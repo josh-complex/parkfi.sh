@@ -104,6 +104,7 @@
     "vitest": "npm:@voidzero-dev/vite-plus-test@latest"
   },
   "overrides": {
+    "kysely": "0.28.17",
     "vite": "npm:@voidzero-dev/vite-plus-core@latest",
     "vitest": "npm:@voidzero-dev/vite-plus-test@latest"
   },
