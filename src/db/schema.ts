@@ -14,6 +14,10 @@ import {
   timestamp,
 } from "drizzle-orm/pg-core";
 
+// better-auth tables (user/session/account/verification) — re-exported so
+// drizzle-kit migrations and the `db` schema object include them.
+export * from "./auth-schema.ts";
+
 /**
  * Theme-park data platform schema.
  *
