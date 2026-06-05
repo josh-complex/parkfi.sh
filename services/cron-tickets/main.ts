@@ -50,8 +50,23 @@ async function main() {
     AbortSignal.timeout(config.fetchTimeoutMs),
   );
 
+  // Disney returns placeholder entries (e.g. `[{}]`) when there's no data to
+  // report for anonymous callers — keep only entries with a real date+state.
+  const usable = calendar.filter(
+    (e): e is { date: string; availability: string; parks: Array<string> } =>
+      typeof e.date === "string" && typeof e.availability === "string",
+  );
+
+  if (usable.length === 0) {
+    console.warn(
+      `[cron-tickets] Disney returned ${calendar.length} entr${calendar.length === 1 ? "y" : "ies"} with no usable availability ` +
+        `(the calendar gates data behind an authenticated session; standard-ticket Park Pass was retired). Nothing to record.`,
+    );
+    return;
+  }
+
   const rows: Array<typeof ticketAvailability.$inferInsert> = [];
-  for (const entry of calendar) {
+  for (const entry of usable) {
     const available = new Set(entry.parks);
     for (const [disneyId, parkId] of parkMap) {
       const state = available.has(disneyId)
@@ -68,16 +83,14 @@ async function main() {
     }
   }
 
-  if (rows.length > 0) {
-    for (let i = 0; i < rows.length; i += 500) {
-      await db
-        .insert(ticketAvailability)
-        .values(rows.slice(i, i + 500))
-        .onConflictDoNothing();
-    }
+  for (let i = 0; i < rows.length; i += 500) {
+    await db
+      .insert(ticketAvailability)
+      .values(rows.slice(i, i + 500))
+      .onConflictDoNothing();
   }
   console.log(
-    `[cron-tickets] ${calendar.length} dates × ${parkMap.size} parks → ${rows.length} rows`,
+    `[cron-tickets] ${usable.length} dates × ${parkMap.size} parks → ${rows.length} rows`,
   );
 }
 

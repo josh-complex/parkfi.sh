@@ -96,11 +96,14 @@ export const QueueTimesSchema = z.object({
 });
 export type QueueTimesPayload = z.infer<typeof QueueTimesSchema>;
 
-// Disney availability-calendar
+// Disney availability-calendar.
+// Fields are optional because the endpoint returns placeholder entries (`[{}]`)
+// for anonymous callers / segments with no data. The cron filters to usable
+// entries rather than crashing on the empties.
 export const AvailabilityCalendarSchema = z.array(
   z.object({
-    date: z.string(),
-    availability: z.string(),
+    date: z.string().optional(),
+    availability: z.string().optional(),
     parks: z.array(z.string()).default([]),
   }),
 );
