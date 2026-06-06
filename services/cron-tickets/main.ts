@@ -152,12 +152,29 @@ async function captureDisneyPricing(
     if (!DISNEY_DAY_BUCKETS.has(bucket.numDays)) continue;
     for (const day of bucket.dates) {
       if (day.date < todayIso || day.date > endIso) continue;
+
+      // Disney lists several price points per ageGroup per date (validity
+      // windows / ticket options). Collapse to one headline figure per age:
+      // the lowest sellable "from" price. This keeps each (park, date, tier)
+      // unique (it's the PK) and matches the price Disney advertises.
+      const byAge = new Map<string, { amount: number; soldOut: boolean }>();
       for (const p of day.pricing) {
         if (!p.pricePerDay) continue;
         const amount = Number(p.pricePerDay);
         if (!Number.isFinite(amount)) continue;
-        const tier = `${bucket.numDays}day_${p.ageGroup ?? "adult"}`;
-        const state = p.stopSale ? QueueState.SOLD_OUT : QueueState.AVAILABLE;
+        const age = p.ageGroup ?? "adult";
+        const soldOut = p.stopSale ?? false;
+        const prev = byAge.get(age);
+        const better =
+          !prev ||
+          (prev.soldOut && !soldOut) || // prefer a sellable price
+          (prev.soldOut === soldOut && amount < prev.amount); // else the lowest
+        if (better) byAge.set(age, { amount, soldOut });
+      }
+
+      for (const [age, { amount, soldOut }] of byAge) {
+        const tier = `${bucket.numDays}day_${age}`;
+        const state = soldOut ? QueueState.SOLD_OUT : QueueState.AVAILABLE;
         // WDW date-based tickets are resort-wide (one price admits to any park);
         // record against every WDW park so per-park queries resolve.
         for (const parkId of wdwParkIds) {
