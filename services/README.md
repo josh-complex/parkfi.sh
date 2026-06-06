@@ -19,8 +19,11 @@ The web app (`bun run start`) is a third service with a public domain. DB/Redis
 ride the Railway private network — only the app gets a public URL.
 
 **Browserless v2** runs as its own Railway service (the `ghcr.io/browserless/chromium`
-image). `cron-tickets` reaches it over the private network for the Universal
-feeds; only its `BROWSERLESS_URL`/`BROWSERLESS_TOKEN` need wiring into the cron.
+image). For the Universal feeds, `cron-tickets` connects puppeteer-core to it
+over its WS/CDP endpoint on the private network; only `BROWSERLESS_URL`/
+`BROWSERLESS_TOKEN` need wiring into the cron (`BROWSERLESS_URL` is the HTTP base,
+e.g. `http://browserless.railway.internal:3000` — it's converted to `ws://` at
+connect time).
 
 ## Environment
 
@@ -31,16 +34,17 @@ All services need `DATABASE_URL` (Timescale-enabled Postgres). Optional knobs
 
 `cron-tickets` gated feeds (see `research/gated-feeds-report.md`):
 
-| Var                                               | Default                             | Purpose                                                                 |
-| ------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------- |
-| `DISNEY_TICKET_BASE`                              | `https://disneyworld.disney.go.com` | WDW client-token + lexicon pricing host (D2)                            |
-| `DISNEY_DAY_BUCKETS`                              | `1`                                 | comma list of `numDays` buckets to record from the pricing calendar     |
-| `BROWSERLESS_URL`                                 | _(unset)_                           | Browserless v2 base URL; unset ⇒ Universal feeds skipped                |
-| `BROWSERLESS_TOKEN`                               | _(unset)_                           | Browserless v2 auth token                                               |
-| `BROWSERLESS_TIMEOUT_MS`                          | `60000`                             | budget for one Browserless `/function` run                              |
-| `UNIVERSAL_STORE_URL`                             | `https://www.universalorlando.com`  | web-store front driven in Chromium (U1/U2)                              |
-| `UNIVERSAL_EXPRESS_URL` / `UNIVERSAL_TICKETS_URL` | web-store defaults                  | entry pages whose `priceAndInventory/v2` XHR we harvest                 |
-| `UNIVERSAL_SELECT_SELECTORS`                      | built-in                            | comma list of "Select" selectors to click to trigger the per-date calls |
+| Var                                               | Default                             | Purpose                                                                     |
+| ------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------- |
+| `DISNEY_TICKET_BASE`                              | `https://disneyworld.disney.go.com` | WDW client-token + lexicon pricing host (D2)                                |
+| `DISNEY_DAY_BUCKETS`                              | `1`                                 | comma list of `numDays` buckets to record from the pricing calendar         |
+| `BROWSERLESS_URL`                                 | _(unset)_                           | Browserless v2 HTTP base (→ `ws://` at connect); unset ⇒ Universal skipped  |
+| `BROWSERLESS_TOKEN`                               | _(unset)_                           | Browserless v2 auth token                                                   |
+| `BROWSERLESS_TIMEOUT_MS`                          | `60000`                             | budget for one Browserless session (connect + capture)                      |
+| `BROWSERLESS_WS_QUERY`                            | _(unset)_                           | extra WS query, e.g. `proxy=residential&proxySticky=true` (Akamai fallback) |
+| `UNIVERSAL_STORE_URL`                             | `https://www.universalorlando.com`  | web-store front driven in Chromium (U1/U2)                                  |
+| `UNIVERSAL_EXPRESS_URL` / `UNIVERSAL_TICKETS_URL` | web-store defaults                  | entry pages whose `priceAndInventory/v2` XHR we harvest                     |
+| `UNIVERSAL_SELECT_SELECTORS`                      | built-in                            | comma list of "Select" selectors to click to trigger the per-date calls     |
 
 Disney's JSON APIs (D1/D2) are not Akamai-sensor-gated, so they run over a plain
 HTTPS client with no proxy. If the Railway datacenter IP gets challenged, route

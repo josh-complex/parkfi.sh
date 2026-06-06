@@ -1,47 +1,59 @@
+import puppeteer, { type Browser } from "puppeteer-core";
+
 import { config } from "../config.ts";
 import { UpstreamError } from "./themeparks.ts";
 
 /**
- * Thin client over a Browserless v2 instance (its own Railway service) via the
- * `/function` REST API — no local puppeteer/playwright dependency. We POST a JS
- * module that runs inside headless Chromium with `{ page, context }` in scope;
- * it returns `{ data, type }` which Browserless serializes back as the HTTP
- * body. We use this for feeds gated by a real-browser session (Universal),
- * where a plain HTTPS client is blocked. See research/gated-feeds-report.md §U1.
+ * Connection manager for a Browserless v2 instance (its own Railway service).
+ * We connect puppeteer-core to it over WS/CDP — Browserless runs the real
+ * Chromium, we drive it from typed code. Used for feeds gated by a real-browser
+ * session (Universal), where a plain HTTPS client is blocked. See
+ * research/gated-feeds-report.md §U1.
  */
 
 export function browserlessConfigured(): boolean {
   return config.browserlessUrl.length > 0;
 }
 
+/** Derive the ws(s):// CDP endpoint (with token + optional proxy query). */
+function wsEndpoint(): string {
+  const base = config.browserlessUrl.replace(/^http/, "ws");
+  const params = new URLSearchParams();
+  if (config.browserlessToken) params.set("token", config.browserlessToken);
+  const query = [params.toString(), config.browserlessQuery].filter(Boolean).join("&");
+  return query ? `${base}?${query}` : base;
+}
+
+/** Reject when `signal` aborts, so a stuck connect/run can't hang the cron. */
+function abortRejection(signal: AbortSignal): Promise<never> {
+  return new Promise((_, reject) => {
+    const fail = () => reject(new UpstreamError("browserless run aborted (timeout)"));
+    if (signal.aborted) fail();
+    else signal.addEventListener("abort", fail, { once: true });
+  });
+}
+
 /**
- * Run `code` (a `export default async ({ page, context }) => ({ data, type })`
- * module) in Browserless and return its `data` parsed as JSON.
+ * Connect to Browserless, run `fn` against the remote Browser, and always
+ * release the session — even on abort or throw. The `signal` bounds the whole
+ * connect+run.
  */
-export async function runBrowserFunction<T>(
-  code: string,
-  context: Record<string, unknown>,
+export async function withBrowser<T>(
+  fn: (browser: Browser) => Promise<T>,
   signal: AbortSignal,
 ): Promise<T> {
   if (!browserlessConfigured()) {
     throw new UpstreamError("BROWSERLESS_URL not set — cannot run browser feed");
   }
-  const token = config.browserlessToken
-    ? `?token=${encodeURIComponent(config.browserlessToken)}`
-    : "";
-  const url = `${config.browserlessUrl}/function${token}`;
-  const res = await fetch(url, {
-    method: "POST",
-    signal,
-    headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({ code, context }),
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new UpstreamError(
-      `POST ${config.browserlessUrl}/function -> ${res.status}${body ? `: ${body.slice(0, 300)}` : ""}`,
-      res.status,
-    );
+  const browser = await Promise.race([
+    puppeteer.connect({ browserWSEndpoint: wsEndpoint() }),
+    abortRejection(signal),
+  ]);
+  try {
+    return await Promise.race([fn(browser), abortRejection(signal)]);
+  } finally {
+    // close() ends the Browserless session (frees the slot); disconnect() alone
+    // would leave it running until its own TIMEOUT.
+    await browser.close().catch(() => {});
   }
-  return (await res.json()) as T;
 }

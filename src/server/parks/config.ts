@@ -27,13 +27,20 @@ export const config = {
 
   /**
    * Browserless v2 instance (separate Railway service). Universal's feeds are
-   * gated by a real-browser guest session, so we harvest them through headless
-   * Chromium here via the `/function` REST API. Empty = Universal capture is
-   * skipped (Disney still runs over plain HTTPS).
+   * gated by a real-browser guest session, so we harvest them by connecting
+   * puppeteer-core to this instance over its WS/CDP endpoint. The HTTP(S) base
+   * is converted to ws(s) at connect time. Empty = Universal capture is skipped
+   * (Disney still runs over plain HTTPS).
    */
   browserlessUrl: (process.env.BROWSERLESS_URL ?? "").replace(/\/+$/, ""),
   browserlessToken: process.env.BROWSERLESS_TOKEN ?? "",
-  /** Budget for a single Browserless `/function` run, in ms (full SPA load). */
+  /**
+   * Extra WS query string appended to the connect URL, e.g.
+   * `proxy=residential&proxySticky=true` to use Browserless's residential proxy
+   * if the datacenter IP gets Akamai-challenged (the report's fallback).
+   */
+  browserlessQuery: (process.env.BROWSERLESS_WS_QUERY ?? "").replace(/^[?&]/, ""),
+  /** Budget for a single Browserless session, in ms (full SPA load). */
   browserlessTimeoutMs: num("BROWSERLESS_TIMEOUT_MS", 60_000),
 
   /** How often the worker polls every active park, in ms. */
