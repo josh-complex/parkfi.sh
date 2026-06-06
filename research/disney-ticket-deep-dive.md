@@ -205,7 +205,85 @@ offer = { offerId:"<id>:1", time:"11:30:00", label:"11:30 AM" }
 
 Empty/no-availability states return `{code, message}` (e.g. `code:404`) or `{errors, statusCode, error}` instead of `restaurants`. So the **`dining_obs` signal** is: per `(facilityId, date, partySize)` → for each meal period, the list of `offer{time,label,offerId}`; **non-empty `offersByAccessibility` = a bookable table** at that time. `facilityId;entityType=restaurant` is the join key.
 
-**Domain model — `dining_obs`:** `(facility_id, date, party_size, meal_period, offer_time, observed_at)` one row per available slot (+ a `(facility_id,date,party_size)` "checked, none available" marker for the empty case). Restaurant dimension (facilityId → name/cuisine/serviceStyle/location) comes from the meal-period fields + the dining catalog. Cadence: this is the most perishable feed (tables flip minute-to-minute near 60-day booking opening) — sweep hot restaurants/dates frequently, cold ones rarely.
+**Domain model — `dining_obs`:** `(facility_id, date, party_size, meal_period, offer_time, observed_at)` one row per available slot (+ a `(facility_id,date,party_size)` "checked, none available" marker for the empty case). Cadence: this is the most perishable feed (tables flip minute-to-minute near 60-day booking opening) — sweep hot restaurants/dates frequently, cold ones rarely.
+
+See **§9** for the restaurant catalog / dimension source.
+
+---
+
+## 9. Dining catalog — `/dine-res/api/dine/facilities` (restaurant dimension)
+
+`GET https://disneyworld.disney.go.com/dine-res/api/dine/facilities` returns the **full WDW dining catalog** — the source for `restaurant_dim` and for auto-discovering sweep targets.
+
+- **Auth: session-gated, same as getAvailability.** 401 anonymous; **403 even with the anonymous client-token** (recognized but not entitled); 200 only under the logged-in OneID session. So the catalog refresh reuses the scraper's maintained session.
+- **All three categories are sweepable** via `getAvailability` (confirmed) — pass the entry's `id` straight through as `facilityId`; the entityType is already embedded in it.
+
+### Response shape
+
+Top level = an object keyed by **category**, each a map of **`{facilityId}` → entry**:
+
+```
+{
+  "restaurant":  { "<facilityId>": <entry>, ... },
+  "dinnerShow":  { "<facilityId>": <entry>, ... },
+  "diningEvent": { "<facilityId>": <entry>, ... }
+}
+```
+
+Note: the live payload also contains an `errors`/`statusCode`/`error` envelope shape on failure — guard for `restaurant` presence before iterating.
+
+**`id` field = the getAvailability join key**, with entityType embedded:
+| category | `id` format | getAvailability `facilityId` arg |
+|---|---|---|
+| `restaurant` | `"98575;entityType=restaurant"` | `…?facilityId=98575;entityType=restaurant` |
+| `dinnerShow` | `"80010856;entityType=dinner-show"` | `…?facilityId=80010856;entityType=dinner-show` |
+| `diningEvent` | `"140873;entityType=dining-event"` | `…?facilityId=140873;entityType=dining-event` |
+
+### Entry schema (fields used for the dimension)
+
+```
+entry = {
+  id,                              // "{facilityId};entityType={restaurant|dinner-show|dining-event}"
+  name,                            // "The Turf Club Bar and Grill"
+  description, sortProductName,
+  primaryCuisineType,              // "American"        (restaurant)
+  priceRange,                      // "$$ ($15 to $34.99 per adult)"
+  experienceType,                  // "Casual Dining" | "Signature Dining" | "Dinner Shows" ...
+  mealPeriodType, type,            // "Dinner" | "Breakfast" | "Lunch"
+  ancestorLocationParkResort,      // "Disney's Saratoga Springs Resort & Spa"  (park/resort name)
+  ancestorLocationParkResortId,    // "80010383"
+  ancestorLocationParkResortType,  // "WDW Resort Area" | "Theme Park"
+  ancestorLocationLandArea(+Id +Type),  // sub-area
+  coordinates: { "Guest Entrance": { gps: { latitude, longitude } } },
+  sellableOnline,                  // bool
+  admissionRequired, disneyOwned, quickServiceAvailable, reservationsRecommended,
+  hasDiningEventsAssociated,
+  webLinks: { wdwDetail:{href,title}, reservableExperience?:{href,title} },
+  media / mediaGalleries,          // image URLs (skip for the dim)
+  facets: [ { id, title, type, urlFriendlyId }, ... ]   // see below
+}
+```
+
+(`dinnerShow`/`diningEvent` entries share the core fields; dinner-shows add e.g. a `seatingChart` media + family-style/price facets, dining-events add `eec-*` price/age/accessibility facets.)
+
+### `facets[]` — how to classify / filter
+
+Each facet: `{ id, title, type, urlFriendlyId }`. Useful flags by `urlFriendlyId` (or `id`):
+
+- **bookable / reservable**: `reservations-accepted` (16983862) and/or `checkavailmodulewdw` (17385675) — gate sweeping on these + `sellableOnline:true`.
+- **category type**: `is-restaurant` (16726823), `dinner-show` (16726809), `is-dining-event` (16726821), `dine-event-not-bookable` (412087442 → exclude).
+- **service style**: `table-service-type`, `casual-dining`, `signature-dining`, `family-style`, `a-la-carte`, `quick-service`.
+- **cuisine**: `*-cuisine` (e.g. `american-cuisine`), and `primaryCuisineType` on the entry.
+- **price tier**: `Price Range Dining` type (`priceLegend1..4`), or the `priceRange` string.
+- **location/area**: `Dining` type facets (`mk-area`, `epcot-area`, `ds-area`, `resort-dining`, `theme-park-dining`) — plus the structured `ancestorLocation*` fields (prefer those).
+- **walk-up**: `walkupWaitList` (19569082).
+
+### → `restaurant_dim` mapping & usage
+
+Columns: `facility_id` (bare numeric, split off `;entityType`), `entity_type` (`restaurant`/`dinner-show`/`dining-event`), `name`, `cuisine` (`primaryCuisineType`), `price_range`, `experience_type`, `service_style` (from facets), `park_resort` + `park_resort_id` + `park_resort_type` (from `ancestorLocation*`), `lat`/`lng` (from `coordinates`), `wdw_url` (`webLinks.wdwDetail.href`), `bookable` (facet-derived), `sellable_online`, `is_active` + `last_seen_at`.
+
+- **Refresh** weekly/daily via the maintained session → **upsert** on `facility_id`; **soft-delete** (set `is_active=false`/`last_seen_at`) when a venue drops out — never hard-delete (preserves `dining_obs` FK + history).
+- **Sweep set** = `bookable` rows filtered by a separate, config-controlled `hot`/priority flag — so a catalog refresh widens the candidate pool without silently expanding the active sweep.
 
 **Reproduction recommendation / confidence:** **MEDIUM, session-bound.** Schema + auth are now fully VERIFIED, but there is **no anonymous path** (unlike tickets). Production needs a **maintained logged-in session**:
 

@@ -320,25 +320,75 @@ export const skuPriceObs = pgTable(
   (t) => [primaryKey({ columns: [t.sku, t.serviceDate, t.observedAt] })],
 );
 
-/** (E) Dining availability (later; per-user-auth feed). */
+/**
+ * (F) WDW restaurant catalog (the dine-vas dimension). Seeded weekly from
+ * `/dine-res/api/dine/facilities` via the maintained OneID session. `facilityId`
+ * is the bare id (the `;entityType=…` suffix is split into `entityType`); it's
+ * the join key for the availability sweep. Soft-delete (active=false) on drop —
+ * never hard-delete, so `dining_obs` keeps FK integrity + history.
+ */
+export const restaurantDim = pgTable("restaurant_dim", {
+  facilityId: text("facility_id").primaryKey(),
+  // 'restaurant' | 'dinner-show' | 'dining-event'
+  entityType: text("entity_type").notNull(),
+  name: text("name").notNull(),
+  cuisine: text("cuisine"),
+  experienceType: text("experience_type"),
+  priceRange: text("price_range"),
+  parkResort: text("park_resort"),
+  parkResortId: text("park_resort_id"),
+  // reservations-accepted/checkAvail facet + sellableOnline => sweepable candidate
+  bookable: boolean("bookable").notNull().default(false),
+  sellableOnline: boolean("sellable_online").notNull().default(false),
+  // hot tier the availability poller actually sweeps (config-controlled, not catalog)
+  priority: boolean("priority").notNull().default(false),
+  active: boolean("active").notNull().default(true),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * (G) Dining reservation availability (dine-vas getAvailability). One row per
+ * bookable slot from `offersByAccessibility[]`; a sentinel row (empty
+ * `meal_period`/`offer_time`) records "(facility,date,party) checked, none
+ * available". See research/disney-ticket-deep-dive.md §7.
+ */
 export const diningObs = pgTable(
   "dining_obs",
   {
     observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
-    restaurantId: bigint("restaurant_id", { mode: "number" })
+    facilityId: text("facility_id")
       .notNull()
-      .references(() => attractions.id),
+      .references(() => restaurantDim.facilityId),
     serviceDate: date("service_date").notNull(),
-    mealTime: time("meal_time").notNull(),
     partySize: smallint("party_size").notNull(),
-    available: boolean("available").notNull(),
+    // '' on the "none available" sentinel row (NOT NULL so it lives in the PK)
+    mealPeriod: text("meal_period").notNull().default(""),
+    offerTime: time("offer_time").notNull().default("00:00:00"),
+    offerId: text("offer_id"),
     source: smallint("source")
       .notNull()
       .references(() => refSource.id),
   },
   (t) => [
     primaryKey({
-      columns: [t.restaurantId, t.serviceDate, t.mealTime, t.partySize, t.observedAt],
+      columns: [t.facilityId, t.serviceDate, t.partySize, t.mealPeriod, t.offerTime, t.observedAt],
     }),
   ],
 );
+
+/**
+ * (H) Encrypted scraper sessions (e.g. the Disney OneID storageState). The blob
+ * is a live account credential, so it's AES-256-GCM encrypted (key from
+ * SESSION_ENC_KEY, never stored here). Re-seeded on 401.
+ */
+export const scraperSession = pgTable("scraper_session", {
+  name: text("name").primaryKey(),
+  accountLabel: text("account_label"),
+  ciphertext: text("ciphertext").notNull(),
+  iv: text("iv").notNull(),
+  authTag: text("auth_tag").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  lastValidatedAt: timestamp("last_validated_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

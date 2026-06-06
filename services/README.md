@@ -10,13 +10,21 @@ from `bun.lock`, so bun is available at build and runtime for every service.
 Deploy each as its own Railway service pointed at this same repo, with a distinct
 **start command** (set the root in Railway → "Custom Start Command"):
 
-| Service        | Start command          | Railway type        | Notes                                            |
-| -------------- | ---------------------- | ------------------- | ------------------------------------------------ |
-| `worker`       | `bun run worker`       | long-running, 1 rep | self-scheduling 60s poller; `/health` on `$PORT` |
-| `cron-tickets` | `bun run cron:tickets` | Cron `0 8 * * *`    | single-shot, exits; gated ticket/Express feeds   |
+| Service               | Start command                 | Railway type        | Notes                                            |
+| --------------------- | ----------------------------- | ------------------- | ------------------------------------------------ |
+| `worker`              | `bun run worker`              | long-running, 1 rep | self-scheduling 60s poller; `/health` on `$PORT` |
+| `cron-tickets`        | `bun run cron:tickets`        | Cron `0 8 * * *`    | single-shot; gated ticket/Express feeds          |
+| `dining-facilities`   | `bun run dining:facilities`   | Cron `0 6 * * 1`    | weekly; refresh `restaurant_dim` catalog         |
+| `dining-availability` | `bun run dining:availability` | Cron `*/10 * * * *` | frequent; dine-vas reservation sweep (logged-in) |
 
 The web app (`bun run start`) is a third service with a public domain. DB/Redis
 ride the Railway private network — only the app gets a public URL.
+
+The two `dining-*` services share one logged-in MyDisney (OneID) session
+(encrypted in `scraper_session`); they require a logged-in browser, so they need
+Browserless + `DISNEY_EMAIL`/`DISNEY_PASS` + `SESSION_ENC_KEY`. The availability
+sweep only polls restaurants flagged `restaurant_dim.priority=true` (set those by
+hand/SQL); `dining-facilities` seeds the full catalog but never sets `priority`.
 
 **Browserless v2** runs as its own Railway service (the `ghcr.io/browserless/chromium`
 image / Railway Browserless template). For the Universal feeds, `cron-tickets`
@@ -48,6 +56,20 @@ Universal: `research/universal-ticket-deep-dive.md`):
 | `UNIVERSAL_CONTRACT_ID`                 | `4000000000000000003`               | priceAndInventory contract id (prices standard + FL SKUs)                   |
 | `UNIVERSAL_PRICE_WINDOW_DAYS`           | `180`                               | forward window of per-date pricing (one call covers it; max ~365)           |
 | `UNIVERSAL_PRICE_BATCH`                 | `20`                                | partNumbers per priceAndInventory call                                      |
+
+`dining-*` services (logged-in MyDisney session; see `disney-ticket-deep-dive.md` §7-8):
+
+| Var                            | Default  | Purpose                                                                |
+| ------------------------------ | -------- | ---------------------------------------------------------------------- |
+| `DISNEY_EMAIL` / `DISNEY_PASS` | _(req.)_ | OneID login for a **dedicated throwaway account** (no payment on file) |
+| `SESSION_ENC_KEY`              | _(req.)_ | AES-256-GCM key (hex-64 or base64-32) for the `scraper_session` blob   |
+| `DINING_PARTY_SIZES`           | `2,4`    | comma list of party sizes to sweep                                     |
+| `DINING_DAY_HORIZON`           | `14`     | forward days to sweep per restaurant                                   |
+
+Both dining services also need `BROWSER_WS_ENDPOINT` (+ `BROWSERLESS_WS_QUERY=stealth&proxy=residential`
+— login from a datacenter IP is the main failure point) and a generous
+`BROWSERLESS_TIMEOUT_MS` for the availability sweep (facilities × parties × days
+in one session).
 
 Both resorts land in the SKU-keyed model (`product_dim` + `sku_price_obs`), not
 the park-keyed `product_price_obs`. **Disney** is plain HTTPS (no browser): mint
