@@ -19,11 +19,10 @@ The web app (`bun run start`) is a third service with a public domain. DB/Redis
 ride the Railway private network — only the app gets a public URL.
 
 **Browserless v2** runs as its own Railway service (the `ghcr.io/browserless/chromium`
-image). For the Universal feeds, `cron-tickets` connects puppeteer-core to it
-over its WS/CDP endpoint on the private network; only `BROWSERLESS_URL`/
-`BROWSERLESS_TOKEN` need wiring into the cron (`BROWSERLESS_URL` is the HTTP base,
-e.g. `http://browserless.railway.internal:3000` — it's converted to `ws://` at
-connect time).
+image / Railway Browserless template). For the Universal feeds, `cron-tickets`
+connects puppeteer-core to it over its WS/CDP endpoint. Simplest wiring: reference
+the template's `BROWSER_WS_ENDPOINT` (a full `wss://…?token=…` URL) into the cron
+— that's all it needs.
 
 ## Environment
 
@@ -38,8 +37,8 @@ All services need `DATABASE_URL` (Timescale-enabled Postgres). Optional knobs
 | ------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------- |
 | `DISNEY_TICKET_BASE`                              | `https://disneyworld.disney.go.com` | WDW client-token + lexicon pricing host (D2)                                |
 | `DISNEY_DAY_BUCKETS`                              | `1`                                 | comma list of `numDays` buckets to record from the pricing calendar         |
-| `BROWSERLESS_URL`                                 | _(unset)_                           | Browserless v2 HTTP base (→ `ws://` at connect); unset ⇒ Universal skipped  |
-| `BROWSERLESS_TOKEN`                               | _(unset)_                           | Browserless v2 auth token                                                   |
+| `BROWSER_WS_ENDPOINT`                             | _(unset)_                           | full `wss://…?token=…` (Railway template var); unset ⇒ Universal skipped    |
+| `BROWSERLESS_URL` + `BROWSERLESS_TOKEN`           | _(unset)_                           | fallback: HTTP base (→ `ws://`) + token, e.g. `…railway.internal:3000`      |
 | `BROWSERLESS_TIMEOUT_MS`                          | `60000`                             | budget for one Browserless session (connect + capture)                      |
 | `BROWSERLESS_WS_QUERY`                            | _(unset)_                           | extra WS query, e.g. `proxy=residential&proxySticky=true` (Akamai fallback) |
 | `UNIVERSAL_STORE_URL`                             | `https://www.universalorlando.com`  | web-store front driven in Chromium (U1/U2)                                  |

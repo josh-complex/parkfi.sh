@@ -28,10 +28,16 @@ export const config = {
   /**
    * Browserless v2 instance (separate Railway service). Universal's feeds are
    * gated by a real-browser guest session, so we harvest them by connecting
-   * puppeteer-core to this instance over its WS/CDP endpoint. The HTTP(S) base
-   * is converted to ws(s) at connect time. Empty = Universal capture is skipped
-   * (Disney still runs over plain HTTPS).
+   * puppeteer-core to this instance over its WS/CDP endpoint.
+   *
+   * Primary: `BROWSER_WS_ENDPOINT` — the complete `wss://…?token=…` URL the
+   * Railway Browserless template exposes, used verbatim. Fallback: an HTTP(S)
+   * base (`BROWSERLESS_URL`) + `BROWSERLESS_TOKEN`, from which we derive the ws
+   * URL (e.g. for private-network `http://…railway.internal:3000`). Empty =
+   * Universal capture is skipped (Disney still runs over plain HTTPS).
    */
+  browserlessWsEndpoint:
+    process.env.BROWSER_WS_ENDPOINT ?? process.env.BROWSERLESS_WS_ENDPOINT ?? "",
   browserlessUrl: (process.env.BROWSERLESS_URL ?? "").replace(/\/+$/, ""),
   browserlessToken: process.env.BROWSERLESS_TOKEN ?? "",
   /**

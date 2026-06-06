@@ -12,16 +12,29 @@ import { UpstreamError } from "./themeparks.ts";
  */
 
 export function browserlessConfigured(): boolean {
-  return config.browserlessUrl.length > 0;
+  return config.browserlessWsEndpoint.length > 0 || config.browserlessUrl.length > 0;
 }
 
-/** Derive the ws(s):// CDP endpoint (with token + optional proxy query). */
+function appendQuery(url: string, extra: string): string {
+  if (!extra) return url;
+  return url.includes("?") ? `${url}&${extra}` : `${url}?${extra}`;
+}
+
+/**
+ * The ws(s):// CDP endpoint to connect to. Prefers a complete
+ * `BROWSER_WS_ENDPOINT` (used verbatim, e.g. `wss://…?token=…` from Railway);
+ * otherwise derives one from the HTTP base + token. The optional proxy query is
+ * appended in either case.
+ */
 function wsEndpoint(): string {
+  if (config.browserlessWsEndpoint) {
+    return appendQuery(config.browserlessWsEndpoint, config.browserlessQuery);
+  }
   const base = config.browserlessUrl.replace(/^http/, "ws");
   const params = new URLSearchParams();
   if (config.browserlessToken) params.set("token", config.browserlessToken);
   const query = [params.toString(), config.browserlessQuery].filter(Boolean).join("&");
-  return query ? `${base}?${query}` : base;
+  return appendQuery(base, query);
 }
 
 /** Reject when `signal` aborts, so a stuck connect/run can't hang the cron. */
