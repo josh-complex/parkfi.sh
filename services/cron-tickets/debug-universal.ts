@@ -15,8 +15,7 @@ import { browserlessConfigured, withBrowser } from "#/server/parks/sources/brows
 import { fetchUniversalCatalogAndPricing } from "#/server/parks/sources/universal.ts";
 
 const URL =
-  process.env.UNIVERSAL_TICKETS_URL ??
-  `${config.universalStoreUrl}/web-store/en/us/theme-park-tickets`;
+  process.env.UNIVERSAL_TICKETS_URL ?? `${config.universalStoreUrl}/web-store/en/us/park-tickets`;
 const UA =
   process.env.UNIVERSAL_BROWSER_UA ??
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
