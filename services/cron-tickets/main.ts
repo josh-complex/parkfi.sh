@@ -6,8 +6,8 @@
  *
  * Feeds (Disney: research/gated-feeds-report.md; Universal: research/universal-ticket-deep-dive.md):
  *   D1     Disney ticket-date availability  -> ticket_availability         (plain HTTPS)
- *   D2     Disney date-based ticket pricing -> product_price_obs            (plain HTTPS, cookieless bearer)
- *   U1/U2  Universal ticket + Express        -> product_dim + sku_price_obs  (SKU-keyed, park-agnostic)
+ *   D2     Disney ticket catalog + pricing  -> product_dim + sku_price_obs  (plain HTTPS, cookieless bearer)
+ *   U1/U2  Universal ticket + Express        -> product_dim + sku_price_obs  (SKU-keyed, in-browser)
  *
  * Disney's JSON APIs aren't Akamai-sensor-gated, so they run over a plain HTTPS
  * client. Universal is harvested by loading the web-store once in Browserless to
@@ -22,19 +22,14 @@ loadEnv({ path: [".env.local", ".env"] });
 import { and, eq, sql } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
-import {
-  externalIds,
-  productDim,
-  productPriceObs,
-  skuPriceObs,
-  ticketAvailability,
-} from "#/db/schema.ts";
+import { externalIds, productDim, skuPriceObs, ticketAvailability } from "#/db/schema.ts";
 import {
   availabilityToQueueState,
-  Product,
+  disneyDecodeSku,
   QueueState,
   Source,
   universalDecodeSku,
+  type DisneySkuDims,
 } from "#/server/parks/codes.ts";
 import {
   fetchAvailabilityCalendar,
@@ -47,11 +42,27 @@ import { config } from "#/server/parks/config.ts";
 
 const SEGMENT = "tickets" as const;
 const WINDOW_DAYS = Number(process.env.TICKET_WINDOW_DAYS ?? 60);
-// Which Disney numDays buckets to record. The 1-day adult/child series is the
-// demand signal; widen via env if longer-stay pricing is wanted.
-const DISNEY_DAY_BUCKETS = new Set(
-  (process.env.DISNEY_DAY_BUCKETS ?? "1").split(",").map((s) => s.trim()),
-);
+// How far forward to record Disney per-date pricing (the calendar reaches ~17mo).
+const DISNEY_PRICE_WINDOW_DAYS = Number(process.env.DISNEY_PRICE_WINDOW_DAYS ?? 180);
+// E2 sweep: product-type slug + add-on variants (verified in the deep dive; the
+// FL-resident slug is best-effort and tolerated if it 404s). Residency/park are
+// recovered from each row's productInstanceId, so one sweep covers all groups.
+const DISNEY_E2: Array<{ slug: string; addOns: Array<string> }> = [
+  {
+    slug: "theme-parks",
+    addOns: ["false", "park-hopper", "park-hopper-plus", "water-parks-sports"],
+  },
+  { slug: "after-2pm-ticket-offer", addOns: ["false"] },
+  { slug: "four-park-magic-ticket-offer", addOns: ["false", "water-parks-sports"] },
+  {
+    slug: "canada-ticket",
+    addOns: ["false", "park-hopper", "park-hopper-plus", "water-parks-sports"],
+  },
+  {
+    slug: "theme-parks-for-fl-resident",
+    addOns: ["false", "park-hopper", "park-hopper-plus", "water-parks-sports"],
+  },
+];
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -74,13 +85,55 @@ async function parkMapForSource(source: number): Promise<Map<string, number>> {
   return new Map(rows.map((r) => [r.externalId, r.entityId]));
 }
 
-async function insertPriceRows(rows: Array<typeof productPriceObs.$inferInsert>): Promise<void> {
+/** Upsert SKU dimension rows (shared by Disney + Universal), refreshing on re-crawl. */
+async function upsertProductDims(rows: Array<typeof productDim.$inferInsert>): Promise<void> {
   for (let i = 0; i < rows.length; i += 500) {
     await db
-      .insert(productPriceObs)
+      .insert(productDim)
+      .values(rows.slice(i, i + 500))
+      .onConflictDoUpdate({
+        target: productDim.sku,
+        set: {
+          resort: sql`excluded.resort`,
+          family: sql`excluded.family`,
+          durationDays: sql`excluded.duration_days`,
+          parkScope: sql`excluded.park_scope`,
+          parkToPark: sql`excluded.park_to_park`,
+          ageGroup: sql`excluded.age_group`,
+          residency: sql`excluded.residency`,
+          passTier: sql`excluded.pass_tier`,
+          variablePriced: sql`excluded.variable_priced`,
+          // keep a known list price/name if a later (priced-only) pass has none
+          listPriceCents: sql`coalesce(excluded.list_price_cents, ${productDim.listPriceCents})`,
+          name: sql`coalesce(excluded.name, ${productDim.name})`,
+          active: sql`true`,
+          updatedAt: sql`excluded.updated_at`,
+        },
+      });
+  }
+}
+
+/** Insert SKU price observations (shared by Disney + Universal), idempotent on PK. */
+async function insertSkuPrices(rows: Array<typeof skuPriceObs.$inferInsert>): Promise<void> {
+  for (let i = 0; i < rows.length; i += 500) {
+    await db
+      .insert(skuPriceObs)
       .values(rows.slice(i, i + 500))
       .onConflictDoNothing();
   }
+}
+
+/** Readable display name from a decoded WDW SKU. */
+function disneyName(d: DisneySkuDims): string {
+  return [
+    d.durationDays ? `${d.durationDays}-Day` : null,
+    d.ageGroup === "ADULT" ? "Adult" : d.ageGroup === "CHILD" ? "Child" : null,
+    d.family.replace(/-/g, " "),
+    d.parkToPark ? "Park Hopper" : null,
+    d.residency !== "STD" ? `(${d.residency})` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 // --- D1: Disney ticket-date availability ----------------------------------
@@ -141,67 +194,77 @@ async function captureDisneyAvailability(
 
 // --- D2: Disney date-based ticket pricing ---------------------------------
 
-async function captureDisneyPricing(
-  wdwParkIds: Array<number>,
-  todayIso: string,
-  endIso: string,
-  observedAt: Date,
-): Promise<number> {
-  const signal = AbortSignal.timeout(config.fetchTimeoutMs);
-  const token = await fetchClientToken(signal);
-  const pricing = await fetchTicketPricing(
-    token.access_token,
-    AbortSignal.timeout(config.fetchTimeoutMs),
-  );
+async function captureDisneyPricing(observedAt: Date): Promise<number> {
+  const todayIso = isoDate(observedAt);
+  const end = new Date(observedAt);
+  end.setDate(end.getDate() + DISNEY_PRICE_WINDOW_DAYS);
+  const endIso = isoDate(end);
 
-  const rows: Array<typeof productPriceObs.$inferInsert> = [];
-  for (const bucket of pricing.pricingCalendar?.pricingCalendar ?? []) {
-    if (!DISNEY_DAY_BUCKETS.has(bucket.numDays)) continue;
-    for (const day of bucket.dates) {
-      if (day.date < todayIso || day.date > endIso) continue;
+  // One anonymous client token (~20 min TTL) covers the whole sweep.
+  const token = await fetchClientToken(AbortSignal.timeout(config.fetchTimeoutMs));
 
-      // Disney lists several price points per ageGroup per date (validity
-      // windows / ticket options). Collapse to one headline figure per age:
-      // the lowest sellable "from" price. This keeps each (park, date, tier)
-      // unique (it's the PK) and matches the price Disney advertises.
-      const byAge = new Map<string, { amount: number; soldOut: boolean }>();
-      for (const p of day.pricing) {
-        if (!p.pricePerDay) continue;
-        const amount = Number(p.pricePerDay);
-        if (!Number.isFinite(amount)) continue;
-        const age = p.ageGroup ?? "adult";
-        const soldOut = p.stopSale ?? false;
-        const prev = byAge.get(age);
-        const better =
-          !prev ||
-          (prev.soldOut && !soldOut) || // prefer a sellable price
-          (prev.soldOut === soldOut && amount < prev.amount); // else the lowest
-        if (better) byAge.set(age, { amount, soldOut });
+  const dims = new Map<string, typeof productDim.$inferInsert>();
+  const rows: Array<typeof skuPriceObs.$inferInsert> = [];
+
+  for (const { slug, addOns } of DISNEY_E2) {
+    for (const addOn of addOns) {
+      let pricing;
+      try {
+        pricing = await fetchTicketPricing(
+          token.access_token,
+          AbortSignal.timeout(config.fetchTimeoutMs),
+          slug,
+          addOn,
+        );
+      } catch {
+        continue; // unverified slug / flaky upstream — skip this variant
       }
-
-      for (const [age, { amount, soldOut }] of byAge) {
-        const tier = `${bucket.numDays}day_${age}`;
-        const state = soldOut ? QueueState.SOLD_OUT : QueueState.AVAILABLE;
-        // WDW date-based tickets are resort-wide (one price admits to any park);
-        // record against every WDW park so per-park queries resolve.
-        for (const parkId of wdwParkIds) {
-          rows.push({
-            observedAt,
-            parkId,
-            productId: Product.DISNEY_TICKET,
-            serviceDate: day.date,
-            tier,
-            priceCents: roundCents(amount),
-            currency: "USD",
-            state,
-            source: Source.DISNEY_DIRECT,
-          });
+      for (const bucket of pricing.pricingCalendar?.pricingCalendar ?? []) {
+        for (const day of bucket.dates) {
+          if (day.date < todayIso || day.date > endIso) continue;
+          for (const p of day.pricing) {
+            if (!p.id) continue; // id = productInstanceId, the SKU/join key
+            const amount = Number(p.subtotal ?? p.pricePerDay);
+            if (!Number.isFinite(amount)) continue;
+            const sku = p.id.replace(/_progenstr/i, "");
+            if (!dims.has(sku)) {
+              const d = disneyDecodeSku(p.id);
+              dims.set(sku, {
+                sku,
+                resort: "WDW",
+                family: d.family,
+                durationDays: d.durationDays,
+                parkScope: d.parkScope,
+                parkToPark: d.parkToPark,
+                ageGroup: d.ageGroup,
+                residency: d.residency,
+                passTier: null,
+                variablePriced: true,
+                listPriceCents: null,
+                name: disneyName(d),
+                updatedAt: observedAt,
+              });
+            }
+            rows.push({
+              observedAt,
+              sku,
+              serviceDate: day.date,
+              priceCents: roundCents(amount),
+              currency: day.currency ?? "USD",
+              available: !p.stopSale, // stopSale=true => sold out
+              availableUnits: null,
+              totalCapacity: null,
+              source: Source.DISNEY_DIRECT,
+            });
+          }
         }
       }
     }
   }
 
-  await insertPriceRows(rows);
+  await upsertProductDims([...dims.values()]);
+  await insertSkuPrices(rows);
+  console.log(`[D2] Disney: ${dims.size} SKUs`);
   return rows.length;
 }
 
@@ -251,30 +314,7 @@ async function captureUniversalPricing(todayIso: string, observedAt: Date): Prom
   for (const sku of Object.keys(capture.eventAvailability)) addDim(sku, null, null, true);
 
   const dimRows = [...dims.values()];
-  for (let i = 0; i < dimRows.length; i += 500) {
-    await db
-      .insert(productDim)
-      .values(dimRows.slice(i, i + 500))
-      .onConflictDoUpdate({
-        target: productDim.sku,
-        set: {
-          resort: sql`excluded.resort`,
-          family: sql`excluded.family`,
-          durationDays: sql`excluded.duration_days`,
-          parkScope: sql`excluded.park_scope`,
-          parkToPark: sql`excluded.park_to_park`,
-          ageGroup: sql`excluded.age_group`,
-          residency: sql`excluded.residency`,
-          passTier: sql`excluded.pass_tier`,
-          variablePriced: sql`excluded.variable_priced`,
-          // keep a known list price if a later (priced-only) pass has none
-          listPriceCents: sql`coalesce(excluded.list_price_cents, ${productDim.listPriceCents})`,
-          name: sql`coalesce(excluded.name, ${productDim.name})`,
-          active: sql`true`,
-          updatedAt: sql`excluded.updated_at`,
-        },
-      });
-  }
+  await upsertProductDims(dimRows);
 
   // (2) sku_price_obs: per-date demand pricing (day tickets + Express), plus a
   // single flat row today for annual passes (no per-date calendar).
@@ -317,12 +357,7 @@ async function captureUniversalPricing(todayIso: string, observedAt: Date): Prom
     });
   }
 
-  for (let i = 0; i < rows.length; i += 500) {
-    await db
-      .insert(skuPriceObs)
-      .values(rows.slice(i, i + 500))
-      .onConflictDoNothing();
-  }
+  await insertSkuPrices(rows);
   console.log(`[U1/U2] Universal: ${dimRows.length} SKUs in catalog`);
   return rows.length;
 }
@@ -356,9 +391,7 @@ async function main() {
     await runStep("D1 Disney availability", () =>
       captureDisneyAvailability(disneyMap, todayIso, endIso, snapshotDate),
     );
-    await runStep("D2 Disney ticket pricing", () =>
-      captureDisneyPricing([...disneyMap.values()], todayIso, endIso, observedAt),
-    );
+    await runStep("D2 Disney ticket pricing", () => captureDisneyPricing(observedAt));
   }
 
   // Universal is SKU-keyed (product_dim + sku_price_obs), not park-mapped.

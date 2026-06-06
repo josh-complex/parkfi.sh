@@ -50,19 +50,21 @@ export async function fetchClientToken(signal: AbortSignal): Promise<DisneyClien
 }
 
 /**
- * D2 step 2: the date-based ticket pricing calendar for `slug` (default
- * `theme-parks`, the standard demand-priced product). Returns ~16 months of
- * per-date, per-ageGroup prices in 10 numDays buckets, plus sold-out / blockout
- * flags. Requires `Authorization: BEARER <token>` (401 without it).
+ * D2/E2: the date-based ticket pricing calendar for a product type + add-on.
+ * `slug` ∈ theme-parks | after-2pm-ticket-offer | four-park-magic-ticket-offer |
+ * canada-ticket | theme-parks-for-fl-resident; `addOn` ∈ false | park-hopper |
+ * park-hopper-plus | water-parks-sports. Returns ~17 months of per-date prices
+ * in 10 numDays buckets (1-day rows are per-park). Bearer-gated (401 without).
  */
 export async function fetchTicketPricing(
   accessToken: string,
   signal: AbortSignal,
   slug = "theme-parks",
+  addOn = "false",
 ): Promise<DisneyPricing> {
   const url =
     `${config.disneyTicketBase}/api/lexicon-view-assembler-service/wdw/tickets/product-types/` +
-    `${slug}?storeId=wdw&addOn=false&excludePricingCalendar=false`;
+    `${slug}?storeId=wdw&addOn=${addOn}&excludePricingCalendar=false`;
   const res = await fetch(url, {
     signal,
     headers: {

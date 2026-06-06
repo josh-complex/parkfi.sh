@@ -157,6 +157,45 @@ export interface UniversalSkuDims {
   passTier: "POWER" | "SEASONAL" | "PREFERRED" | "PREMIER" | null;
 }
 
+/**
+ * Decode a WDW `productInstanceId` into `product_dim` fields, per the taxonomy
+ * in research/disney-ticket-deep-dive.md §4:
+ *   {productType}_{numDays}_{A|C}_{addOn}_{affiliation}_RF_AF_{SOF|SOT}_progenstr[_park]
+ * 1-day products carry a `_mk/_ep/_hs/_ak` park suffix (the only park-resolved
+ * rows); multi-day are valid at any park.
+ */
+export interface DisneySkuDims {
+  family: string; // productType, e.g. 'theme-park' | 'canada-ticket'
+  durationDays: number | null;
+  parkScope: Array<string>;
+  parkToPark: boolean;
+  ageGroup: "ADULT" | "CHILD" | null;
+  residency: "STD" | "FL" | "CA";
+}
+
+const DISNEY_PARK_SUFFIX: Record<string, string> = {
+  mk: "MK",
+  ep: "EP",
+  hs: "HS",
+  ak: "AK",
+};
+
+export function disneyDecodeSku(productInstanceId: string): DisneySkuDims {
+  const t = productInstanceId.replace(/_progenstr/i, "").split("_");
+  const numDays = Number(t[1]);
+  const addOn = t[3]; // 0 | P | PHP | WPS
+  const affiliation = t[4]; // 0 std | 2 FL | 21 Canada
+  const park = DISNEY_PARK_SUFFIX[(t[t.length - 1] ?? "").toLowerCase()];
+  return {
+    family: t[0] ?? "theme-park",
+    durationDays: Number.isFinite(numDays) ? numDays : null,
+    parkScope: park ? [park] : ["MK", "EP", "HS", "AK"],
+    parkToPark: addOn === "P" || addOn === "PHP",
+    ageGroup: t[2] === "A" ? "ADULT" : t[2] === "C" ? "CHILD" : null,
+    residency: affiliation === "2" ? "FL" : affiliation === "21" ? "CA" : "STD",
+  };
+}
+
 export function universalDecodeSku(partNumber: string): UniversalSkuDims {
   const tokens = partNumber.split(/[-_]/);
   const has = (t: string) => tokens.includes(t);

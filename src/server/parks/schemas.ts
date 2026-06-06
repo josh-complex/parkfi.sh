@@ -116,16 +116,22 @@ export const DisneyClientTokenSchema = z.object({
 });
 export type DisneyClientToken = z.infer<typeof DisneyClientTokenSchema>;
 
-// Disney date-based ticket pricing calendar (D2 step 2), from
+// Disney date-based ticket pricing calendar (D2/E2), from
 // lexicon-view-assembler-service. One bucket per `numDays` (1..10), each with a
-// ~16-month `dates[]` series; per-date `pricing[]` is keyed by ageGroup.
+// ~17-month `dates[]` series. Each `pricing[]` entry's `id` IS the
+// productInstanceId (the join/SKU key — for 1-day it carries a `_mk/_ep/_hs/_ak`
+// park suffix); `stopSale` is the per-product/date sold-out flag.
 const DisneyPricingDate = z.object({
   date: z.string(),
+  currency: z.string().optional(),
   pricing: z
     .array(
       z.object({
+        id: z.string().optional(),
         ageGroup: z.string().optional(),
-        pricePerDay: z.string().optional(),
+        pricePerDay: z.union([z.string(), z.number()]).optional(),
+        subtotal: z.union([z.string(), z.number()]).optional(),
+        tax: z.union([z.string(), z.number()]).optional(),
         stopSale: z.boolean().optional(),
       }),
     )

@@ -33,10 +33,24 @@ Date captured: 2026-06-05. Browser: logged-in WDW session (Akamai-protected site
 - Captured demand series (USF Express Unlimited AO-UEP_UU_USF): 06-05=$259.99, 06-19=$239.99, 07-03=$279.99, 07-17=$249.99, 07-31=$259.99 (listPrice/"starting" 159.99).
 - Express products (partNumber encodes park): USF Express Unlimited AO-UEP_UU_USF ($159.99 from), USF Express AO-UEP_01U_USF ($119.99), IOA Express Unlimited AO-UEP_UU_UIOA ($169.99), IOA Express AO-UEP_01U_UIOA ($129.99), Volcano Bay Express Plus AO-UEP_01U_PV_UVB ($59.99), Volcano Bay Express AO-UEP_01U_SV_UVB ($29.99), Epic Universe 1-Day Express AO-UEP_1D_01U_EPIC ($199.99). Park codes: USF, UIOA, UVB, EPIC.
 
+## DISNEY — Full ticket catalog via `affiliations` toggle — CAPTURED (see `disney-ticket-deep-dive.md`)
+
+- E0 `GET /com-shared/api/get-store/wdw` (anonymous): gives `affiliations[]`, `productCategories[]`, `dtiName:"progenstr"`.
+- E1 catalog `GET /api/lexicon-view-assembler-service/wdw/tickets/product-listing?storeId=wdw&affiliations={CSV}` — 401 w/o bearer, 200 w/ anon client-token. `affiliations` is additive; anon token surfaces 3 groups: STD_GST, **CANADA_RESIDENT** ("Canada Residents", genuine WDW offer, NOT California), FL_RESIDENT. 19 product configs total.
+- E2 per-date `product-types/{theme-parks|after-2pm-ticket-offer|four-park-magic-ticket-offer|canada-ticket}?addOn={false|park-hopper|park-hopper-plus|water-parks-sports}&excludePricingCalendar=false` → 10 buckets × 514 dates (~17mo) in one call.
+- **1-day = park-specific**: E2 emits 1 row/park (`_mk/_ep/_hs/_ak`). Verified adult spread: AK $119-189, EP $129-214, HS $139-209, MK $139-219. `stopSale` = sold-out flag (uniformly false now).
+- Taxonomy: `{type}_{numDays}_{A|C}_{0|P|PHP|WPS}_{0std|2FL|21canada}_RF_AF_{SOF|SOT}_progenstr[_park]`.
+
+## DISNEY — Dining availability ("dine-vas") — CAPTURED logged-in (see `disney-ticket-deep-dive.md` §7)
+
+- `GET /api/availability/{partySize}/{date},{date}?facilityId={fid};entityType=restaurant`. Requires logged-in OneID session (Authorization bearer + cookies) + routing headers `X-Function-Name:getAvailability`, `X-Correlation-Id`/`X-Conversation-Id` (uuids), `x-disney-internal-dine-vas-{eks,365}:true`. Logged-out→500; anon ticket bearer→200 `{code:404}`; logged-in→200 populated.
+- Populated schema VERIFIED: `{statusCode, restaurants:{"YYYY-MM-DD":[mealPeriod]}}`; mealPeriod has `offersByAccessibility:[{offerId,time,label}]` = bookable slots. Empty→`{code,message}`.
+- Repro = maintained logged-in session (Playwright storageState seed + reuse; automated-login last-resort via env `DISNEY_LOGIN_EMAIL`/`DISNEY_LOGIN_PASSWORD`, dedicated acct, residential proxy, ToS risk).
+
 ## TODO
 
-- Universal date-based admission TICKET pricing (same gettickets + priceAndInventory/v2 API, different products — verify)
-- Universal authN guest-session minting + token lifetime; datacenter-IP/Akamai test
-- Universal virtual line
-- Disney LL Multi Pass / Genie+ daily price (research: MDE app API, gated)
-- Dining (stretch)
+- WDW Annual Passes: in-store (`productCategories`) but slug NOT on /tickets/ assembler path (400/404). Capture XHR on `/passes/` to find it. UNVERIFIED.
+- Universal authN guest-session token lifetime; datacenter-IP/Akamai test (shared risk WDW + UOR).
+- Universal virtual line (app OIDC, dormant 2026).
+- Disney LL Multi Pass / Genie+ daily price (MDE app API, per-user login).
+- Draft Playwright dining scraper (storageState + getAvailability sweep + refresh) if dining is in scope.

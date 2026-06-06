@@ -31,13 +31,13 @@ All services need `DATABASE_URL` (Timescale-enabled Postgres). Optional knobs
 `POLL_CONCURRENCY` (4), `FETCH_TIMEOUT_MS` (9000), `THEMEPARKS_MAX_PER_MIN` (280),
 `INGEST_USER_AGENT`, `TICKET_WINDOW_DAYS` (60).
 
-`cron-tickets` gated feeds (Disney: `research/gated-feeds-report.md`; Universal:
-`research/universal-ticket-deep-dive.md`):
+`cron-tickets` gated feeds (Disney: `research/disney-ticket-deep-dive.md`;
+Universal: `research/universal-ticket-deep-dive.md`):
 
 | Var                                     | Default                             | Purpose                                                                     |
 | --------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------- |
-| `DISNEY_TICKET_BASE`                    | `https://disneyworld.disney.go.com` | WDW client-token + lexicon pricing host (D2)                                |
-| `DISNEY_DAY_BUCKETS`                    | `1`                                 | comma list of `numDays` buckets to record from the pricing calendar         |
+| `DISNEY_TICKET_BASE`                    | `https://disneyworld.disney.go.com` | WDW client-token + lexicon catalog/pricing host (D2)                        |
+| `DISNEY_PRICE_WINDOW_DAYS`              | `180`                               | forward window of WDW per-date pricing (calendar reaches ~17mo)             |
 | `BROWSER_WS_ENDPOINT`                   | _(unset)_                           | full `wss://…?token=…` (Railway template var); unset ⇒ Universal skipped    |
 | `BROWSERLESS_URL` + `BROWSERLESS_TOKEN` | _(unset)_                           | fallback: HTTP base (→ `ws://`) + token, e.g. `…railway.internal:3000`      |
 | `BROWSERLESS_TIMEOUT_MS`                | `60000`                             | budget for the Browserless session harvest                                  |
@@ -49,10 +49,15 @@ All services need `DATABASE_URL` (Timescale-enabled Postgres). Optional knobs
 | `UNIVERSAL_PRICE_WINDOW_DAYS`           | `180`                               | forward window of per-date pricing (one call covers it; max ~365)           |
 | `UNIVERSAL_PRICE_BATCH`                 | `20`                                | partNumbers per priceAndInventory call                                      |
 
-Universal is captured by loading the web-store once in Browserless to harvest the
-anonymous guest-session headers, then replaying `gettickets` (catalog crawl over
-days × park × residency) and `priceAndInventory/v2` (full-year per-date pricing)
-directly — both are CORS-open + header-auth'd, so the replays are plain `fetch`es.
+Both resorts land in the SKU-keyed model (`product_dim` + `sku_price_obs`), not
+the park-keyed `product_price_obs`. **Disney** is plain HTTPS (no browser): mint
+an anonymous client token, then sweep the lexicon pricing calendar across product
+types × add-ons (theme-parks ±hopper/PHP/WPS, after-2pm, four-park-magic, canada,
+FL) — each row is keyed by its `productInstanceId` (1-day rows carry the
+`_mk/_ep/_hs/_ak` park). **Universal** is captured by loading the web-store once
+in Browserless to harvest the guest-session headers, then calling `gettickets`
+(catalog crawl) + `priceAndInventory/v2` (per-date pricing) **in-page** so they
+carry the live browser session (the API rejects detached datacenter clients).
 
 Disney's JSON APIs (D1/D2) are not Akamai-sensor-gated, so they run over a plain
 HTTPS client with no proxy. If the Railway datacenter IP gets challenged on either
