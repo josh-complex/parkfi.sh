@@ -13,10 +13,14 @@ Deploy each as its own Railway service pointed at this same repo, with a distinc
 | Service        | Start command          | Railway type        | Notes                                            |
 | -------------- | ---------------------- | ------------------- | ------------------------------------------------ |
 | `worker`       | `bun run worker`       | long-running, 1 rep | self-scheduling 60s poller; `/health` on `$PORT` |
-| `cron-tickets` | `bun run cron:tickets` | Cron `0 8 * * *`    | single-shot, exits                               |
+| `cron-tickets` | `bun run cron:tickets` | Cron `0 8 * * *`    | single-shot, exits; gated ticket/Express feeds   |
 
 The web app (`bun run start`) is a third service with a public domain. DB/Redis
 ride the Railway private network — only the app gets a public URL.
+
+**Browserless v2** runs as its own Railway service (the `ghcr.io/browserless/chromium`
+image). `cron-tickets` reaches it over the private network for the Universal
+feeds; only its `BROWSERLESS_URL`/`BROWSERLESS_TOKEN` need wiring into the cron.
 
 ## Environment
 
@@ -24,6 +28,23 @@ All services need `DATABASE_URL` (Timescale-enabled Postgres). Optional knobs
 (`src/server/parks/config.ts`): `POLL_INTERVAL_MS` (default 60000),
 `POLL_CONCURRENCY` (4), `FETCH_TIMEOUT_MS` (9000), `THEMEPARKS_MAX_PER_MIN` (280),
 `INGEST_USER_AGENT`, `TICKET_WINDOW_DAYS` (60).
+
+`cron-tickets` gated feeds (see `research/gated-feeds-report.md`):
+
+| Var                                               | Default                             | Purpose                                                                 |
+| ------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------- |
+| `DISNEY_TICKET_BASE`                              | `https://disneyworld.disney.go.com` | WDW client-token + lexicon pricing host (D2)                            |
+| `DISNEY_DAY_BUCKETS`                              | `1`                                 | comma list of `numDays` buckets to record from the pricing calendar     |
+| `BROWSERLESS_URL`                                 | _(unset)_                           | Browserless v2 base URL; unset ⇒ Universal feeds skipped                |
+| `BROWSERLESS_TOKEN`                               | _(unset)_                           | Browserless v2 auth token                                               |
+| `BROWSERLESS_TIMEOUT_MS`                          | `60000`                             | budget for one Browserless `/function` run                              |
+| `UNIVERSAL_STORE_URL`                             | `https://www.universalorlando.com`  | web-store front driven in Chromium (U1/U2)                              |
+| `UNIVERSAL_EXPRESS_URL` / `UNIVERSAL_TICKETS_URL` | web-store defaults                  | entry pages whose `priceAndInventory/v2` XHR we harvest                 |
+| `UNIVERSAL_SELECT_SELECTORS`                      | built-in                            | comma list of "Select" selectors to click to trigger the per-date calls |
+
+Disney's JSON APIs (D1/D2) are not Akamai-sensor-gated, so they run over a plain
+HTTPS client with no proxy. If the Railway datacenter IP gets challenged, route
+them through Browserless `/unblock` as a fallback (not wired by default).
 
 ## One-time bootstrap (in order)
 

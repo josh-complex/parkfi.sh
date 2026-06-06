@@ -53,6 +53,8 @@ async function seedReference() {
       { id: Product.SIXFLAGS_FLASH_PASS, code: "SIXFLAGS_FLASH_PASS", pricingGrain: "park_date" },
       { id: Product.CEDAR_FAIR_FAST_LANE, code: "CEDAR_FAIR_FAST_LANE", pricingGrain: "park_date" },
       { id: Product.SEAWORLD_QUICK_QUEUE, code: "SEAWORLD_QUICK_QUEUE", pricingGrain: "park_date" },
+      { id: Product.DISNEY_TICKET, code: "DISNEY_TICKET", pricingGrain: "park_date" },
+      { id: Product.UNIVERSAL_TICKET, code: "UNIVERSAL_TICKET", pricingGrain: "park_date" },
     ])
     .onConflictDoNothing();
 
@@ -112,6 +114,8 @@ interface ParkSeed {
   slug: string;
   themeparksUuid: string;
   disneyId?: string;
+  // Universal web-store park code (partNumber suffix): USF | UIOA | EPIC | UVB
+  universalCode?: string;
   products: Array<{ productId: number; displayName: string }>;
 }
 
@@ -148,6 +152,18 @@ async function upsertPark(operatorId: number, resortId: number, p: ParkSeed): Pr
       .onConflictDoNothing();
   }
 
+  if (p.universalCode) {
+    await db
+      .insert(externalIds)
+      .values({
+        entityKind: "park",
+        entityId: parkId,
+        source: Source.UNIVERSAL_DIRECT,
+        externalId: p.universalCode,
+      })
+      .onConflictDoNothing();
+  }
+
   if (p.products.length > 0) {
     await db
       .insert(parkProducts)
@@ -160,10 +176,12 @@ const DISNEY_PRODUCTS = [
   { productId: Product.LIGHTNING_LANE_MULTI, displayName: "Lightning Lane Multi Pass" },
   { productId: Product.LIGHTNING_LANE_SINGLE, displayName: "Lightning Lane Single Pass" },
   { productId: Product.DISNEY_VIRTUAL_QUEUE, displayName: "Virtual Queue" },
+  { productId: Product.DISNEY_TICKET, displayName: "Date-Based Theme Park Ticket" },
 ];
 const UNIVERSAL_PRODUCTS = [
   { productId: Product.UNIVERSAL_EXPRESS, displayName: "Universal Express Pass" },
   { productId: Product.UNIVERSAL_VIRTUAL_LINE, displayName: "Virtual Line" },
+  { productId: Product.UNIVERSAL_TICKET, displayName: "Theme Park Ticket" },
 ];
 
 async function main() {
@@ -210,18 +228,21 @@ async function main() {
       name: "Universal Studios Florida",
       slug: "universal-studios-florida",
       themeparksUuid: "eb3f4560-2383-4a36-9152-6b3e5ed6bc57",
+      universalCode: "USF",
       products: UNIVERSAL_PRODUCTS,
     },
     {
       name: "Universal Islands of Adventure",
       slug: "islands-of-adventure",
       themeparksUuid: "267615cc-8943-4c2a-ae2c-5da728ca591f",
+      universalCode: "UIOA",
       products: UNIVERSAL_PRODUCTS,
     },
     {
       name: "Universal Epic Universe",
       slug: "epic-universe",
       themeparksUuid: "12dbb85b-265f-44e6-bccf-f1faa17211fc",
+      universalCode: "EPIC",
       products: UNIVERSAL_PRODUCTS,
     },
   ];

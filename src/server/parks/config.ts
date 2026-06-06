@@ -16,6 +16,25 @@ export const config = {
   disneyAvailabilityBase:
     process.env.DISNEY_AVAILABILITY_BASE ??
     "https://disneyworld.disney.go.com/availability-calendar/api",
+  /**
+   * Disney WDW origin for the ticket-pricing handshake (D2): the anonymous
+   * client-token endpoint + the lexicon pricing-calendar API both live here.
+   * Cookieless, bearer-gated only — see research/gated-feeds-report.md.
+   */
+  disneyTicketBase: process.env.DISNEY_TICKET_BASE ?? "https://disneyworld.disney.go.com",
+  /** Universal Orlando web-store front (Akamai-protected SPA we drive in Chromium). */
+  universalStoreUrl: process.env.UNIVERSAL_STORE_URL ?? "https://www.universalorlando.com",
+
+  /**
+   * Browserless v2 instance (separate Railway service). Universal's feeds are
+   * gated by a real-browser guest session, so we harvest them through headless
+   * Chromium here via the `/function` REST API. Empty = Universal capture is
+   * skipped (Disney still runs over plain HTTPS).
+   */
+  browserlessUrl: (process.env.BROWSERLESS_URL ?? "").replace(/\/+$/, ""),
+  browserlessToken: process.env.BROWSERLESS_TOKEN ?? "",
+  /** Budget for a single Browserless `/function` run, in ms (full SPA load). */
+  browserlessTimeoutMs: num("BROWSERLESS_TIMEOUT_MS", 60_000),
 
   /** How often the worker polls every active park, in ms. */
   pollIntervalMs: num("POLL_INTERVAL_MS", 60_000),

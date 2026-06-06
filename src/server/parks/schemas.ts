@@ -108,3 +108,65 @@ export const AvailabilityCalendarSchema = z.array(
   }),
 );
 export type AvailabilityCalendar = z.infer<typeof AvailabilityCalendarSchema>;
+
+// Disney anonymous client token (D2 step 1).
+export const DisneyClientTokenSchema = z.object({
+  access_token: z.string(),
+  expires_in: z.number().optional(),
+});
+export type DisneyClientToken = z.infer<typeof DisneyClientTokenSchema>;
+
+// Disney date-based ticket pricing calendar (D2 step 2), from
+// lexicon-view-assembler-service. One bucket per `numDays` (1..10), each with a
+// ~16-month `dates[]` series; per-date `pricing[]` is keyed by ageGroup.
+const DisneyPricingDate = z.object({
+  date: z.string(),
+  pricing: z
+    .array(
+      z.object({
+        ageGroup: z.string().optional(),
+        pricePerDay: z.string().optional(),
+        stopSale: z.boolean().optional(),
+      }),
+    )
+    .default([]),
+});
+export const DisneyPricingSchema = z.object({
+  soldOut: z.boolean().optional(),
+  blockoutDates: z.array(z.string()).default([]),
+  pricingCalendar: z
+    .object({
+      pricingCalendar: z
+        .array(z.object({ numDays: z.string(), dates: z.array(DisneyPricingDate).default([]) }))
+        .default([]),
+    })
+    .optional(),
+});
+export type DisneyPricing = z.infer<typeof DisneyPricingSchema>;
+
+// Universal `priceAndInventory/v2` per-date calendar, harvested from the
+// web-store in Chromium. Shape: eventAvailability[partNumber][date] = {...}.
+const UniversalDateEntry = z.object({
+  pricing: z
+    .array(
+      z.object({
+        amount: z.number().optional(),
+        quantity: z.number().optional(),
+        currency: z.string().optional(),
+      }),
+    )
+    .default([]),
+  inventoryEvents: z
+    .array(
+      z.object({
+        availableUnits: z.string().nullable().optional(),
+        totalCapacity: z.string().nullable().optional(),
+        available: z.string().nullable().optional(),
+      }),
+    )
+    .default([]),
+});
+export const UniversalPricingSchema = z.object({
+  eventAvailability: z.record(z.string(), z.record(z.string(), UniversalDateEntry)).default({}),
+});
+export type UniversalPricing = z.infer<typeof UniversalPricingSchema>;

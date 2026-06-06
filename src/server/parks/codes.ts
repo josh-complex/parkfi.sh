@@ -49,6 +49,9 @@ export const Product = {
   SIXFLAGS_FLASH_PASS: 6,
   CEDAR_FAIR_FAST_LANE: 7,
   SEAWORLD_QUICK_QUEUE: 8,
+  // Date-based admission tickets (demand-priced). Disney D2 / Universal U2.
+  DISNEY_TICKET: 9,
+  UNIVERSAL_TICKET: 10,
 } as const;
 export type ProductCode = (typeof Product)[keyof typeof Product];
 
@@ -105,4 +108,35 @@ export function availabilityToQueueState(availability?: string | null): QueueSta
     default:
       return QueueState.NOT_OFFERED;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Universal Orlando web-store (api.universalparks.com) helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * The Universal `partNumber` encodes the park as its trailing token, e.g.
+ * `AO-UEP_UU_USF` -> USF, `AO-UEP_01U_PV_UVB` -> UVB, `AO-UEP_1D_01U_EPIC` ->
+ * EPIC. These match the `external_ids` we seed under `UNIVERSAL_DIRECT`.
+ */
+export function universalParkCode(partNumber: string): string | null {
+  const token = partNumber.split("_").pop();
+  return token && token.length > 0 ? token : null;
+}
+
+/** Express products carry the `UEP` (Universal Express Pass) segment. */
+export function universalProductId(partNumber: string): ProductCode {
+  return partNumber.includes("UEP") ? Product.UNIVERSAL_EXPRESS : Product.UNIVERSAL_TICKET;
+}
+
+/**
+ * Universal `priceAndInventory/v2` availability -> QueueState. `available` and
+ * `availableUnits` arrive as strings; `"0"` on either means sold out.
+ */
+export function universalAvailabilityToQueueState(
+  available?: string | null,
+  availableUnits?: string | null,
+): QueueStateCode {
+  if (available === "0" || availableUnits === "0") return QueueState.SOLD_OUT;
+  return QueueState.AVAILABLE;
 }
