@@ -20,6 +20,7 @@
     "db:seed": "bun src/db/seed.ts",
     "worker": "bun services/worker/main.ts",
     "cron:tickets": "bun services/cron-tickets/main.ts",
+    "debug:universal": "bun services/cron-tickets/debug-universal.ts",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "prepare": "vp config"

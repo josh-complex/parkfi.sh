@@ -100,28 +100,58 @@ async function harvestSession(browser: Browser): Promise<GuestSession> {
   await page.setUserAgent(BROWSER_UA);
   await page.setViewport({ width: 1366, height: 900 });
 
-  const seedReqP = page.waitForRequest(
-    (r) => r.url().includes("/personalization/gettickets") && r.method() === "POST",
-    { timeout: NAV_TIMEOUT_MS },
-  );
+  // The auth header set rides on every api.universalparks.com call. Capture the
+  // first authenticated one — preferring `gettickets` (it also carries the seed
+  // body) but accepting any authed request so a changed path doesn't break us.
+  const seenApi: Array<string> = [];
+  let captured: { headers: Record<string, string>; body?: string } | null = null;
+  let gotGetTickets = false;
+  let resolve: () => void = () => {};
+  const getticketsSeen = new Promise<void>((r) => (resolve = r));
+
+  page.on("request", (req) => {
+    const url = req.url();
+    if (!url.includes("api.universalparks.com")) return;
+    seenApi.push(`${req.method()} ${url.split("?")[0]}`);
+    const h = req.headers();
+    if (!h.authorization && !h.wctoken) return;
+    const isGetTickets = url.includes("/personalization/gettickets");
+    if (isGetTickets) {
+      captured = { headers: h, body: req.postData() };
+      gotGetTickets = true;
+      resolve();
+    } else if (!captured) {
+      captured = { headers: h, body: req.postData() }; // fallback (no seed body)
+    }
+  });
+
   await page
     .goto(TICKETS_URL, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT_MS })
     .catch(() => {});
-  const seedReq = await seedReqP;
+  // Wait for gettickets specifically, but don't exceed the nav budget.
+  await Promise.race([getticketsSeen, new Promise<void>((r) => setTimeout(r, NAV_TIMEOUT_MS))]);
 
-  const raw = seedReq.headers();
+  if (!captured) {
+    const seen = seenApi.length
+      ? `saw ${seenApi.length} api request(s): ${[...new Set(seenApi)].slice(0, 6).join(", ")}`
+      : "saw NO api.universalparks.com requests — page likely challenged/blocked (try BROWSERLESS_WS_QUERY=proxy=residential, or verify UNIVERSAL_TICKETS_URL)";
+    throw new UpstreamError(`Universal: no authenticated guest-session request captured; ${seen}`);
+  }
+  if (!gotGetTickets) {
+    console.warn(
+      "[universal] no gettickets request seen — harvested headers from another api call; crawl may need a seed body (set UNIVERSAL_TICKETS_URL to the tickets page)",
+    );
+  }
+
+  const raw = (captured as { headers: Record<string, string> }).headers;
   const headers: Record<string, string> = {
     "content-type": "application/json",
     accept: "application/json",
   };
   for (const key of FORWARD_HEADERS) {
-    const v = raw[key];
-    if (v) headers[key] = v;
+    if (raw[key]) headers[key] = raw[key];
   }
-  if (!headers.authorization && !headers.wctoken) {
-    throw new UpstreamError("Universal: gettickets request carried no guest-session auth headers");
-  }
-  return { headers, seed: safeParse(seedReq.postData()) };
+  return { headers, seed: safeParse((captured as { body?: string }).body) };
 }
 
 async function postJson(
