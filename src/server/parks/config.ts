@@ -24,6 +24,8 @@ export const config = {
   disneyTicketBase: process.env.DISNEY_TICKET_BASE ?? "https://disneyworld.disney.go.com",
   /** Universal Orlando web-store front (Akamai-protected SPA we drive in Chromium). */
   universalStoreUrl: process.env.UNIVERSAL_STORE_URL ?? "https://www.universalorlando.com",
+  /** Universal commerce API host (gettickets + priceAndInventory/v2 live here). */
+  universalApiBase: process.env.UNIVERSAL_API_BASE ?? "https://api.universalparks.com",
 
   /**
    * Browserless v2 instance (separate Railway service). Universal's feeds are

@@ -4,34 +4,37 @@
  * feed is isolated — a flaky or blocked upstream logs and is skipped, never
  * fails the run (so one resort going dark doesn't lose the other's data).
  *
- * Feeds (see research/gated-feeds-report.md):
- *   D1  Disney ticket-date availability  -> ticket_availability  (plain HTTPS)
- *   D2  Disney date-based ticket pricing -> product_price_obs     (plain HTTPS, cookieless bearer)
- *   U1  Universal Express pricing        -> product_price_obs     (Browserless v2 Chromium)
- *   U2  Universal admission pricing       -> product_price_obs     (Browserless v2 Chromium)
+ * Feeds (Disney: research/gated-feeds-report.md; Universal: research/universal-ticket-deep-dive.md):
+ *   D1     Disney ticket-date availability  -> ticket_availability         (plain HTTPS)
+ *   D2     Disney date-based ticket pricing -> product_price_obs            (plain HTTPS, cookieless bearer)
+ *   U1/U2  Universal ticket + Express        -> product_dim + sku_price_obs  (SKU-keyed, park-agnostic)
  *
  * Disney's JSON APIs aren't Akamai-sensor-gated, so they run over a plain HTTPS
- * client. Universal's are gated by a real-browser guest session, so they run
- * through the separate Browserless v2 service (BROWSERLESS_URL). If Browserless
- * isn't configured, Universal is skipped and Disney still runs.
+ * client. Universal is harvested by loading the web-store once in Browserless to
+ * mint a guest session, then replaying gettickets + priceAndInventory/v2. If
+ * Browserless isn't configured, Universal is skipped and Disney still runs.
  *
  * Run:  bun run cron:tickets
  */
 import { config as loadEnv } from "dotenv";
 loadEnv({ path: [".env.local", ".env"] });
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
-import { externalIds, productPriceObs, ticketAvailability } from "#/db/schema.ts";
+import {
+  externalIds,
+  productDim,
+  productPriceObs,
+  skuPriceObs,
+  ticketAvailability,
+} from "#/db/schema.ts";
 import {
   availabilityToQueueState,
   Product,
   QueueState,
   Source,
-  universalAvailabilityToQueueState,
-  universalParkCode,
-  universalProductId,
+  universalDecodeSku,
 } from "#/server/parks/codes.ts";
 import {
   fetchAvailabilityCalendar,
@@ -39,7 +42,7 @@ import {
   fetchTicketPricing,
 } from "#/server/parks/sources/disney.ts";
 import { browserlessConfigured } from "#/server/parks/sources/browserless.ts";
-import { fetchUniversalPricing } from "#/server/parks/sources/universal.ts";
+import { fetchUniversalCatalogAndPricing } from "#/server/parks/sources/universal.ts";
 import { config } from "#/server/parks/config.ts";
 
 const SEGMENT = "tickets" as const;
@@ -56,6 +59,10 @@ function isoDate(d: Date): string {
 
 function roundCents(amount: number): number {
   return Math.round(amount * 100);
+}
+
+function roundOrNull(amount: number | null): number | null {
+  return amount == null ? null : roundCents(amount);
 }
 
 /** External-id (by source) -> internal park id, for a given source. */
@@ -200,49 +207,123 @@ async function captureDisneyPricing(
 
 // --- U1/U2: Universal Express + admission pricing -------------------------
 
-async function captureUniversalPricing(
-  uniMap: Map<string, number>,
-  todayIso: string,
-  endIso: string,
-  observedAt: Date,
-): Promise<number> {
-  const pricing = await fetchUniversalPricing(AbortSignal.timeout(config.browserlessTimeoutMs));
+async function captureUniversalPricing(todayIso: string, observedAt: Date): Promise<number> {
+  const capture = await fetchUniversalCatalogAndPricing(
+    AbortSignal.timeout(config.browserlessTimeoutMs),
+  );
 
-  const rows: Array<typeof productPriceObs.$inferInsert> = [];
-  const unmappedParks = new Set<string>();
-  for (const [partNumber, byDate] of Object.entries(pricing.eventAvailability)) {
-    const parkCode = universalParkCode(partNumber);
-    const parkId = parkCode ? uniMap.get(parkCode) : undefined;
-    if (!parkId) {
-      if (parkCode) unmappedParks.add(parkCode);
-      continue;
-    }
-    const productId = universalProductId(partNumber);
+  function num(v: number | string | null | undefined): number | null {
+    if (v == null) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  // (1) product_dim: decode every SKU we have catalog or pricing for.
+  const dims = new Map<string, typeof productDim.$inferInsert>();
+  const addDim = (
+    sku: string,
+    listPriceCents: number | null,
+    name: string | null,
+    variablePriced: boolean,
+  ) => {
+    if (dims.has(sku)) return;
+    const d = universalDecodeSku(sku);
+    dims.set(sku, {
+      sku,
+      resort: "UOR",
+      family: d.family,
+      durationDays: d.durationDays,
+      parkScope: d.parkScope,
+      parkToPark: d.parkToPark,
+      ageGroup: d.ageGroup,
+      residency: d.residency,
+      passTier: d.passTier,
+      variablePriced,
+      listPriceCents,
+      name,
+      updatedAt: observedAt,
+    });
+  };
+  for (const s of capture.skus) {
+    addDim(s.partNumber, roundOrNull(num(s.listPrice)), s.name ?? null, s.variablePriced);
+  }
+  // Express SKUs (and anything priced but absent from the catalog crawl).
+  for (const sku of Object.keys(capture.eventAvailability)) addDim(sku, null, null, true);
+
+  const dimRows = [...dims.values()];
+  for (let i = 0; i < dimRows.length; i += 500) {
+    await db
+      .insert(productDim)
+      .values(dimRows.slice(i, i + 500))
+      .onConflictDoUpdate({
+        target: productDim.sku,
+        set: {
+          resort: sql`excluded.resort`,
+          family: sql`excluded.family`,
+          durationDays: sql`excluded.duration_days`,
+          parkScope: sql`excluded.park_scope`,
+          parkToPark: sql`excluded.park_to_park`,
+          ageGroup: sql`excluded.age_group`,
+          residency: sql`excluded.residency`,
+          passTier: sql`excluded.pass_tier`,
+          variablePriced: sql`excluded.variable_priced`,
+          // keep a known list price if a later (priced-only) pass has none
+          listPriceCents: sql`coalesce(excluded.list_price_cents, ${productDim.listPriceCents})`,
+          name: sql`coalesce(excluded.name, ${productDim.name})`,
+          active: sql`true`,
+          updatedAt: sql`excluded.updated_at`,
+        },
+      });
+  }
+
+  // (2) sku_price_obs: per-date demand pricing (day tickets + Express), plus a
+  // single flat row today for annual passes (no per-date calendar).
+  const rows: Array<typeof skuPriceObs.$inferInsert> = [];
+  for (const [sku, byDate] of Object.entries(capture.eventAvailability)) {
     for (const [serviceDate, entry] of Object.entries(byDate)) {
-      if (serviceDate < todayIso || serviceDate > endIso) continue;
+      if (serviceDate < todayIso) continue;
       const price = entry.pricing[0];
       if (price?.amount === undefined) continue;
       const inv = entry.inventoryEvents[0];
       rows.push({
         observedAt,
-        parkId,
-        productId,
+        sku,
         serviceDate,
-        tier: partNumber,
         priceCents: roundCents(price.amount),
         currency: price.currency ?? "USD",
-        state: universalAvailabilityToQueueState(inv?.available, inv?.availableUnits),
+        // `available` is the reliable signal; units/capacity are soft (capped).
+        available: inv ? inv.available !== "0" : null,
+        availableUnits: num(inv?.availableUnits),
+        totalCapacity: num(inv?.totalCapacity),
         source: Source.UNIVERSAL_DIRECT,
       });
     }
   }
-
-  if (unmappedParks.size > 0) {
-    console.warn(
-      `[U1/U2] Universal: no park mapping for codes [${[...unmappedParks].join(", ")}] — run db:seed (Volcano Bay isn't seeded yet)`,
-    );
+  const priced = new Set(Object.keys(capture.eventAvailability));
+  for (const s of capture.skus) {
+    if (s.variablePriced || priced.has(s.partNumber)) continue;
+    const amount = num(s.listPrice);
+    if (amount == null) continue;
+    rows.push({
+      observedAt,
+      sku: s.partNumber,
+      serviceDate: todayIso,
+      priceCents: roundCents(amount),
+      currency: s.currency ?? "USD",
+      available: true,
+      availableUnits: null,
+      totalCapacity: null,
+      source: Source.UNIVERSAL_DIRECT,
+    });
   }
-  await insertPriceRows(rows);
+
+  for (let i = 0; i < rows.length; i += 500) {
+    await db
+      .insert(skuPriceObs)
+      .values(rows.slice(i, i + 500))
+      .onConflictDoNothing();
+  }
+  console.log(`[U1/U2] Universal: ${dimRows.length} SKUs in catalog`);
   return rows.length;
 }
 
@@ -268,7 +349,6 @@ async function main() {
   const observedAt = today;
 
   const disneyMap = await parkMapForSource(Source.DISNEY_DIRECT);
-  const universalMap = await parkMapForSource(Source.UNIVERSAL_DIRECT);
 
   if (disneyMap.size === 0) {
     console.warn("[cron-tickets] no disney_direct park mappings — run db:seed first");
@@ -281,14 +361,11 @@ async function main() {
     );
   }
 
+  // Universal is SKU-keyed (product_dim + sku_price_obs), not park-mapped.
   if (!browserlessConfigured()) {
     console.warn("[cron-tickets] BROWSERLESS_URL not set — skipping Universal feeds");
-  } else if (universalMap.size === 0) {
-    console.warn("[cron-tickets] no universal_direct park mappings — run db:seed first");
   } else {
-    await runStep("U1/U2 Universal pricing", () =>
-      captureUniversalPricing(universalMap, todayIso, endIso, observedAt),
-    );
+    await runStep("U1/U2 Universal pricing", () => captureUniversalPricing(todayIso, observedAt));
   }
 }
 

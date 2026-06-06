@@ -114,8 +114,6 @@ interface ParkSeed {
   slug: string;
   themeparksUuid: string;
   disneyId?: string;
-  // Universal web-store park code (partNumber suffix): USF | UIOA | EPIC | UVB
-  universalCode?: string;
   products: Array<{ productId: number; displayName: string }>;
 }
 
@@ -148,18 +146,6 @@ async function upsertPark(operatorId: number, resortId: number, p: ParkSeed): Pr
         entityId: parkId,
         source: Source.DISNEY_DIRECT,
         externalId: p.disneyId,
-      })
-      .onConflictDoNothing();
-  }
-
-  if (p.universalCode) {
-    await db
-      .insert(externalIds)
-      .values({
-        entityKind: "park",
-        entityId: parkId,
-        source: Source.UNIVERSAL_DIRECT,
-        externalId: p.universalCode,
       })
       .onConflictDoNothing();
   }
@@ -228,21 +214,18 @@ async function main() {
       name: "Universal Studios Florida",
       slug: "universal-studios-florida",
       themeparksUuid: "eb3f4560-2383-4a36-9152-6b3e5ed6bc57",
-      universalCode: "USF",
       products: UNIVERSAL_PRODUCTS,
     },
     {
       name: "Universal Islands of Adventure",
       slug: "islands-of-adventure",
       themeparksUuid: "267615cc-8943-4c2a-ae2c-5da728ca591f",
-      universalCode: "UIOA",
       products: UNIVERSAL_PRODUCTS,
     },
     {
       name: "Universal Epic Universe",
       slug: "epic-universe",
       themeparksUuid: "12dbb85b-265f-44e6-bccf-f1faa17211fc",
-      universalCode: "EPIC",
       products: UNIVERSAL_PRODUCTS,
     },
   ];

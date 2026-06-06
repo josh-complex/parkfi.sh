@@ -115,28 +115,77 @@ export function availabilityToQueueState(availability?: string | null): QueueSta
 // ---------------------------------------------------------------------------
 
 /**
- * The Universal `partNumber` encodes the park as its trailing token, e.g.
- * `AO-UEP_UU_USF` -> USF, `AO-UEP_01U_PV_UVB` -> UVB, `AO-UEP_1D_01U_EPIC` ->
- * EPIC. These match the `external_ids` we seed under `UNIVERSAL_DIRECT`.
+ * The set of parks a Universal `partNumber` is valid at, decoded from its
+ * taxonomy (see research/universal-ticket-deep-dive.md §1). Park scope codes:
+ * 2P={USF,IOA}, 3P=+Epic, 4P=+Volcano Bay; explicit `EPIC`/`USF`/`UIOA`/`UVB`
+ * tokens (and Express `AO-UEP_*_<PARK>`) name a single park. Stored as labels in
+ * `product_dim.park_scope` (not park FKs — Universal pricing is SKU-keyed).
  */
-export function universalParkCode(partNumber: string): string | null {
-  const token = partNumber.split("_").pop();
-  return token && token.length > 0 ? token : null;
-}
+export function universalParkScope(partNumber: string): Array<string> {
+  const tokens = partNumber.split(/[-_]/);
+  const has = (t: string) => tokens.includes(t);
+  const scope = new Set<string>();
 
-/** Express products carry the `UEP` (Universal Express Pass) segment. */
-export function universalProductId(partNumber: string): ProductCode {
-  return partNumber.includes("UEP") ? Product.UNIVERSAL_EXPRESS : Product.UNIVERSAL_TICKET;
+  // Explicit single-park tokens (Express SKUs + Epic/Volcano-Bay-only tickets).
+  if (has("EPIC")) scope.add("EPIC");
+  if (has("USF")) scope.add("USF");
+  if (has("UIOA")) scope.add("UIOA");
+  if (has("UVB")) scope.add("UVB");
+
+  // Multi-park pool codes (TPA admission tickets).
+  if (has("4P")) ["USF", "UIOA", "EPIC", "UVB"].forEach((p) => scope.add(p));
+  else if (has("3P")) ["USF", "UIOA", "EPIC"].forEach((p) => scope.add(p));
+  else if (has("2P")) ["USF", "UIOA"].forEach((p) => scope.add(p));
+  else if (has("1P") && scope.size === 0) scope.add("USF"); // ambiguous one-park pool
+
+  return [...scope];
 }
 
 /**
- * Universal `priceAndInventory/v2` availability -> QueueState. `available` and
- * `availableUnits` arrive as strings; `"0"` on either means sold out.
+ * Decode a Universal `partNumber` into `product_dim` fields, per the taxonomy in
+ * research/universal-ticket-deep-dive.md §1:
+ *   TPA-{DUR}_{TYPE}_{PARKSCOPE}[_{ADDON}]_{AGE}[_GA]_{CONTRACT}[_FL][_{VARIANT}]
+ * Express SKUs use the `AO-UEP_*` family.
  */
-export function universalAvailabilityToQueueState(
-  available?: string | null,
-  availableUnits?: string | null,
-): QueueStateCode {
-  if (available === "0" || availableUnits === "0") return QueueState.SOLD_OUT;
-  return QueueState.AVAILABLE;
+export interface UniversalSkuDims {
+  family: "TICKET" | "ANNUAL" | "EXPRESS";
+  durationDays: number | null;
+  parkScope: Array<string>;
+  parkToPark: boolean;
+  ageGroup: "ADULT" | "CHILD" | null;
+  residency: "STD" | "FL";
+  passTier: "POWER" | "SEASONAL" | "PREFERRED" | "PREMIER" | null;
+}
+
+export function universalDecodeSku(partNumber: string): UniversalSkuDims {
+  const tokens = partNumber.split(/[-_]/);
+  const has = (t: string) => tokens.includes(t);
+
+  const isExpress = partNumber.startsWith("AO-UEP") || has("UEP");
+  const isAnnual = has("12M") || has("AP");
+  const family = isExpress ? "EXPRESS" : isAnnual ? "ANNUAL" : "TICKET";
+
+  // DUR: 01D..07D -> 1..7; the Express add-on uses a bare `1D`.
+  const dur = tokens.find((t) => /^0[1-7]D$/.test(t)) ?? (has("1D") ? "1D" : undefined);
+  const durationDays = !isAnnual && dur ? Number(dur.replace(/^0/, "").replace(/D$/, "")) : null;
+
+  const passTier = has("PWR")
+    ? "POWER"
+    : has("SEA")
+      ? "SEASONAL"
+      : has("PRF")
+        ? "PREFERRED"
+        : has("PRM")
+          ? "PREMIER"
+          : null;
+
+  return {
+    family,
+    durationDays,
+    parkScope: universalParkScope(partNumber),
+    parkToPark: has("PTP"),
+    ageGroup: has("AD") ? "ADULT" : has("CH") ? "CHILD" : null,
+    residency: has("FL") ? "FL" : "STD",
+    passTier,
+  };
 }

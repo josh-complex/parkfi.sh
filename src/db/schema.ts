@@ -264,6 +264,62 @@ export const ticketAvailability = pgTable(
   ],
 );
 
+/**
+ * (D2) SKU dimension for resorts whose products are SKU-centric, not park-keyed
+ * (Universal Orlando: a P2P ticket spans multiple parks; pricing is per-SKU).
+ * Keyed by the upstream SKU string (Universal `partNumber`). Populated from the
+ * `gettickets` catalog crawl; see research/universal-ticket-deep-dive.md §4.
+ */
+export const productDim = pgTable("product_dim", {
+  // upstream SKU id, e.g. 'TPA-01D_PTP_2P_AD_GA_ABP' or 'AO-UEP_UU_USF'
+  sku: text("sku").primaryKey(),
+  resort: text("resort").notNull(),
+  // 'TICKET' | 'ANNUAL' | 'EXPRESS'
+  family: text("family").notNull(),
+  // 1..7 for day tickets; null for annual passes
+  durationDays: integer("duration_days"),
+  // park codes the SKU is valid at (USF/UIOA/EPIC/UVB)
+  parkScope: text("park_scope").array().notNull(),
+  parkToPark: boolean("park_to_park").notNull().default(false),
+  // 'ADULT' | 'CHILD' | null
+  ageGroup: text("age_group"),
+  // 'STD' | 'FL' (Florida resident)
+  residency: text("residency").notNull().default("STD"),
+  // annual tiers: 'POWER' | 'SEASONAL' | 'PREFERRED' | 'PREMIER' | null
+  passTier: text("pass_tier"),
+  variablePriced: boolean("variable_priced").notNull().default(false),
+  listPriceCents: integer("list_price_cents"),
+  name: text("name"),
+  active: boolean("active").notNull().default(true),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * (D3) Park-agnostic SKU pricing/availability (Universal day tickets, Express,
+ * annual passes). One row per (sku, service_date, tick); annual passes use
+ * service_date = the observation date. `available` is the reliable sell-out
+ * signal — `available_units`/`total_capacity` are soft (Universal caps them).
+ */
+export const skuPriceObs = pgTable(
+  "sku_price_obs",
+  {
+    observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
+    sku: text("sku")
+      .notNull()
+      .references(() => productDim.sku),
+    serviceDate: date("service_date").notNull(),
+    priceCents: integer("price_cents"),
+    currency: char("currency", { length: 3 }),
+    available: boolean("available"),
+    availableUnits: integer("available_units"),
+    totalCapacity: integer("total_capacity"),
+    source: smallint("source")
+      .notNull()
+      .references(() => refSource.id),
+  },
+  (t) => [primaryKey({ columns: [t.sku, t.serviceDate, t.observedAt] })],
+);
+
 /** (E) Dining availability (later; per-user-auth feed). */
 export const diningObs = pgTable(
   "dining_obs",

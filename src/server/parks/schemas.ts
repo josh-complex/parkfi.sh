@@ -144,8 +144,9 @@ export const DisneyPricingSchema = z.object({
 });
 export type DisneyPricing = z.infer<typeof DisneyPricingSchema>;
 
-// Universal `priceAndInventory/v2` per-date calendar, harvested from the
-// web-store in Chromium. Shape: eventAvailability[partNumber][date] = {...}.
+// Universal `priceAndInventory/v2` per-date calendar, harvested by replaying the
+// endpoint with the web-store's guest-session headers. Shape:
+// eventAvailability[partNumber][date] = {...}.
 const UniversalDateEntry = z.object({
   pricing: z
     .array(
@@ -166,7 +167,22 @@ const UniversalDateEntry = z.object({
     )
     .default([]),
 });
-export const UniversalPricingSchema = z.object({
+
+// A SKU from the `gettickets` catalog crawl. `listPrice` is the from-price anchor;
+// `variablePriced` marks demand-priced day tickets/Express vs flat annual passes.
+const UniversalSku = z.object({
+  partNumber: z.string(),
+  name: z.string().nullable().optional(),
+  listPrice: z.union([z.number(), z.string()]).nullable().optional(),
+  currency: z.string().nullable().optional(),
+  variablePriced: z.boolean().default(false),
+});
+export type UniversalSku = z.infer<typeof UniversalSku>;
+
+// Full Universal capture: catalog (all SKUs) + per-date pricing for the
+// variable-priced ones. See research/universal-ticket-deep-dive.md.
+export const UniversalCaptureSchema = z.object({
+  skus: z.array(UniversalSku).default([]),
   eventAvailability: z.record(z.string(), z.record(z.string(), UniversalDateEntry)).default({}),
 });
-export type UniversalPricing = z.infer<typeof UniversalPricingSchema>;
+export type UniversalCapture = z.infer<typeof UniversalCaptureSchema>;
