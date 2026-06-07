@@ -46,6 +46,52 @@ const DAY_CELL_CLASS =
   "[&:last-child[data-selected=true]_button]:rounded-r-(--cell-radius) " +
   "[&:first-child[data-selected=true]_button]:rounded-l-(--cell-radius)";
 
+interface PricingCtx {
+  priceMap: Map<string, DayPrice>;
+  min: number | undefined;
+}
+const PricingContext = React.createContext<PricingCtx>({ priceMap: new Map(), min: undefined });
+
+// Defined at module level so the component type is stable across renders.
+// Reads live data from PricingContext instead of a closure.
+function PriceDayButton({
+  className,
+  day,
+  modifiers,
+  children: _children,
+  ...props
+}: React.ComponentProps<typeof DayButton>) {
+  const { priceMap, min } = React.useContext(PricingContext);
+  const info = priceMap.get(localIso(day.date));
+  const isCheapest = info != null && min != null && info.priceCents === min;
+  return (
+    <Button
+      variant="ghost"
+      className={cn(
+        "flex h-full w-full flex-col items-center justify-center gap-0.5 p-0 leading-none font-normal",
+        modifiers.outside && "opacity-40",
+        className,
+      )}
+      {...props}
+    >
+      <span className="text-xs">{day.date.getDate()}</span>
+      {info ? (
+        <span
+          className={cn(
+            "text-[10px] tabular-nums",
+            !info.available && "text-muted-foreground line-through",
+            isCheapest && info.available ? "font-semibold text-primary" : "text-muted-foreground",
+          )}
+        >
+          {dollars(info.priceCents)}
+        </span>
+      ) : (
+        <span className="text-[10px]">·</span>
+      )}
+    </Button>
+  );
+}
+
 export function PricingCalendar() {
   const trpc = useTRPC();
   const [resort, setResort] = React.useState<Resort>("WDW");
@@ -97,47 +143,10 @@ export function PricingCalendar() {
     return { today: t, endDate: e };
   }, []);
 
-  const PriceDay = React.useMemo(() => {
-    const min = stats?.min;
-    return function PriceDayButton({
-      className,
-      day,
-      modifiers,
-      children: _children,
-      ...props
-    }: React.ComponentProps<typeof DayButton>) {
-      const info = priceMap.get(localIso(day.date));
-      const isCheapest = info != null && min != null && info.priceCents === min;
-      return (
-        <Button
-          variant="ghost"
-          className={cn(
-            "flex h-full w-full flex-col items-center justify-center gap-0.5 p-0 leading-none font-normal",
-            modifiers.outside && "opacity-40",
-            className,
-          )}
-          {...props}
-        >
-          <span className="text-xs">{day.date.getDate()}</span>
-          {info ? (
-            <span
-              className={cn(
-                "text-[10px] tabular-nums",
-                !info.available && "text-muted-foreground line-through",
-                isCheapest && info.available
-                  ? "font-semibold text-primary"
-                  : "text-muted-foreground",
-              )}
-            >
-              {dollars(info.priceCents)}
-            </span>
-          ) : (
-            <span className="text-[10px]">·</span>
-          )}
-        </Button>
-      );
-    };
-  }, [priceMap, stats?.min]);
+  const pricingCtx = React.useMemo<PricingCtx>(
+    () => ({ priceMap, min: stats?.min }),
+    [priceMap, stats?.min],
+  );
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -275,17 +284,19 @@ export function PricingCalendar() {
                 </EmptyDescription>
               </Empty>
             ) : (
-              <Calendar
-                month={month}
-                onMonthChange={setMonth}
-                startMonth={today}
-                endMonth={endDate}
-                disabled={{ before: today, after: endDate }}
-                showOutsideDays
-                className="w-full"
-                classNames={{ day: DAY_CELL_CLASS }}
-                components={{ DayButton: PriceDay }}
-              />
+              <PricingContext.Provider value={pricingCtx}>
+                <Calendar
+                  month={month}
+                  onMonthChange={setMonth}
+                  startMonth={today}
+                  endMonth={endDate}
+                  disabled={{ before: today, after: endDate }}
+                  showOutsideDays
+                  className="w-full"
+                  classNames={{ day: DAY_CELL_CLASS }}
+                  components={{ DayButton: PriceDayButton }}
+                />
+              </PricingContext.Provider>
             )}
           </div>
         </Card>

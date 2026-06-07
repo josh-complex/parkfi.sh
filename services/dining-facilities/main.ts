@@ -15,7 +15,7 @@ import { notInArray, sql } from "drizzle-orm";
 import { db } from "#/db/index.ts";
 import { restaurantDim } from "#/db/schema.ts";
 import { config } from "#/server/parks/config.ts";
-import { ensureLoggedIn } from "#/server/dining/disney-session.ts";
+import { ensureLoggedIn, relogin } from "#/server/dining/disney-session.ts";
 import { fetchFacilities } from "#/server/dining/facilities.ts";
 import { browserlessConfigured, withBrowser } from "#/server/parks/sources/browserless.ts";
 
@@ -26,10 +26,19 @@ async function main() {
   }
   const now = new Date();
 
-  const rows = await withBrowser(
-    async (browser) => fetchFacilities(await ensureLoggedIn(browser)),
-    AbortSignal.timeout(config.browserlessTimeoutMs),
-  );
+  const rows = await withBrowser(async (browser) => {
+    const page = await ensureLoggedIn(browser);
+    try {
+      return await fetchFacilities(page);
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("session invalid")) {
+        // Stored session passed cookie-check but was rejected by the API — force re-login once.
+        await relogin(page);
+        return fetchFacilities(page);
+      }
+      throw err;
+    }
+  }, AbortSignal.timeout(config.browserlessTimeoutMs));
   if (rows.length === 0) {
     console.warn("[dining-facilities] catalog returned no venues — session invalid?");
     return;

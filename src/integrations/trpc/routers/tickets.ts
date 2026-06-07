@@ -75,7 +75,7 @@ export const ticketsRouter = {
           ? uorProduct(input.ageGroup, input.park)
           : wdwProduct(input.parkHopper, input.ageGroup, input.park);
       const result = await db.execute<{
-        service_date: string;
+        service_date: Date | string;
         price_cents: number;
         available: boolean | null;
       }>(sql`
@@ -102,7 +102,10 @@ export const ticketsRouter = {
         resort: input.resort,
         productLabel: product.label,
         days: result.rows.map((r) => ({
-          date: r.service_date,
+          date: (r.service_date instanceof Date
+            ? r.service_date.toISOString()
+            : String(r.service_date)
+          ).slice(0, 10),
           priceCents: Number(r.price_cents),
           available: r.available ?? true,
         })),

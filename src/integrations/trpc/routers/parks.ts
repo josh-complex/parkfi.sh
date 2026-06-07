@@ -96,6 +96,7 @@ export const parksRouter = {
       return_state: number | null;
       observed_at: string | null;
       support_types: Array<number> | null;
+      hist_standby_wait: number | null;
     }>(sql`
         WITH park AS (SELECT id FROM parks WHERE slug = ${input.parkSlug}),
         latest_status AS (
@@ -125,6 +126,16 @@ export const parksRouter = {
           JOIN attractions a ON a.id = s.attraction_id
           WHERE a.park_id = (SELECT id FROM park)
           GROUP BY s.attraction_id
+        ),
+        hist AS (
+          SELECT q.attraction_id, avg(q.wait_min)::int AS hist_standby_wait
+          FROM queue_obs q
+          JOIN attractions a ON a.id = q.attraction_id
+          WHERE a.park_id = (SELECT id FROM park)
+            AND q.queue_type = 1
+            AND q.observed_at >= now() - INTERVAL '48 hours'
+            AND q.observed_at < now() - INTERVAL '24 hours'
+          GROUP BY q.attraction_id
         )
         SELECT a.id, a.name, a.slug, a.entity_type,
                ls.status,
@@ -134,13 +145,15 @@ export const parksRouter = {
                prt.currency AS ll_currency,
                prt.return_start AS ll_return_start, prt.return_end AS ll_return_end,
                rt.state AS return_state,
-               caps.qtypes AS support_types
+               caps.qtypes AS support_types,
+               hist.hist_standby_wait
         FROM attractions a
         LEFT JOIN latest_status ls ON ls.attraction_id = a.id
         LEFT JOIN latest_q sb ON sb.attraction_id = a.id AND sb.queue_type = 1
         LEFT JOIN latest_q prt ON prt.attraction_id = a.id AND prt.queue_type = 4
         LEFT JOIN latest_q rt ON rt.attraction_id = a.id AND rt.queue_type = 3
         LEFT JOIN caps ON caps.attraction_id = a.id
+        LEFT JOIN hist ON hist.attraction_id = a.id
         WHERE a.park_id = (SELECT id FROM park) AND a.active = true
         ORDER BY a.name
       `);
@@ -161,6 +174,7 @@ export const parksRouter = {
       },
       returnTimeState: code(QUEUE_STATE_CODE, r.return_state),
       supportsQueueTypes: (r.support_types ?? []).map(Number),
+      histStandbyWait: r.hist_standby_wait,
     }));
   }),
 

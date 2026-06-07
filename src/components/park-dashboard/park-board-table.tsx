@@ -4,6 +4,7 @@ import * as React from "react";
 import { ChevronRightIcon, InfoIcon } from "lucide-react";
 
 import { Badge } from "#/components/ui/badge.tsx";
+import { Button } from "#/components/ui/button.tsx";
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "#/components/ui/card.tsx";
 import {
   Select,
@@ -133,18 +134,31 @@ export function ParkBoardTable({
   className?: string;
 }) {
   const [filter, setFilter] = React.useState<StatusFilter>("ALL");
+  const [linesOnly, setLinesOnly] = React.useState(true);
 
   const rides = React.useMemo(
     () => (board ?? []).filter((b) => b.entityType === "ATTRACTION"),
     [board],
   );
 
+  const hasLineRides = React.useMemo(
+    () => rides.some((r) => r.supportsQueueTypes.includes(1)),
+    [rides],
+  );
+
   const rows = React.useMemo(() => {
-    const sorted = [...rides].sort((a, b) => (b.standbyWait ?? -1) - (a.standbyWait ?? -1));
-    if (filter === "ALL") return sorted;
-    if (filter === "CLOSED") return sorted.filter((r) => r.status === "CLOSED" || r.status == null);
-    return sorted.filter((r) => r.status === filter);
-  }, [rides, filter]);
+    const sorted = [...rides].sort((a, b) => {
+      const scoreA = a.standbyWait ?? a.histStandbyWait ?? -1;
+      const scoreB = b.standbyWait ?? b.histStandbyWait ?? -1;
+      return scoreB - scoreA;
+    });
+    const lineFiltered =
+      linesOnly && hasLineRides ? sorted.filter((r) => r.supportsQueueTypes.includes(1)) : sorted;
+    if (filter === "ALL") return lineFiltered;
+    if (filter === "CLOSED")
+      return lineFiltered.filter((r) => r.status === "CLOSED" || r.status == null);
+    return lineFiltered.filter((r) => r.status === filter);
+  }, [rides, filter, linesOnly, hasLineRides]);
 
   return (
     <Card className={cn("flex flex-col", className)}>
@@ -154,28 +168,36 @@ export function ParkBoardTable({
           {loading ? "Loading…" : `${rows.length} attractions · select a ride to chart its history`}
         </CardDescription>
         <CardAction>
-          <Select
-            value={filter}
-            onValueChange={(v) => v && setFilter(v as StatusFilter)}
-            items={FILTER_LABELS}
-          >
-            <SelectTrigger size="sm" className="w-36" aria-label="Filter by status">
-              <SelectValue placeholder="All statuses" />
-            </SelectTrigger>
-            <SelectContent>
-              {(Object.keys(FILTER_LABELS) as Array<StatusFilter>).map((key) => (
-                <SelectItem key={key} value={key}>
-                  {FILTER_LABELS[key]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-2">
+            {hasLineRides && (
+              <Button
+                variant={linesOnly ? "default" : "outline"}
+                size="sm"
+                onClick={() => setLinesOnly((v) => !v)}
+              >
+                Lines only
+              </Button>
+            )}
+            <Select
+              value={filter}
+              onValueChange={(v) => v && setFilter(v as StatusFilter)}
+              items={FILTER_LABELS}
+            >
+              <SelectTrigger size="sm" className="w-36" aria-label="Filter by status">
+                <SelectValue placeholder="All statuses" />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(FILTER_LABELS) as Array<StatusFilter>).map((key) => (
+                  <SelectItem key={key} value={key}>
+                    {FILTER_LABELS[key]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </CardAction>
       </CardHeader>
-      <div
-        className="min-h-0 flex-1 overflow-x-auto overflow-y-auto px-2 pb-2 sm:px-6 sm:pb-4"
-        style={{ maxHeight: "560px" }}
-      >
+      <div className="min-h-0 flex-1 overflow-x-auto px-2 pb-2 sm:px-6 sm:pb-4">
         {loading ? (
           <div className="flex flex-col gap-2">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -207,7 +229,9 @@ export function ParkBoardTable({
                   data-state={item.id === selectedId ? "selected" : undefined}
                   className={cn("cursor-pointer", item.id === selectedId && "bg-muted/60")}
                 >
-                  <TableCell className="font-medium">{item.name}</TableCell>
+                  <TableCell className="max-w-0 w-full font-medium">
+                    <span className="block truncate">{item.name}</span>
+                  </TableCell>
                   <TableCell>
                     <StatusBadge status={item.status} />
                   </TableCell>

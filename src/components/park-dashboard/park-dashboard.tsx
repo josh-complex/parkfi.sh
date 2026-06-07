@@ -110,7 +110,7 @@ export function ParkDashboard() {
       />
 
       <div className="px-4 lg:px-6">
-        <div className="grid items-start gap-4 lg:grid-cols-[1fr_480px]">
+        <div className="grid items-start gap-4 lg:grid-cols-[3fr_2fr]">
           <ParkWaitChart
             attractionId={selected?.id ?? null}
             attractionName={selected?.name ?? null}
