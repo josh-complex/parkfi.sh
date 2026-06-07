@@ -48,8 +48,8 @@ export const config = {
    * if the datacenter IP gets Akamai-challenged (the report's fallback).
    */
   browserlessQuery: (process.env.BROWSERLESS_WS_QUERY ?? "").replace(/^[?&]/, ""),
-  /** Budget for a single Browserless session, in ms (full SPA load). */
-  browserlessTimeoutMs: num("BROWSERLESS_TIMEOUT_MS", 60_000),
+  /** Budget for a single Browserless session, in ms. Matches Browserless's own default. */
+  browserlessTimeoutMs: num("BROWSERLESS_TIMEOUT_MS", 300_000),
 
   /** How often the worker polls every active park, in ms. */
   pollIntervalMs: num("POLL_INTERVAL_MS", 60_000),
