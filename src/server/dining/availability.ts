@@ -32,6 +32,7 @@ export async function fetchAvailability(
   partySize: number,
 ): Promise<AvailabilityResult> {
   const bearer = await getDineAccessToken(page);
+
   return page.evaluate(
     async (fid: string, et: string, d: string, party: number, token: string | null) => {
       const url = `/api/availability/${party}/${d},${d}?facilityId=${fid};entityType=${et}`;
