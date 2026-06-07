@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TicketsRouteImport } from './routes/tickets'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as DisclaimersRouteImport } from './routes/disclaimers'
 import { Route as DiningRouteImport } from './routes/dining'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
@@ -24,6 +25,11 @@ const TicketsRoute = TicketsRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DisclaimersRoute = DisclaimersRouteImport.update({
+  id: '/disclaimers',
+  path: '/disclaimers',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DiningRoute = DiningRouteImport.update({
@@ -50,6 +56,7 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dining': typeof DiningRoute
+  '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
   '/tickets': typeof TicketsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -58,6 +65,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dining': typeof DiningRoute
+  '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
   '/tickets': typeof TicketsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -67,6 +75,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/dining': typeof DiningRoute
+  '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
   '/tickets': typeof TicketsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -77,16 +86,25 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/dining'
+    | '/disclaimers'
     | '/login'
     | '/tickets'
     | '/api/auth/$'
     | '/api/trpc/$'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/dining' | '/login' | '/tickets' | '/api/auth/$' | '/api/trpc/$'
+  to:
+    | '/'
+    | '/dining'
+    | '/disclaimers'
+    | '/login'
+    | '/tickets'
+    | '/api/auth/$'
+    | '/api/trpc/$'
   id:
     | '__root__'
     | '/'
     | '/dining'
+    | '/disclaimers'
     | '/login'
     | '/tickets'
     | '/api/auth/$'
@@ -96,6 +114,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DiningRoute: typeof DiningRoute
+  DisclaimersRoute: typeof DisclaimersRoute
   LoginRoute: typeof LoginRoute
   TicketsRoute: typeof TicketsRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
@@ -116,6 +135,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/disclaimers': {
+      id: '/disclaimers'
+      path: '/disclaimers'
+      fullPath: '/disclaimers'
+      preLoaderRoute: typeof DisclaimersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dining': {
@@ -152,6 +178,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DiningRoute: DiningRoute,
+  DisclaimersRoute: DisclaimersRoute,
   LoginRoute: LoginRoute,
   TicketsRoute: TicketsRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,

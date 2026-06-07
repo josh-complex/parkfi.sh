@@ -1,10 +1,17 @@
 import * as React from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ActivityIcon, FerrisWheelIcon, TicketIcon, UtensilsIcon } from "lucide-react";
+import {
+  ActivityIcon,
+  FerrisWheelIcon,
+  ShieldAlertIcon,
+  TicketIcon,
+  UtensilsIcon,
+} from "lucide-react";
 
 import { NavUser } from "#/components/nav-user.tsx";
 import { SidebarThemeToggle } from "#/components/theme-toggle.tsx";
+import { Button } from "#/components/ui/button.tsx";
 import {
   Sidebar,
   SidebarContent,
@@ -117,11 +124,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         )}
       </SidebarContent>
       <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarThemeToggle />
-          </SidebarMenuItem>
-        </SidebarMenu>
+        <div className="flex items-center justify-between px-2">
+          <Button variant="ghost" size="sm" render={<Link to="/disclaimers" />}>
+            <ShieldAlertIcon />
+            Disclaimers
+          </Button>
+          <SidebarThemeToggle />
+        </div>
         <NavUser />
       </SidebarFooter>
     </Sidebar>

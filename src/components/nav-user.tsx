@@ -3,6 +3,7 @@ import { LogInIcon, LogOutIcon } from "lucide-react";
 
 import { authClient } from "#/lib/auth-client.ts";
 import { Avatar, AvatarFallback, AvatarImage } from "#/components/ui/avatar.tsx";
+import { Button } from "#/components/ui/button.tsx";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,14 +44,12 @@ export function NavUser() {
 
   if (!session?.user) {
     return (
-      <SidebarMenu>
-        <SidebarMenuItem>
-          <SidebarMenuButton render={<Link to="/login" />}>
-            <LogInIcon />
-            <span>Sign in</span>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-      </SidebarMenu>
+      <div className="px-2">
+        <Button variant="ghost" size="sm" render={<Link to="/login" />}>
+          <LogInIcon />
+          Sign in
+        </Button>
+      </div>
     );
   }
 
