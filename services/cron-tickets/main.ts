@@ -34,6 +34,7 @@ import {
 import {
   fetchAvailabilityCalendar,
   fetchClientToken,
+  fetchProductListing,
   fetchTicketPricing,
 } from "#/server/parks/sources/disney.ts";
 import { browserlessConfigured } from "#/server/parks/sources/browserless.ts";
@@ -44,25 +45,6 @@ const SEGMENT = "tickets" as const;
 const WINDOW_DAYS = Number(process.env.TICKET_WINDOW_DAYS ?? 60);
 // How far forward to record Disney per-date pricing (the calendar reaches ~17mo).
 const DISNEY_PRICE_WINDOW_DAYS = Number(process.env.DISNEY_PRICE_WINDOW_DAYS ?? 180);
-// E2 sweep: product-type slug + add-on variants (verified in the deep dive; the
-// FL-resident slug is best-effort and tolerated if it 404s). Residency/park are
-// recovered from each row's productInstanceId, so one sweep covers all groups.
-const DISNEY_E2: Array<{ slug: string; addOns: Array<string> }> = [
-  {
-    slug: "theme-parks",
-    addOns: ["false", "park-hopper", "park-hopper-plus", "water-parks-sports"],
-  },
-  { slug: "after-2pm-ticket-offer", addOns: ["false"] },
-  { slug: "four-park-magic-ticket-offer", addOns: ["false", "water-parks-sports"] },
-  {
-    slug: "canada-ticket",
-    addOns: ["false", "park-hopper", "park-hopper-plus", "water-parks-sports"],
-  },
-  {
-    slug: "theme-parks-for-fl-resident",
-    addOns: ["false", "park-hopper", "park-hopper-plus", "water-parks-sports"],
-  },
-];
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -206,18 +188,64 @@ async function captureDisneyPricing(observedAt: Date): Promise<number> {
   const dims = new Map<string, typeof productDim.$inferInsert>();
   const rows: Array<typeof skuPriceObs.$inferInsert> = [];
 
-  for (const { slug, addOns } of DISNEY_E2) {
-    for (const addOn of addOns) {
+  function recordDim(
+    instanceId: string,
+    sku: string,
+    opts: { variablePriced: boolean; listPriceCents: number | null; name: string | null },
+  ): void {
+    if (dims.has(sku)) return;
+    const d = disneyDecodeSku(instanceId);
+    dims.set(sku, {
+      sku,
+      resort: "WDW",
+      family: d.family,
+      durationDays: d.durationDays,
+      parkScope: d.parkScope,
+      parkToPark: d.parkToPark,
+      ageGroup: d.ageGroup,
+      residency: d.residency,
+      passTier: null,
+      variablePriced: opts.variablePriced,
+      listPriceCents: opts.listPriceCents,
+      name: opts.name ?? disneyName(d),
+      updatedAt: observedAt,
+    });
+  }
+
+  // E1 catalog drives the whole sweep: each product key IS the E2 slug, and
+  // `isVariablePricing` says whether a demand calendar exists. This auto-adapts
+  // to seasonal offers (e.g. FL summer) and — critically — keys E2 off the slug,
+  // since the `addOn` query param is ignored (the tier lives in the slug).
+  const listing = await fetchProductListing(
+    token.access_token,
+    AbortSignal.timeout(config.fetchTimeoutMs),
+  );
+  const products = new Map<string, { variable: boolean; name: string | null }>();
+  for (const group of Object.values(listing.discountGroups)) {
+    for (const [key, product] of Object.entries(group.products)) {
+      // Same key can appear under multiple groups; first writer wins (identical).
+      if (!products.has(key)) {
+        products.set(key, {
+          variable: product.isVariablePricing !== false,
+          name: product.names?.text ?? null,
+        });
+      }
+    }
+  }
+
+  let flat = 0;
+  for (const [slug, { variable, name }] of products) {
+    if (variable) {
+      // Demand-priced → pull the per-date E2 calendar.
       let pricing;
       try {
         pricing = await fetchTicketPricing(
           token.access_token,
           AbortSignal.timeout(config.fetchTimeoutMs),
           slug,
-          addOn,
         );
       } catch {
-        continue; // unverified slug / flaky upstream — skip this variant
+        continue; // flaky upstream / retired offer — skip, don't fail the run
       }
       for (const bucket of pricing.pricingCalendar?.pricingCalendar ?? []) {
         for (const day of bucket.dates) {
@@ -227,24 +255,7 @@ async function captureDisneyPricing(observedAt: Date): Promise<number> {
             const amount = Number(p.subtotal ?? p.pricePerDay);
             if (!Number.isFinite(amount)) continue;
             const sku = p.id.replace(/_progenstr/i, "");
-            if (!dims.has(sku)) {
-              const d = disneyDecodeSku(p.id);
-              dims.set(sku, {
-                sku,
-                resort: "WDW",
-                family: d.family,
-                durationDays: d.durationDays,
-                parkScope: d.parkScope,
-                parkToPark: d.parkToPark,
-                ageGroup: d.ageGroup,
-                residency: d.residency,
-                passTier: null,
-                variablePriced: true,
-                listPriceCents: null,
-                name: disneyName(d),
-                updatedAt: observedAt,
-              });
-            }
+            recordDim(p.id, sku, { variablePriced: true, listPriceCents: null, name });
             rows.push({
               observedAt,
               sku,
@@ -259,12 +270,46 @@ async function captureDisneyPricing(observedAt: Date): Promise<number> {
           }
         }
       }
+    } else {
+      // Flat offer (e.g. FL summer ticket): no E2 calendar — the price is the
+      // per-day-count `startingFromPrice` in E1. Record one row at today.
+      const listingProduct = Object.values(listing.discountGroups)
+        .map((g) => g.products[slug])
+        .find(Boolean);
+      const days = [
+        ...(listingProduct?.ticketDays?.adult ?? []),
+        ...(listingProduct?.ticketDays?.child ?? []),
+      ];
+      for (const entry of days) {
+        const amount = Number(entry.startingFromPrice?.subtotal);
+        if (!Number.isFinite(amount)) continue;
+        const sku = entry.productInstanceId.replace(/_progenstr/i, "");
+        recordDim(entry.productInstanceId, sku, {
+          variablePriced: false,
+          listPriceCents: roundCents(amount),
+          name,
+        });
+        rows.push({
+          observedAt,
+          sku,
+          serviceDate: todayIso,
+          priceCents: roundCents(amount),
+          currency: entry.startingFromPrice?.currency ?? "USD",
+          available: true,
+          availableUnits: null,
+          totalCapacity: null,
+          source: Source.DISNEY_DIRECT,
+        });
+        flat++;
+      }
     }
   }
 
   await upsertProductDims([...dims.values()]);
   await insertSkuPrices(rows);
-  console.log(`[D2] Disney: ${dims.size} SKUs`);
+  console.log(
+    `[D2] Disney: ${products.size} products → ${dims.size} SKUs (${flat} flat-priced rows)`,
+  );
   return rows.length;
 }
 

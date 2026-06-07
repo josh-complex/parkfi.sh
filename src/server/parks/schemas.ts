@@ -150,6 +150,45 @@ export const DisneyPricingSchema = z.object({
 });
 export type DisneyPricing = z.infer<typeof DisneyPricingSchema>;
 
+// Disney E1 catalog / product-listing. Enumerates every purchasable product
+// across the anonymous discount groups (STD_GST, FL_RESIDENT, CANADA_RESIDENT).
+// Each `products` key IS the E2 slug; `isVariablePricing` distinguishes the
+// demand-priced tickets (have an E2 calendar) from flat offers (e.g. the FL
+// summer ticket) whose only price is the per-day-count `startingFromPrice` here.
+// Tolerant by design: unknown fields are dropped, missing ones default empty.
+const DisneyPriceBlock = z.object({
+  currency: z.string().optional(),
+  pricePerDay: z.union([z.string(), z.number()]).optional(),
+  subtotal: z.union([z.string(), z.number()]).optional(),
+  tax: z.union([z.string(), z.number()]).optional(),
+  total: z.union([z.string(), z.number()]).optional(),
+});
+const DisneyTicketDay = z.object({
+  numDays: z.union([z.string(), z.number()]).optional(),
+  productInstanceId: z.string(),
+  startingFromPrice: DisneyPriceBlock.optional(),
+});
+const DisneyListingProduct = z.object({
+  isVariablePricing: z.boolean().optional(),
+  names: z.object({ text: z.string().optional() }).partial().optional(),
+  ticketDays: z
+    .object({
+      adult: z.array(DisneyTicketDay).default([]),
+      child: z.array(DisneyTicketDay).default([]),
+    })
+    .partial()
+    .optional(),
+});
+export const DisneyProductListingSchema = z.object({
+  discountGroups: z
+    .record(
+      z.string(),
+      z.object({ products: z.record(z.string(), DisneyListingProduct).default({}) }),
+    )
+    .default({}),
+});
+export type DisneyProductListing = z.infer<typeof DisneyProductListingSchema>;
+
 // Universal `priceAndInventory/v2` per-date calendar, harvested by replaying the
 // endpoint with the web-store's guest-session headers. Shape:
 // eventAvailability[partNumber][date] = {...}.

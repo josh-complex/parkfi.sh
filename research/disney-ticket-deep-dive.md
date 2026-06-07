@@ -33,8 +33,9 @@ The bootstrap doc. Key fields driving everything else:
 
 ### E2 — Per-date pricing calendar (the demand feed)
 
-`GET /api/lexicon-view-assembler-service/wdw/tickets/product-types/{productType}?storeId=wdw&addOn={false|park-hopper|park-hopper-plus|water-parks-sports}&excludePricingCalendar=false`
+`GET /api/lexicon-view-assembler-service/wdw/tickets/product-types/{productKey}?storeId=wdw&addOn=false&excludePricingCalendar=false`
 
+- **CORRECTION (verified live 2026-06-07): the `addOn` query param is IGNORED.** The add-on tier and residency are baked into the **`{productKey}` slug** (the E1 product key), NOT the query param. `theme-parks?addOn=park-hopper` returns the base `_0_` SKUs, not `_P_`; you must request slug `theme-parks-with-park-hopper`. Likewise `canada-ticket` → **404**; the real slug is `canada-ticket-for-canada-resident`. So: **drive E2 off the E1 catalog — each product key is its own E2 slug.** (The earlier draft of this doc wrongly treated `addOn` as a working filter; the production scraper inherited that bug and captured the base ticket 4× while silently dropping all Hopper/PHP/WPS + Canada pricing until the 2026-06-07 fix.)
 - Same bearer gate as E1 (anonymous client token; cookieless verified).
 - Returns `pricingCalendar.pricingCalendar[]` = **10 buckets (numDays 1–10)**, each `.dates[]` = **514 dates**, spanning **2026-06-06 → 2027-10-31** (~17 months). Each date:
   ```
@@ -148,7 +149,7 @@ Mirrors the Universal mapping so WDW + Universal share tables.
 
 **`ticket_availability`** — `(park_id, date, state, observed_at)`. **Derive from `stopSale` on the 1-day park-specific E2 rows** (the only park-resolved product): `stopSale:true → SOLD_OUT`, else `AVAILABLE`. Also fold in top-level `blockoutDates[]` and `hasBlockoutDates`. Do **not** use the legacy `availability-calendar` API — it returns `[{}]` = "all available" since reservations were retired (see report). `stopSale` is currently uniformly false, so today every park/date reads AVAILABLE; the column exists for when Disney re-enables stop-sales (historically used on peak holidays).
 
-**Cadence & cost:** E0 once (rarely changes); E1 catalog weekly; E2 daily — ~6–10 calls/day total (theme-parks base + 3 add-on variants + after-2pm + 4-park-magic + canada-ticket; FL summer is flat so skip E2). Mint one client token per run (~20 min TTL covers a full sweep). Each E2 call is ~5,000 price rows (514 dates × up to 8 park/age rows for 1-day, fewer for multi-day) — trivial volume.
+**Cadence & cost:** E0 once (rarely changes); **E1 every run (it drives the sweep — one call enumerates all ~19 product keys + their `isVariablePricing` flags); E2 once per variable product key** (~15 calls: the 4 STD theme-park tiers + after-2pm + the two 4-park-magic + 4 Canada + 4 FL-resident theme-park tiers). Flat products (the 4 FL-summer SKUs) have no E2 — take their price from E1 `startingFromPrice` and write one row at today. Mint one client token per run (~20 min TTL covers the full sweep). Total volume ≈ 27.6k price rows over a 180-day window — trivial.
 
 ---
 
