@@ -78,10 +78,11 @@ export const ticketsRouter = {
         service_date: Date | string;
         price_cents: number;
         available: boolean | null;
+        observed_at: string | null;
       }>(sql`
         WITH latest AS (
           SELECT DISTINCT ON (sp.sku, sp.service_date)
-                 sp.sku, sp.service_date, sp.price_cents, sp.available
+                 sp.sku, sp.service_date, sp.price_cents, sp.available, sp.observed_at
           FROM sku_price_obs sp
           JOIN product_dim d ON d.sku = sp.sku
           WHERE d.resort = ${input.resort}
@@ -92,15 +93,22 @@ export const ticketsRouter = {
         )
         SELECT service_date,
                min(price_cents) AS price_cents,
-               bool_or(available) AS available
+               bool_or(available) AS available,
+               max(observed_at) AS observed_at
         FROM latest
         WHERE price_cents IS NOT NULL
         GROUP BY service_date
         ORDER BY service_date
       `);
+      const lastUpdatedAt = result.rows.reduce<string | null>((m, r) => {
+        if (!r.observed_at) return m;
+        const s = String(r.observed_at);
+        return !m || s > m ? s : m;
+      }, null);
       return {
         resort: input.resort,
         productLabel: product.label,
+        lastUpdatedAt,
         days: result.rows.map((r) => ({
           date: (r.service_date instanceof Date
             ? r.service_date.toISOString()

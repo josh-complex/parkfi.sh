@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { ActivityIcon, FerrisWheelIcon, TicketIcon } from "lucide-react";
+import { ActivityIcon, FerrisWheelIcon, TicketIcon, UtensilsIcon } from "lucide-react";
 
 import { NavUser } from "#/components/nav-user.tsx";
 import { SidebarThemeToggle } from "#/components/theme-toggle.tsx";
@@ -19,13 +19,8 @@ import {
 const NAV: Array<{ title: string; to: string; icon: React.ReactNode }> = [
   { title: "Live Board", to: "/", icon: <ActivityIcon /> },
   { title: "Ticket Pricing", to: "/tickets", icon: <TicketIcon /> },
+  { title: "Dining", to: "/dining", icon: <UtensilsIcon /> },
 ];
-
-const user = {
-  name: "shadcn",
-  email: "m@example.com",
-  avatar: "/avatars/shadcn.jpg",
-};
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -71,7 +66,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <SidebarThemeToggle />
           </SidebarMenuItem>
         </SidebarMenu>
-        <NavUser user={user} />
+        <NavUser />
       </SidebarFooter>
     </Sidebar>
   );

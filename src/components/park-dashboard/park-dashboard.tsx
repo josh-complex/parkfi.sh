@@ -74,6 +74,19 @@ export function ParkDashboard() {
           </h2>
           <p className="text-muted-foreground text-sm">
             Live wait times, ride status, and Lightning Lane pricing.
+            {board &&
+              (() => {
+                const latest = board.reduce<string | null>((m, b) => {
+                  if (!b.observedAt) return m;
+                  return !m || b.observedAt > m ? b.observedAt : m;
+                }, null);
+                if (!latest) return null;
+                const diff = Date.now() - new Date(latest).getTime();
+                const min = Math.floor(diff / 60_000);
+                const label =
+                  min < 1 ? "just now" : min < 60 ? `${min}m ago` : `${Math.floor(min / 60)}h ago`;
+                return <span className="ml-2 text-xs">Updated {label}</span>;
+              })()}
           </p>
         </div>
         <div className="flex flex-col gap-1.5">

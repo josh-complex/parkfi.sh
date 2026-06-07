@@ -119,6 +119,7 @@ export function PricingCalendar() {
   );
   const rows = calQ.data?.days;
   const productLabel = calQ.data?.productLabel ?? "Ticket";
+  const lastUpdatedAt = calQ.data?.lastUpdatedAt ?? null;
 
   const priceMap = React.useMemo(() => {
     const m = new Map<string, DayPrice>();
@@ -155,6 +156,18 @@ export function PricingCalendar() {
           <h2 className="text-xl font-semibold tracking-tight">Ticket Pricing</h2>
           <p className="text-muted-foreground text-sm">
             Cheapest {productLabel.toLowerCase()} by date — find the cheapest day to go.
+            {lastUpdatedAt && (
+              <span className="ml-2 text-xs">
+                Updated{" "}
+                {(() => {
+                  const diff = Date.now() - new Date(lastUpdatedAt).getTime();
+                  const min = Math.floor(diff / 60_000);
+                  if (min < 1) return "just now";
+                  if (min < 60) return `${min}m ago`;
+                  return `${Math.floor(min / 60)}h ago`;
+                })()}
+              </span>
+            )}
           </p>
         </div>
         <ToggleGroup

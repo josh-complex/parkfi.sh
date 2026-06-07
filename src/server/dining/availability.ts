@@ -35,7 +35,11 @@ export async function fetchAvailability(
 
   return page.evaluate(
     async (fid: string, et: string, d: string, party: number, token: string | null) => {
-      const url = `/api/availability/${party}/${d},${d}?facilityId=${fid};entityType=${et}`;
+      // Endpoint is under the `/dine-res/` prefix and takes a time-of-day range
+      // path segment (all-day here); the bare `/api/availability/…` path 404s.
+      const url =
+        `/dine-res/api/availability/${party}/${d},${d}/00:00:00,23:59:59` +
+        `?facilityId=${fid};entityType=${et}`;
       const headers: Record<string, string> = {
         Accept: "application/json, text/plain, */*",
         "X-Function-Name": "getAvailability",
@@ -59,7 +63,12 @@ export async function fetchAvailability(
           Array<{
             mealPeriodType?: string;
             mealPeriodName?: string;
-            offersByAccessibility?: Array<{ offerId?: string; time?: string }>;
+            // each entry is an accessibility tier; the bookable slots are nested
+            // under `.offers`, NOT on the tier object itself
+            offersByAccessibility?: Array<{
+              accessibilityLevel?: string;
+              offers?: Array<{ offerId?: string; time?: string }>;
+            }>;
           }>
         >;
       } | null;
@@ -73,8 +82,10 @@ export async function fetchAvailability(
       }> = [];
       for (const mp of periods) {
         const mealPeriod = mp.mealPeriodType ?? mp.mealPeriodName ?? null;
-        for (const off of mp.offersByAccessibility ?? []) {
-          offers.push({ mealPeriod, offerTime: off.time ?? null, offerId: off.offerId ?? null });
+        for (const tier of mp.offersByAccessibility ?? []) {
+          for (const off of tier.offers ?? []) {
+            offers.push({ mealPeriod, offerTime: off.time ?? null, offerId: off.offerId ?? null });
+          }
         }
       }
       return { loggedIn: true, offers };
