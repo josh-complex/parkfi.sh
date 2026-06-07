@@ -72,7 +72,14 @@ Both dining services also need `BROWSER_WS_ENDPOINT` (+ `BROWSERLESS_WS_QUERY=st
 in one session).
 
 Both resorts land in the SKU-keyed model (`product_dim` + `sku_price_obs`), not
-the park-keyed `product_price_obs`. **Disney** is plain HTTPS (no browser): mint
+the park-keyed `product_price_obs`. **Note:** as of 2026-06-07, `insertSkuPrices`
+is delta-only — a new row is written only when `price_cents`, `available`,
+`available_units`, or `total_capacity` changes from the previous observation for
+that `(sku, service_date)` pair. Rows before that date are full daily snapshots
+(one per run regardless of change). When querying historical prices, use the most
+recent observation on or before your target date, not an exact-date match.
+
+**Disney** is plain HTTPS (no browser): mint
 an anonymous client token, then sweep the lexicon pricing calendar across product
 types × add-ons (theme-parks ±hopper/PHP/WPS, after-2pm, four-park-magic, canada,
 FL) — each row is keyed by its `productInstanceId` (1-day rows carry the

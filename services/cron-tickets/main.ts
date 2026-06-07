@@ -95,14 +95,79 @@ async function upsertProductDims(rows: Array<typeof productDim.$inferInsert>): P
   }
 }
 
-/** Insert SKU price observations (shared by Disney + Universal), idempotent on PK. */
-async function insertSkuPrices(rows: Array<typeof skuPriceObs.$inferInsert>): Promise<void> {
-  for (let i = 0; i < rows.length; i += 500) {
+/**
+ * Insert SKU price observations, skipping rows where price and availability are
+ * unchanged from the most recent observation for that (sku, service_date) pair.
+ * Returns the number of rows actually inserted.
+ */
+async function insertSkuPrices(rows: Array<typeof skuPriceObs.$inferInsert>): Promise<number> {
+  if (rows.length === 0) return 0;
+
+  // Deduplicate by (sku, serviceDate) within the batch — last entry wins.
+  const deduped = new Map<string, typeof skuPriceObs.$inferInsert>();
+  for (const row of rows) deduped.set(`${row.sku}::${row.serviceDate}`, row);
+  const batch = [...deduped.values()];
+
+  // Fetch the most recent observation for each (sku, service_date) pair.
+  type LatestRow = {
+    priceCents: number | null;
+    available: boolean | null;
+    availableUnits: number | null;
+    totalCapacity: number | null;
+  };
+  const latestMap = new Map<string, LatestRow>();
+  const CHUNK = 500;
+
+  for (let i = 0; i < batch.length; i += CHUNK) {
+    const chunk = batch.slice(i, i + CHUNK);
+    const pairList = sql.join(
+      chunk.map((r) => sql`(${r.sku}, ${r.serviceDate as string}::date)`),
+      sql`, `,
+    );
+    const result = await db.execute<{
+      sku: string;
+      service_date: string;
+      price_cents: number | null;
+      available: boolean | null;
+      available_units: number | null;
+      total_capacity: number | null;
+    }>(sql`
+      SELECT DISTINCT ON (sku, service_date)
+        sku, service_date, price_cents, available, available_units, total_capacity
+      FROM sku_price_obs
+      WHERE (sku, service_date) IN (${pairList})
+      ORDER BY sku, service_date, observed_at DESC
+    `);
+    for (const r of result.rows) {
+      latestMap.set(`${r.sku}::${r.service_date}`, {
+        priceCents: r.price_cents,
+        available: r.available,
+        availableUnits: r.available_units,
+        totalCapacity: r.total_capacity,
+      });
+    }
+  }
+
+  // Only insert rows where price or availability changed.
+  const changed = batch.filter((row) => {
+    const prev = latestMap.get(`${row.sku}::${row.serviceDate}`);
+    if (!prev) return true;
+    return (
+      prev.priceCents !== row.priceCents ||
+      prev.available !== row.available ||
+      prev.availableUnits !== row.availableUnits ||
+      prev.totalCapacity !== row.totalCapacity
+    );
+  });
+
+  for (let i = 0; i < changed.length; i += CHUNK) {
     await db
       .insert(skuPriceObs)
-      .values(rows.slice(i, i + 500))
+      .values(changed.slice(i, i + CHUNK))
       .onConflictDoNothing();
   }
+
+  return changed.length;
 }
 
 /** Readable display name from a decoded WDW SKU. */
@@ -306,11 +371,11 @@ async function captureDisneyPricing(observedAt: Date): Promise<number> {
   }
 
   await upsertProductDims([...dims.values()]);
-  await insertSkuPrices(rows);
+  const inserted = await insertSkuPrices(rows);
   console.log(
-    `[D2] Disney: ${products.size} products → ${dims.size} SKUs (${flat} flat-priced rows)`,
+    `[D2] Disney: ${products.size} products → ${dims.size} SKUs (${flat} flat-priced rows), ${inserted}/${rows.length} price obs inserted`,
   );
-  return rows.length;
+  return inserted;
 }
 
 // --- U1/U2: Universal Express + admission pricing -------------------------
@@ -402,9 +467,11 @@ async function captureUniversalPricing(todayIso: string, observedAt: Date): Prom
     });
   }
 
-  await insertSkuPrices(rows);
-  console.log(`[U1/U2] Universal: ${dimRows.length} SKUs in catalog`);
-  return rows.length;
+  const inserted = await insertSkuPrices(rows);
+  console.log(
+    `[U1/U2] Universal: ${dimRows.length} SKUs in catalog, ${inserted}/${rows.length} price obs inserted`,
+  );
+  return inserted;
 }
 
 // --- orchestration --------------------------------------------------------
