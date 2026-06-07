@@ -77,13 +77,16 @@ export function statusFromThemeparks(status?: string | null): AttractionStatusCo
 
 /**
  * ThemeParks.wiki queue `state` -> QueueState code.
- * Notably `FINISHED` means "sold out for the day".
+ * Notably `FINISHED` means "sold out for the day"; `TEMP_FULL` (mostly Universal
+ * virtual lines) means temporarily not distributing return times — we treat that
+ * as LIMITED rather than dropping it to null.
  */
 export function queueStateFromThemeparks(state?: string | null): QueueStateCode | null {
   switch (state) {
     case "AVAILABLE":
       return QueueState.AVAILABLE;
     case "LIMITED":
+    case "TEMP_FULL":
       return QueueState.LIMITED;
     case "FINISHED":
       return QueueState.SOLD_OUT;

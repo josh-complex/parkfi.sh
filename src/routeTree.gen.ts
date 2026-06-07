@@ -9,10 +9,16 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TicketsRouteImport } from './routes/tickets'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
+const TicketsRoute = TicketsRouteImport.update({
+  id: '/tickets',
+  path: '/tickets',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -31,36 +37,47 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/tickets': typeof TicketsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/tickets': typeof TicketsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/tickets': typeof TicketsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/auth/$' | '/api/trpc/$'
+  fullPaths: '/' | '/tickets' | '/api/auth/$' | '/api/trpc/$'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/auth/$' | '/api/trpc/$'
-  id: '__root__' | '/' | '/api/auth/$' | '/api/trpc/$'
+  to: '/' | '/tickets' | '/api/auth/$' | '/api/trpc/$'
+  id: '__root__' | '/' | '/tickets' | '/api/auth/$' | '/api/trpc/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  TicketsRoute: typeof TicketsRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/tickets': {
+      id: '/tickets'
+      path: '/tickets'
+      fullPath: '/tickets'
+      preLoaderRoute: typeof TicketsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -87,6 +104,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  TicketsRoute: TicketsRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,
 }

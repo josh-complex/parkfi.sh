@@ -1,0 +1,97 @@
+import { QueueType } from "#/server/parks/codes.ts";
+
+import type { BoardItem } from "./types.ts";
+
+/**
+ * Operator-aware view of an attraction's paid/virtual line.
+ *
+ * The per-ride "skip the line" product differs by operator:
+ *  - **Disney** → Lightning Lane. Most rides are LL **Multi** (a RETURN_TIME
+ *    queue, bundled price); a few premium rides are LL **Single** (a
+ *    PAID_RETURN_TIME queue, à-la-carte with a price).
+ *  - **Universal** → labeled "Express". The per-ride signal we get is the
+ *    RETURN_TIME (Virtual Line) queue; true Universal Express is a *park-wide*
+ *    paid product whose pricing lives on the tickets page.
+ *
+ * `has` comes from authoritative capability (`supportsQueueTypes`), so it's true
+ * even when no return time is posted right now. `state` is the current, fresh
+ * availability (null when nothing is posted).
+ */
+export interface PaidLineInfo {
+  has: boolean;
+  product: string | null;
+  kind: string | null;
+  state: string | null;
+  soldOut: boolean;
+  priceCents: number | null;
+}
+
+const EMPTY: PaidLineInfo = {
+  has: false,
+  product: null,
+  kind: null,
+  state: null,
+  soldOut: false,
+  priceCents: null,
+};
+
+export function isUniversal(operatorSlug: string | null | undefined): boolean {
+  return operatorSlug === "universal";
+}
+
+/** Human label for an operator's per-ride line product. */
+export function paidLineProduct(operatorSlug: string | null | undefined): string {
+  return isUniversal(operatorSlug) ? "Express" : "Lightning Lane";
+}
+
+export function paidLineInfo(
+  item: BoardItem,
+  operatorSlug: string | null | undefined,
+): PaidLineInfo {
+  const supports = item.supportsQueueTypes;
+  const sold = (s: string | null) => s === "SOLD_OUT";
+
+  if (isUniversal(operatorSlug)) {
+    // Universal: free Virtual Line (RETURN_TIME / BOARDING_GROUP capability).
+    const has =
+      supports.includes(QueueType.RETURN_TIME) || supports.includes(QueueType.BOARDING_GROUP);
+    if (!has) return EMPTY;
+    return {
+      has: true,
+      product: "Express",
+      kind: null,
+      state: item.returnTimeState,
+      soldOut: sold(item.returnTimeState),
+      priceCents: null,
+    };
+  }
+
+  // Disney: Lightning Lane — prefer the priced Single signal, else Multi.
+  const single = supports.includes(QueueType.PAID_RETURN_TIME);
+  const multi = supports.includes(QueueType.RETURN_TIME);
+  if (!single && !multi) return EMPTY;
+  if (single) {
+    return {
+      has: true,
+      product: "Lightning Lane",
+      kind: "Single",
+      state: item.lightningLane.state,
+      soldOut: sold(item.lightningLane.state),
+      priceCents: item.lightningLane.priceCents,
+    };
+  }
+  return {
+    has: true,
+    product: "Lightning Lane",
+    kind: "Multi",
+    state: item.returnTimeState,
+    soldOut: sold(item.returnTimeState),
+    priceCents: null,
+  };
+}
+
+export function formatPriceCents(cents: number | null, currency: string | null): string | null {
+  if (cents == null) return null;
+  const symbol = !currency || currency === "USD" ? "$" : "";
+  return `${symbol}${(cents / 100).toFixed(2)}`;
+}

@@ -1,10 +1,7 @@
-import {
-  HeadContent,
-  Scripts,
-  createRootRouteWithContext,
-} from "@tanstack/react-router";
+import { HeadContent, Scripts, createRootRouteWithContext } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { TanStackDevtools } from "@tanstack/react-devtools";
+import { ThemeProvider } from "next-themes";
 
 import PostHogProvider from "../integrations/posthog/provider";
 
@@ -56,21 +53,28 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         <PostHogProvider>
-          <TooltipProvider>
-            {children}
-            <TanStackDevtools
-              config={{
-                position: "bottom-right",
-              }}
-              plugins={[
-                {
-                  name: "Tanstack Router",
-                  render: <TanStackRouterDevtoolsPanel />,
-                },
-                TanStackQueryDevtools,
-              ]}
-            />
-          </TooltipProvider>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="system"
+            enableSystem
+            disableTransitionOnChange
+          >
+            <TooltipProvider>
+              {children}
+              <TanStackDevtools
+                config={{
+                  position: "bottom-right",
+                }}
+                plugins={[
+                  {
+                    name: "Tanstack Router",
+                    render: <TanStackRouterDevtoolsPanel />,
+                  },
+                  TanStackQueryDevtools,
+                ]}
+              />
+            </TooltipProvider>
+          </ThemeProvider>
         </PostHogProvider>
         <Scripts />
       </body>

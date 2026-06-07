@@ -1,152 +1,35 @@
 import * as React from "react";
+import { Link, useRouterState } from "@tanstack/react-router";
+import { ActivityIcon, FerrisWheelIcon, TicketIcon } from "lucide-react";
 
-import { NavDocuments } from "#/components/nav-documents.tsx";
-import { NavMain } from "#/components/nav-main.tsx";
-import { NavSecondary } from "#/components/nav-secondary.tsx";
 import { NavUser } from "#/components/nav-user.tsx";
+import { SidebarThemeToggle } from "#/components/theme-toggle.tsx";
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "#/components/ui/sidebar.tsx";
-import {
-  LayoutDashboardIcon,
-  ListIcon,
-  ChartBarIcon,
-  FolderIcon,
-  UsersIcon,
-  CameraIcon,
-  FileTextIcon,
-  Settings2Icon,
-  CircleHelpIcon,
-  SearchIcon,
-  DatabaseIcon,
-  FileChartColumnIcon,
-  FileIcon,
-  CommandIcon,
-} from "lucide-react";
 
-const data = {
-  user: {
-    name: "shadcn",
-    email: "m@example.com",
-    avatar: "/avatars/shadcn.jpg",
-  },
-  navMain: [
-    {
-      title: "Dashboard",
-      url: "#",
-      icon: <LayoutDashboardIcon />,
-    },
-    {
-      title: "Lifecycle",
-      url: "#",
-      icon: <ListIcon />,
-    },
-    {
-      title: "Analytics",
-      url: "#",
-      icon: <ChartBarIcon />,
-    },
-    {
-      title: "Projects",
-      url: "#",
-      icon: <FolderIcon />,
-    },
-    {
-      title: "Team",
-      url: "#",
-      icon: <UsersIcon />,
-    },
-  ],
-  navClouds: [
-    {
-      title: "Capture",
-      icon: <CameraIcon />,
-      isActive: true,
-      url: "#",
-      items: [
-        {
-          title: "Active Proposals",
-          url: "#",
-        },
-        {
-          title: "Archived",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Proposal",
-      icon: <FileTextIcon />,
-      url: "#",
-      items: [
-        {
-          title: "Active Proposals",
-          url: "#",
-        },
-        {
-          title: "Archived",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Prompts",
-      icon: <FileTextIcon />,
-      url: "#",
-      items: [
-        {
-          title: "Active Proposals",
-          url: "#",
-        },
-        {
-          title: "Archived",
-          url: "#",
-        },
-      ],
-    },
-  ],
-  navSecondary: [
-    {
-      title: "Settings",
-      url: "#",
-      icon: <Settings2Icon />,
-    },
-    {
-      title: "Get Help",
-      url: "#",
-      icon: <CircleHelpIcon />,
-    },
-    {
-      title: "Search",
-      url: "#",
-      icon: <SearchIcon />,
-    },
-  ],
-  documents: [
-    {
-      name: "Data Library",
-      url: "#",
-      icon: <DatabaseIcon />,
-    },
-    {
-      name: "Reports",
-      url: "#",
-      icon: <FileChartColumnIcon />,
-    },
-    {
-      name: "Word Assistant",
-      url: "#",
-      icon: <FileIcon />,
-    },
-  ],
+const NAV: Array<{ title: string; to: string; icon: React.ReactNode }> = [
+  { title: "Live Board", to: "/", icon: <ActivityIcon /> },
+  { title: "Ticket Pricing", to: "/tickets", icon: <TicketIcon /> },
+];
+
+const user = {
+  name: "shadcn",
+  email: "m@example.com",
+  avatar: "/avatars/shadcn.jpg",
 };
+
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
@@ -154,21 +37,41 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <SidebarMenuItem>
             <SidebarMenuButton
               className="data-[slot=sidebar-menu-button]:p-1.5!"
-              render={<a href="#" />}
+              render={<Link to="/" />}
             >
-              <CommandIcon className="size-5!" />
-              <span className="text-base font-semibold">Acme Inc.</span>
+              <FerrisWheelIcon className="size-5!" />
+              <span className="text-base font-semibold">parkfi.sh</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={data.navMain} />
-        <NavDocuments items={data.documents} />
-        <NavSecondary items={data.navSecondary} className="mt-auto" />
+        <SidebarGroup>
+          <SidebarGroupContent className="flex flex-col gap-2">
+            <SidebarMenu>
+              {NAV.map((item) => (
+                <SidebarMenuItem key={item.to}>
+                  <SidebarMenuButton
+                    tooltip={item.title}
+                    isActive={item.to === "/" ? pathname === "/" : pathname.startsWith(item.to)}
+                    render={<Link to={item.to} />}
+                  >
+                    {item.icon}
+                    <span>{item.title}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarThemeToggle />
+          </SidebarMenuItem>
+        </SidebarMenu>
+        <NavUser user={user} />
       </SidebarFooter>
     </Sidebar>
   );

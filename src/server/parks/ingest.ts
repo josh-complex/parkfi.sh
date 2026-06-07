@@ -1,7 +1,14 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
-import { attractionStatusObs, attractions, externalIds, parks, queueObs } from "#/db/schema.ts";
+import {
+  attractionQueueSupport,
+  attractionStatusObs,
+  attractions,
+  externalIds,
+  parks,
+  queueObs,
+} from "#/db/schema.ts";
 
 import { AttractionStatus, QueueType, Source } from "./codes.ts";
 import { config } from "./config.ts";
@@ -226,6 +233,16 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
           target: [queueObs.attractionId, queueObs.queueType, queueObs.observedAt],
         });
     }
+  }
+
+  // (C) capability: record every (attraction, queue_type) pair we've ever seen so
+  // the board can answer "does this ride offer a paid/virtual line?" authoritatively,
+  // independent of whether a return time happens to be posted right now.
+  const supportRows = [
+    ...new Map(queueRows.map((q) => [`${q.attractionId}:${q.queueType}`, q])).values(),
+  ].map((q) => ({ attractionId: q.attractionId, queueType: q.queueType }));
+  if (supportRows.length > 0) {
+    await db.insert(attractionQueueSupport).values(supportRows).onConflictDoNothing();
   }
 
   return {

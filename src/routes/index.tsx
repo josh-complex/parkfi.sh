@@ -1,16 +1,31 @@
-import { Button } from "#/components/ui/button";
 import { createFileRoute } from "@tanstack/react-router";
+
+import { AppSidebar } from "#/components/app-sidebar.tsx";
+import { ParkDashboard } from "#/components/park-dashboard/park-dashboard.tsx";
+import { SiteHeader } from "#/components/site-header.tsx";
+import { SidebarInset, SidebarProvider } from "#/components/ui/sidebar.tsx";
 
 export const Route = createFileRoute("/")({ component: Home });
 
 function Home() {
   return (
-    <div className="p-8">
-      <h1 className="text-4xl font-bold">Welcome to TanStack Start</h1>
-      <p className="mt-4 text-lg">
-        Edit <code>src/routes/index.tsx</code> to get started.
-        <Button>hi this is a button</Button>
-      </p>
-    </div>
+    <SidebarProvider
+      style={
+        {
+          "--sidebar-width": "calc(var(--spacing) * 72)",
+          "--header-height": "calc(var(--spacing) * 12)",
+        } as React.CSSProperties
+      }
+    >
+      <AppSidebar variant="inset" />
+      <SidebarInset>
+        <SiteHeader title="Live Park Board" />
+        <div className="flex flex-1 flex-col">
+          <div className="@container/main flex flex-1 flex-col gap-2">
+            <ParkDashboard />
+          </div>
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

@@ -1,7 +1,7 @@
-import { Button as ButtonPrimitive } from "@base-ui/react/button"
-import { cva, type VariantProps } from "class-variance-authority"
+import { Button as ButtonPrimitive } from "@base-ui/react/button";
+import { cva, type VariantProps } from "class-variance-authority";
 
-import { cn } from "#/lib/utils.ts"
+import { cn } from "#/lib/utils.ts";
 
 const buttonVariants = cva(
   "group/button relative top-0 inline-flex shrink-0 items-center justify-center rounded-4xl border border-transparent text-sm font-medium whitespace-nowrap outline-none select-none transition-[box-shadow,top,background-color,border-color,color] duration-150 ease-out [--btn-3d:transparent] [--btn-glare:transparent] shadow-[0_3px_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 active:not-aria-[haspopup]:top-[3px] active:not-aria-[haspopup]:shadow-[0_0_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)] disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
@@ -36,8 +36,8 @@ const buttonVariants = cva(
       variant: "default",
       size: "default",
     },
-  }
-)
+  },
+);
 
 function Button({
   className,
@@ -51,7 +51,7 @@ function Button({
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     />
-  )
+  );
 }
 
-export { Button, buttonVariants }
+export { Button, buttonVariants };
