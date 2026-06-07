@@ -125,3 +125,43 @@ export async function ensureLoggedIn(browser: Browser): Promise<Page> {
 export async function relogin(page: Page): Promise<void> {
   await disneyLogin(page);
 }
+
+/**
+ * The OneID access-token the dine-res SPA attaches as `Authorization: BEARER …`.
+ * The dine-vas API (`facilities`, `getAvailability`) 401s on cookies alone —
+ * VERIFIED live: cookies-only → 401, +bearer +routing headers → 200. The token
+ * is the `access_token` field of the chunked LBJS session cookie
+ * `TPR-WDW-LBJS.WEB-PROD.token` (value `<n>=<base64-json>`). It is NOT
+ * `pep_oauth_token` (a 32-char opaque token → 403). Returns null when the cookie
+ * is absent (session never established / token expired) so the caller can
+ * re-login. See research/disney-ticket-deep-dive.md §9.
+ */
+export async function getDineAccessToken(page: Page): Promise<string | null> {
+  return page.evaluate(() => {
+    const cookie = document.cookie
+      .split(";")
+      .map((c) => c.trim())
+      .find((c) => c.startsWith("TPR-WDW-LBJS.WEB-PROD.token="));
+    if (!cookie) return null;
+    let val = cookie.slice(cookie.indexOf("=") + 1);
+    try {
+      val = decodeURIComponent(val);
+    } catch {
+      // keep the raw value if it isn't percent-encoded
+    }
+    const data = val.replace(/^\d+=/, ""); // strip the `<n>=` chunk-format prefix
+    // The cookie is base64(JSON{access_token,…}); a stray byte can break a full
+    // decode, but access_token is the first field, so the longest valid base64
+    // prefix always contains it. Scan down from a generous bound to find it.
+    for (let len = Math.min(data.length - (data.length % 4), 1600); len >= 400; len -= 4) {
+      try {
+        const json = atob(data.slice(0, len));
+        const m = json.match(/"access_token"\s*:\s*"(eyJ[\w-]+\.eyJ[\w-]+\.[\w-]+)"/);
+        if (m) return m[1];
+      } catch {
+        // not a valid base64 prefix at this length — try a shorter one
+      }
+    }
+    return null;
+  });
+}

@@ -1,9 +1,13 @@
 import type { Page } from "puppeteer-core";
 
+import { getDineAccessToken } from "./disney-session.ts";
+
 /**
  * dine-vas `getAvailability` — the perishable reservation feed. Called in-page
- * on the logged-in session (§8 option A: cookies are inherited; we add the SPA
- * routing headers). One row per bookable slot in `offersByAccessibility[]`.
+ * on the logged-in session. Cookies are inherited but are NOT sufficient — the
+ * dine-vas API 401s without the OneID bearer (verified against `facilities`),
+ * so we attach `Authorization: BEARER …` alongside the SPA routing headers.
+ * One row per bookable slot in `offersByAccessibility[]`.
  * See research/disney-ticket-deep-dive.md §7.
  */
 
@@ -27,21 +31,22 @@ export async function fetchAvailability(
   date: string,
   partySize: number,
 ): Promise<AvailabilityResult> {
+  const bearer = await getDineAccessToken(page);
   return page.evaluate(
-    async (fid: string, et: string, d: string, party: number) => {
+    async (fid: string, et: string, d: string, party: number, token: string | null) => {
       const url = `/api/availability/${party}/${d},${d}?facilityId=${fid};entityType=${et}`;
+      const headers: Record<string, string> = {
+        Accept: "application/json, text/plain, */*",
+        "X-Function-Name": "getAvailability",
+        "X-Correlation-Id": crypto.randomUUID(),
+        "X-Conversation-Id": crypto.randomUUID(),
+        "x-disney-internal-dine-vas-eks": "true",
+        "x-disney-internal-dine-vas-365": "true",
+      };
+      if (token) headers.Authorization = `BEARER ${token}`;
       let res: Response;
       try {
-        res = await fetch(url, {
-          headers: {
-            Accept: "application/json, text/plain, */*",
-            "X-Function-Name": "getAvailability",
-            "X-Correlation-Id": crypto.randomUUID(),
-            "X-Conversation-Id": crypto.randomUUID(),
-            "x-disney-internal-dine-vas-eks": "true",
-            "x-disney-internal-dine-vas-365": "true",
-          },
-        });
+        res = await fetch(url, { headers });
       } catch {
         return { loggedIn: true, offers: [] }; // transient network error — keep session
       }
@@ -77,5 +82,6 @@ export async function fetchAvailability(
     entityType,
     date,
     partySize,
+    bearer,
   );
 }

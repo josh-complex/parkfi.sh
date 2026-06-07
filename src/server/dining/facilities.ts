@@ -1,11 +1,18 @@
 import type { Page } from "puppeteer-core";
 
+import { getDineAccessToken } from "./disney-session.ts";
+
 /**
  * WDW restaurant catalog from `/dine-res/api/dine/facilities` (session-gated —
  * fetched in-page on the logged-in session). The response groups venues under
  * `restaurant` / `dinnerShow` / `diningEvent`, each a map of bare-id → facility.
  * The bare id is the `getAvailability` join key; `;entityType=…` is the category.
- * See research/disney-ticket-deep-dive.md §7.
+ *
+ * The request needs the OneID bearer AND the dine-vas routing headers: cookies
+ * alone → 401; bearer without the `X-Function-Name`/`dine-vas` headers → the
+ * service can't build its DineContext and 500s (NPE in DineContextSubscriber);
+ * bearer + routing headers → 200. All three verified live.
+ * See research/disney-ticket-deep-dive.md §7, §9.
  */
 
 export interface RestaurantRow {
@@ -31,13 +38,19 @@ const CATEGORIES: Array<[string, RestaurantRow["entityType"]]> = [
 const BOOKABLE_FACETS = new Set(["reservations-accepted", "checkavailmodulewdw"]);
 
 export async function fetchFacilities(page: Page): Promise<Array<RestaurantRow>> {
-  const raw = await page.evaluate(async () => {
-    const r = await fetch("/dine-res/api/dine/facilities", {
-      headers: { Accept: "application/json, text/plain, */*" },
-    });
+  const bearer = await getDineAccessToken(page);
+  const raw = await page.evaluate(async (token: string | null) => {
+    const headers: Record<string, string> = {
+      Accept: "application/json, text/plain, */*",
+      "X-Function-Name": "getFacilities",
+      "x-disney-internal-dine-vas-eks": "true",
+      "x-disney-internal-dine-vas-365": "true",
+    };
+    if (token) headers.Authorization = `BEARER ${token}`;
+    const r = await fetch("/dine-res/api/dine/facilities", { headers });
     if (!r.ok) return { status: r.status, body: null as unknown };
     return { status: 200, body: (await r.json()) as unknown };
-  });
+  }, bearer);
   if (raw.status !== 200 || !raw.body) {
     throw new Error(`dine/facilities -> ${raw.status} (session invalid?)`);
   }
