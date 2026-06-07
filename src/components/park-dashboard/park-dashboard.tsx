@@ -3,22 +3,13 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { Label } from "#/components/ui/label.tsx";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "#/components/ui/select.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
+import { Route } from "#/routes/index.tsx";
 
 import { ParkBoardTable } from "./park-board-table.tsx";
 import { ParkStatCards } from "./park-stat-cards.tsx";
 import { ParkWaitChart } from "./park-wait-chart.tsx";
-import type { BoardItem, ParkListItem } from "./types.ts";
+import type { BoardItem } from "./types.ts";
 
 /** Default attraction to chart: the operating ride with the longest standby line. */
 function pickDefault(board: Array<BoardItem>): BoardItem | null {
@@ -34,7 +25,7 @@ export function ParkDashboard() {
   const parksQ = useQuery(trpc.parks.list.queryOptions());
   const parks = parksQ.data;
 
-  const [parkSlug, setParkSlug] = React.useState<string | undefined>(undefined);
+  const { park: parkSlug } = Route.useSearch();
   const activeSlug = parkSlug ?? parks?.[0]?.slug;
 
   const boardQ = useQuery({
@@ -56,13 +47,6 @@ export function ParkDashboard() {
     }
   }, [board, selected]);
 
-  // Reset the selection when switching parks so the effect re-picks a default.
-  const onParkChange = (slug: string) => {
-    setParkSlug(slug);
-    setSelected(null);
-  };
-
-  const byResort = groupByResort(parks ?? []);
   const operatorSlug = parks?.find((p) => p.slug === activeSlug)?.operatorSlug;
 
   return (
@@ -89,68 +73,31 @@ export function ParkDashboard() {
               })()}
           </p>
         </div>
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-xs">Park</Label>
-          <Select
-            value={activeSlug}
-            onValueChange={(v) => v && onParkChange(v)}
-            items={(parks ?? []).map((p) => ({ value: p.slug, label: p.name }))}
-            disabled={!parks}
-          >
-            <SelectTrigger className="w-64" aria-label="Select a park">
-              <SelectValue placeholder="Select a park" />
-            </SelectTrigger>
-            <SelectContent>
-              {byResort.map((group) => (
-                <SelectGroup key={group.resort}>
-                  <SelectLabel>{group.resort}</SelectLabel>
-                  {group.parks.map((p) => (
-                    <SelectItem key={p.slug} value={p.slug}>
-                      {p.name}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
       </div>
 
-      <ParkStatCards
-        board={board}
-        loading={boardQ.isLoading || !activeSlug}
-        operatorSlug={operatorSlug}
-      />
+      <div className="px-4 lg:px-6">
+        <ParkWaitChart
+          attractionId={selected?.id ?? null}
+          attractionName={selected?.name ?? null}
+          operatorSlug={operatorSlug}
+        />
+        <ParkStatCards
+          board={board}
+          loading={boardQ.isLoading || !activeSlug}
+          operatorSlug={operatorSlug}
+          className="rounded-b-lg border border-t-0 shadow-xs"
+        />
+      </div>
 
       <div className="px-4 lg:px-6">
-        <div className="grid items-start gap-4 lg:grid-cols-[3fr_2fr]">
-          <ParkWaitChart
-            attractionId={selected?.id ?? null}
-            attractionName={selected?.name ?? null}
-            operatorSlug={operatorSlug}
-          />
-          <ParkBoardTable
-            board={board}
-            loading={boardQ.isLoading || !activeSlug}
-            selectedId={selected?.id ?? null}
-            onSelect={(item) => setSelected({ id: item.id, name: item.name })}
-            operatorSlug={operatorSlug}
-          />
-        </div>
+        <ParkBoardTable
+          board={board}
+          loading={boardQ.isLoading || !activeSlug}
+          selectedId={selected?.id ?? null}
+          onSelect={(item) => setSelected({ id: item.id, name: item.name })}
+          operatorSlug={operatorSlug}
+        />
       </div>
     </div>
   );
-}
-
-function groupByResort(
-  parks: Array<ParkListItem>,
-): Array<{ resort: string; parks: Array<ParkListItem> }> {
-  const map = new Map<string, Array<ParkListItem>>();
-  for (const p of parks) {
-    const key = p.resortName ?? "Other";
-    const list = map.get(key) ?? [];
-    list.push(p);
-    map.set(key, list);
-  }
-  return [...map.entries()].map(([resort, parks]) => ({ resort, parks }));
 }

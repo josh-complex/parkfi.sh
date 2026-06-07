@@ -94,6 +94,8 @@ export const parksRouter = {
       ll_return_start: string | null;
       ll_return_end: string | null;
       return_state: number | null;
+      return_start: string | null;
+      return_end: string | null;
       observed_at: string | null;
       support_types: Array<number> | null;
       hist_standby_wait: number | null;
@@ -145,6 +147,7 @@ export const parksRouter = {
                prt.currency AS ll_currency,
                prt.return_start AS ll_return_start, prt.return_end AS ll_return_end,
                rt.state AS return_state,
+               rt.return_start AS return_start, rt.return_end AS return_end,
                caps.qtypes AS support_types,
                hist.hist_standby_wait
         FROM attractions a
@@ -173,6 +176,7 @@ export const parksRouter = {
         returnEnd: r.ll_return_end,
       },
       returnTimeState: code(QUEUE_STATE_CODE, r.return_state),
+      returnTimeWindow: { start: r.return_start ?? null, end: r.return_end ?? null },
       supportsQueueTypes: (r.support_types ?? []).map(Number),
       histStandbyWait: r.hist_standby_wait,
     }));

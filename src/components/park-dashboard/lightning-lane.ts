@@ -24,6 +24,8 @@ export interface PaidLineInfo {
   state: string | null;
   soldOut: boolean;
   priceCents: number | null;
+  returnStart: string | null;
+  returnEnd: string | null;
 }
 
 const EMPTY: PaidLineInfo = {
@@ -33,6 +35,8 @@ const EMPTY: PaidLineInfo = {
   state: null,
   soldOut: false,
   priceCents: null,
+  returnStart: null,
+  returnEnd: null,
 };
 
 export function isUniversal(operatorSlug: string | null | undefined): boolean {
@@ -63,6 +67,8 @@ export function paidLineInfo(
       state: item.returnTimeState,
       soldOut: sold(item.returnTimeState),
       priceCents: null,
+      returnStart: item.returnTimeWindow.start,
+      returnEnd: item.returnTimeWindow.end,
     };
   }
 
@@ -78,6 +84,8 @@ export function paidLineInfo(
       state: item.lightningLane.state,
       soldOut: sold(item.lightningLane.state),
       priceCents: item.lightningLane.priceCents,
+      returnStart: item.lightningLane.returnStart,
+      returnEnd: item.lightningLane.returnEnd,
     };
   }
   return {
@@ -87,6 +95,8 @@ export function paidLineInfo(
     state: item.returnTimeState,
     soldOut: sold(item.returnTimeState),
     priceCents: null,
+    returnStart: item.returnTimeWindow.start,
+    returnEnd: item.returnTimeWindow.end,
   };
 }
 

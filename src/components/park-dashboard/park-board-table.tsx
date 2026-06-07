@@ -28,6 +28,30 @@ import { cn } from "#/lib/utils.ts";
 import { formatPriceCents, isUniversal, paidLineInfo, paidLineProduct } from "./lightning-lane.ts";
 import type { BoardItem } from "./types.ts";
 
+function formatReturnWindow(start: string | null, end: string | null): string | null {
+  if (!start && !end) return null;
+  const fmt = (iso: string) =>
+    new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  if (start && end) return `${fmt(start)} – ${fmt(end)}`;
+  if (start) return `from ${fmt(start)}`;
+  if (end) return `until ${fmt(end)}`;
+  return null;
+}
+
+function ReturnWindowCell({
+  item,
+  operatorSlug,
+}: {
+  item: BoardItem;
+  operatorSlug: string | null | undefined;
+}) {
+  const ll = paidLineInfo(item, operatorSlug);
+  if (!ll.has) return <span className="text-muted-foreground">—</span>;
+  const window = formatReturnWindow(ll.returnStart, ll.returnEnd);
+  if (!window) return <span className="text-muted-foreground">—</span>;
+  return <span className="tabular-nums">{window}</span>;
+}
+
 function PaidLineHeader({ operatorSlug }: { operatorSlug: string | null | undefined }) {
   return (
     <span className="inline-flex items-center gap-1.5">
@@ -218,6 +242,7 @@ export function ParkBoardTable({
                 <TableHead>
                   <PaidLineHeader operatorSlug={operatorSlug} />
                 </TableHead>
+                <TableHead>Next return</TableHead>
                 <TableHead className="w-8" />
               </TableRow>
             </TableHeader>
@@ -244,6 +269,9 @@ export function ParkBoardTable({
                   </TableCell>
                   <TableCell>
                     <PaidLineCell item={item} operatorSlug={operatorSlug} />
+                  </TableCell>
+                  <TableCell>
+                    <ReturnWindowCell item={item} operatorSlug={operatorSlug} />
                   </TableCell>
                   <TableCell>
                     <ChevronRightIcon

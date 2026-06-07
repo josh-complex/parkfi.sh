@@ -1,25 +1,12 @@
 "use client";
 
-import {
-  ActivityIcon,
-  ClockIcon,
-  TicketIcon,
-  TrendingDownIcon,
-  TrendingUpIcon,
-} from "lucide-react";
+import * as React from "react";
+import { TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 
-import { Badge } from "#/components/ui/badge.tsx";
-import {
-  Card,
-  CardAction,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "#/components/ui/card.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
+import { cn } from "#/lib/utils.ts";
 
-import { isUniversal, paidLineInfo, paidLineProduct } from "./lightning-lane.ts";
+import { paidLineInfo, paidLineProduct } from "./lightning-lane.ts";
 import type { BoardItem } from "./types.ts";
 
 function mean(xs: Array<number>): number {
@@ -27,20 +14,51 @@ function mean(xs: Array<number>): number {
   return xs.reduce((a, b) => a + b, 0) / xs.length;
 }
 
+function StatItem({
+  label,
+  value,
+  sub,
+  className,
+}: {
+  label: string;
+  value: React.ReactNode;
+  sub?: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex flex-col gap-0.5", className)}>
+      <span className="text-xs font-medium uppercase tracking-wider text-blue-200/80">{label}</span>
+      <span className="text-xl font-semibold tabular-nums leading-tight text-white">{value}</span>
+      {sub && <span className="line-clamp-1 text-xs text-blue-200/70">{sub}</span>}
+    </div>
+  );
+}
+
 export function ParkStatCards({
   board,
   loading,
   operatorSlug,
+  className,
 }: {
   board: Array<BoardItem> | undefined;
   loading: boolean;
   operatorSlug: string | null | undefined;
+  className?: string;
 }) {
   if (loading || !board) {
     return (
-      <div className="grid grid-cols-1 gap-4 px-4 lg:px-6 @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
+      <div
+        className={cn(
+          "grid grid-cols-2 gap-6 border-t border-primary bg-primary px-6 py-5 lg:grid-cols-4",
+          className,
+        )}
+      >
         {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-[140px] rounded-xl" />
+          <div key={i} className="flex flex-col gap-2">
+            <Skeleton className="h-3 w-20 bg-blue-300/30" />
+            <Skeleton className="h-6 w-16 bg-blue-300/30" />
+            <Skeleton className="h-3 w-28 bg-blue-300/30" />
+          </div>
         ))}
       </div>
     );
@@ -62,127 +80,81 @@ export function ParkStatCards({
 
   const llInfos = rides.map((r) => paidLineInfo(r, operatorSlug)).filter((ll) => ll.has);
   const llSoldOut = llInfos.filter((ll) => ll.soldOut).length;
-  const llPrices = llInfos
-    .map((ll) => ll.priceCents)
-    .filter((p): p is number => typeof p === "number");
-  const avgLlDollars = llPrices.length > 0 ? mean(llPrices) / 100 : null;
   const llLabel = paidLineProduct(operatorSlug);
 
   const operatingPct = rides.length > 0 ? Math.round((operating.length / rides.length) * 100) : 0;
 
   return (
-    <div className="grid grid-cols-1 gap-4 px-4 *:data-[slot=card]:bg-linear-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs lg:px-6 @xl/main:grid-cols-2 @5xl/main:grid-cols-4 dark:*:data-[slot=card]:bg-card">
-      <Card className="@container/card">
-        <CardHeader>
-          <CardDescription>Rides Operating</CardDescription>
-          <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
+    <div
+      className={cn(
+        "grid grid-cols-2 gap-6 border-t border-primary bg-primary px-6 py-5 lg:grid-cols-4",
+        className,
+      )}
+    >
+      <StatItem
+        label="Rides Operating"
+        value={
+          <>
             {operating.length}
-            <span className="text-muted-foreground text-lg"> / {rides.length}</span>
-          </CardTitle>
-          <CardAction>
-            <Badge variant="outline">
-              <ActivityIcon />
-              {operatingPct}%
-            </Badge>
-          </CardAction>
-        </CardHeader>
-        <CardFooter className="flex-col items-start gap-1.5 text-sm">
-          <div className="line-clamp-1 flex gap-2 font-medium">
-            {issues.length === 0 ? "All systems nominal" : `${issues.length} down or in refurb`}
-          </div>
-          <div className="text-muted-foreground">Live across the park</div>
-        </CardFooter>
-      </Card>
+            <span className="text-base font-normal text-blue-200/70"> / {rides.length}</span>
+          </>
+        }
+        sub={
+          issues.length === 0
+            ? `${operatingPct}% operational`
+            : `${issues.length} down or in refurb · ${operatingPct}%`
+        }
+      />
 
-      <Card className="@container/card">
-        <CardHeader>
-          <CardDescription>Average Wait</CardDescription>
-          <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {waits.length > 0 ? `${avgWait} min` : "—"}
-          </CardTitle>
-          <CardAction>
-            <Badge variant="outline">
-              <ClockIcon />
-              {waits.length} posted
-            </Badge>
-          </CardAction>
-        </CardHeader>
-        <CardFooter className="flex-col items-start gap-1.5 text-sm">
-          <div className="line-clamp-1 flex gap-2 font-medium">
-            {avgWait >= 45 ? (
-              <>
-                Heavy crowds right now <TrendingUpIcon className="size-4" />
-              </>
+      <StatItem
+        label="Average Wait"
+        value={waits.length > 0 ? `${avgWait} min` : "—"}
+        sub={
+          waits.length > 0 ? (
+            avgWait >= 45 ? (
+              <span className="inline-flex items-center gap-1">
+                Heavy crowds <TrendingUpIcon className="size-3" />
+              </span>
             ) : (
-              <>
-                Lines moving steadily <TrendingDownIcon className="size-4" />
-              </>
-            )}
-          </div>
-          <div className="text-muted-foreground">Standby, operating rides only</div>
-        </CardFooter>
-      </Card>
+              <span className="inline-flex items-center gap-1">
+                Moving steadily <TrendingDownIcon className="size-3" />
+              </span>
+            )
+          ) : (
+            "No waits posted"
+          )
+        }
+      />
 
-      <Card className="@container/card">
-        <CardHeader>
-          <CardDescription>Longest Wait</CardDescription>
-          <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {longest?.standbyWait != null ? `${longest.standbyWait} min` : "—"}
-          </CardTitle>
-          <CardAction>
-            <Badge variant="outline">
-              <TrendingUpIcon />
-              Peak
-            </Badge>
-          </CardAction>
-        </CardHeader>
-        <CardFooter className="flex-col items-start gap-1.5 text-sm">
-          <div className="line-clamp-1 flex gap-2 font-medium">
-            {longest?.name ?? "No waits posted"}
-          </div>
-          <div className="text-muted-foreground">Highest standby line in the park</div>
-        </CardFooter>
-      </Card>
+      <StatItem
+        label="Longest Wait"
+        value={longest?.standbyWait != null ? `${longest.standbyWait} min` : "—"}
+        sub={longest?.name ?? "No waits posted"}
+      />
 
-      <Card className="@container/card">
-        <CardHeader>
-          <CardDescription>{llLabel}</CardDescription>
-          <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {llInfos.length > 0 ? (
-              <>
-                {llSoldOut}
-                <span className="text-muted-foreground text-lg"> / {llInfos.length} sold out</span>
-              </>
-            ) : (
-              "—"
-            )}
-          </CardTitle>
-          <CardAction>
-            <Badge variant="outline">
-              <TicketIcon />
-              {isUniversal(operatorSlug)
-                ? "park-wide"
-                : avgLlDollars != null
-                  ? `$${avgLlDollars.toFixed(0)} single`
-                  : "n/a"}
-            </Badge>
-          </CardAction>
-        </CardHeader>
-        <CardFooter className="flex-col items-start gap-1.5 text-sm">
-          <div className="line-clamp-1 flex gap-2 font-medium">
-            {llInfos.length === 0
-              ? `No ${llLabel} at this park`
-              : llSoldOut === llInfos.length
-                ? "All return times gone"
-                : `${llInfos.length - llSoldOut} still available`}
-          </div>
-          <div className="text-muted-foreground">
-            {isUniversal(operatorSlug)
-              ? "Rides offering Express"
-              : "Rides offering Multi or Single LL"}
-          </div>
-        </CardFooter>
-      </Card>
+      <StatItem
+        label={llLabel}
+        value={
+          llInfos.length > 0 ? (
+            <>
+              {llSoldOut}
+              <span className="text-base font-normal text-blue-200/70">
+                {" "}
+                / {llInfos.length} sold out
+              </span>
+            </>
+          ) : (
+            "—"
+          )
+        }
+        sub={
+          llInfos.length === 0
+            ? `No ${llLabel} at this park`
+            : llSoldOut === llInfos.length
+              ? "All return times gone"
+              : `${llInfos.length - llSoldOut} still available`
+        }
+      />
     </div>
   );
 }

@@ -139,7 +139,7 @@ export function ParkWaitChart({
   );
 
   return (
-    <Card className={cn("@container/card", className)}>
+    <Card className={cn("@container/card rounded-b-none border-b-0", className)}>
       <CardHeader>
         <CardTitle>{attractionName ?? "Wait History"}</CardTitle>
         <CardDescription>{description}</CardDescription>
@@ -175,14 +175,14 @@ export function ParkWaitChart({
       </CardHeader>
       <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
         {attractionId == null ? (
-          <Empty className="h-[250px]">
+          <Empty className="h-[380px]">
             <EmptyTitle>No ride selected</EmptyTitle>
             <EmptyDescription>Pick an attraction from the board.</EmptyDescription>
           </Empty>
         ) : historyQ.isLoading ? (
           <Skeleton className="h-[250px] w-full" />
         ) : !hasData ? (
-          <Empty className="h-[250px]">
+          <Empty className="h-[380px]">
             <EmptyTitle>No data yet</EmptyTitle>
             <EmptyDescription>
               No {mode === "price" ? "pricing" : "wait"} samples for this metric in the selected
@@ -190,7 +190,7 @@ export function ParkWaitChart({
             </EmptyDescription>
           </Empty>
         ) : (
-          <ChartContainer config={chartConfig} className="aspect-auto h-[250px] w-full">
+          <ChartContainer config={chartConfig} className="aspect-auto h-[380px] w-full">
             <AreaChart data={data}>
               <defs>
                 <linearGradient id="fillPark" x1="0" y1="0" x2="0" y2="1">
@@ -235,14 +235,19 @@ export function ParkWaitChart({
               ) : (
                 <YAxis tickLine={false} axisLine={false} width={40} tickFormatter={(v) => `${v}`} />
               )}
-              <ChartTooltip cursor={false} isAnimationActive={false} content={<SpringTooltip />} />
+              <ChartTooltip
+                cursor={false}
+                isAnimationActive={false}
+                wrapperStyle={{ transition: "transform 90ms ease" }}
+                content={<SpringTooltip />}
+              />
               {mode === "price" ? (
                 <>
                   <Area
                     yAxisId="price"
                     dataKey="price"
                     type="monotone"
-                    animationDuration={250}
+                    animationDuration={500}
                     fill="url(#fillPark)"
                     stroke="var(--primary)"
                     connectNulls
@@ -252,7 +257,7 @@ export function ParkWaitChart({
                     dataKey="availPct"
                     name="Available"
                     type="monotone"
-                    animationDuration={250}
+                    animationDuration={500}
                     fill="url(#fillAvail)"
                     stroke="var(--chart-2)"
                     fillOpacity={1}
@@ -264,7 +269,7 @@ export function ParkWaitChart({
                   <Area
                     dataKey="maxWait"
                     type="monotone"
-                    animationDuration={250}
+                    animationDuration={500}
                     fill="url(#fillPark)"
                     stroke="var(--primary)"
                     fillOpacity={0.25}
@@ -273,7 +278,7 @@ export function ParkWaitChart({
                   <Area
                     dataKey="avgWait"
                     type="monotone"
-                    animationDuration={250}
+                    animationDuration={500}
                     fill="url(#fillPark)"
                     stroke="var(--primary)"
                     connectNulls
