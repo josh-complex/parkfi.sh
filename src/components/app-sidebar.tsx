@@ -24,6 +24,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarSeparator,
+  useSidebar,
 } from "#/components/ui/sidebar.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
@@ -47,6 +48,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const parks = parksQ.data;
 
   const navigate = useNavigate();
+  const { isMobile, setOpenMobile } = useSidebar();
+
+  // On mobile the sidebar is an overlay sheet, so collapse it once the user
+  // picks a destination.
+  const closeOnMobile = React.useCallback(() => {
+    if (isMobile) setOpenMobile(false);
+  }, [isMobile, setOpenMobile]);
 
   const byResort = React.useMemo(() => {
     if (!parks) return [];
@@ -69,6 +77,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <SidebarMenuItem>
             <SidebarMenuButton
               className="data-[slot=sidebar-menu-button]:p-1.5!"
+              onClick={closeOnMobile}
               render={<Link to="/" />}
             >
               <FerrisWheelIcon className="size-5!" />
@@ -86,6 +95,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   <SidebarMenuButton
                     tooltip={item.title}
                     isActive={item.to === "/" ? isDashboard : pathname.startsWith(item.to)}
+                    onClick={closeOnMobile}
                     render={<Link to={item.to} />}
                   >
                     {item.icon}
@@ -109,9 +119,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                       <SidebarMenuItem key={park.slug}>
                         <SidebarMenuButton
                           isActive={park.slug === effectiveSlug}
-                          onClick={() =>
-                            void navigate({ to: "/park/$slug", params: { slug: park.slug } })
-                          }
+                          onClick={() => {
+                            closeOnMobile();
+                            void navigate({ to: "/park/$slug", params: { slug: park.slug } });
+                          }}
                         >
                           <span>{park.name}</span>
                         </SidebarMenuButton>
@@ -126,7 +137,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarContent>
       <SidebarFooter>
         <div className="flex items-center justify-between px-2">
-          <Button variant="ghost" size="sm" render={<Link to="/disclaimers" />}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={closeOnMobile}
+            render={<Link to="/disclaimers" />}
+          >
             <ShieldAlertIcon />
             Disclaimers
           </Button>
