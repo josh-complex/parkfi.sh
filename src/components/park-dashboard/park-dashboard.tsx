@@ -4,11 +4,11 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { useTRPC } from "#/integrations/trpc/react.ts";
-import { Route } from "#/routes/index.tsx";
 
 import { ParkBoardTable } from "./park-board-table.tsx";
 import { ParkStatCards } from "./park-stat-cards.tsx";
 import { ParkWaitChart } from "./park-wait-chart.tsx";
+import { useSelection } from "./selection-context.tsx";
 import type { BoardItem } from "./types.ts";
 
 /** Default attraction to chart: the operating ride with the longest standby line. */
@@ -20,13 +20,12 @@ function pickDefault(board: Array<BoardItem>): BoardItem | null {
   return withWait[0] ?? rides[0] ?? null;
 }
 
-export function ParkDashboard() {
+export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
   const trpc = useTRPC();
   const parksQ = useQuery(trpc.parks.list.queryOptions());
   const parks = parksQ.data;
 
-  const { park: parkSlug } = Route.useSearch();
-  const activeSlug = parkSlug ?? parks?.[0]?.slug;
+  const activeSlug = parkSlug;
 
   const boardQ = useQuery({
     ...trpc.parks.board.queryOptions({ parkSlug: activeSlug ?? "" }),
@@ -34,7 +33,10 @@ export function ParkDashboard() {
   });
   const board = boardQ.data;
 
-  const [selected, setSelected] = React.useState<{ id: number; name: string } | null>(null);
+  // Selection is shared with the persistent map in the dash layout (see
+  // `selection-context.tsx`) so clicking a marker drives the chart and the
+  // selection survives navigation.
+  const { selected, setSelected } = useSelection();
 
   // When a park's board loads (or the park changes), default the charted ride
   // if the current selection isn't present in this board.
@@ -45,7 +47,7 @@ export function ParkDashboard() {
       const def = pickDefault(board);
       setSelected(def ? { id: def.id, name: def.name } : null);
     }
-  }, [board, selected]);
+  }, [board, selected, setSelected]);
 
   const operatorSlug = parks?.find((p) => p.slug === activeSlug)?.operatorSlug;
 
@@ -75,17 +77,20 @@ export function ParkDashboard() {
         </div>
       </div>
 
-      <div className="px-4 lg:px-6">
+      <div className="flex flex-col gap-4 px-4 lg:px-6">
+        {/* The map now lives in the dash layout as a shared element; the chart
+            it drives spans the full content column here. */}
         <ParkWaitChart
           attractionId={selected?.id ?? null}
           attractionName={selected?.name ?? null}
           operatorSlug={operatorSlug}
+          className="shadow-xs"
         />
         <ParkStatCards
           board={board}
           loading={boardQ.isLoading || !activeSlug}
           operatorSlug={operatorSlug}
-          className="rounded-b-lg border border-t-0 shadow-xs"
+          className="rounded-lg border shadow-xs"
         />
       </div>
 

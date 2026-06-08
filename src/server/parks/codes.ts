@@ -114,6 +114,62 @@ export function availabilityToQueueState(availability?: string | null): QueueSta
 }
 
 // ---------------------------------------------------------------------------
+// Map-pin categories (geo enrichment). Our taxonomy:
+//   thrill | attraction | water | show | dine | shop | character | info
+// ---------------------------------------------------------------------------
+
+export type MapCategory =
+  | "thrill"
+  | "attraction"
+  | "water"
+  | "show"
+  | "dine"
+  | "shop"
+  | "character"
+  | "info";
+
+/** Default pin class from a ThemeParks.wiki entityType (the geo backbone). */
+export function categoryFromEntityType(entityType?: string | null): MapCategory {
+  switch ((entityType ?? "").toUpperCase()) {
+    case "ATTRACTION":
+      return "attraction";
+    case "SHOW":
+      return "show";
+    case "RESTAURANT":
+      return "dine";
+    default:
+      return "info";
+  }
+}
+
+/**
+ * Disney explorer `pin` string -> our pin class (WDW override). The finder's pin
+ * vocabulary (verified live): activities, characters, fireworks, parades, shows,
+ * water-rides, thrill, info, dine, shop. Normalize tolerantly and fall back to
+ * null (caller keeps the entityType-derived default) on anything unknown.
+ */
+export function categoryFromDisneyPin(pin?: string | null): MapCategory | null {
+  const p = (pin ?? "").toLowerCase();
+  if (!p) return null;
+  if (p.includes("thrill") || p.includes("coaster")) return "thrill";
+  if (p.includes("water")) return "water";
+  if (p.includes("character")) return "character";
+  if (
+    p.includes("show") ||
+    p.includes("fireworks") ||
+    p.includes("parade") ||
+    p.includes("entertainment")
+  )
+    return "show";
+  if (p.includes("dining") || p.includes("dine") || p.includes("restaurant") || p.includes("food"))
+    return "dine";
+  if (p.includes("shop") || p.includes("merchandise") || p.includes("store")) return "shop";
+  if (p === "info") return "info";
+  if (p.includes("attraction") || p.includes("ride") || p.includes("activit")) return "attraction";
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Universal Orlando web-store (api.universalparks.com) helpers
 // ---------------------------------------------------------------------------
 

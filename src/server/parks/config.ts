@@ -22,6 +22,14 @@ export const config = {
    * Cookieless, bearer-gated only — see research/gated-feeds-report.md.
    */
   disneyTicketBase: process.env.DISNEY_TICKET_BASE ?? "https://disneyworld.disney.go.com",
+  /**
+   * Disney WDW "finder" explorer host — the geo enrichment source (park map
+   * center/zoom, pin categories, media). Cookieless GETs over plain HTTPS, same
+   * trust level as the availability calendar. Only used by the monthly geo cron.
+   */
+  disneyFinderBase:
+    process.env.DISNEY_FINDER_BASE ??
+    "https://disneyworld.disney.go.com/finder/api/v1/explorer-service",
   /** Universal Orlando web-store front (Akamai-protected SPA we drive in Chromium). */
   universalStoreUrl: process.env.UNIVERSAL_STORE_URL ?? "https://www.universalorlando.com",
   /** Universal commerce API host (gettickets + priceAndInventory/v2 live here). */

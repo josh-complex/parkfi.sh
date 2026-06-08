@@ -35,9 +35,17 @@ export const parksRouter = {
       operator_slug: string | null;
       operator_name: string | null;
       resort_name: string | null;
+      latitude: number | null;
+      longitude: number | null;
+      lat_min: number | null;
+      lat_max: number | null;
+      lng_min: number | null;
+      lng_max: number | null;
+      map_zoom: number | null;
     }>(sql`
       SELECT p.id, p.slug, p.name, p.timezone,
-             o.slug AS operator_slug, o.name AS operator_name, r.name AS resort_name
+             o.slug AS operator_slug, o.name AS operator_name, r.name AS resort_name,
+             p.latitude, p.longitude, p.lat_min, p.lat_max, p.lng_min, p.lng_max, p.map_zoom
       FROM parks p
       LEFT JOIN operators o ON o.id = p.operator_id
       LEFT JOIN resorts r ON r.id = p.resort_id
@@ -52,6 +60,13 @@ export const parksRouter = {
       operatorSlug: p.operator_slug,
       operatorName: p.operator_name,
       resortName: p.resort_name,
+      latitude: p.latitude,
+      longitude: p.longitude,
+      bounds:
+        p.lat_min != null && p.lat_max != null && p.lng_min != null && p.lng_max != null
+          ? { latMin: p.lat_min, latMax: p.lat_max, lngMin: p.lng_min, lngMax: p.lng_max }
+          : null,
+      mapZoom: p.map_zoom,
     }));
   }),
 
@@ -99,6 +114,9 @@ export const parksRouter = {
       observed_at: string | null;
       support_types: Array<number> | null;
       hist_standby_wait: number | null;
+      latitude: number | null;
+      longitude: number | null;
+      category: string | null;
     }>(sql`
         WITH park AS (SELECT id FROM parks WHERE slug = ${input.parkSlug}),
         latest_status AS (
@@ -149,7 +167,8 @@ export const parksRouter = {
                rt.state AS return_state,
                rt.return_start AS return_start, rt.return_end AS return_end,
                caps.qtypes AS support_types,
-               hist.hist_standby_wait
+               hist.hist_standby_wait,
+               a.latitude, a.longitude, a.category
         FROM attractions a
         LEFT JOIN latest_status ls ON ls.attraction_id = a.id
         LEFT JOIN latest_q sb ON sb.attraction_id = a.id AND sb.queue_type = 1
@@ -179,7 +198,148 @@ export const parksRouter = {
       returnTimeWindow: { start: r.return_start ?? null, end: r.return_end ?? null },
       supportsQueueTypes: (r.support_types ?? []).map(Number),
       histStandbyWait: r.hist_standby_wait,
+      latitude: r.latitude,
+      longitude: r.longitude,
+      category: r.category,
     }));
+  }),
+
+  /**
+   * Cross-park overview for the map dashboard: per-park live stats (avg standby
+   * wait, operating count, longest ride) for the markers, rolled up into a global
+   * headline and a per-resort (Disney vs Universal) split. Reuses the
+   * latest-per-attraction CTE shape from `board`.
+   */
+  overview: publicProcedure.query(async () => {
+    const result = await db.execute<{
+      id: string;
+      slug: string;
+      name: string;
+      latitude: number | null;
+      longitude: number | null;
+      operator_slug: string | null;
+      operator_name: string | null;
+      resort_name: string | null;
+      total_rides: number;
+      operating: number;
+      wait_samples: number;
+      avg_wait: number | null;
+      longest_name: string | null;
+      longest_wait: number | null;
+    }>(sql`
+      WITH latest_standby AS (
+        SELECT DISTINCT ON (q.attraction_id) q.attraction_id, q.wait_min
+        FROM queue_obs q
+        WHERE q.queue_type = 1 AND q.observed_at >= now() - INTERVAL '24 hours'
+        ORDER BY q.attraction_id, q.observed_at DESC
+      ),
+      latest_status AS (
+        SELECT DISTINCT ON (s.attraction_id) s.attraction_id, s.status
+        FROM attraction_status_obs s
+        ORDER BY s.attraction_id, s.observed_at DESC
+      ),
+      ride AS (
+        SELECT a.id, a.park_id, a.name,
+               lst.status AS status, lsb.wait_min AS wait_min
+        FROM attractions a
+        LEFT JOIN latest_status lst ON lst.attraction_id = a.id
+        LEFT JOIN latest_standby lsb ON lsb.attraction_id = a.id
+        WHERE a.active = true AND a.entity_type = 'ATTRACTION'
+      ),
+      park_agg AS (
+        SELECT park_id,
+               count(*) AS total_rides,
+               count(*) FILTER (WHERE status = 1) AS operating,
+               count(*) FILTER (WHERE status = 1 AND wait_min IS NOT NULL) AS wait_samples,
+               avg(wait_min) FILTER (WHERE status = 1 AND wait_min IS NOT NULL)::int AS avg_wait
+        FROM ride
+        GROUP BY park_id
+      ),
+      longest AS (
+        SELECT DISTINCT ON (park_id) park_id, name AS longest_name, wait_min AS longest_wait
+        FROM ride
+        WHERE status = 1 AND wait_min IS NOT NULL
+        ORDER BY park_id, wait_min DESC
+      )
+      SELECT p.id, p.slug, p.name, p.latitude, p.longitude,
+             o.slug AS operator_slug, o.name AS operator_name, r.name AS resort_name,
+             coalesce(pa.total_rides, 0) AS total_rides,
+             coalesce(pa.operating, 0) AS operating,
+             coalesce(pa.wait_samples, 0) AS wait_samples,
+             pa.avg_wait,
+             l.longest_name, l.longest_wait
+      FROM parks p
+      LEFT JOIN operators o ON o.id = p.operator_id
+      LEFT JOIN resorts r ON r.id = p.resort_id
+      LEFT JOIN park_agg pa ON pa.park_id = p.id
+      LEFT JOIN longest l ON l.park_id = p.id
+      WHERE p.active = true
+      ORDER BY r.name, p.name
+    `);
+
+    const parks = result.rows.map((p) => ({
+      id: Number(p.id),
+      slug: p.slug,
+      name: p.name,
+      latitude: p.latitude,
+      longitude: p.longitude,
+      operatorSlug: p.operator_slug,
+      operatorName: p.operator_name,
+      resortName: p.resort_name,
+      avgWait: p.avg_wait,
+      operating: Number(p.operating),
+      totalRides: Number(p.total_rides),
+      waitSamples: Number(p.wait_samples),
+      longest:
+        p.longest_name != null && p.longest_wait != null
+          ? { name: p.longest_name, wait: p.longest_wait }
+          : null,
+    }));
+
+    // Operating-sample-weighted mean = exact overall avg over rides with a wait.
+    const weighted = (items: Array<(typeof parks)[number]>) => {
+      let num = 0;
+      let den = 0;
+      for (const p of items) {
+        if (p.avgWait != null && p.waitSamples > 0) {
+          num += p.avgWait * p.waitSamples;
+          den += p.waitSamples;
+        }
+      }
+      return den > 0 ? Math.round(num / den) : null;
+    };
+
+    const busiest = parks
+      .filter((p) => p.avgWait != null)
+      .sort((a, b) => (b.avgWait ?? 0) - (a.avgWait ?? 0))[0];
+
+    const global = {
+      busiestParkSlug: busiest?.slug ?? null,
+      busiestParkName: busiest?.name ?? null,
+      busiestParkWait: busiest?.avgWait ?? null,
+      avgWait: weighted(parks),
+      operating: parks.reduce((s, p) => s + p.operating, 0),
+      totalRides: parks.reduce((s, p) => s + p.totalRides, 0),
+      parkCount: parks.length,
+    };
+
+    const byOperator = new Map<string, Array<(typeof parks)[number]>>();
+    for (const p of parks) {
+      const key = p.operatorSlug ?? "other";
+      const list = byOperator.get(key) ?? [];
+      list.push(p);
+      byOperator.set(key, list);
+    }
+    const resorts = [...byOperator.entries()].map(([operatorSlug, items]) => ({
+      operatorSlug,
+      operatorName: items[0]?.operatorName ?? null,
+      avgWait: weighted(items),
+      operating: items.reduce((s, p) => s + p.operating, 0),
+      totalRides: items.reduce((s, p) => s + p.totalRides, 0),
+      parkCount: items.length,
+    }));
+
+    return { parks, global, resorts };
   }),
 
   /**

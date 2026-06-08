@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useParams, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   ActivityIcon,
@@ -34,17 +34,16 @@ const NAV: Array<{ title: string; to: string; icon: React.ReactNode }> = [
 ];
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  const { pathname, locationSearch } = useRouterState({
-    select: (s) => ({ pathname: s.location.pathname, locationSearch: s.location.search }),
-  });
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const params = useParams({ strict: false }) as { slug?: string };
 
-  const isLiveBoard = pathname === "/";
-  const activeParkSlug = isLiveBoard
-    ? ((locationSearch as { park?: string }).park ?? undefined)
-    : undefined;
+  // The dashboard (overview + per-park) shares one shell, so the park list shows
+  // on both `/` and `/park/*`.
+  const isDashboard = pathname === "/" || pathname.startsWith("/park");
+  const activeParkSlug = params.slug;
 
   const trpc = useTRPC();
-  const parksQ = useQuery({ ...trpc.parks.list.queryOptions(), enabled: isLiveBoard });
+  const parksQ = useQuery({ ...trpc.parks.list.queryOptions(), enabled: isDashboard });
   const parks = parksQ.data;
 
   const navigate = useNavigate();
@@ -61,7 +60,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     return [...map.entries()].map(([resort, items]) => ({ resort, items }));
   }, [parks]);
 
-  const effectiveSlug = activeParkSlug ?? parks?.[0]?.slug;
+  const effectiveSlug = activeParkSlug;
 
   return (
     <Sidebar collapsible="offcanvas" {...props}>
@@ -86,7 +85,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <SidebarMenuItem key={item.to}>
                   <SidebarMenuButton
                     tooltip={item.title}
-                    isActive={item.to === "/" ? pathname === "/" : pathname.startsWith(item.to)}
+                    isActive={item.to === "/" ? isDashboard : pathname.startsWith(item.to)}
                     render={<Link to={item.to} />}
                   >
                     {item.icon}
@@ -98,7 +97,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {isLiveBoard && byResort.length > 0 && (
+        {isDashboard && byResort.length > 0 && (
           <>
             <SidebarSeparator />
             {byResort.map((group) => (
@@ -110,7 +109,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                       <SidebarMenuItem key={park.slug}>
                         <SidebarMenuButton
                           isActive={park.slug === effectiveSlug}
-                          onClick={() => void navigate({ to: "/", search: { park: park.slug } })}
+                          onClick={() =>
+                            void navigate({ to: "/park/$slug", params: { slug: park.slug } })
+                          }
                         >
                           <span>{park.name}</span>
                         </SidebarMenuButton>

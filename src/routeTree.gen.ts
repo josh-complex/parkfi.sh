@@ -13,9 +13,11 @@ import { Route as TicketsRouteImport } from './routes/tickets'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DisclaimersRouteImport } from './routes/disclaimers'
 import { Route as DiningRouteImport } from './routes/dining'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as DashRouteImport } from './routes/_dash'
+import { Route as DashIndexRouteImport } from './routes/_dash/index'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as DashParkSlugRouteImport } from './routes/_dash/park.$slug'
 
 const TicketsRoute = TicketsRouteImport.update({
   id: '/tickets',
@@ -37,10 +39,14 @@ const DiningRoute = DiningRouteImport.update({
   path: '/dining',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
+const DashRoute = DashRouteImport.update({
+  id: '/_dash',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashIndexRoute = DashIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => DashRoute,
 } as any)
 const ApiTrpcSplatRoute = ApiTrpcSplatRouteImport.update({
   id: '/api/trpc/$',
@@ -52,32 +58,41 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashParkSlugRoute = DashParkSlugRouteImport.update({
+  id: '/park/$slug',
+  path: '/park/$slug',
+  getParentRoute: () => DashRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
+  '/': typeof DashIndexRoute
   '/dining': typeof DiningRoute
   '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
   '/tickets': typeof TicketsRoute
+  '/park/$slug': typeof DashParkSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
   '/dining': typeof DiningRoute
   '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
   '/tickets': typeof TicketsRoute
+  '/': typeof DashIndexRoute
+  '/park/$slug': typeof DashParkSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
+  '/_dash': typeof DashRouteWithChildren
   '/dining': typeof DiningRoute
   '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
   '/tickets': typeof TicketsRoute
+  '/_dash/': typeof DashIndexRoute
+  '/_dash/park/$slug': typeof DashParkSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
 }
@@ -89,30 +104,34 @@ export interface FileRouteTypes {
     | '/disclaimers'
     | '/login'
     | '/tickets'
+    | '/park/$slug'
     | '/api/auth/$'
     | '/api/trpc/$'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/'
     | '/dining'
     | '/disclaimers'
     | '/login'
     | '/tickets'
+    | '/'
+    | '/park/$slug'
     | '/api/auth/$'
     | '/api/trpc/$'
   id:
     | '__root__'
-    | '/'
+    | '/_dash'
     | '/dining'
     | '/disclaimers'
     | '/login'
     | '/tickets'
+    | '/_dash/'
+    | '/_dash/park/$slug'
     | '/api/auth/$'
     | '/api/trpc/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
+  DashRoute: typeof DashRouteWithChildren
   DiningRoute: typeof DiningRoute
   DisclaimersRoute: typeof DisclaimersRoute
   LoginRoute: typeof LoginRoute
@@ -151,12 +170,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DiningRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
+    '/_dash': {
+      id: '/_dash'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof DashRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_dash/': {
+      id: '/_dash/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof DashIndexRouteImport
+      parentRoute: typeof DashRoute
     }
     '/api/trpc/$': {
       id: '/api/trpc/$'
@@ -172,11 +198,30 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_dash/park/$slug': {
+      id: '/_dash/park/$slug'
+      path: '/park/$slug'
+      fullPath: '/park/$slug'
+      preLoaderRoute: typeof DashParkSlugRouteImport
+      parentRoute: typeof DashRoute
+    }
   }
 }
 
+interface DashRouteChildren {
+  DashIndexRoute: typeof DashIndexRoute
+  DashParkSlugRoute: typeof DashParkSlugRoute
+}
+
+const DashRouteChildren: DashRouteChildren = {
+  DashIndexRoute: DashIndexRoute,
+  DashParkSlugRoute: DashParkSlugRoute,
+}
+
+const DashRouteWithChildren = DashRoute._addFileChildren(DashRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
+  DashRoute: DashRouteWithChildren,
   DiningRoute: DiningRoute,
   DisclaimersRoute: DisclaimersRoute,
   LoginRoute: LoginRoute,

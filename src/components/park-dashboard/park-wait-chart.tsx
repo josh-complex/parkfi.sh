@@ -19,6 +19,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "#/components/ui/chart.tsx";
+import { ConstructionState } from "#/components/ui/construction.tsx";
 import { Empty, EmptyDescription, EmptyTitle } from "#/components/ui/empty.tsx";
 import {
   Select,
@@ -40,7 +41,6 @@ function getQueueOptions(operatorSlug?: string | null) {
   // Disney Lightning Lane Single: uses queue type 4 (paid return time), has price
   return [
     { value: "1", label: "Standby wait", mode: "wait" as const },
-    { value: "2", label: "Single rider", mode: "wait" as const },
     isUniversal(operatorSlug)
       ? { value: "3", label: paidLabel, mode: "wait" as const }
       : { value: "4", label: paidLabel, mode: "price" as const },
@@ -139,7 +139,7 @@ export function ParkWaitChart({
   );
 
   return (
-    <Card className={cn("@container/card rounded-b-none border-b-0", className)}>
+    <Card className={cn("@container/card", className)}>
       <CardHeader>
         <CardTitle>{attractionName ?? "Wait History"}</CardTitle>
         <CardDescription>{description}</CardDescription>
@@ -182,13 +182,16 @@ export function ParkWaitChart({
         ) : historyQ.isLoading ? (
           <Skeleton className="h-[250px] w-full" />
         ) : !hasData ? (
-          <Empty className="h-[380px]">
-            <EmptyTitle>No data yet</EmptyTitle>
-            <EmptyDescription>
-              No {mode === "price" ? "pricing" : "wait"} samples for this metric in the selected
-              range.
-            </EmptyDescription>
-          </Empty>
+          <ConstructionState
+            className="h-[380px]"
+            title="Charting in progress"
+            description={
+              <>
+                We&rsquo;re still gathering {mode === "price" ? "pricing" : "wait"} history for{" "}
+                {attractionName ?? "this attraction"}. Check back soon.
+              </>
+            }
+          />
         ) : (
           <ChartContainer config={chartConfig} className="aspect-auto h-[380px] w-full">
             <AreaChart data={data}>

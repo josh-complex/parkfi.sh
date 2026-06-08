@@ -14,6 +14,7 @@ Deploy each as its own Railway service pointed at this same repo, with a distinc
 | --------------------- | ----------------------------- | ------------------- | ------------------------------------------------ |
 | `worker`              | `bun run worker`              | long-running, 1 rep | self-scheduling 60s poller; `/health` on `$PORT` |
 | `cron-tickets`        | `bun run cron:tickets`        | Cron `0 8 * * *`    | single-shot; gated ticket/Express feeds          |
+| `geo`                 | `bun run cron:geo`            | Cron `0 6 1 * *`    | monthly; geo enrichment of `parks`/`attractions` |
 | `dining-facilities`   | `bun run dining:facilities`   | Cron `0 6 * * 1`    | weekly; refresh `restaurant_dim` catalog         |
 | `dining-availability` | `bun run dining:availability` | Cron `*/10 * * * *` | frequent; dine-vas reservation sweep (logged-in) |
 
@@ -31,6 +32,13 @@ image / Railway Browserless template). For the Universal feeds, `cron-tickets`
 connects puppeteer-core to it over its WS/CDP endpoint. Simplest wiring: reference
 the template's `BROWSER_WS_ENDPOINT` (a full `wss://…?token=…` URL) into the cron
 — that's all it needs.
+
+The `geo` cron is keyless and needs only `DATABASE_URL`. It enriches the nullable
+geo columns on `parks` (center, bounds, `map_zoom`) and `attractions` (lat/lng,
+`category`) from ThemeParks.wiki `/entity/{uuid}/children` (the backbone, 100%
+coverage at both resorts), with the WDW finder explorer (`DISNEY_FINDER_BASE`)
+layered on for Disney pin categories + precise map center/zoom. Pure dimension
+enrichment — no fact table, no `ref_source`. Monthly is plenty (geo rarely moves).
 
 ## Environment
 

@@ -1,6 +1,11 @@
 import { config } from "../config.ts";
 import { themeparksBucket } from "../ratelimit.ts";
-import { LiveSchema, type LivePayload } from "../schemas.ts";
+import {
+  EntityChildrenSchema,
+  LiveSchema,
+  type EntityChildrenPayload,
+  type LivePayload,
+} from "../schemas.ts";
 
 export class UpstreamError extends Error {
   constructor(
@@ -38,6 +43,21 @@ export interface Destination {
   name: string;
   slug: string;
   parks: Array<DestinationPark>;
+}
+
+/**
+ * Children of a park entity (attractions/shows/restaurants) WITH geo `location`.
+ * The geo backbone: each child's `externalId` is the operator numeric id and the
+ * UUID is our `external_ids` join key. Used by the monthly geo cron, not the
+ * live poller, so it takes a rate-limit token like the other themeparks calls.
+ */
+export async function fetchChildren(
+  parkUuid: string,
+  signal: AbortSignal,
+): Promise<EntityChildrenPayload> {
+  await themeparksBucket.take();
+  const json = await getJson(`${config.themeparksBase}/entity/${parkUuid}/children`, signal);
+  return EntityChildrenSchema.parse(json);
 }
 
 /** All destinations (used by seeding / park discovery). */

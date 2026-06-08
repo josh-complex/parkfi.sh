@@ -62,6 +62,83 @@ export const LiveSchema = z.object({
 });
 export type LivePayload = z.infer<typeof LiveSchema>;
 
+/**
+ * ThemeParks.wiki `/entity/{uuid}/children` — the geo backbone. Returns every
+ * child entity (attractions, shows, restaurants) with a `location` block for
+ * ~100% of children at both Disney and Universal, keyed by the same UUID our
+ * `attractions` rows map to via `external_ids` (source THEMEPARKS_WIKI). The
+ * `externalId` is the operator's own numeric id (Disney's `80010199`), the join
+ * onward to the Disney explorer. Tolerant: location is optional/nullable.
+ */
+const EntityLocation = z
+  .object({
+    latitude: z.number().nullable().optional(),
+    longitude: z.number().nullable().optional(),
+  })
+  .nullable()
+  .optional();
+
+export const EntityChildSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  entityType: z.string(),
+  slug: z.string().nullable().optional(),
+  externalId: z.string().nullable().optional(),
+  location: EntityLocation,
+});
+export type EntityChild = z.infer<typeof EntityChildSchema>;
+
+export const EntityChildrenSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().optional(),
+  entityType: z.string().optional(),
+  timezone: z.string().optional(),
+  location: EntityLocation,
+  children: z.array(EntityChildSchema).default([]),
+});
+export type EntityChildrenPayload = z.infer<typeof EntityChildrenSchema>;
+
+// ---------------------------------------------------------------------------
+// Disney "finder" explorer (disneyworld.disney.go.com/finder/api/v1) — the WDW
+// geo *enrichment* layer (pin categories). Cookieless GET, same trust level as
+// the availability calendar:
+//   details-entity-simple/wdw/{slug}/{date}/ -> mapData.location.markers[]
+// NB: the map `defaults` (center/zoom/maxBounds) are resort-wide (identical for
+// all four parks), so per-park center/bounds come from the ThemeParks.wiki child
+// centroid, not here — this feed is used ONLY for the per-marker `pin` category.
+// `card.id` is "80010199;entityType=Attraction"; the numeric prefix before ';'
+// joins back to the ThemeParks.wiki child's `externalId` numeric prefix.
+// ---------------------------------------------------------------------------
+
+const DisneyParkMarker = z.object({
+  lat: z.union([z.number(), z.string()]).optional(),
+  lng: z.union([z.number(), z.string()]).optional(),
+  pin: z.string().nullable().optional(),
+  card: z
+    .object({
+      id: z.string().optional(),
+      name: z.string().optional(),
+      media: z.unknown().optional(),
+    })
+    .partial()
+    .optional(),
+});
+
+export const DisneyParkDetailSchema = z.object({
+  mapData: z
+    .object({
+      location: z
+        .object({
+          markers: z.array(DisneyParkMarker).default([]),
+        })
+        .partial()
+        .optional(),
+    })
+    .partial()
+    .optional(),
+});
+export type DisneyParkDetail = z.infer<typeof DisneyParkDetailSchema>;
+
 // queue-times.com — wait times + open/closed only (degraded fallback)
 export const QueueTimesSchema = z.object({
   lands: z

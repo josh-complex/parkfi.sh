@@ -4,6 +4,7 @@ import {
   boolean,
   char,
   date,
+  doublePrecision,
   index,
   integer,
   pgTable,
@@ -93,6 +94,17 @@ export const parks = pgTable("parks", {
   slug: text("slug").notNull().unique(),
   timezone: text("timezone").notNull(),
   active: boolean("active").notNull().default(true),
+  // Geo (nullable — enriched monthly by services/geo). `latitude`/`longitude`
+  // are the park center; lat/lng min/max are the bounds for a camera fit; the
+  // Disney explorer supplies a precise center + `mapZoom`, others are derived
+  // from the centroid/bounds of the park's child attractions.
+  latitude: doublePrecision("latitude"),
+  longitude: doublePrecision("longitude"),
+  latMin: doublePrecision("lat_min"),
+  latMax: doublePrecision("lat_max"),
+  lngMin: doublePrecision("lng_min"),
+  lngMax: doublePrecision("lng_max"),
+  mapZoom: integer("map_zoom"),
 });
 
 export const attractions = pgTable(
@@ -107,6 +119,13 @@ export const attractions = pgTable(
     // ATTRACTION | SHOW | RESTAURANT
     entityType: text("entity_type").notNull().default("ATTRACTION"),
     active: boolean("active").notNull().default(true),
+    // Geo (nullable — enriched monthly by services/geo from ThemeParks.wiki
+    // child coords). `category` is the map-pin class derived from entityType and
+    // overridden by the Disney explorer `pin` for WDW:
+    // thrill|attraction|water|show|dine|shop|character|info.
+    latitude: doublePrecision("latitude"),
+    longitude: doublePrecision("longitude"),
+    category: text("category"),
   },
   (t) => [index("attractions_park_slug_idx").on(t.parkId, t.slug)],
 );
