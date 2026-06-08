@@ -35,6 +35,11 @@ function escapeHtml(s: string): string {
 const ORLANDO_CENTER: [number, number] = [-81.51, 28.43];
 const ORLANDO_ZOOM = 10.5;
 
+// Camera fly duration. Matched to the shared-map box morph (MORPH_MS in
+// map-stage.tsx) so that, on navigation, the camera and the container settle
+// together rather than one finishing visibly after the other.
+const MAP_FLY_MS = 800;
+
 /**
  * Keyless raster basemap, per the app theme:
  *  - **light** → OpenStreetMap "Standard" — the colorful, detailed style with
@@ -126,12 +131,15 @@ export function ParkMap({
   activeSlug,
   selectedId,
   onSelectAttraction,
+  onMapRef,
 }: {
   activeSlug: string | null;
   /** Currently charted attraction — its marker is highlighted. */
   selectedId?: number | null;
   /** Clicking an attraction marker selects it (drives the wait chart). */
   onSelectAttraction?: (item: { id: number; name: string }) => void;
+  /** Exposes the live maplibre instance so a parent can resize it mid-animation. */
+  onMapRef?: (map: maplibregl.Map | null) => void;
 }) {
   const trpc = useTRPC();
   const navigate = useNavigate();
@@ -181,9 +189,11 @@ export function ParkMap({
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     map.on("load", () => setReady(true));
     mapRef.current = map;
+    onMapRef?.(map);
     return () => {
       map.remove();
       mapRef.current = null;
+      onMapRef?.(null);
       setReady(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -323,7 +333,7 @@ export function ParkMap({
       }
       const b = new maplibregl.LngLatBounds();
       for (const p of coords) b.extend([p.longitude, p.latitude]);
-      map.fitBounds(b, { padding: 80, maxZoom: 12, duration: 900 });
+      map.fitBounds(b, { padding: 80, maxZoom: 12, duration: MAP_FLY_MS });
       void map.once("moveend", () => map.setMaxBounds(paddedBounds(b, 0.6)));
       return;
     }
@@ -340,7 +350,7 @@ export function ParkMap({
           [bounds.lngMin, bounds.latMin],
           [bounds.lngMax, bounds.latMax],
         ],
-        { padding: 60, maxZoom: 17, duration: 1100 },
+        { padding: 60, maxZoom: 17, duration: MAP_FLY_MS },
       );
       void map.once("moveend", () => map.setMaxBounds(zoomOutBounds(bounds)));
     } else if (park.latitude != null && park.longitude != null) {
@@ -348,7 +358,7 @@ export function ParkMap({
       map.flyTo({
         center: [park.longitude, park.latitude],
         zoom: park.mapZoom ?? 15,
-        duration: 1100,
+        duration: MAP_FLY_MS,
       });
     }
   }, [activeSlug, overview, parks, ready]);

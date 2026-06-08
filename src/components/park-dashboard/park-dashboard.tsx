@@ -5,6 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
+import { MapSlot } from "#/components/park-map/map-stage.tsx";
+
 import { ParkBoardTable } from "./park-board-table.tsx";
 import { ParkStatCards } from "./park-stat-cards.tsx";
 import { ParkWaitChart } from "./park-wait-chart.tsx";
@@ -78,14 +80,18 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
       </div>
 
       <div className="flex flex-col gap-4 px-4 lg:px-6">
-        {/* The map now lives in the dash layout as a shared element; the chart
-            it drives spans the full content column here. */}
-        <ParkWaitChart
-          attractionId={selected?.id ?? null}
-          attractionName={selected?.name ?? null}
-          operatorSlug={operatorSlug}
-          className="shadow-xs"
-        />
+        {/* Map and wait chart share a row at equal width; the board table spans
+            the full column underneath them. The map cell is a shared-layout
+            slot — the live map morphs in from the overview hero. */}
+        <div className="grid items-stretch gap-4 lg:grid-cols-2">
+          <MapSlot className="relative h-[320px] overflow-hidden rounded-lg border shadow-xs lg:h-auto lg:min-h-[460px]" />
+          <ParkWaitChart
+            attractionId={selected?.id ?? null}
+            attractionName={selected?.name ?? null}
+            operatorSlug={operatorSlug}
+            className="shadow-xs"
+          />
+        </div>
         <ParkStatCards
           board={board}
           loading={boardQ.isLoading || !activeSlug}

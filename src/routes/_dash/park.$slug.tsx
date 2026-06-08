@@ -10,9 +10,9 @@ function ParkPage() {
   return (
     <motion.div
       key={slug}
-      initial={{ opacity: 0, x: 16 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ type: "spring", stiffness: 220, damping: 28 }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.25 }}
     >
       <ParkDashboard parkSlug={slug} />
     </motion.div>
