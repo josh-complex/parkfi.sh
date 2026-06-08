@@ -106,6 +106,36 @@ function StatusBadge({ status }: { status: string | null }) {
   return <Badge variant={STATUS_BADGE[label] ?? "outline"}>{label.toLowerCase()}</Badge>;
 }
 
+/**
+ * Attraction name cell: a leading thumbnail + a secondary tags/height line when
+ * Disney enrichment (`meta`) is present; rows without meta (Universal, or
+ * un-enriched) keep the plain text-only look.
+ */
+function AttractionCell({ item }: { item: BoardItem }) {
+  const meta = item.meta;
+  const subtitle = [meta?.tags?.join(" · "), meta?.heightRequirement].filter(Boolean).join(" · ");
+  return (
+    <div className="flex min-w-0 items-center gap-2.5">
+      {meta?.imageThumbUrl ? (
+        <img
+          src={meta.imageThumbUrl}
+          alt=""
+          loading="lazy"
+          className="size-9 shrink-0 rounded object-cover"
+        />
+      ) : null}
+      <div className="min-w-0">
+        <span className="block truncate">{item.name}</span>
+        {subtitle ? (
+          <span className="text-muted-foreground block truncate text-xs font-normal">
+            {subtitle}
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function PaidLineCell({
   item,
   operatorSlug,
@@ -255,7 +285,7 @@ export function ParkBoardTable({
                   className={cn("cursor-pointer", item.id === selectedId && "bg-muted/60")}
                 >
                   <TableCell className="max-w-0 w-full font-medium">
-                    <span className="block truncate">{item.name}</span>
+                    <AttractionCell item={item} />
                   </TableCell>
                   <TableCell>
                     <StatusBadge status={item.status} />

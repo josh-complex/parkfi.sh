@@ -19,6 +19,8 @@ import { useTheme } from "next-themes";
 
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
+import type { BoardItem } from "#/components/park-dashboard/types.ts";
+
 import "maplibre-gl/dist/maplibre-gl.css";
 
 /** Escape user-facing strings before injecting into marker/popup innerHTML. */
@@ -30,15 +32,61 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/**
+ * Build the attraction popup body. Disney rides carry rich `meta` (hero image,
+ * tags, height/land, detail page); Universal (and un-enriched rows) degrade to
+ * just the name + live wait line — no broken image. Maplibre's popup background
+ * is always white, so fixed dark text (theme tokens would vanish in dark mode).
+ */
+function attractionPopupHtml(a: BoardItem, waitLabel: string): string {
+  const meta = a.meta;
+  const hero =
+    (meta?.imageHeroUrl ?? meta?.imageThumbUrl)
+      ? `<img src="${escapeHtml((meta?.imageHeroUrl ?? meta?.imageThumbUrl)!)}" alt="${escapeHtml(
+          meta?.imageAlt ?? a.name,
+        )}" class="mb-1.5 h-24 w-full rounded object-cover" loading="lazy" />`
+      : "";
+  const tags =
+    meta?.tags && meta.tags.length > 0
+      ? `<div class="mt-1 flex flex-wrap gap-1">${meta.tags
+          .map(
+            (t) =>
+              `<span class="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600">${escapeHtml(
+                t,
+              )}</span>`,
+          )
+          .join("")}</div>`
+      : "";
+  const detailBits = [meta?.heightRequirement, meta?.land].filter(Boolean) as Array<string>;
+  const detail =
+    detailBits.length > 0
+      ? `<div class="mt-1 text-[11px] text-neutral-500">${detailBits
+          .map(escapeHtml)
+          .join(" · ")}</div>`
+      : "";
+  const moreInfo = meta?.detailUrl
+    ? `<a href="${escapeHtml(
+        meta.detailUrl,
+      )}" target="_blank" rel="noreferrer" class="mt-1.5 inline-block text-[11px] font-medium text-blue-600 hover:underline">More info ↗</a>`
+    : "";
+  return `<div class="w-44 px-0.5">${hero}<div class="text-xs font-semibold text-neutral-900">${escapeHtml(
+    a.name,
+  )}</div><div class="text-[11px] text-neutral-500">${waitLabel}</div>${tags}${detail}${moreInfo}</div>`;
+}
+
 // Orlando theme-park area — fallback view before park coords load (covers WDW +
 // Universal Orlando).
 const ORLANDO_CENTER: [number, number] = [-81.51, 28.43];
 const ORLANDO_ZOOM = 10.5;
 
-// Camera fly duration. Matched to the shared-map box morph (MORPH_MS in
-// map-stage.tsx) so that, on navigation, the camera and the container settle
-// together rather than one finishing visibly after the other.
+// Camera fly duration.
 const MAP_FLY_MS = 800;
+// Must match MORPH_MS in map-stage.tsx (kept local to avoid a circular import).
+// We wait this long after a navigation before flying so the shared-map box has
+// finished morphing to its destination size — fitBounds reads the container's
+// pixel dimensions, so flying before the box settles frames the view for the
+// wrong size. Layout first, then zoom.
+const MORPH_MS = 420;
 
 /**
  * Keyless raster basemap, per the app theme:
@@ -289,13 +337,7 @@ export function ParkMap({
         popupRef.current?.remove();
         popupRef.current = new maplibregl.Popup({ offset: 16, closeButton: false })
           .setLngLat(lngLat)
-          .setHTML(
-            // Maplibre's popup background is always white, so use fixed dark text
-            // (theme tokens would vanish in dark mode).
-            `<div class="px-0.5"><div class="text-xs font-semibold text-neutral-900">${escapeHtml(
-              a.name,
-            )}</div><div class="text-[11px] text-neutral-500">${waitLabel}</div></div>`,
-          )
+          .setHTML(attractionPopupHtml(a, waitLabel))
           .addTo(map);
         map.easeTo({ center: lngLat, duration: 500 });
       });
@@ -315,10 +357,13 @@ export function ParkMap({
     }
   }, [selectedId, board, ready]);
 
-  // Camera: fit both resorts on the overview, fly into the active park.
-  React.useEffect(() => {
+  // Camera: fit both resorts on the overview, fly into the active park. Built
+  // as a closure recomputed each render and stashed in a ref so the delayed
+  // scheduler below always reads fresh data without re-firing the fly on every
+  // query refetch.
+  const runFly = () => {
     const map = mapRef.current;
-    if (!map || !ready) return;
+    if (!map) return;
 
     if (!activeSlug) {
       // Overview/home: fit both resorts, then cap pan/zoom-out to that area.
@@ -361,7 +406,20 @@ export function ParkMap({
         duration: MAP_FLY_MS,
       });
     }
-  }, [activeSlug, overview, parks, ready]);
+  };
+  const runFlyRef = React.useRef(runFly);
+  runFlyRef.current = runFly;
+
+  // Schedule the fly after the box morph settles (layout first, then zoom). Keyed
+  // on the navigation target and data *presence* (stable booleans) — not the
+  // data objects — so a background refetch can't queue a second, competing fly.
+  const hasOverview = (overview?.parks?.length ?? 0) > 0;
+  const hasParks = (parks?.length ?? 0) > 0;
+  React.useEffect(() => {
+    if (!ready) return;
+    const t = setTimeout(() => runFlyRef.current(), MORPH_MS);
+    return () => clearTimeout(t);
+  }, [activeSlug, ready, hasOverview, hasParks]);
 
   if (!mounted) {
     return <div className="size-full bg-muted" aria-hidden />;

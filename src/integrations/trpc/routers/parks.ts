@@ -117,6 +117,13 @@ export const parksRouter = {
       latitude: number | null;
       longitude: number | null;
       category: string | null;
+      meta_image_thumb_url: string | null;
+      meta_image_hero_url: string | null;
+      meta_image_alt: string | null;
+      meta_detail_url: string | null;
+      meta_land: string | null;
+      meta_height_requirement: string | null;
+      meta_tags: Array<string> | null;
     }>(sql`
         WITH park AS (SELECT id FROM parks WHERE slug = ${input.parkSlug}),
         latest_status AS (
@@ -168,7 +175,14 @@ export const parksRouter = {
                rt.return_start AS return_start, rt.return_end AS return_end,
                caps.qtypes AS support_types,
                hist.hist_standby_wait,
-               a.latitude, a.longitude, a.category
+               a.latitude, a.longitude, a.category,
+               m.image_thumb_url AS meta_image_thumb_url,
+               m.image_hero_url AS meta_image_hero_url,
+               m.image_alt AS meta_image_alt,
+               m.detail_url AS meta_detail_url,
+               m.land AS meta_land,
+               m.height_requirement AS meta_height_requirement,
+               m.tags AS meta_tags
         FROM attractions a
         LEFT JOIN latest_status ls ON ls.attraction_id = a.id
         LEFT JOIN latest_q sb ON sb.attraction_id = a.id AND sb.queue_type = 1
@@ -176,6 +190,7 @@ export const parksRouter = {
         LEFT JOIN latest_q rt ON rt.attraction_id = a.id AND rt.queue_type = 3
         LEFT JOIN caps ON caps.attraction_id = a.id
         LEFT JOIN hist ON hist.attraction_id = a.id
+        LEFT JOIN attraction_meta m ON m.attraction_id = a.id
         WHERE a.park_id = (SELECT id FROM park) AND a.active = true
         ORDER BY a.name
       `);
@@ -201,6 +216,23 @@ export const parksRouter = {
       latitude: r.latitude,
       longitude: r.longitude,
       category: r.category,
+      meta:
+        r.meta_image_thumb_url != null ||
+        r.meta_image_hero_url != null ||
+        r.meta_detail_url != null ||
+        r.meta_land != null ||
+        r.meta_height_requirement != null ||
+        (r.meta_tags != null && r.meta_tags.length > 0)
+          ? {
+              imageThumbUrl: r.meta_image_thumb_url,
+              imageHeroUrl: r.meta_image_hero_url,
+              imageAlt: r.meta_image_alt,
+              detailUrl: r.meta_detail_url,
+              land: r.meta_land,
+              heightRequirement: r.meta_height_requirement,
+              tags: r.meta_tags ?? [],
+            }
+          : null,
     }));
   }),
 

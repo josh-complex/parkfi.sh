@@ -114,11 +114,25 @@ const DisneyParkMarker = z.object({
   lat: z.union([z.number(), z.string()]).optional(),
   lng: z.union([z.number(), z.string()]).optional(),
   pin: z.string().nullable().optional(),
+  // Three-group array-of-arrays of human-readable labels: experience tags,
+  // cuisines/price, and a trailing `[park, land]` location group. Ordering is
+  // heuristic (see parseDisneyFacets) so we stay tolerant of shape drift; null
+  // slots appear in the wild, so each group filters them out to a clean string[].
+  facets: z
+    .array(z.array(z.string().nullable()).transform((g) => g.filter((x): x is string => x != null)))
+    .optional(),
   card: z
     .object({
       id: z.string().optional(),
       name: z.string().optional(),
-      media: z.unknown().optional(),
+      // `desktop` is the ~90px thumbnail (resizable to hero via its
+      // mwImage/1/{w}/{h}/ segment); `url` is the relative attraction-page path.
+      media: z
+        .object({ desktop: z.string().optional(), alt: z.string().optional() })
+        .partial()
+        .nullable()
+        .optional(),
+      url: z.string().optional(),
     })
     .partial()
     .optional(),

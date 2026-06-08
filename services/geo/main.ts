@@ -23,10 +23,12 @@ loadEnv({ path: [".env.local", ".env"] });
 import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
-import { externalIds } from "#/db/schema.ts";
+import { attractionMeta, externalIds } from "#/db/schema.ts";
 import {
   categoryFromDisneyPin,
   categoryFromEntityType,
+  disneyHeroUrl,
+  parseDisneyFacets,
   Source,
   type MapCategory,
 } from "#/server/parks/codes.ts";
@@ -145,6 +147,38 @@ async function overrideCategories(
   }
 }
 
+/** Upsert per-attraction Disney enrichment, refreshing every field on re-crawl. */
+async function upsertAttractionMeta(
+  rows: Array<typeof attractionMeta.$inferInsert>,
+): Promise<void> {
+  for (let i = 0; i < rows.length; i += 500) {
+    await db
+      .insert(attractionMeta)
+      .values(rows.slice(i, i + 500))
+      .onConflictDoUpdate({
+        target: attractionMeta.attractionId,
+        set: {
+          imageThumbUrl: sql`excluded.image_thumb_url`,
+          imageHeroUrl: sql`excluded.image_hero_url`,
+          imageAlt: sql`excluded.image_alt`,
+          detailUrl: sql`excluded.detail_url`,
+          land: sql`excluded.land`,
+          heightRequirement: sql`excluded.height_requirement`,
+          tags: sql`excluded.tags`,
+          source: sql`excluded.source`,
+          updatedAt: sql`now()`,
+        },
+      });
+  }
+}
+
+/** Resolve a finder `card.url` (usually a relative path) to an absolute URL. */
+function resolveDetailUrl(url?: string | null): string | null {
+  if (!url) return null;
+  if (/^https?:\/\//i.test(url)) return url;
+  return `${config.disneyTicketBase}${url.startsWith("/") ? "" : "/"}${url}`;
+}
+
 interface Bounds {
   latMin: number;
   latMax: number;
@@ -256,15 +290,16 @@ async function ingestChildren(park: ParkRow): Promise<Map<string, number>> {
 
 /**
  * Step 3 (Disney only): the finder explorer overrides `category` from each
- * marker's `pin`. The map `defaults` are resort-wide (not per-park), so park
- * center/bounds stay as the child-centroid from step 2 — this step only touches
- * categories.
+ * marker's `pin` AND captures the rich per-attraction card metadata (hero image,
+ * detail page, ride tags, height requirement, land) into `attraction_meta`. The
+ * map `defaults` are resort-wide (not per-park), so park center/bounds stay as
+ * the child-centroid from step 2 — this step only touches categories + meta.
  */
 async function enrichDisneyPark(
   park: ParkRow,
   numericToAttraction: Map<string, number>,
   today: string,
-): Promise<number> {
+): Promise<void> {
   const detail = await fetchParkDetail(
     park.slug,
     today,
@@ -273,19 +308,36 @@ async function enrichDisneyPark(
   const loc = detail.mapData?.location;
 
   const overrides: Array<{ id: number; category: MapCategory }> = [];
+  const metaRows: Array<typeof attractionMeta.$inferInsert> = [];
   for (const marker of loc?.markers ?? []) {
-    const cat = categoryFromDisneyPin(marker.pin);
-    if (!cat) continue;
     // card.id is "80010199;entityType=Attraction" — the numeric prefix joins back.
     const numeric = marker.card?.id?.split(";")[0];
     if (!numeric) continue;
     const attractionId = numericToAttraction.get(numeric);
     if (attractionId == null) continue;
-    overrides.push({ id: attractionId, category: cat });
+
+    const cat = categoryFromDisneyPin(marker.pin);
+    if (cat) overrides.push({ id: attractionId, category: cat });
+
+    const thumb = marker.card?.media?.desktop ?? null;
+    const { land, heightRequirement, tags } = parseDisneyFacets(marker.facets);
+    metaRows.push({
+      attractionId,
+      imageThumbUrl: thumb,
+      imageHeroUrl: disneyHeroUrl(thumb),
+      imageAlt: marker.card?.media?.alt ?? null,
+      detailUrl: resolveDetailUrl(marker.card?.url),
+      land,
+      heightRequirement,
+      tags,
+      source: Source.DISNEY_DIRECT,
+    });
   }
   if (overrides.length > 0) await overrideCategories(overrides);
-  console.log(`[geo] ${park.slug}: ${overrides.length} categories enriched from Disney pins`);
-  return overrides.length;
+  if (metaRows.length > 0) await upsertAttractionMeta(metaRows);
+  console.log(
+    `[geo] ${park.slug}: ${overrides.length} categories enriched, ${metaRows.length} meta rows from Disney finder`,
+  );
 }
 
 // --- orchestration --------------------------------------------------------
@@ -315,7 +367,7 @@ async function main() {
     // Disney parks only — the finder explorer is WDW-specific.
     if (park.operatorSlug === "disney" && DISNEY_FINDER_SLUGS.has(park.slug)) {
       await runStep(`disney enrich ${park.slug}`, () =>
-        enrichDisneyPark(park, numericToAttraction, today).then(() => undefined),
+        enrichDisneyPark(park, numericToAttraction, today),
       );
     }
   }

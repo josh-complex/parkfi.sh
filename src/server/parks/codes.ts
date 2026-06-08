@@ -169,6 +169,57 @@ export function categoryFromDisneyPin(pin?: string | null): MapCategory | null {
   return null;
 }
 
+/**
+ * Rewrite a Disney finder thumbnail URL's resize segment to a larger hero size.
+ * The finder serves ~90px thumbnails via a `/resize/mwImage/1/{w}/{h}/75/`
+ * segment; Disney's own `transcodeTemplate` reuses the same `{width}/{height}`
+ * slots, so swapping in 800x450 yields a clean hero. Returns null when the URL
+ * doesn't carry the expected segment (degrade to the thumbnail).
+ */
+export function disneyHeroUrl(thumbUrl?: string | null): string | null {
+  if (!thumbUrl) return null;
+  const re = /\/resize\/mwImage\/1\/\d+\/\d+\/75\//;
+  if (!re.test(thumbUrl)) return null;
+  return thumbUrl.replace(re, "/resize/mwImage/1/800/450/75/");
+}
+
+export interface DisneyFacetInfo {
+  land: string | null;
+  heightRequirement: string | null;
+  tags: Array<string>;
+}
+
+/**
+ * Parse a Disney finder marker's `facets` (a 3-group array-of-arrays of labels)
+ * into structured fields. Facet ordering is a heuristic, so each extraction
+ * degrades to null/empty rather than throwing on an unexpected shape:
+ *  - heightRequirement = first label (any group) that looks like a height rule
+ *  - land              = last element of the LAST group (the [park, land] group)
+ *  - tags              = every label in the non-location groups, minus the
+ *                        height label
+ */
+export function parseDisneyFacets(facets?: Array<Array<string>> | null): DisneyFacetInfo {
+  const groups = (facets ?? []).filter((g) => Array.isArray(g) && g.length > 0);
+  if (groups.length === 0) return { land: null, heightRequirement: null, tags: [] };
+
+  const heightRe = /\d+\s*"|taller|any height|height/i;
+  const all = groups.flat();
+  const heightRequirement = all.find((label) => heightRe.test(label)) ?? null;
+
+  // The last group is the location group ([park, land]); its last element is the land.
+  const lastGroup = groups[groups.length - 1];
+  const land = lastGroup[lastGroup.length - 1] ?? null;
+
+  // Tags come from every group EXCEPT the trailing location group, with the
+  // height label removed (it's surfaced separately).
+  const tags = groups
+    .slice(0, -1)
+    .flat()
+    .filter((label) => label !== heightRequirement);
+
+  return { land, heightRequirement, tags };
+}
+
 // ---------------------------------------------------------------------------
 // Universal Orlando web-store (api.universalparks.com) helpers
 // ---------------------------------------------------------------------------

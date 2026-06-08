@@ -131,6 +131,30 @@ export const attractions = pgTable(
 );
 
 /**
+ * Optional per-attraction enrichment from the Disney explorer (one row per
+ * enriched attraction, absent for Universal — which has no explorer endpoint).
+ * Kept out of `attractions` so that table stays lean: this is the rich card
+ * metadata (hero image, official detail page, ride tags, height requirement,
+ * land) the finder marker carries. Refreshed by the monthly geo cron.
+ */
+export const attractionMeta = pgTable("attraction_meta", {
+  attractionId: bigint("attraction_id", { mode: "number" })
+    .primaryKey()
+    .references(() => attractions.id),
+  imageThumbUrl: text("image_thumb_url"),
+  imageHeroUrl: text("image_hero_url"),
+  imageAlt: text("image_alt"),
+  detailUrl: text("detail_url"),
+  land: text("land"),
+  heightRequirement: text("height_requirement"),
+  tags: text("tags").array().notNull().default([]),
+  source: smallint("source")
+    .notNull()
+    .references(() => refSource.id),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
  * Source-agnostic ID mapping: add or swap a feed without rewriting facts.
  * entityKind ∈ 'park' | 'attraction' | 'restaurant'
  */
