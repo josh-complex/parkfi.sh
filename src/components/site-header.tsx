@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { PanelLeftIcon } from "lucide-react";
 
-import { NotificationBell } from "#/components/notifications/notification-bell.tsx";
+import { NotificationCenter } from "#/components/notifications/notification-center.tsx";
 import { ThemeToggle } from "#/components/theme-toggle.tsx";
 import { MenuIcon, type MenuIconHandle } from "#/components/ui/anim-icons/menu.tsx";
 import { useSidebar } from "#/components/ui/sidebar.tsx";
@@ -70,7 +70,7 @@ export function SiteHeader({
         {isMobile && (
           <div className="flex items-center gap-1">
             <ThemeToggle />
-            <NotificationBell />
+            <NotificationCenter />
           </div>
         )}
 
@@ -85,11 +85,13 @@ export function SiteHeader({
         </h1>
 
         <div className="ml-auto flex items-center gap-1">
-          {/* Desktop: bell + theme on the right when the sidebar is collapsed. */}
-          {showActions && !isMobile && (
+          {/* Desktop: the notification bell is always reachable from the top bar;
+              the theme toggle only appears here when collapsed (otherwise it
+              lives in the sidebar footer). */}
+          {!isMobile && (
             <>
-              <NotificationBell />
-              <ThemeToggle />
+              <NotificationCenter />
+              {showActions && <ThemeToggle />}
             </>
           )}
           {/* Mobile: the trigger (hamburger ⇄ X) lives on the right. */}

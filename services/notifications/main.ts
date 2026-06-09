@@ -29,7 +29,13 @@ const worker = new Worker<PushJob>(
         if (!ok) await removeStale(userId, sub.endpoint);
       }),
     );
-    console.log(`[notifications] job=${job.id} user=${userId} subs=${subs.length}`);
+    if (subs.length === 0) {
+      console.warn(
+        `[notifications] job=${job.id} user=${userId} has NO registered devices — push dropped`,
+      );
+    } else {
+      console.log(`[notifications] job=${job.id} user=${userId} subs=${subs.length}`);
+    }
   },
   {
     connection: { url: process.env.REDIS_URL },

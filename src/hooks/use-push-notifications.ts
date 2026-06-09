@@ -5,6 +5,7 @@ import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { useTRPC } from "#/integrations/trpc/react";
+import { authClient } from "#/lib/auth-client.ts";
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
 
@@ -25,9 +26,12 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
  */
 export function usePushNotifications() {
   const trpc = useTRPC();
+  const { data: session } = authClient.useSession();
+  const userId = session?.user?.id;
   const [supported, setSupported] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission>("default");
   const [subscribed, setSubscribed] = useState(false);
+  const [existing, setExisting] = useState<PushSubscription | null>(null);
 
   useEffect(() => {
     const ok =
@@ -41,7 +45,10 @@ export function usePushNotifications() {
     setPermission(Notification.permission);
     void navigator.serviceWorker.ready
       .then((reg) => reg.pushManager.getSubscription())
-      .then((existing) => setSubscribed(!!existing))
+      .then((sub) => {
+        setSubscribed(!!sub);
+        setExisting(sub);
+      })
       .catch(() => {
         /* no active registration yet */
       });
@@ -66,6 +73,22 @@ export function usePushNotifications() {
     }),
   );
 
+  // Re-bind an already-registered browser subscription to the signed-in account.
+  // A subscription created before login is stored server-side under "anonymous",
+  // and the browser keeps that subscription across login — so without this the
+  // account never gets associated with the device and its ride-alert pushes are
+  // delivered to nobody. The server upserts by endpoint, so this is idempotent.
+  const bindSub = useMutation(trpc.notifications.subscribe.mutationOptions()).mutate;
+  useEffect(() => {
+    if (!userId || !existing) return;
+    const json = existing.toJSON();
+    bindSub({
+      endpoint: existing.endpoint,
+      p256dh: json.keys?.p256dh ?? "",
+      auth: json.keys?.auth ?? "",
+    });
+  }, [userId, existing, bindSub]);
+
   const subscribe = useCallback(async (): Promise<boolean> => {
     if (!supported) return false;
     const reg = await navigator.serviceWorker.ready;
@@ -81,6 +104,7 @@ export function usePushNotifications() {
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY!).buffer as ArrayBuffer,
     });
+    setExisting(sub);
     const json = sub.toJSON();
     subscribeM.mutate({
       endpoint: sub.endpoint,
@@ -93,13 +117,13 @@ export function usePushNotifications() {
   const unsubscribe = useCallback(async (): Promise<void> => {
     if (!supported) return;
     const reg = await navigator.serviceWorker.ready;
-    const existing = await reg.pushManager.getSubscription();
-    if (existing) {
-      await existing.unsubscribe();
-      unsubscribeM.mutate({ endpoint: existing.endpoint });
-    } else {
-      setSubscribed(false);
+    const existingSub = await reg.pushManager.getSubscription();
+    if (existingSub) {
+      await existingSub.unsubscribe();
+      unsubscribeM.mutate({ endpoint: existingSub.endpoint });
     }
+    setSubscribed(false);
+    setExisting(null);
   }, [supported, unsubscribeM]);
 
   return {
