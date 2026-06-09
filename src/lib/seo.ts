@@ -12,7 +12,10 @@ export const SITE_URL = "https://parkfi.sh";
 export const SITE_NAME = "ParkFish";
 
 /** Absolute URL to the default share image. OG requires an absolute href. */
-const DEFAULT_IMAGE = `${SITE_URL}/logo512.png`;
+const DEFAULT_IMAGE = `${SITE_URL}/og-image.png`;
+/** Dimensions of {@link DEFAULT_IMAGE}; lets crawlers render the card sooner. */
+const DEFAULT_IMAGE_WIDTH = "1731";
+const DEFAULT_IMAGE_HEIGHT = "909";
 
 export interface SeoOptions {
   /** Full <title>. Include the brand suffix yourself, e.g. "Dining — ParkFish". */
@@ -49,6 +52,12 @@ export function seo(opts: SeoOptions) {
       { name: "description", content: description },
       { property: "og:description", content: description },
       { name: "twitter:description", content: description },
+    );
+  }
+  if (image === DEFAULT_IMAGE) {
+    meta.push(
+      { property: "og:image:width", content: DEFAULT_IMAGE_WIDTH },
+      { property: "og:image:height", content: DEFAULT_IMAGE_HEIGHT },
     );
   }
   if (keywords) meta.push({ name: "keywords", content: keywords });
