@@ -479,38 +479,87 @@ export const parksRouter = {
                 ? "6 hours"
                 : "1 day";
       const isPrice = input.queueType === 4;
-      const result = await db.execute<{
-        attraction_id: string;
-        name: string;
-        bucket: string;
-        value: number | null;
-      }>(sql`
-        SELECT q.attraction_id,
-               a.name,
-               time_bucket(${bucket}::interval, q.observed_at) AS bucket,
-               ${isPrice ? sql`(avg(q.price_cents) / 100.0)` : sql`avg(q.wait_min)::int`} AS value
-        FROM queue_obs q
-        JOIN attractions a ON a.id = q.attraction_id
-        WHERE a.park_id = (SELECT id FROM parks WHERE slug = ${input.parkSlug})
-          AND a.active = true
-          AND q.queue_type = ${input.queueType}
-          AND q.observed_at >= now() - (${input.hours} * INTERVAL '1 hour')
-        GROUP BY q.attraction_id, a.name, bucket
-        ORDER BY bucket
-      `);
+      const [result, spine] = await Promise.all([
+        db.execute<{
+          attraction_id: string;
+          name: string;
+          bucket: string;
+          value: number | null;
+        }>(sql`
+          SELECT q.attraction_id,
+                 a.name,
+                 time_bucket(${bucket}::interval, q.observed_at) AS bucket,
+                 ${isPrice ? sql`(avg(q.price_cents) / 100.0)` : sql`avg(q.wait_min)::int`} AS value
+          FROM queue_obs q
+          JOIN attractions a ON a.id = q.attraction_id
+          WHERE a.park_id = (SELECT id FROM parks WHERE slug = ${input.parkSlug})
+            AND a.active = true
+            AND q.queue_type = ${input.queueType}
+            AND q.observed_at >= now() - (${input.hours} * INTERVAL '1 hour')
+          GROUP BY q.attraction_id, a.name, bucket
+          ORDER BY bucket
+        `),
+        // Continuous bucket spine with a per-bucket `closed` flag from the park's
+        // operating calendar, so the client can draw 0 (not a bridged gap) while
+        // the park is shut. We mark a bucket closed only when it falls *inside*
+        // the overall span of known operating windows but outside every one of
+        // them — buckets before the earliest / after the latest known window
+        // (no schedule knowledge) and parks with no schedule at all stay
+        // `closed = false`, degrading to the old connect-the-gap behavior.
+        db.execute<{ bucket: string; closed: boolean }>(sql`
+          WITH park AS (SELECT id FROM parks WHERE slug = ${input.parkSlug}),
+          spine AS (
+            SELECT generate_series(
+              time_bucket(${bucket}::interval, now() - (${input.hours} * INTERVAL '1 hour')),
+              time_bucket(${bucket}::interval, now()),
+              ${bucket}::interval
+            ) AS bucket
+          ),
+          -- Latest daily snapshot's view of each operating window.
+          sched AS (
+            SELECT DISTINCT ON (service_date, opening_time) opening_time, closing_time
+            FROM park_schedule
+            WHERE park_id = (SELECT id FROM park)
+              AND type = 'OPERATING'
+              AND closing_time IS NOT NULL
+            ORDER BY service_date, opening_time, snapshot_date DESC
+          ),
+          span AS (SELECT min(opening_time) AS lo, max(closing_time) AS hi FROM sched)
+          SELECT s.bucket,
+                 (
+                   (SELECT lo FROM span) IS NOT NULL
+                   AND s.bucket >= (SELECT lo FROM span)
+                   AND s.bucket <  (SELECT hi FROM span)
+                   AND NOT EXISTS (
+                     SELECT 1 FROM sched w
+                     WHERE s.bucket >= w.opening_time AND s.bucket < w.closing_time
+                   )
+                 ) AS closed
+          FROM spine s
+          ORDER BY s.bucket
+        `),
+      ]);
 
-      // Pivot the long rows into one record per bucket keyed by attraction id,
-      // and summarize each ride (peak value) so the client can order the legend
-      // busiest-first and pick which series to enable by default.
-      type Point = { bucket: string } & Record<string, number | string | null>;
+      // Seed one record per bucket from the continuous spine (so fully-closed
+      // buckets exist even though no ride reported), then pivot the observation
+      // rows on top keyed by attraction id, and summarize each ride (peak value)
+      // so the client can order the legend busiest-first and pick which series
+      // to enable by default.
+      type Point = { bucket: string; closed: boolean } & Record<
+        string,
+        number | string | boolean | null
+      >;
       const buckets = new Map<string, Point>();
+      for (const r of spine.rows) {
+        buckets.set(r.bucket, { bucket: r.bucket, closed: r.closed });
+      }
       const rideMap = new Map<number, { id: number; name: string; peak: number }>();
       for (const r of result.rows) {
         const id = Number(r.attraction_id);
         const value = r.value == null ? null : Number(r.value);
         let point = buckets.get(r.bucket);
         if (!point) {
-          point = { bucket: r.bucket };
+          point = { bucket: r.bucket, closed: false };
           buckets.set(r.bucket, point);
         }
         point[String(id)] = value;

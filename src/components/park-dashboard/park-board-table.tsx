@@ -327,12 +327,12 @@ export function ParkBoardTable({
     const points = sparkQ.data?.points ?? [];
     const m = new Map<number, Array<number | null>>();
     for (const ride of sparkQ.data?.rides ?? []) {
+      // Drop the gaps (overnight/closed + intermittent downtime) so the tiny
+      // 24h trend reads as one compact continuous line rather than shattering
+      // into disconnected fragments with a detached last-point dot.
       m.set(
         ride.id,
-        points.map((p) => {
-          const v = p[String(ride.id)];
-          return typeof v === "number" ? v : null;
-        }),
+        points.map((p) => p[String(ride.id)]).filter((v): v is number => typeof v === "number"),
       );
     }
     return m;
