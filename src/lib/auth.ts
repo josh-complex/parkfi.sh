@@ -16,12 +16,12 @@ export const auth = betterAuth({
     enabled: true,
   },
   plugins: [
-    tanstackStartCookies(),
+    dash(),
     oAuthProxy({
       productionURL: import.meta.env.BETTER_AUTH_URL,
       secret: import.meta.env.OAUTH_PROXY_SECRET,
     }),
-    dash(),
+    tanstackStartCookies(),
   ],
   trustedOrigins: import.meta.env.DEV ? ["http://localhost:3000"] : [],
 });
