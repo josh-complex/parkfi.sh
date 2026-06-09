@@ -14,6 +14,11 @@
  *   3. Disney parks only: the finder explorer overrides `category` from each
  *      marker's `pin` and sets a precise center/zoom on `parks`; the destinations
  *      feed (fetched once) supplies authoritative park-center coordinates.
+ *   4. Universal parks only: the resort-wide "places" feed (fetched once via
+ *      Browserless) overrides `category` and fills `attraction_meta` (images,
+ *      detail URL, land, tags) — the UOR analog of the Disney finder, joined on
+ *      the shared `place_id` / TP `externalId` namespace. Skipped when Browserless
+ *      isn't configured.
  *
  * Run:  bun run cron:geo
  */
@@ -27,14 +32,24 @@ import { attractionMeta, externalIds } from "#/db/schema.ts";
 import {
   categoryFromDisneyPin,
   categoryFromEntityType,
+  categoryFromUniversalPlace,
   disneyHeroUrl,
+  normalizeUniversalName,
   parseDisneyFacets,
+  parseUniversalId,
   Source,
+  universalDetailUrl,
+  universalLandLabel,
+  universalPlaceImages,
+  universalPlaceTags,
   type MapCategory,
 } from "#/server/parks/codes.ts";
 import { config } from "#/server/parks/config.ts";
+import { browserlessConfigured } from "#/server/parks/sources/browserless.ts";
 import { fetchParkDetail, toNum } from "#/server/parks/sources/disney-finder.ts";
 import { fetchChildren } from "#/server/parks/sources/themeparks.ts";
+import { fetchUniversalPlaces } from "#/server/parks/sources/universal-places.ts";
+import type { UniversalPlace, UniversalPlaces } from "#/server/parks/schemas.ts";
 
 const KIND_ATTRACTION = "attraction";
 const KIND_PARK = "park";
@@ -340,6 +355,101 @@ async function enrichDisneyPark(
   );
 }
 
+// --- Universal places enrichment (step 4, UOR only) -----------------------
+
+interface ParkAttraction {
+  id: number;
+  name: string;
+  externalId: string;
+}
+
+/** Active attractions of a park with their ThemeParks.wiki `externalId` (the join key). */
+async function resolveParkAttractions(parkId: number): Promise<Array<ParkAttraction>> {
+  const result = await db.execute<{ id: string; name: string; external_id: string }>(sql`
+    SELECT a.id, a.name, e.external_id
+    FROM attractions a
+    JOIN external_ids e
+      ON e.entity_kind = ${KIND_ATTRACTION} AND e.entity_id = a.id AND e.source = ${Source.THEMEPARKS_WIKI}
+    WHERE a.park_id = ${parkId} AND a.active = true
+  `);
+  return result.rows.map((r) => ({ id: Number(r.id), name: r.name, externalId: r.external_id }));
+}
+
+/**
+ * Lookup over the resort-wide places feed: a primary `<venue>:<leaf>` id key and
+ * a `<venue>:<name>` fallback (handles the leaf-slug drift between the feeds,
+ * e.g. Hagrid's `_motorcycle_` vs `_motorbike_`). Both keys are venue-scoped, so
+ * matching is naturally confined to the same park.
+ */
+interface PlaceIndex {
+  byKey: Map<string, UniversalPlace>;
+  byName: Map<string, UniversalPlace>;
+}
+
+function buildPlaceIndex(places: UniversalPlaces): PlaceIndex {
+  const byKey = new Map<string, UniversalPlace>();
+  const byName = new Map<string, UniversalPlace>();
+  for (const { place } of places.results) {
+    const parsed = parseUniversalId(place.place_id);
+    if (!parsed) continue;
+    const keyId = `${parsed.venue}:${parsed.leaf}`;
+    if (!byKey.has(keyId)) byKey.set(keyId, place);
+    if (place.name) {
+      const keyName = `${parsed.venue}:${normalizeUniversalName(place.name)}`;
+      if (!byName.has(keyName)) byName.set(keyName, place);
+    }
+  }
+  return { byKey, byName };
+}
+
+function matchPlace(index: PlaceIndex, attraction: ParkAttraction): UniversalPlace | null {
+  const parsed = parseUniversalId(attraction.externalId);
+  if (!parsed) return null;
+  return (
+    index.byKey.get(`${parsed.venue}:${parsed.leaf}`) ??
+    index.byName.get(`${parsed.venue}:${normalizeUniversalName(attraction.name)}`) ??
+    null
+  );
+}
+
+/**
+ * Step 4 (Universal only): match each park attraction to its place and override
+ * `category` from `place_type` + fill `attraction_meta` (images, detail URL,
+ * land, tags). Mirrors `enrichDisneyPark`; the places feed is shared across all
+ * UOR parks (fetched once), so it's passed in as a prebuilt index.
+ */
+async function enrichUniversalPark(park: ParkRow, index: PlaceIndex): Promise<void> {
+  const attractions = await resolveParkAttractions(park.id);
+  const overrides: Array<{ id: number; category: MapCategory }> = [];
+  const metaRows: Array<typeof attractionMeta.$inferInsert> = [];
+  for (const attraction of attractions) {
+    const place = matchPlace(index, attraction);
+    if (!place) continue;
+
+    const cat = categoryFromUniversalPlace(place.place_type?.type, place.place_type?.categories);
+    if (cat) overrides.push({ id: attraction.id, category: cat });
+
+    const images = universalPlaceImages(place.images, place.name);
+    metaRows.push({
+      attractionId: attraction.id,
+      imageThumbUrl: images.thumb,
+      imageHeroUrl: images.hero,
+      imageAlt: images.alt,
+      detailUrl: universalDetailUrl(place.urls),
+      land: universalLandLabel(place.land_id),
+      // Universal places carry no height-requirement field — leave null.
+      heightRequirement: null,
+      tags: universalPlaceTags(place.place_type?.categories),
+      source: Source.UNIVERSAL_DIRECT,
+    });
+  }
+  if (overrides.length > 0) await overrideCategories(overrides);
+  if (metaRows.length > 0) await upsertAttractionMeta(metaRows);
+  console.log(
+    `[geo] ${park.slug}: ${overrides.length} categories enriched, ${metaRows.length}/${attractions.length} meta rows from Universal places`,
+  );
+}
+
 // --- orchestration --------------------------------------------------------
 
 async function runStep(label: string, fn: () => Promise<void>): Promise<void> {
@@ -358,6 +468,24 @@ async function main() {
     return;
   }
 
+  // The Universal "places" feed is resort-wide — fetch + index it once, then
+  // enrich every UOR park from it (mirrors how the Disney destinations feed is
+  // fetched once). Skipped silently when Browserless isn't configured.
+  let universalIndex: PlaceIndex | null = null;
+  if (parks.some((p) => p.operatorSlug === "universal")) {
+    await runStep("universal places", async () => {
+      if (!browserlessConfigured()) {
+        console.warn(
+          "[cron-geo] Browserless not configured — skipping Universal places enrichment",
+        );
+        return;
+      }
+      const places = await fetchUniversalPlaces(AbortSignal.timeout(config.browserlessTimeoutMs));
+      universalIndex = buildPlaceIndex(places);
+      console.log(`[geo] universal: ${places.results.length} places fetched`);
+    });
+  }
+
   for (const park of parks) {
     let numericToAttraction = new Map<string, number>();
     await runStep(`children ${park.slug}`, async () => {
@@ -368,6 +496,10 @@ async function main() {
     if (park.operatorSlug === "disney" && DISNEY_FINDER_SLUGS.has(park.slug)) {
       await runStep(`disney enrich ${park.slug}`, () =>
         enrichDisneyPark(park, numericToAttraction, today),
+      );
+    } else if (park.operatorSlug === "universal" && universalIndex) {
+      await runStep(`universal enrich ${park.slug}`, () =>
+        enrichUniversalPark(park, universalIndex as PlaceIndex),
       );
     }
   }

@@ -359,3 +359,84 @@ export const UniversalCaptureSchema = z.object({
   eventAvailability: z.record(z.string(), z.record(z.string(), UniversalDateEntry)).default({}),
 });
 export type UniversalCapture = z.infer<typeof UniversalCaptureSchema>;
+
+// ---------------------------------------------------------------------------
+// Universal Orlando "places" feed — the UOR geo *enrichment* layer (analog of
+// the Disney finder explorer). `GET api.universalparks.com/resort-areas/uor/places`
+// returns every resort POI (park rides/shows/dining + hotels + CityWalk), each
+// keyed by `place_id` in the SAME namespace as the ThemeParks.wiki Universal
+// child `externalId` (`uor.<venue>.<type>.<leaf>`, e.g.
+// `uor.usf.rides.revenge_of_the_mummy`) — that's the join back to our attractions.
+// Bearer/guest-session gated like the ticket feeds, so harvested via Browserless.
+// Tolerant by design: every enriched field is optional and degrades to null.
+// ---------------------------------------------------------------------------
+const UniversalPlaceImage = z
+  .object({
+    desktop: z.string().optional(),
+    mobile: z.string().optional(),
+    tablet: z.string().optional(),
+    // Comma-joined kinds, e.g. "heroImage", "filterListImage,iconImage,tileImage".
+    image_kind: z.string().nullable().optional(),
+  })
+  .partial();
+
+const UniversalPlaceLatLng = z
+  .object({
+    lat: z.union([z.number(), z.string()]).nullable().optional(),
+    lng: z.union([z.number(), z.string()]).nullable().optional(),
+  })
+  .partial();
+
+const UniversalPlace = z
+  .object({
+    place_id: z.string(),
+    name: z.string().nullable().optional(),
+    short_description: z.string().nullable().optional(),
+    long_description: z.string().nullable().optional(),
+    // `uor.usf` / `uor.ioa` / `uor.ueu` for park items; hotel/CityWalk venues we
+    // ignore (they never join to a park attraction).
+    venue_id: z.string().nullable().optional(),
+    // `uor.<venue>.<land>`, e.g. `uor.ioa.wizarding_world_of_harry_potter_hogsmeade`.
+    land_id: z.string().nullable().optional(),
+    geometry: z
+      .object({
+        locations: z
+          .array(z.object({ lat_lng: UniversalPlaceLatLng.nullable().optional() }).partial())
+          .default([]),
+      })
+      .partial()
+      .nullable()
+      .optional(),
+    images: z.array(UniversalPlaceImage).default([]),
+    place_type: z
+      .object({
+        // "Dining" | "Amenity" | "Attraction" | "Show" | "Shopping" | …
+        type: z.string().nullable().optional(),
+        categories: z.array(z.string()).default([]),
+      })
+      .partial()
+      .nullable()
+      .optional(),
+    urls: z
+      .array(
+        z
+          .object({
+            url: z.string().optional(),
+            // PLACE_POI_DETAILS is the official detail page; DINING_MENU etc. exist too.
+            url_type: z.string().optional(),
+            description: z.string().optional(),
+          })
+          .partial(),
+      )
+      .default([]),
+    tags: z.array(z.string()).default([]),
+  })
+  .passthrough();
+export type UniversalPlace = z.infer<typeof UniversalPlace>;
+
+export const UniversalPlacesSchema = z.object({
+  results: z
+    .array(z.object({ place: UniversalPlace, open_now: z.boolean().optional() }))
+    .default([]),
+});
+export type UniversalPlaces = z.infer<typeof UniversalPlacesSchema>;

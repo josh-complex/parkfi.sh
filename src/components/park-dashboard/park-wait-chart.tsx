@@ -19,7 +19,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "#/components/ui/chart.tsx";
-import { ConstructionState } from "#/components/ui/anim-icons/construction.tsx";
+import { ConstructionIcon, ConstructionState } from "#/components/ui/anim-icons/construction.tsx";
 import { Empty, EmptyDescription, EmptyTitle } from "#/components/ui/empty.tsx";
 import {
   Select,
@@ -140,15 +140,19 @@ export function ParkWaitChart({
     return rows.map((r, i) => {
       // Open bucket: keep raw per-ride values. A missing reading mid-day is ride
       // downtime — left null so the line bridges it (connectNulls), not a break.
-      if (r.open) return { ...r.p, closed: false, [AVG_KEY]: r.avg };
+      if (r.open) return { ...r.p, status: "open" as const, [AVG_KEY]: r.avg };
       const inRange = first >= 0 && i >= first && i <= last;
-      // Closed-but-in-range bucket (park shut overnight): floor every series to 0
-      // so ride lines and the park average drop to the baseline together instead
-      // of breaking. Out-of-range buckets stay null so we draw no phantom line.
-      if (!inRange) return { ...r.p, closed: false, [AVG_KEY]: null };
+      // Out-of-range bucket (before history starts / after it ends): stay null so
+      // we don't paint a phantom flatline where we simply have no data.
+      if (!inRange) return { ...r.p, status: "open" as const, [AVG_KEY]: null };
+      // In-range gap: floor every series to 0 so the ride and park-average lines
+      // drop to the baseline together instead of breaking. The operating calendar
+      // (server `closed` flag from park_schedule) decides what that flatline means:
+      // a true overnight closure ("Park closed") vs. the park being open with a
+      // data-collection gap ("Missing data"). Either way we keep the 0 baseline.
       const zeroed: Record<string, number> = { [AVG_KEY]: 0 };
       for (const id of ids) zeroed[String(id)] = 0;
-      return { ...r.p, ...zeroed, closed: true };
+      return { ...r.p, ...zeroed, status: r.p.closed ? ("closed" as const) : ("missing" as const) };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [points, ridesKey, mode]);
@@ -223,15 +227,29 @@ export function ParkWaitChart({
         labelFormatter={labelFormatter}
         formatter={(value, name, item) => {
           const key = String(name);
-          // Closed bucket: one clean "Park closed" line off the park-average
-          // series instead of a 0; ride series are null here and drop out.
-          const closed = Boolean(item?.payload?.closed);
-          if (closed) {
+          const status = item?.payload?.status as "open" | "closed" | "missing" | undefined;
+          // Flatlined bucket: render one clean line off the park-average series
+          // instead of a 0 for every ride; ride series drop out. Whether it reads
+          // as a closure or a data gap is decided by the operating calendar.
+          if (status === "closed" || status === "missing") {
             if (key !== AVG_KEY) return null;
+            if (status === "closed") {
+              return (
+                <span className="flex items-center gap-1.5 text-muted-foreground">
+                  <span className="bg-muted-foreground/40 size-2 shrink-0 rounded-[2px]" />
+                  Park closed
+                </span>
+              );
+            }
+            // Park was open per its schedule but no reading landed here — surface
+            // the gap honestly rather than wrongly claiming the park was closed.
             return (
               <span className="flex items-center gap-1.5 text-muted-foreground">
-                <span className="bg-muted-foreground/40 size-2 shrink-0 rounded-[2px]" />
-                Park closed
+                <ConstructionIcon
+                  size={14}
+                  className="shrink-0 text-amber-500 dark:text-amber-400"
+                />
+                Missing data
               </span>
             );
           }

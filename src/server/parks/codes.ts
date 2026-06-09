@@ -243,6 +243,142 @@ export function parseDisneyFacets(facets?: Array<Array<string>> | null): DisneyF
 }
 
 // ---------------------------------------------------------------------------
+// Universal Orlando "places" feed -> geo enrichment (the UOR analog of the
+// Disney finder). The places `place_id` and the ThemeParks.wiki Universal child
+// `externalId` share one namespace: `[uo|uor].<venue>.<type>.<leaf>`
+//   uor.usf.rides.revenge_of_the_mummy      (TP externalId)
+//   uor.ioa.dining.green_eggs_and_ham_cafe  (TP externalId)
+// venue ∈ usf | ioa | ueu (the three UOR parks). We join on `<venue>:<leaf>`,
+// dropping the `<type>` segment because it drifts across the feeds
+// (rides/ride/shows/show), with a normalized-name fallback within the venue.
+// ---------------------------------------------------------------------------
+
+const SMALL_WORDS = new Set(["a", "an", "and", "at", "for", "in", "of", "on", "the", "to"]);
+
+/** Title-case a space-separated phrase, keeping small joiner words lowercase. */
+function titleCase(s: string): string {
+  const words = s.toLowerCase().split(/\s+/).filter(Boolean);
+  return words
+    .map((w, i) => (i > 0 && SMALL_WORDS.has(w) ? w : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join(" ");
+}
+
+/**
+ * Parse a Universal POI id (`[uo|uor].<venue>.<type>.<leaf...>`) into the stable
+ * join identity `{ venue, leaf }`. The leading resort prefix and the volatile
+ * `<type>` segment are dropped; remaining segments form the leaf. Returns null
+ * for ids that can't yield a venue + leaf (e.g. resort-wide `uor.dining.<x>`).
+ */
+export function parseUniversalId(id?: string | null): { venue: string; leaf: string } | null {
+  if (!id) return null;
+  const parts = id.toLowerCase().split(".");
+  let i = 0;
+  if (parts[i] === "uo" || parts[i] === "uor") i += 1;
+  const rest = parts.slice(i).filter(Boolean);
+  if (rest.length < 2) return null;
+  const venue = rest[0];
+  // 2 segments => venue.leaf (no type); 3+ => venue.<type>.leaf… (drop the type).
+  const leaf = (rest.length === 2 ? rest.slice(1) : rest.slice(2)).join("_");
+  if (!venue || !leaf) return null;
+  return { venue, leaf };
+}
+
+/** Lowercased, punctuation-stripped name for the cross-feed fallback match. */
+export function normalizeUniversalName(name?: string | null): string {
+  return (
+    (name ?? "")
+      .toLowerCase()
+      .replace(/[™®©]/g, "")
+      // Drop apostrophes so "Hagrid's" == "Hagrids" (join the word, don't split it).
+      .replace(/['’`]/g, "")
+      .replace(/&/g, " and ")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim()
+  );
+}
+
+/**
+ * Universal place `place_type.type` + `categories` -> our pin class. Tolerant
+ * keyword match over the combined haystack, ordered so the specific ride classes
+ * (thrill/water) win before the generic "attraction", and dining/shop/show beat
+ * the catch-all amenity -> info. Returns null on anything unknown (caller keeps
+ * the entityType-derived default).
+ */
+export function categoryFromUniversalPlace(
+  type?: string | null,
+  categories?: Array<string> | null,
+): MapCategory | null {
+  const hay = `${type ?? ""} ${(categories ?? []).join(" ")}`.toLowerCase();
+  if (!hay.trim()) return null;
+  if (/thrill|coaster|intense/.test(hay)) return "thrill";
+  if (/water/.test(hay)) return "water";
+  if (/character|meet/.test(hay)) return "character";
+  if (/dining|dine|restaurant|food|snack|beverage|quick-service|table-service/.test(hay))
+    return "dine";
+  if (/shop|retail|merchandise|store/.test(hay)) return "shop";
+  if (/show|entertain|theat|cinema|parade|firework|fountain/.test(hay)) return "show";
+  if (/ride|attraction|family|kid|play/.test(hay)) return "attraction";
+  if (/amenity|locker|restroom|atm|photo|service|first.aid/.test(hay)) return "info";
+  return null;
+}
+
+/**
+ * Pick the hero + thumbnail from a place's `images[]` by `image_kind`, falling
+ * back to the first usable image. Universal places carry no alt text, so the
+ * place name is the alt. Prefers the desktop variant of each image.
+ */
+export function universalPlaceImages(
+  images?: Array<{
+    desktop?: string;
+    mobile?: string;
+    tablet?: string;
+    image_kind?: string | null;
+  }>,
+  name?: string | null,
+): { thumb: string | null; hero: string | null; alt: string | null } {
+  const urlOf = (img?: { desktop?: string; mobile?: string; tablet?: string }) =>
+    img?.desktop ?? img?.tablet ?? img?.mobile ?? null;
+  let hero: string | null = null;
+  let thumb: string | null = null;
+  for (const img of images ?? []) {
+    const kind = (img.image_kind ?? "").toLowerCase();
+    const url = urlOf(img);
+    if (!url) continue;
+    if (!hero && kind.includes("hero")) hero = url;
+    // Prefer an actual tile/list photo over the `avatarImage` (usually a logo);
+    // the logo is still picked up by the first-usable fallback below.
+    if (!thumb && /tile|icon|filterlist/.test(kind)) thumb = url;
+  }
+  const first = urlOf((images ?? []).find((img) => urlOf(img)));
+  return { thumb: thumb ?? first, hero: hero ?? first, alt: name ?? null };
+}
+
+/** Humanize a place's `categories` slugs into display tags ("quick-service" -> "Quick Service"). */
+export function universalPlaceTags(categories?: Array<string> | null): Array<string> {
+  return (categories ?? []).map((c) => titleCase(c.replace(/[-_]/g, " "))).filter(Boolean);
+}
+
+/** Derive a readable land name from a `land_id` (`uor.ioa.<land>` -> "The Land"). */
+export function universalLandLabel(landId?: string | null): string | null {
+  const parsed = parseUniversalId(landId);
+  if (!parsed) return null;
+  // For a land id the "leaf" is the land slug (the `<venue>.<land>` shape has no
+  // type segment); join handled by parseUniversalId.
+  const label = titleCase(parsed.leaf.replace(/_/g, " "));
+  return label || null;
+}
+
+/** The official detail-page URL from a place's `urls[]`, if present. */
+export function universalDetailUrl(
+  urls?: Array<{ url?: string; url_type?: string }> | null,
+): string | null {
+  for (const u of urls ?? []) {
+    if ((u.url_type ?? "") === "PLACE_POI_DETAILS" && u.url) return u.url;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Universal Orlando web-store (api.universalparks.com) helpers
 // ---------------------------------------------------------------------------
 
