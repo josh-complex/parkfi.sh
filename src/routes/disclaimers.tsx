@@ -10,9 +10,9 @@ export const Route = createFileRoute("/disclaimers")({
   component: DisclaimersPage,
   head: () =>
     seo({
-      title: "Disclaimers & Legal Notice — ParkFish",
+      title: "Disclaimers & Legal Notice — ParkFi.sh",
       description:
-        "ParkFish is an independent service and is not affiliated with The Walt Disney Company or Universal. Read our data, trademark, and legal disclaimers.",
+        "ParkFi.sh is an independent service and is not affiliated with The Walt Disney Company or Universal. Read our data, trademark, and legal disclaimers.",
       path: "/disclaimers",
     }),
 });

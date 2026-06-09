@@ -153,6 +153,43 @@ export const DisneyParkDetailSchema = z.object({
 });
 export type DisneyParkDetail = z.infer<typeof DisneyParkDetailSchema>;
 
+/**
+ * ThemeParks.wiki `/entity/{uuid}/schedule` — the forward 30-day park calendar.
+ * Two payloads we care about live here:
+ *  - `schedule[]`: per-date operating hours + ticketed-event windows (Early
+ *    Entry, Extended Evening, Special Ticketed Event) -> `park_schedule`.
+ *  - `schedule[].purchases[]`: demand-priced park-date bundles. The Lightning
+ *    Lane Multi Pass / Premier Pass daily price (and `available` sell-out flag)
+ *    -> `product_price_obs`. NB: `price.amount` here is ALREADY IN CENTS
+ *    (1200 == $12.00), unlike the Disney/Universal direct feeds (dollars).
+ * Tolerant by design: unknown fields drop, missing arrays default empty.
+ */
+const SchedulePurchase = z.object({
+  id: z.string(),
+  name: z.string().optional(),
+  // ADMISSION | PACKAGE | ATTRACTION
+  type: z.string().nullable().optional(),
+  price: Price.optional(),
+  available: z.boolean().optional(),
+});
+const ScheduleEntry = z.object({
+  date: z.string(),
+  // OPERATING | TICKETED_EVENT | PRIVATE_EVENT | EXTRA_HOURS | INFO
+  type: z.string(),
+  openingTime: z.string().nullable().optional(),
+  closingTime: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  purchases: z.array(SchedulePurchase).default([]),
+});
+export const ScheduleSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().optional(),
+  timezone: z.string().optional(),
+  schedule: z.array(ScheduleEntry).default([]),
+});
+export type SchedulePayload = z.infer<typeof ScheduleSchema>;
+export type ScheduleEntryData = z.infer<typeof ScheduleEntry>;
+
 // queue-times.com — wait times + open/closed only (degraded fallback)
 export const QueueTimesSchema = z.object({
   lands: z

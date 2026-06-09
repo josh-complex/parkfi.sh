@@ -113,6 +113,28 @@ export function availabilityToQueueState(availability?: string | null): QueueSta
   }
 }
 
+/**
+ * Classify a ThemeParks.wiki `/schedule` purchase `id` into a park-date *bundle*
+ * product + tier (for `product_price_obs`). Returns null for anything that isn't
+ * a park-grain bundle — notably per-attraction Lightning Lane (`lightninglane_<id>`),
+ * which is attraction-grain and captured on `queue_obs` via the `/live` poller.
+ * Premier Pass is folded into LL Multi as the `Premier` tier (no distinct code).
+ *   lightninglanemultipass_*  -> LL Multi, tier ''
+ *   premierpass_*             -> LL Multi, tier 'Premier'
+ */
+export function themeparksScheduleProduct(
+  id: string,
+): { productId: ProductCode; tier: string } | null {
+  const s = id.toLowerCase();
+  if (s.startsWith("lightninglanemultipass")) {
+    return { productId: Product.LIGHTNING_LANE_MULTI, tier: "" };
+  }
+  if (s.startsWith("premierpass")) {
+    return { productId: Product.LIGHTNING_LANE_MULTI, tier: "Premier" };
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Map-pin categories (geo enrichment). Our taxonomy:
 //   thrill | attraction | water | show | dine | shop | character | info

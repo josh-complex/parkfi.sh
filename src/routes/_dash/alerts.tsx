@@ -6,7 +6,7 @@ export const Route = createFileRoute("/_dash/alerts")({
   component: AlertsPage,
   head: () =>
     seo({
-      title: "Alerts & Push Notifications — ParkFish",
+      title: "Alerts & Push Notifications — ParkFi",
       description:
         "Manage push notifications for wait times, Lightning Lane availability, and ticket price drops.",
       path: "/alerts",

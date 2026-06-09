@@ -308,6 +308,39 @@ export const ticketAvailability = pgTable(
 );
 
 /**
+ * (E) Park calendar: operating hours + ticketed-event windows, captured daily
+ * from the ThemeParks.wiki `/schedule` feed (forward ~30 days). One row per
+ * (park, service_date, type, opening_time) per daily snapshot, so a date with
+ * Operating + Early Entry + Extended Evening windows yields three rows. Daily
+ * snapshot (idempotent within a day) — keeps history of how hours/events shift.
+ * Plain table (small, slow-moving), not a hypertable.
+ */
+export const parkSchedule = pgTable(
+  "park_schedule",
+  {
+    snapshotDate: date("snapshot_date").notNull(),
+    parkId: bigint("park_id", { mode: "number" })
+      .notNull()
+      .references(() => parks.id),
+    serviceDate: date("service_date").notNull(),
+    // OPERATING | TICKETED_EVENT | PRIVATE_EVENT | EXTRA_HOURS | INFO
+    type: text("type").notNull(),
+    openingTime: timestamp("opening_time", { withTimezone: true }).notNull(),
+    closingTime: timestamp("closing_time", { withTimezone: true }),
+    // 'Early Entry' | 'Extended Evening' | 'Special Ticketed Event' | null
+    description: text("description"),
+    source: smallint("source")
+      .notNull()
+      .references(() => refSource.id),
+  },
+  (t) => [
+    primaryKey({
+      columns: [t.parkId, t.serviceDate, t.type, t.openingTime, t.snapshotDate],
+    }),
+  ],
+);
+
+/**
  * (D2) SKU dimension for resorts whose products are SKU-centric, not park-keyed
  * (Universal Orlando: a P2P ticket spans multiple parks; pricing is per-SKU).
  * Keyed by the upstream SKU string (Universal `partNumber`). Populated from the

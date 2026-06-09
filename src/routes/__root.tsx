@@ -26,7 +26,7 @@ interface MyRouterContext {
 export const Route = createRootRouteWithContext<MyRouterContext>()({
   head: () => {
     const base = seo({
-      title: "ParkFish — Live Theme Park Wait Times, Ticket Prices & Dining",
+      title: "ParkFi — Live Theme Park Wait Times, Ticket Prices & Dining",
       description:
         "Track real-time wait times, Lightning Lane availability, ticket pricing, and dining reservations across Walt Disney World and Universal Orlando — all on one live park map.",
       keywords:
@@ -40,7 +40,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
         { name: "theme-color", content: "#09090b" },
         { name: "apple-mobile-web-app-capable", content: "yes" },
         { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
-        { name: "apple-mobile-web-app-title", content: "ParkFish" },
+        { name: "apple-mobile-web-app-title", content: "ParkFi" },
         { name: "robots", content: "index, follow" },
         ...base.meta,
       ],

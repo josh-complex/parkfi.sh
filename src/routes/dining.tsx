@@ -10,7 +10,7 @@ export const Route = createFileRoute("/dining")({
   component: DiningPage,
   head: () =>
     seo({
-      title: "Dining Reservations & Availability — ParkFish",
+      title: "Dining Reservations & Availability — ParkFi",
       description:
         "Find open table-service dining reservations at Walt Disney World and Universal Orlando with live availability across dates, parties, and restaurants.",
       keywords:

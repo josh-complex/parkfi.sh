@@ -19,8 +19,8 @@ export const Route = createFileRoute("/login")({
   component: LoginPage,
   head: () =>
     seo({
-      title: "Sign In — ParkFish",
-      description: "Sign in to ParkFish to manage alerts and personalize your park dashboard.",
+      title: "Sign In — ParkFi",
+      description: "Sign in to ParkFi to manage alerts and personalize your park dashboard.",
       path: "/login",
       noindex: true,
     }),

@@ -41,7 +41,7 @@ export const notificationsRouter = createTRPCRouter({
       const q = getPushQueue();
       await q.add("test", {
         userId,
-        title: "ParkFish test notification",
+        title: "ParkFi test notification",
         body: "Push notifications are working!",
         url: "/",
       });

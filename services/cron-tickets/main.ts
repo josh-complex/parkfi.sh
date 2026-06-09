@@ -22,12 +22,20 @@ loadEnv({ path: [".env.local", ".env"] });
 import { and, eq, sql } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
-import { externalIds, productDim, skuPriceObs, ticketAvailability } from "#/db/schema.ts";
+import {
+  externalIds,
+  parkSchedule,
+  productDim,
+  productPriceObs,
+  skuPriceObs,
+  ticketAvailability,
+} from "#/db/schema.ts";
 import {
   availabilityToQueueState,
   disneyDecodeSku,
   QueueState,
   Source,
+  themeparksScheduleProduct,
   universalDecodeSku,
   type DisneySkuDims,
 } from "#/server/parks/codes.ts";
@@ -38,6 +46,7 @@ import {
   fetchTicketPricing,
 } from "#/server/parks/sources/disney.ts";
 import { browserlessConfigured } from "#/server/parks/sources/browserless.ts";
+import { fetchSchedule } from "#/server/parks/sources/themeparks.ts";
 import { fetchUniversalCatalogAndPricing } from "#/server/parks/sources/universal.ts";
 import { config } from "#/server/parks/config.ts";
 
@@ -163,6 +172,75 @@ async function insertSkuPrices(rows: Array<typeof skuPriceObs.$inferInsert>): Pr
   for (let i = 0; i < changed.length; i += CHUNK) {
     await db
       .insert(skuPriceObs)
+      .values(changed.slice(i, i + CHUNK))
+      .onConflictDoNothing();
+  }
+
+  return changed.length;
+}
+
+/**
+ * Insert park-date bundle price observations (LL Multi / Premier), skipping rows
+ * unchanged in price+state from the latest observation for that
+ * (park, product, service_date, tier). Mirrors `insertSkuPrices`. Returns the
+ * number of rows actually inserted.
+ */
+async function insertProductPrices(
+  rows: Array<typeof productPriceObs.$inferInsert>,
+): Promise<number> {
+  if (rows.length === 0) return 0;
+
+  // Deduplicate within the batch on the natural key — last entry wins.
+  const deduped = new Map<string, typeof productPriceObs.$inferInsert>();
+  for (const row of rows) {
+    deduped.set(`${row.parkId}::${row.productId}::${row.serviceDate}::${row.tier}`, row);
+  }
+  const batch = [...deduped.values()];
+
+  type LatestRow = { priceCents: number | null; state: number | null };
+  const latestMap = new Map<string, LatestRow>();
+  const CHUNK = 500;
+
+  for (let i = 0; i < batch.length; i += CHUNK) {
+    const chunk = batch.slice(i, i + CHUNK);
+    const tuples = sql.join(
+      chunk.map(
+        (r) =>
+          sql`(${r.parkId}, ${r.productId}, ${r.serviceDate as string}::date, ${r.tier as string})`,
+      ),
+      sql`, `,
+    );
+    const result = await db.execute<{
+      park_id: string;
+      product_id: number;
+      service_date: string;
+      tier: string;
+      price_cents: number | null;
+      state: number | null;
+    }>(sql`
+      SELECT DISTINCT ON (park_id, product_id, service_date, tier)
+        park_id, product_id, service_date, tier, price_cents, state
+      FROM product_price_obs
+      WHERE (park_id, product_id, service_date, tier) IN (${tuples})
+      ORDER BY park_id, product_id, service_date, tier, observed_at DESC
+    `);
+    for (const r of result.rows) {
+      latestMap.set(`${r.park_id}::${r.product_id}::${r.service_date}::${r.tier}`, {
+        priceCents: r.price_cents,
+        state: r.state,
+      });
+    }
+  }
+
+  const changed = batch.filter((row) => {
+    const prev = latestMap.get(`${row.parkId}::${row.productId}::${row.serviceDate}::${row.tier}`);
+    if (!prev) return true;
+    return prev.priceCents !== row.priceCents || prev.state !== (row.state ?? null);
+  });
+
+  for (let i = 0; i < changed.length; i += CHUNK) {
+    await db
+      .insert(productPriceObs)
       .values(changed.slice(i, i + CHUNK))
       .onConflictDoNothing();
   }
@@ -474,6 +552,85 @@ async function captureUniversalPricing(todayIso: string, observedAt: Date): Prom
   return inserted;
 }
 
+// --- TP: ThemeParks.wiki schedule (park hours + LL bundle pricing) --------
+
+/**
+ * Secondary source for both resorts. For every park with a ThemeParks.wiki
+ * mapping, pull the forward 30-day `/schedule` and capture two things the direct
+ * ticket feeds miss:
+ *   (1) park_schedule    — operating hours + ticketed-event windows (daily snapshot)
+ *   (2) product_price_obs — LL Multi Pass / Premier daily demand pricing (change-only)
+ * Per-park isolation: a flaky/blocked park logs and is skipped, never fails the run.
+ * NB: schedule `price.amount` is already in cents (1200 == $12.00) — no *100.
+ */
+async function captureSchedules(
+  themeparksMap: Map<string, number>,
+  snapshotDate: string,
+  observedAt: Date,
+): Promise<number> {
+  const scheduleRows: Array<typeof parkSchedule.$inferInsert> = [];
+  const priceRows: Array<typeof productPriceObs.$inferInsert> = [];
+
+  for (const [uuid, parkId] of themeparksMap) {
+    let payload;
+    try {
+      payload = await fetchSchedule(uuid, AbortSignal.timeout(config.fetchTimeoutMs));
+    } catch (err) {
+      console.error(`[TP] schedule ${uuid} failed:`, err instanceof Error ? err.message : err);
+      continue;
+    }
+
+    // Dedupe bundle prices per (product, date, tier) within a park — last wins.
+    const bundles = new Map<string, typeof productPriceObs.$inferInsert>();
+    for (const entry of payload.schedule) {
+      // (1) hours + ticketed events — needs a real opening time (it's in the PK).
+      if (entry.openingTime) {
+        scheduleRows.push({
+          snapshotDate,
+          parkId,
+          serviceDate: entry.date,
+          type: entry.type,
+          openingTime: new Date(entry.openingTime),
+          closingTime: entry.closingTime ? new Date(entry.closingTime) : null,
+          description: entry.description ?? null,
+          source: Source.THEMEPARKS_WIKI,
+        });
+      }
+
+      // (2) park-date bundle pricing from purchases.
+      for (const p of entry.purchases) {
+        const cls = themeparksScheduleProduct(p.id);
+        if (!cls || p.price?.amount == null) continue;
+        bundles.set(`${cls.productId}::${entry.date}::${cls.tier}`, {
+          observedAt,
+          parkId,
+          productId: cls.productId,
+          serviceDate: entry.date,
+          tier: cls.tier,
+          priceCents: Math.round(p.price.amount), // already cents in this feed
+          currency: p.price.currency ?? "USD",
+          state: p.available ? QueueState.AVAILABLE : QueueState.SOLD_OUT,
+          source: Source.THEMEPARKS_WIKI,
+        });
+      }
+    }
+    priceRows.push(...bundles.values());
+  }
+
+  // park_schedule: daily snapshot, idempotent within the day.
+  for (let i = 0; i < scheduleRows.length; i += 500) {
+    await db
+      .insert(parkSchedule)
+      .values(scheduleRows.slice(i, i + 500))
+      .onConflictDoNothing();
+  }
+  const inserted = await insertProductPrices(priceRows);
+  console.log(
+    `[TP] schedule: ${scheduleRows.length} hours/event rows, ${inserted}/${priceRows.length} bundle price obs inserted`,
+  );
+  return scheduleRows.length + inserted;
+}
+
 // --- orchestration --------------------------------------------------------
 
 async function runStep(label: string, fn: () => Promise<number>): Promise<void> {
@@ -511,6 +668,16 @@ async function main() {
     console.warn("[cron-tickets] BROWSERLESS_URL not set — skipping Universal feeds");
   } else {
     await runStep("U1/U2 Universal pricing", () => captureUniversalPricing(todayIso, observedAt));
+  }
+
+  // TP: secondary source (both resorts) for park hours + LL bundle pricing.
+  const themeparksMap = await parkMapForSource(Source.THEMEPARKS_WIKI);
+  if (themeparksMap.size === 0) {
+    console.warn("[cron-tickets] no themeparks_wiki park mappings — run db:seed first");
+  } else {
+    await runStep("TP schedule (hours + LL bundles)", () =>
+      captureSchedules(themeparksMap, snapshotDate, observedAt),
+    );
   }
 }
 

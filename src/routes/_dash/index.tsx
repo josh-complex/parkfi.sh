@@ -9,7 +9,7 @@ export const Route = createFileRoute("/_dash/")({
   component: Overview,
   head: () =>
     seo({
-      title: "Live Park Map — Theme Park Wait Times | ParkFish",
+      title: "Live Park Map — Theme Park Wait Times | ParkFi",
       description:
         "Explore an interactive map of Walt Disney World and Universal Orlando with live wait times, ride status, and resort context updated in real time.",
       path: "/",

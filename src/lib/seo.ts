@@ -9,7 +9,7 @@
 
 /** Production origin. Used for canonical + absolute OG/Twitter URLs. */
 export const SITE_URL = "https://parkfi.sh";
-export const SITE_NAME = "ParkFish";
+export const SITE_NAME = "ParkFi";
 
 /** Absolute URL to the default share image. OG requires an absolute href. */
 const DEFAULT_IMAGE = `${SITE_URL}/og-image.png`;
@@ -18,7 +18,7 @@ const DEFAULT_IMAGE_WIDTH = "1731";
 const DEFAULT_IMAGE_HEIGHT = "909";
 
 export interface SeoOptions {
-  /** Full <title>. Include the brand suffix yourself, e.g. "Dining — ParkFish". */
+  /** Full <title>. Include the brand suffix yourself, e.g. "Dining — ParkFi". */
   title: string;
   description?: string;
   keywords?: string;

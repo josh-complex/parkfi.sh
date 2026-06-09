@@ -1,6 +1,6 @@
 {
-  "name": "ParkFish",
-  "short_name": "ParkFish",
+  "name": "ParkFi",
+  "short_name": "ParkFi",
   "description": "Real-time theme park wait times, pricing, and dining availability.",
   "start_url": "/",
   "display": "standalone",

@@ -17,8 +17,8 @@ export const Route = createFileRoute("/_dash/park/$slug")({
   head: ({ params }) => {
     const name = titleizeSlug(params.slug);
     return seo({
-      title: `${name} Wait Times & Live Map — ParkFish`,
-      description: `Live wait times, ride status, and Lightning Lane availability for ${name}. Plan your day with real-time queue data on ParkFish.`,
+      title: `${name} Wait Times & Live Map — ParkFi`,
+      description: `Live wait times, ride status, and Lightning Lane availability for ${name}. Plan your day with real-time queue data on ParkFi.`,
       path: `/park/${params.slug}`,
     });
   },

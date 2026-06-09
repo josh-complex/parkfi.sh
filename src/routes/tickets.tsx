@@ -10,7 +10,7 @@ export const Route = createFileRoute("/tickets")({
   component: TicketsPage,
   head: () =>
     seo({
-      title: "Theme Park Ticket Prices & Pricing Calendar — ParkFish",
+      title: "Theme Park Ticket Prices & Pricing Calendar — ParkFi",
       description:
         "Compare daily theme park ticket prices across the calendar for Walt Disney World and Universal Orlando, and find the cheapest days to visit.",
       keywords:

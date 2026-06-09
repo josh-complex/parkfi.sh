@@ -3,8 +3,10 @@ import { themeparksBucket } from "../ratelimit.ts";
 import {
   EntityChildrenSchema,
   LiveSchema,
+  ScheduleSchema,
   type EntityChildrenPayload,
   type LivePayload,
+  type SchedulePayload,
 } from "../schemas.ts";
 
 export class UpstreamError extends Error {
@@ -58,6 +60,21 @@ export async function fetchChildren(
   await themeparksBucket.take();
   const json = await getJson(`${config.themeparksBase}/entity/${parkUuid}/children`, signal);
   return EntityChildrenSchema.parse(json);
+}
+
+/**
+ * Forward 30-day schedule for a park entity: operating hours + ticketed-event
+ * windows, plus `purchases[]` (LL Multi / Premier daily demand pricing). Used by
+ * the daily ticket cron as the secondary source for park-date bundle pricing and
+ * park hours, so it takes a rate-limit token like the other themeparks calls.
+ */
+export async function fetchSchedule(
+  parkUuid: string,
+  signal: AbortSignal,
+): Promise<SchedulePayload> {
+  await themeparksBucket.take();
+  const json = await getJson(`${config.themeparksBase}/entity/${parkUuid}/schedule`, signal);
+  return ScheduleSchema.parse(json);
 }
 
 /** All destinations (used by seeding / park discovery). */
