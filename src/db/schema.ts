@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   bigint,
   bigserial,
@@ -13,7 +14,10 @@ import {
   text,
   time,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
+
+import { user } from "./auth-schema.ts";
 
 // better-auth tables (user/session/account/verification) — re-exported so
 // drizzle-kit migrations and the `db` schema object include them.
@@ -468,3 +472,60 @@ export const scraperSession = pgTable("scraper_session", {
   lastValidatedAt: timestamp("last_validated_at", { withTimezone: true }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ---------------------------------------------------------------------------
+// User-facing alerts
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-user ride wait-time alert subscriptions. Evaluated once per worker tick
+ * against each attraction's latest STANDBY `queue_obs` + status — no separate
+ * fetch path. Firing uses edge-trigger + cooldown state carried on the row:
+ *  - `armed` flips false on fire and re-arms once the condition clears, so a
+ *    sustained match notifies once, not every tick.
+ *  - `lastFiredAt` enforces a minimum gap between fires (ALERT_COOLDOWN_MS).
+ *  - `lastWaitMin` is the change-mode baseline (reset on fire); `lastStatus`
+ *    is the carried status used to edge-detect DOWN→OPERATING-style flips.
+ *
+ * The partial unique index on (user, attraction) WHERE active makes "one active
+ * alert per ride" a DB invariant, so create is a clean upsert.
+ */
+export const rideAlert = pgTable(
+  "ride_alert",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    parkId: bigint("park_id", { mode: "number" })
+      .notNull()
+      .references(() => parks.id),
+    attractionId: bigint("attraction_id", { mode: "number" })
+      .notNull()
+      .references(() => attractions.id),
+
+    // rule: 1 = threshold (fire when standby <= thresholdMin),
+    //       2 = change   (fire on status flip or |Δ standby| >= changeDelta)
+    mode: smallint("mode").notNull(),
+    thresholdMin: integer("threshold_min"),
+    changeDelta: integer("change_delta"),
+
+    // firing state (edge-trigger + cooldown)
+    armed: boolean("armed").notNull().default(true),
+    lastFiredAt: timestamp("last_fired_at", { withTimezone: true }),
+    lastWaitMin: integer("last_wait_min"),
+    lastStatus: smallint("last_status"),
+
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("ride_alert_active_attraction_idx")
+      .on(t.attractionId)
+      .where(sql`active`),
+    index("ride_alert_user_park_idx").on(t.userId, t.parkId),
+    uniqueIndex("ride_alert_user_attraction_uq")
+      .on(t.userId, t.attractionId)
+      .where(sql`active`),
+  ],
+);

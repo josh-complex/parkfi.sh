@@ -1,8 +1,15 @@
 "use client";
 
 import * as React from "react";
+import { useQuery } from "@tanstack/react-query";
 import { ChevronRightIcon, InfoIcon } from "lucide-react";
 
+import {
+  RideAlertButton,
+  type RideAlertEntry,
+} from "#/components/notifications/ride-alert-button.tsx";
+import { useTRPC } from "#/integrations/trpc/react.ts";
+import { authClient } from "#/lib/auth-client.ts";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "#/components/ui/card.tsx";
@@ -190,6 +197,27 @@ export function ParkBoardTable({
   const [filter, setFilter] = React.useState<StatusFilter>("ALL");
   const [linesOnly, setLinesOnly] = React.useState(true);
 
+  // The current user's alerts (if signed in) keyed by ride, so each row's bell
+  // reflects its tracked state. The list query is protected — gate it on session.
+  const trpc = useTRPC();
+  const { data: session } = authClient.useSession();
+  const loggedIn = !!session?.user;
+  const alertsQ = useQuery({ ...trpc.rideAlerts.list.queryOptions(), enabled: loggedIn });
+  const alertByAttraction = React.useMemo(() => {
+    const m = new Map<number, RideAlertEntry>();
+    for (const park of alertsQ.data?.parks ?? []) {
+      for (const a of park.alerts) {
+        m.set(a.attractionId, {
+          id: a.id,
+          mode: a.mode,
+          thresholdMin: a.thresholdMin,
+          changeDelta: a.changeDelta,
+        });
+      }
+    }
+    return m;
+  }, [alertsQ.data]);
+
   const rides = React.useMemo(
     () => (board ?? []).filter((b) => b.entityType === "ATTRACTION"),
     [board],
@@ -273,6 +301,7 @@ export function ParkBoardTable({
                   <PaidLineHeader operatorSlug={operatorSlug} />
                 </TableHead>
                 <TableHead>Next return</TableHead>
+                <TableHead className="w-10 text-center">Alert</TableHead>
                 <TableHead className="w-8" />
               </TableRow>
             </TableHeader>
@@ -302,6 +331,14 @@ export function ParkBoardTable({
                   </TableCell>
                   <TableCell>
                     <ReturnWindowCell item={item} operatorSlug={operatorSlug} />
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <RideAlertButton
+                      attractionId={item.id}
+                      attractionName={item.name}
+                      alert={alertByAttraction.get(item.id)}
+                      loggedIn={loggedIn}
+                    />
                   </TableCell>
                   <TableCell>
                     <ChevronRightIcon

@@ -13,6 +13,7 @@ loadEnv({ path: [".env.local", ".env"] });
 import { createServer } from "node:http";
 
 import { config } from "#/server/parks/config.ts";
+import { evaluateAlerts } from "#/server/notifications/alerts.ts";
 import { activeParkIds, ingestPark } from "#/server/parks/ingest.ts";
 
 let shuttingDown = false;
@@ -63,10 +64,19 @@ async function tick(): Promise<void> {
       }
     });
 
+    // Alerts read the rows we just wrote; isolate so a failure here never
+    // breaks ingestion.
+    let alertsFired = 0;
+    try {
+      alertsFired = await evaluateAlerts();
+    } catch (err) {
+      console.error("[alerts] eval failed:", err);
+    }
+
     lastTickOk = Date.now();
     const ms = lastTickOk - started;
     console.log(
-      `[tick] parks=${parkIds.length} entities=${entities} statusΔ=${statusChanges} queueRows=${queueRows} degraded=${degraded} errors=${errors} ${ms}ms`,
+      `[tick] parks=${parkIds.length} entities=${entities} statusΔ=${statusChanges} queueRows=${queueRows} alerts=${alertsFired} degraded=${degraded} errors=${errors} ${ms}ms`,
     );
   } catch (err) {
     console.error("[tick] failed:", err);

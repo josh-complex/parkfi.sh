@@ -6,12 +6,20 @@ import { useQuery } from "@tanstack/react-query";
 import maplibregl from "maplibre-gl";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
+  CastleIcon,
+  ClapperboardIcon,
+  CompassIcon,
   DramaIcon,
   FerrisWheelIcon,
+  FilmIcon,
+  GlobeIcon,
   InfoIcon,
+  RocketIcon,
   RollerCoasterIcon,
   ShoppingBagIcon,
   SmileIcon,
+  TicketIcon,
+  TreesIcon,
   UtensilsIcon,
   WavesIcon,
 } from "lucide-react";
@@ -156,10 +164,44 @@ const CATEGORY_ICON = {
   info: InfoIcon,
 } as const;
 
-function categoryIconSvg(category: string | null): string {
+function categoryIconSvg(category: string | null, size = 14): string {
   const Icon = CATEGORY_ICON[(category ?? "info") as keyof typeof CATEGORY_ICON] ?? InfoIcon;
-  return renderToStaticMarkup(<Icon width={12} height={12} strokeWidth={2.5} />);
+  return renderToStaticMarkup(<Icon width={size} height={size} strokeWidth={2.5} />);
 }
+
+// Per-park glyph for the overview map — a recognizable landmark icon (the castle,
+// Spaceship Earth's globe, a clapperboard for the studios, …). Unknown slugs fall
+// back to an operator-level icon, then a generic ticket.
+const PARK_ICON: Record<string, typeof CastleIcon> = {
+  "magic-kingdom": CastleIcon,
+  epcot: GlobeIcon,
+  "animal-kingdom": TreesIcon,
+  "hollywood-studios": ClapperboardIcon,
+  "universal-studios-florida": FilmIcon,
+  "islands-of-adventure": CompassIcon,
+  "epic-universe": RocketIcon,
+};
+const OPERATOR_ICON: Record<string, typeof CastleIcon> = {
+  disney: CastleIcon,
+  universal: RocketIcon,
+};
+
+function parkIconSvg(slug: string, operatorSlug: string | null, size = 15): string {
+  const Icon = PARK_ICON[slug] ?? OPERATOR_ICON[operatorSlug ?? ""] ?? TicketIcon;
+  return renderToStaticMarkup(<Icon width={size} height={size} strokeWidth={2.25} />);
+}
+
+/** Operator-brand accent for a park's icon disc — identity, not wait status. */
+function operatorColor(operatorSlug: string | null): string {
+  if (operatorSlug === "disney") return "#1d4ed8"; // blue
+  if (operatorSlug === "universal") return "#7c3aed"; // violet
+  return "#475569"; // slate fallback
+}
+
+// Square (px) reserved around a full attraction marker for collision avoidance.
+// Two markers whose projected centers fall within this on both axes can't both
+// stay expanded; the lower-priority one collapses to a dot.
+const DECLUTTER_SIZE = 34;
 
 // Classes layered onto the selected attraction marker. Applied to the inner
 // element (not the marker root, whose transform maplibre owns for positioning).
@@ -199,9 +241,21 @@ export function ParkMap({
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<maplibregl.Map | null>(null);
   const markersRef = React.useRef<Array<maplibregl.Marker>>([]);
-  // Attraction marker elements by id, so selection highlight can update in place
-  // without rebuilding (rebuilding would close an open popup).
+  // Attraction marker detail-layer elements by id, so selection highlight can
+  // update in place without rebuilding (rebuilding would close an open popup).
   const markerElsRef = React.useRef<Map<number, HTMLElement>>(new Map());
+  // Per-attraction declutter state: the two visual layers + projection input +
+  // placement priority. Read by the collision pass on every pan/zoom.
+  const declutterItemsRef = React.useRef<
+    Array<{
+      id: number;
+      lngLat: [number, number];
+      detail: HTMLElement;
+      dot: HTMLElement;
+      priority: number;
+    }>
+  >([]);
+  const declutterRafRef = React.useRef(0);
   const popupRef = React.useRef<maplibregl.Popup | null>(null);
   // Latest select callback / selection, read inside the marker effect so it
   // doesn't rebuild every render or on each selection change.
@@ -267,7 +321,42 @@ export function ParkMap({
     for (const m of markersRef.current) m.remove();
     markersRef.current = [];
     markerElsRef.current.clear();
+    declutterItemsRef.current = [];
   }, []);
+
+  // Collision pass: project every attraction marker to screen space and, walking
+  // highest-priority first (selected, then busiest operating rides), keep a marker
+  // expanded only if its reserved box clears every already-placed one — otherwise
+  // collapse it to a dot. Re-runs cheaply on each frame of a pan/zoom (rAF-coalesced),
+  // so detail reappears as the user zooms in and markers spread apart.
+  const declutter = React.useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const sel = selectedIdRef.current;
+    const items = [...declutterItemsRef.current].sort(
+      (a, b) => (b.id === sel ? Infinity : b.priority) - (a.id === sel ? Infinity : a.priority),
+    );
+    const placed: Array<{ x: number; y: number }> = [];
+    for (const it of items) {
+      const p = map.project(it.lngLat);
+      const collides =
+        it.id !== sel &&
+        placed.some(
+          (q) => Math.abs(p.x - q.x) < DECLUTTER_SIZE && Math.abs(p.y - q.y) < DECLUTTER_SIZE,
+        );
+      it.detail.classList.toggle("hidden", collides);
+      it.dot.classList.toggle("hidden", !collides);
+      if (!collides) placed.push(p);
+    }
+  }, []);
+
+  const scheduleDeclutter = React.useCallback(() => {
+    if (declutterRafRef.current) return;
+    declutterRafRef.current = requestAnimationFrame(() => {
+      declutterRafRef.current = 0;
+      declutter();
+    });
+  }, [declutter]);
 
   // Rebuild markers: park badges on the overview, attraction pins when a park is
   // active.
@@ -283,10 +372,15 @@ export function ParkMap({
         if (p.latitude == null || p.longitude == null) continue;
         const el = document.createElement("button");
         el.type = "button";
+        el.title = p.name;
         el.className =
-          "flex cursor-pointer flex-col items-center gap-0.5 rounded-md border border-border bg-card/95 px-2 py-1 text-center shadow-md backdrop-blur transition-transform hover:scale-105";
+          "flex cursor-pointer items-center gap-1.5 rounded-full border border-border bg-card/95 py-1 pr-2.5 pl-1 shadow-md backdrop-blur transition-transform hover:scale-105";
         const wait = p.avgWait != null ? `${p.avgWait}m avg` : "—";
-        el.innerHTML = `<span class="text-[11px] font-semibold leading-none text-card-foreground">${p.name}</span><span class="text-[10px] leading-none text-muted-foreground">${p.operating} open · ${wait}</span>`;
+        el.innerHTML = `<span class="flex size-6 shrink-0 items-center justify-center rounded-full text-white shadow-inner" style="background:${operatorColor(
+          p.operatorSlug,
+        )}">${parkIconSvg(p.slug, p.operatorSlug)}</span><span class="flex flex-col items-start leading-none"><span class="text-[11px] font-semibold text-card-foreground">${escapeHtml(
+          p.name,
+        )}</span><span class="text-[10px] text-muted-foreground">${p.operating} open · ${wait}</span></span>`;
         el.addEventListener("click", () => {
           void navigate({ to: "/park/$slug", params: { slug: p.slug } });
         });
@@ -305,21 +399,32 @@ export function ParkMap({
       const color = waitColor(a.standbyWait, a.status);
       const operating = a.status === "OPERATING";
 
-      // Wrapper is positioned by maplibre (it owns the root transform); the inner
-      // button carries all the visuals so its hover/selected scale doesn't fight
-      // that positioning transform.
-      const wrapper = document.createElement("div");
+      // Root button is positioned by maplibre (it owns the transform). It holds
+      // two swappable layers — a full "detail" disc (ride icon + wait badge) and a
+      // small "dot" — toggled by the declutter pass. Visual scale lives on the
+      // children so hover/selection scaling never fights maplibre's positioning.
       const el = document.createElement("button");
       el.type = "button";
       el.title = a.name;
-      el.className =
-        "flex size-7 cursor-pointer items-center justify-center rounded-full border-2 border-white text-[10px] font-bold leading-none text-white shadow-md transition-transform hover:scale-110";
-      el.style.background = color;
-      el.innerHTML =
+      el.className = "block cursor-pointer";
+
+      const detail = document.createElement("div");
+      detail.className =
+        "relative flex size-7 items-center justify-center rounded-full border-2 border-white text-white shadow-md transition-transform hover:scale-110";
+      detail.style.background = color;
+      const waitBadge =
         operating && a.standbyWait != null
-          ? `<span>${a.standbyWait}</span>`
-          : categoryIconSvg(a.category);
-      if (a.id === selectedIdRef.current) el.classList.add(...SELECTED_CLASSES);
+          ? `<span class="absolute -top-1.5 -right-1.5 min-w-[1rem] rounded-full border border-white bg-neutral-900 px-1 text-center text-[9px] leading-[14px] font-bold text-white shadow">${a.standbyWait}</span>`
+          : "";
+      detail.innerHTML = `${categoryIconSvg(a.category)}${waitBadge}`;
+      if (a.id === selectedIdRef.current) detail.classList.add(...SELECTED_CLASSES);
+
+      const dot = document.createElement("div");
+      dot.className =
+        "hidden size-2.5 rounded-full border border-white shadow transition-transform";
+      dot.style.background = color;
+
+      el.append(detail, dot);
 
       const waitLabel =
         operating && a.standbyWait != null
@@ -342,12 +447,30 @@ export function ParkMap({
         map.easeTo({ center: lngLat, duration: 500 });
       });
 
-      wrapper.appendChild(el);
-      markerElsRef.current.set(a.id, el);
-      const marker = new maplibregl.Marker({ element: wrapper }).setLngLat(lngLat).addTo(map);
+      markerElsRef.current.set(a.id, detail);
+      // Busiest operating rides win a spot first; closed/no-wait rides yield.
+      declutterItemsRef.current.push({
+        id: a.id,
+        lngLat,
+        detail,
+        dot,
+        priority: operating ? 1000 + (a.standbyWait ?? 0) : 0,
+      });
+      const marker = new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map);
       markersRef.current.push(marker);
     }
-  }, [activeSlug, overview, board, ready, navigate, clearMarkers]);
+
+    // Initial placement, then keep it current as the user pans/zooms.
+    scheduleDeclutter();
+    map.on("move", scheduleDeclutter);
+    return () => {
+      map.off("move", scheduleDeclutter);
+      if (declutterRafRef.current) {
+        cancelAnimationFrame(declutterRafRef.current);
+        declutterRafRef.current = 0;
+      }
+    };
+  }, [activeSlug, overview, board, ready, navigate, clearMarkers, scheduleDeclutter]);
 
   // Update selection highlight in place (no marker rebuild, so a popup stays open).
   React.useEffect(() => {
@@ -355,7 +478,9 @@ export function ParkMap({
       const on = id === selectedId;
       for (const c of SELECTED_CLASSES) el.classList.toggle(c, on);
     }
-  }, [selectedId, board, ready]);
+    // Promote the selected marker out of any decluttered dot state.
+    scheduleDeclutter();
+  }, [selectedId, board, ready, scheduleDeclutter]);
 
   // Camera: fit both resorts on the overview, fly into the active park. Built
   // as a closure recomputed each render and stashed in a ref so the delayed

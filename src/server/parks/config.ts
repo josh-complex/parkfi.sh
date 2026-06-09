@@ -61,6 +61,12 @@ export const config = {
 
   /** How often the worker polls every active park, in ms. */
   pollIntervalMs: num("POLL_INTERVAL_MS", 60_000),
+  /**
+   * Minimum gap between two notifications for the same ride alert. Alert
+   * latency itself is governed by `pollIntervalMs` (alerts are evaluated once
+   * per tick); this only rate-limits repeat fires of a still-matching rule.
+   */
+  alertCooldownMs: num("ALERT_COOLDOWN_MS", 30 * 60_000),
   /** Max parks fetched concurrently within one tick. */
   pollConcurrency: num("POLL_CONCURRENCY", 4),
   /** Per-request fetch timeout, in ms. */
