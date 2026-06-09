@@ -1,3 +1,4 @@
+import { dash } from "@better-auth/infra";
 import { betterAuth } from "better-auth";
 import { oAuthProxy } from "better-auth/plugins";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -20,6 +21,7 @@ export const auth = betterAuth({
       productionURL: import.meta.env.BETTER_AUTH_URL,
       secret: import.meta.env.OAUTH_PROXY_SECRET,
     }),
+    dash(),
   ],
   trustedOrigins: import.meta.env.DEV ? ["http://localhost:3000"] : [],
 });
