@@ -19,7 +19,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "#/components/ui/chart.tsx";
-import { ConstructionState } from "#/components/ui/construction.tsx";
+import { ConstructionState } from "#/components/ui/anim-icons/construction.tsx";
 import { Empty, EmptyDescription, EmptyTitle } from "#/components/ui/empty.tsx";
 import {
   Select,
