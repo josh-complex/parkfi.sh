@@ -7,6 +7,7 @@ import viteReact, { reactCompilerPreset } from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import { nitro } from "nitro/vite";
+import { VitePWA } from "vite-plugin-pwa";
 
 const config = defineConfig({
   staged: {
@@ -27,6 +28,16 @@ const config = defineConfig({
     tanstackStart(),
     viteReact(),
     babel({ presets: [reactCompilerPreset()] }),
+    VitePWA({
+      strategies: "injectManifest",
+      srcDir: "public",
+      filename: "sw.js",
+      registerType: "autoUpdate",
+      manifest: false,
+      injectManifest: {
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+      },
+    }),
   ],
 });
 

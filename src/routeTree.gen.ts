@@ -15,6 +15,7 @@ import { Route as DisclaimersRouteImport } from './routes/disclaimers'
 import { Route as DiningRouteImport } from './routes/dining'
 import { Route as DashRouteImport } from './routes/_dash'
 import { Route as DashIndexRouteImport } from './routes/_dash/index'
+import { Route as DashAlertsRouteImport } from './routes/_dash/alerts'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as DashParkSlugRouteImport } from './routes/_dash/park.$slug'
@@ -48,6 +49,11 @@ const DashIndexRoute = DashIndexRouteImport.update({
   path: '/',
   getParentRoute: () => DashRoute,
 } as any)
+const DashAlertsRoute = DashAlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
+  getParentRoute: () => DashRoute,
+} as any)
 const ApiTrpcSplatRoute = ApiTrpcSplatRouteImport.update({
   id: '/api/trpc/$',
   path: '/api/trpc/$',
@@ -70,6 +76,7 @@ export interface FileRoutesByFullPath {
   '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
   '/tickets': typeof TicketsRoute
+  '/alerts': typeof DashAlertsRoute
   '/park/$slug': typeof DashParkSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
@@ -79,6 +86,7 @@ export interface FileRoutesByTo {
   '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
   '/tickets': typeof TicketsRoute
+  '/alerts': typeof DashAlertsRoute
   '/': typeof DashIndexRoute
   '/park/$slug': typeof DashParkSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -91,6 +99,7 @@ export interface FileRoutesById {
   '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
   '/tickets': typeof TicketsRoute
+  '/_dash/alerts': typeof DashAlertsRoute
   '/_dash/': typeof DashIndexRoute
   '/_dash/park/$slug': typeof DashParkSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -104,6 +113,7 @@ export interface FileRouteTypes {
     | '/disclaimers'
     | '/login'
     | '/tickets'
+    | '/alerts'
     | '/park/$slug'
     | '/api/auth/$'
     | '/api/trpc/$'
@@ -113,6 +123,7 @@ export interface FileRouteTypes {
     | '/disclaimers'
     | '/login'
     | '/tickets'
+    | '/alerts'
     | '/'
     | '/park/$slug'
     | '/api/auth/$'
@@ -124,6 +135,7 @@ export interface FileRouteTypes {
     | '/disclaimers'
     | '/login'
     | '/tickets'
+    | '/_dash/alerts'
     | '/_dash/'
     | '/_dash/park/$slug'
     | '/api/auth/$'
@@ -184,6 +196,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashIndexRouteImport
       parentRoute: typeof DashRoute
     }
+    '/_dash/alerts': {
+      id: '/_dash/alerts'
+      path: '/alerts'
+      fullPath: '/alerts'
+      preLoaderRoute: typeof DashAlertsRouteImport
+      parentRoute: typeof DashRoute
+    }
     '/api/trpc/$': {
       id: '/api/trpc/$'
       path: '/api/trpc/$'
@@ -209,11 +228,13 @@ declare module '@tanstack/react-router' {
 }
 
 interface DashRouteChildren {
+  DashAlertsRoute: typeof DashAlertsRoute
   DashIndexRoute: typeof DashIndexRoute
   DashParkSlugRoute: typeof DashParkSlugRoute
 }
 
 const DashRouteChildren: DashRouteChildren = {
+  DashAlertsRoute: DashAlertsRoute,
   DashIndexRoute: DashIndexRoute,
   DashParkSlugRoute: DashParkSlugRoute,
 }
