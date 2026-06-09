@@ -15,11 +15,15 @@ export const diningRouter = {
       experience_type: string | null;
       price_range: string | null;
       park_resort: string | null;
+      image_url: string | null;
+      detail_url: string | null;
+      source: number;
     }>(sql`
-      SELECT facility_id, name, cuisine, experience_type, price_range, park_resort
+      SELECT facility_id, name, cuisine, experience_type, price_range, park_resort,
+             image_url, detail_url, source
       FROM restaurant_dim
       WHERE priority = true AND active = true AND bookable = true
-      ORDER BY name
+      ORDER BY park_resort NULLS LAST, name
     `);
     return result.rows.map((r) => ({
       facilityId: r.facility_id,
@@ -28,6 +32,9 @@ export const diningRouter = {
       experienceType: r.experience_type,
       priceRange: r.price_range,
       parkResort: r.park_resort,
+      imageUrl: r.image_url,
+      detailUrl: r.detail_url,
+      source: Number(r.source),
     }));
   }),
 

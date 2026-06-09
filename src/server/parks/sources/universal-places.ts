@@ -1,3 +1,5 @@
+import type { Page } from "puppeteer-core";
+
 import { config } from "../config.ts";
 import { UniversalPlacesSchema, type UniversalPlaces } from "../schemas.ts";
 import { UpstreamError } from "./themeparks.ts";
@@ -29,15 +31,19 @@ const inPageGet = async (a: { url: string; headers: Record<string, string> }) =>
   }
 };
 
-/** Fetch the full UOR places catalog, harvesting a guest session in-browser. */
-export async function fetchUniversalPlaces(signal: AbortSignal): Promise<UniversalPlaces> {
-  const result = await withUniversalSession(async (page, session) => {
-    // GET, not POST: drop the JSON content-type but keep the auth header set.
-    const headers = { ...session.headers };
-    delete headers["content-type"];
-    return page.evaluate(inPageGet, { url: PLACES_URL, headers });
-  }, signal);
-
+/**
+ * Fetch the places catalog within an already-open guest session — for callers
+ * that also replay other endpoints (e.g. the dining catalog probes
+ * reservation-availability) on the same page, avoiding a second session.
+ */
+export async function fetchPlacesInPage(
+  page: Page,
+  headers: Record<string, string>,
+): Promise<UniversalPlaces> {
+  // GET, not POST: drop the JSON content-type but keep the auth header set.
+  const getHeaders = { ...headers };
+  delete getHeaders["content-type"];
+  const result = await page.evaluate(inPageGet, { url: PLACES_URL, headers: getHeaders });
   if (result.body == null) {
     throw new UpstreamError(
       `Universal places GET ${PLACES_URL} -> ${result.status || "no response"}`,
@@ -45,4 +51,9 @@ export async function fetchUniversalPlaces(signal: AbortSignal): Promise<Univers
     );
   }
   return UniversalPlacesSchema.parse(result.body);
+}
+
+/** Fetch the full UOR places catalog, harvesting a guest session in-browser. */
+export async function fetchUniversalPlaces(signal: AbortSignal): Promise<UniversalPlaces> {
+  return withUniversalSession((page, session) => fetchPlacesInPage(page, session.headers), signal);
 }

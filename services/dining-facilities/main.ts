@@ -10,10 +10,11 @@
 import { config as loadEnv } from "dotenv";
 loadEnv({ path: [".env.local", ".env"] });
 
-import { notInArray, sql } from "drizzle-orm";
+import { and, eq, notInArray, sql } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
 import { restaurantDim } from "#/db/schema.ts";
+import { Source } from "#/server/parks/codes.ts";
 import { config } from "#/server/parks/config.ts";
 import { ensureLoggedIn, relogin } from "#/server/dining/disney-session.ts";
 import { fetchFacilities } from "#/server/dining/facilities.ts";
@@ -48,9 +49,13 @@ async function main() {
     await db
       .insert(restaurantDim)
       .values(
-        rows
-          .slice(i, i + 500)
-          .map((r) => ({ ...r, active: true, lastSeenAt: now, updatedAt: now })),
+        rows.slice(i, i + 500).map((r) => ({
+          ...r,
+          source: Source.DISNEY_DIRECT,
+          active: true,
+          lastSeenAt: now,
+          updatedAt: now,
+        })),
       )
       .onConflictDoUpdate({
         target: restaurantDim.facilityId,
@@ -72,12 +77,18 @@ async function main() {
       });
   }
 
-  // Soft-delete: venues no longer listed stay as rows (FK + history) but go inactive.
+  // Soft-delete: venues no longer listed stay as rows (FK + history) but go
+  // inactive. Scoped to source=DISNEY_DIRECT so the UOR catalog is untouched.
   const seen = rows.map((r) => r.facilityId);
   const deactivated = await db
     .update(restaurantDim)
     .set({ active: false, updatedAt: now })
-    .where(notInArray(restaurantDim.facilityId, seen))
+    .where(
+      and(
+        eq(restaurantDim.source, Source.DISNEY_DIRECT),
+        notInArray(restaurantDim.facilityId, seen),
+      ),
+    )
     .returning({ facilityId: restaurantDim.facilityId });
 
   console.log(

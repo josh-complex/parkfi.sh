@@ -440,3 +440,44 @@ export const UniversalPlacesSchema = z.object({
     .default([]),
 });
 export type UniversalPlaces = z.infer<typeof UniversalPlacesSchema>;
+
+// ---------------------------------------------------------------------------
+// Universal dining reservation availability —
+// `POST resort-areas/UOR/places/{place_id}/reservation-availability` with
+// {place_id, start_date, end_date, party_size}. One POST covers the whole date
+// range. Each date carries time slots with an AVAILABLE/NOT_AVAILABLE status
+// (and a per-party-size breakdown). Same guest-session auth as the places feed.
+// Tolerant: unknown fields drop, missing arrays default empty.
+// ---------------------------------------------------------------------------
+const UniversalReservationSlot = z.object({
+  time: z.string(),
+  availability_status: z.string().optional(),
+  party_sizes: z
+    .array(
+      z
+        .object({
+          size: z.union([z.string(), z.number()]).optional(),
+          availability_status: z.string().optional(),
+        })
+        .partial(),
+    )
+    .default([]),
+});
+
+const UniversalReservationDate = z.object({
+  date: z.string(),
+  availability_status: z.string().optional(),
+  slots: z.array(UniversalReservationSlot).default([]),
+});
+
+export const UniversalReservationAvailabilitySchema = z.object({
+  place_id: z.string().optional(),
+  min_party_size: z.number().optional(),
+  max_party_size: z.number().optional(),
+  min_advanced_minutes: z.number().optional(),
+  max_advanced_days: z.number().optional(),
+  dates: z.array(UniversalReservationDate).default([]),
+});
+export type UniversalReservationAvailability = z.infer<
+  typeof UniversalReservationAvailabilitySchema
+>;

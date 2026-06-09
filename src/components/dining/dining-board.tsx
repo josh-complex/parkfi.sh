@@ -89,36 +89,76 @@ function AvailabilitySparkline({
   );
 }
 
+interface Restaurant {
+  facilityId: string;
+  name: string;
+  cuisine: string | null;
+  experienceType: string | null;
+  priceRange: string | null;
+  parkResort: string | null;
+  imageUrl: string | null;
+  detailUrl: string | null;
+  source: number;
+}
+
 function RestaurantCard({
   restaurant,
   availability,
 }: {
-  restaurant: {
-    facilityId: string;
-    name: string;
-    cuisine: string | null;
-    experienceType: string | null;
-    priceRange: string | null;
-    parkResort: string | null;
-  };
+  restaurant: Restaurant;
   availability: AvailabilityEntry | undefined;
 }) {
   const todayStr = today();
   const todayData = availability?.days.find((d) => d.date === todayStr);
   const nextAvailable = availability?.days.find((d) => d.available && d.date >= todayStr);
   const latestObserved = availability?.days[0]?.observedAt;
+  const subtitle = [restaurant.parkResort, restaurant.experienceType ?? restaurant.cuisine]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
-    <Card className="@container/card">
-      <CardHeader>
+    <Card className="@container/card overflow-hidden pt-0">
+      {restaurant.imageUrl && (
+        <div className="bg-muted relative h-32 w-full overflow-hidden">
+          <img
+            src={restaurant.imageUrl}
+            alt={restaurant.name}
+            loading="lazy"
+            className="size-full object-cover"
+          />
+          {availability &&
+            (todayData?.available ? (
+              <Badge className="absolute top-3 right-3 bg-emerald-500 text-white shadow">
+                Open today
+              </Badge>
+            ) : (
+              <Badge variant="secondary" className="absolute top-3 right-3 shadow">
+                None today
+              </Badge>
+            ))}
+        </div>
+      )}
+      <CardHeader className={restaurant.imageUrl ? "pt-4" : undefined}>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <CardTitle className="line-clamp-1">{restaurant.name}</CardTitle>
-            <CardDescription className="mt-0.5 line-clamp-1">
-              {[restaurant.parkResort, restaurant.cuisine].filter(Boolean).join(" · ")}
-            </CardDescription>
+            <CardTitle className="line-clamp-1">
+              {restaurant.detailUrl ? (
+                <a
+                  href={restaurant.detailUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hover:underline"
+                >
+                  {restaurant.name}
+                </a>
+              ) : (
+                restaurant.name
+              )}
+            </CardTitle>
+            <CardDescription className="mt-0.5 line-clamp-1">{subtitle}</CardDescription>
           </div>
-          {availability ? (
+          {/* Status badge lives on the image when present; show it here otherwise. */}
+          {!restaurant.imageUrl && availability ? (
             todayData?.available ? (
               <Badge className="bg-emerald-500 text-white shrink-0">Open today</Badge>
             ) : (
@@ -181,7 +221,7 @@ export function DiningBoard() {
         <div className="flex flex-col gap-1">
           <h2 className="text-xl font-semibold tracking-tight">Dining Reservations</h2>
           <p className="text-muted-foreground text-sm">
-            Live reservation availability for priority Disney restaurants.
+            Live reservation availability across Disney &amp; Universal restaurants.
           </p>
         </div>
         <div className="flex items-end gap-4">

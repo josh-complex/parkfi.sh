@@ -401,11 +401,13 @@ export const skuPriceObs = pgTable(
 );
 
 /**
- * (F) WDW restaurant catalog (the dine-vas dimension). Seeded weekly from
- * `/dine-res/api/dine/facilities` via the maintained OneID session. `facilityId`
- * is the bare id (the `;entityType=…` suffix is split into `entityType`); it's
+ * (F) Restaurant catalog (the reservation-availability dimension), shared across
+ * operators and partitioned by `source`. WDW rows are seeded weekly from
+ * `/dine-res/api/dine/facilities` (OneID session); UOR rows are seeded from the
+ * Universal "places" feed (`facilityId` = the `uor.*` place_id). `facilityId` is
  * the join key for the availability sweep. Soft-delete (active=false) on drop —
- * never hard-delete, so `dining_obs` keeps FK integrity + history.
+ * never hard-delete, so `dining_obs` keeps FK integrity + history. Each
+ * operator's catalog cron scopes its upsert/soft-delete to its own `source`.
  */
 export const restaurantDim = pgTable("restaurant_dim", {
   facilityId: text("facility_id").primaryKey(),
@@ -422,6 +424,15 @@ export const restaurantDim = pgTable("restaurant_dim", {
   sellableOnline: boolean("sellable_online").notNull().default(false),
   // hot tier the availability poller actually sweeps (config-controlled, not catalog)
   priority: boolean("priority").notNull().default(false),
+  // Optional card metadata (UOR places carry these; WDW leaves them null).
+  imageUrl: text("image_url"),
+  detailUrl: text("detail_url"),
+  // Operator/source that owns this row (DISNEY_DIRECT default backfills the
+  // pre-existing WDW catalog). Scopes each catalog cron's upsert + soft-delete.
+  source: smallint("source")
+    .notNull()
+    .default(3)
+    .references(() => refSource.id),
   active: boolean("active").notNull().default(true),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

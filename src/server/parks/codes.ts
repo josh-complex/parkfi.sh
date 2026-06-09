@@ -365,6 +365,47 @@ export function universalDetailUrl(
   return null;
 }
 
+// Place `categories` that mark a table-service / reservable restaurant (verified
+// live). Quick-service / mobile-food-ordering / snacks carry none of these and
+// have no reservation-availability feed.
+const UNIVERSAL_RESERVABLE_CATEGORIES = new Set([
+  "casual-dining",
+  "full-service",
+  "fine-dining",
+  "character-dining",
+]);
+
+/** Whether a dining place takes reservations (worth sweeping the availability feed). */
+export function universalDiningBookable(categories?: Array<string> | null): boolean {
+  return (categories ?? []).some((c) => UNIVERSAL_RESERVABLE_CATEGORIES.has(c.toLowerCase()));
+}
+
+/** Most specific dining experience label from a place's categories. */
+export function universalDiningExperience(categories?: Array<string> | null): string | null {
+  const set = new Set((categories ?? []).map((c) => c.toLowerCase()));
+  if (set.has("fine-dining")) return "Fine Dining";
+  if (set.has("character-dining")) return "Character Dining";
+  if (set.has("full-service")) return "Full Service";
+  if (set.has("casual-dining")) return "Casual Dining";
+  return null;
+}
+
+/**
+ * Coarse meal period from a "HH:MM" reservation slot time. Universal slots carry
+ * no meal period (Disney's do), so we derive one — it both labels the slot and
+ * keeps it distinguishable from the empty-string "none available" sentinel in
+ * `dining_obs`.
+ */
+export function universalMealPeriod(time: string): string {
+  const head = (time ?? "").split(":")[0];
+  if (!head) return "Dining"; // Number("") is 0, so guard the empty case explicitly
+  const hour = Number(head);
+  if (!Number.isFinite(hour)) return "Dining";
+  if (hour < 11) return "Breakfast";
+  if (hour < 16) return "Lunch";
+  return "Dinner";
+}
+
 // ---------------------------------------------------------------------------
 // Universal Orlando web-store (api.universalparks.com) helpers
 // ---------------------------------------------------------------------------

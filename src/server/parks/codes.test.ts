@@ -4,7 +4,10 @@ import {
   categoryFromUniversalPlace,
   normalizeUniversalName,
   universalDetailUrl,
+  universalDiningBookable,
+  universalDiningExperience,
   universalLandLabel,
+  universalMealPeriod,
   universalPlaceImages,
   universalPlaceTags,
 } from "./codes.ts";
@@ -95,5 +98,29 @@ describe("universalPlaceTags + universalLandLabel + universalDetailUrl", () => {
     ];
     expect(universalDetailUrl(urls)).toBe("https://x/details");
     expect(universalDetailUrl([])).toBeNull();
+  });
+});
+
+describe("Universal dining classification", () => {
+  it("flags only table-service categories as bookable", () => {
+    expect(universalDiningBookable(["casual-dining"])).toBe(true);
+    expect(universalDiningBookable(["fine-dining", "full-service"])).toBe(true);
+    expect(universalDiningBookable(["quick-service", "mobile-food-ordering"])).toBe(false);
+    expect(universalDiningBookable(["snacks-beverages"])).toBe(false);
+    expect(universalDiningBookable([])).toBe(false);
+  });
+
+  it("labels the most specific dining experience", () => {
+    expect(universalDiningExperience(["casual-dining", "full-service"])).toBe("Full Service");
+    expect(universalDiningExperience(["fine-dining"])).toBe("Fine Dining");
+    expect(universalDiningExperience(["casual-dining"])).toBe("Casual Dining");
+    expect(universalDiningExperience(["quick-service"])).toBeNull();
+  });
+
+  it("derives a coarse meal period from a slot time", () => {
+    expect(universalMealPeriod("09:30")).toBe("Breakfast");
+    expect(universalMealPeriod("13:00")).toBe("Lunch");
+    expect(universalMealPeriod("21:45")).toBe("Dinner");
+    expect(universalMealPeriod("")).toBe("Dining");
   });
 });
