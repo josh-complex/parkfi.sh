@@ -1,4 +1,4 @@
-import { boolean, index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 /**
  * better-auth core schema (v1.6.x), matching `@better-auth/core`'s
@@ -69,32 +69,4 @@ export const verification = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [index("verification_identifier_idx").on(t.identifier)],
-);
-
-/**
- * `@better-auth/passkey` plugin model (WebAuthn credentials). Field set matches
- * the plugin's `schema` exactly; JS property keys MUST equal the plugin's field
- * names (camelCase, incl. `credentialID`) so the drizzle adapter maps them.
- */
-export const passkey = pgTable(
-  "passkey",
-  {
-    id: text("id").primaryKey(),
-    name: text("name"),
-    publicKey: text("public_key").notNull(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    credentialID: text("credential_id").notNull(),
-    counter: integer("counter").notNull(),
-    deviceType: text("device_type").notNull(),
-    backedUp: boolean("backed_up").notNull(),
-    transports: text("transports"),
-    aaguid: text("aaguid"),
-    createdAt: timestamp("created_at").defaultNow(),
-  },
-  (t) => [
-    index("passkey_user_id_idx").on(t.userId),
-    index("passkey_credential_id_idx").on(t.credentialID),
-  ],
 );

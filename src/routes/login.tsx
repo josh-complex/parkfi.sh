@@ -1,6 +1,6 @@
 import * as React from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { FerrisWheelIcon, KeyRoundIcon } from "lucide-react";
+import { FerrisWheelIcon } from "lucide-react";
 
 import { authClient } from "#/lib/auth-client.ts";
 import { Button } from "#/components/ui/button.tsx";
@@ -31,47 +31,29 @@ function LoginPage() {
   const [mode, setMode] = React.useState<"signin" | "signup">("signin");
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
+  const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [pending, setPending] = React.useState(false);
 
-  const supported =
-    typeof window !== "undefined" && !!window.PublicKeyCredential && !!navigator.credentials;
-
-  const handleSignIn = async () => {
-    setError(null);
-    setPending(true);
-    try {
-      const result = await authClient.signIn.passkey();
-      if (result?.error) {
-        setError(result.error.message ?? "Couldn’t sign in with a passkey.");
-        return;
-      }
-      await navigate({ to: "/" });
-    } catch {
-      setError("Passkey sign-in was cancelled or failed.");
-    } finally {
-      setPending(false);
-    }
-  };
-
-  const handleSignUp = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setPending(true);
     try {
-      // Passkey-first registration: the server creates the account from this
-      // context (see resolveUser in lib/auth.ts) and starts a session.
-      const result = await authClient.passkey.addPasskey({
-        name,
-        context: JSON.stringify({ email, name }),
-      });
-      if (result?.error) {
-        setError(result.error.message ?? "Couldn’t create your passkey account.");
-        return;
+      if (mode === "signup") {
+        const result = await authClient.signUp.email({ email, password, name });
+        if (result.error) {
+          setError(result.error.message ?? "Sign up failed");
+          return;
+        }
+      } else {
+        const result = await authClient.signIn.email({ email, password });
+        if (result.error) {
+          setError(result.error.message ?? "Sign in failed");
+          return;
+        }
       }
       await navigate({ to: "/" });
-    } catch {
-      setError("Passkey registration was cancelled or failed.");
     } finally {
       setPending(false);
     }
@@ -90,35 +72,13 @@ function LoginPage() {
             <CardTitle>{mode === "signin" ? "Sign in" : "Create account"}</CardTitle>
             <CardDescription>
               {mode === "signin"
-                ? "Use your passkey — Face ID, Touch ID, or a security key. No password."
-                : "Create a passkey-secured account. We’ll never ask for a password."}
+                ? "Enter your email and password to sign in."
+                : "Create an account to save preferences and alerts."}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {!supported ? (
-              <p role="alert" className="text-sm text-destructive">
-                This browser doesn’t support passkeys. Try a recent version of Safari, Chrome, or
-                Edge.
-              </p>
-            ) : mode === "signin" ? (
-              <div className="flex flex-col gap-4">
-                {error && (
-                  <p role="alert" className="text-sm text-destructive">
-                    {error}
-                  </p>
-                )}
-                <Button
-                  type="button"
-                  disabled={pending}
-                  className="w-full"
-                  onClick={() => void handleSignIn()}
-                >
-                  <KeyRoundIcon className="size-4" />
-                  {pending ? "Waiting for passkey…" : "Sign in with a passkey"}
-                </Button>
-              </div>
-            ) : (
-              <form onSubmit={(e) => void handleSignUp(e)} className="flex flex-col gap-4">
+            <form onSubmit={(e) => void handleSubmit(e)} className="flex flex-col gap-4">
+              {mode === "signup" && (
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="name">Name</Label>
                   <Input
@@ -131,29 +91,46 @@ function LoginPage() {
                     required
                   />
                 </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    autoComplete="username webauthn"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@example.com"
-                    required
-                  />
-                </div>
-                {error && (
-                  <p role="alert" className="text-sm text-destructive">
-                    {error}
-                  </p>
-                )}
-                <Button type="submit" disabled={pending} className="w-full">
-                  <KeyRoundIcon className="size-4" />
-                  {pending ? "Creating passkey…" : "Create account with a passkey"}
-                </Button>
-              </form>
-            )}
+              )}
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  autoComplete={mode === "signin" ? "email" : "username"}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  required
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
+              {error && (
+                <p role="alert" className="text-sm text-destructive">
+                  {error}
+                </p>
+              )}
+              <Button type="submit" disabled={pending} className="w-full">
+                {pending
+                  ? mode === "signin"
+                    ? "Signing in…"
+                    : "Creating account…"
+                  : mode === "signin"
+                    ? "Sign in"
+                    : "Create account"}
+              </Button>
+            </form>
           </CardContent>
         </Card>
 
