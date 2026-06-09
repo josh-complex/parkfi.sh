@@ -3,49 +3,15 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   categoryFromUniversalPlace,
   normalizeUniversalName,
-  parseUniversalId,
   universalDetailUrl,
   universalLandLabel,
   universalPlaceImages,
   universalPlaceTags,
 } from "./codes.ts";
 
-// The places `place_id` and the ThemeParks.wiki Universal child `externalId`
-// share one namespace; these are real ids pulled live from both feeds.
-describe("parseUniversalId — the Universal join key", () => {
-  it("parses a park POI id into venue + leaf, dropping the resort prefix + type", () => {
-    expect(parseUniversalId("uor.usf.rides.revenge_of_the_mummy")).toEqual({
-      venue: "usf",
-      leaf: "revenge_of_the_mummy",
-    });
-    expect(parseUniversalId("uor.ioa.dining.green_eggs_and_ham_cafe")).toEqual({
-      venue: "ioa",
-      leaf: "green_eggs_and_ham_cafe",
-    });
-    expect(parseUniversalId("uor.ueu.show.the_cosmos_fountain")).toEqual({
-      venue: "ueu",
-      leaf: "the_cosmos_fountain",
-    });
-  });
-
-  it("normalizes the `uo.` vs `uor.` prefix so both feeds collide on one key", () => {
-    expect(parseUniversalId("uo.usf.rides.revenge_of_the_mummy")).toEqual(
-      parseUniversalId("uor.usf.rides.revenge_of_the_mummy"),
-    );
-  });
-
-  it("tolerates a 2-segment id with no type segment", () => {
-    expect(parseUniversalId("uor.usf.foo")).toEqual({ venue: "usf", leaf: "foo" });
-  });
-
-  it("returns null for ids that can't yield a venue + leaf", () => {
-    expect(parseUniversalId("uor.citywalk")).toBeNull();
-    expect(parseUniversalId(undefined)).toBeNull();
-    expect(parseUniversalId("")).toBeNull();
-  });
-});
-
-describe("normalizeUniversalName — cross-feed fallback match", () => {
+// The Universal places feed is joined to our attractions on venue_id -> park +
+// normalized name (ids don't line up across the feeds). These are real names.
+describe("normalizeUniversalName — the Universal join key", () => {
   it("strips trademark glyphs, lowercases, and collapses punctuation", () => {
     expect(normalizeUniversalName("Hagrid's Magical Creatures Motorbike Adventure™")).toBe(
       "hagrids magical creatures motorbike adventure",

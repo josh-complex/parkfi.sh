@@ -18,6 +18,7 @@ import { Route as DashRouteImport } from './routes/_dash'
 import { Route as DashIndexRouteImport } from './routes/_dash/index'
 import { Route as DashAlertsRouteImport } from './routes/_dash/alerts'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
+import { Route as ApiPushSubscribeRouteImport } from './routes/api/push/subscribe'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as DashParkSlugRouteImport } from './routes/_dash/park.$slug'
 
@@ -65,6 +66,11 @@ const ApiTrpcSplatRoute = ApiTrpcSplatRouteImport.update({
   path: '/api/trpc/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPushSubscribeRoute = ApiPushSubscribeRouteImport.update({
+  id: '/api/push/subscribe',
+  path: '/api/push/subscribe',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -86,6 +92,7 @@ export interface FileRoutesByFullPath {
   '/alerts': typeof DashAlertsRoute
   '/park/$slug': typeof DashParkSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
 }
 export interface FileRoutesByTo {
@@ -98,6 +105,7 @@ export interface FileRoutesByTo {
   '/': typeof DashIndexRoute
   '/park/$slug': typeof DashParkSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
 }
 export interface FileRoutesById {
@@ -112,6 +120,7 @@ export interface FileRoutesById {
   '/_dash/': typeof DashIndexRoute
   '/_dash/park/$slug': typeof DashParkSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
 }
 export interface FileRouteTypes {
@@ -126,6 +135,7 @@ export interface FileRouteTypes {
     | '/alerts'
     | '/park/$slug'
     | '/api/auth/$'
+    | '/api/push/subscribe'
     | '/api/trpc/$'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -138,6 +148,7 @@ export interface FileRouteTypes {
     | '/'
     | '/park/$slug'
     | '/api/auth/$'
+    | '/api/push/subscribe'
     | '/api/trpc/$'
   id:
     | '__root__'
@@ -151,6 +162,7 @@ export interface FileRouteTypes {
     | '/_dash/'
     | '/_dash/park/$slug'
     | '/api/auth/$'
+    | '/api/push/subscribe'
     | '/api/trpc/$'
   fileRoutesById: FileRoutesById
 }
@@ -162,6 +174,7 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   TicketsRoute: typeof TicketsRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiPushSubscribeRoute: typeof ApiPushSubscribeRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
 }
 
@@ -230,6 +243,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiTrpcSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/push/subscribe': {
+      id: '/api/push/subscribe'
+      path: '/api/push/subscribe'
+      fullPath: '/api/push/subscribe'
+      preLoaderRoute: typeof ApiPushSubscribeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -269,6 +289,7 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   TicketsRoute: TicketsRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiPushSubscribeRoute: ApiPushSubscribeRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,
 }
 export const routeTree = rootRouteImport

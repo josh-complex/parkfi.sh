@@ -36,7 +36,6 @@ import {
   disneyHeroUrl,
   normalizeUniversalName,
   parseDisneyFacets,
-  parseUniversalId,
   Source,
   universalDetailUrl,
   universalLandLabel,
@@ -357,73 +356,93 @@ async function enrichDisneyPark(
 
 // --- Universal places enrichment (step 4, UOR only) -----------------------
 
+// Our park slug -> the places feed's `venue_id` (the authoritative park key;
+// place_id prefixes are unreliable). Volcano Bay isn't a seeded park.
+const UNIVERSAL_VENUE_BY_SLUG: Record<string, string> = {
+  "universal-studios-florida": "uor.usf",
+  "islands-of-adventure": "uor.ioa",
+  "epic-universe": "uor.eu",
+};
+
 interface ParkAttraction {
   id: number;
   name: string;
-  externalId: string;
 }
 
-/** Active attractions of a park with their ThemeParks.wiki `externalId` (the join key). */
+/** Active attractions of a park (matched to places by normalized name). */
 async function resolveParkAttractions(parkId: number): Promise<Array<ParkAttraction>> {
-  const result = await db.execute<{ id: string; name: string; external_id: string }>(sql`
-    SELECT a.id, a.name, e.external_id
+  const result = await db.execute<{ id: string; name: string }>(sql`
+    SELECT a.id, a.name
     FROM attractions a
-    JOIN external_ids e
-      ON e.entity_kind = ${KIND_ATTRACTION} AND e.entity_id = a.id AND e.source = ${Source.THEMEPARKS_WIKI}
     WHERE a.park_id = ${parkId} AND a.active = true
   `);
-  return result.rows.map((r) => ({ id: Number(r.id), name: r.name, externalId: r.external_id }));
+  return result.rows.map((r) => ({ id: Number(r.id), name: r.name }));
 }
 
 /**
- * Lookup over the resort-wide places feed: a primary `<venue>:<leaf>` id key and
- * a `<venue>:<name>` fallback (handles the leaf-slug drift between the feeds,
- * e.g. Hagrid's `_motorcycle_` vs `_motorbike_`). Both keys are venue-scoped, so
- * matching is naturally confined to the same park.
+ * Indexed view of the resort-wide places feed:
+ *  - `byVenueName`: venue_id -> (normalized name -> place), the join lookup.
+ *    On a name collision the richer place wins (an attraction beats a same-named
+ *    amenity), so a ride matches its real card, not e.g. its photo-op entry.
+ *  - `landById`: place_id -> readable name for every `Land`-type place. A ride's
+ *    `land_id` references one of these; resolving through it yields proper names
+ *    ("uor.eu.snw" -> "SUPER NINTENDO WORLD") that the cryptic slug can't.
  */
 interface PlaceIndex {
-  byKey: Map<string, UniversalPlace>;
-  byName: Map<string, UniversalPlace>;
+  byVenueName: Map<string, Map<string, UniversalPlace>>;
+  landById: Map<string, string>;
 }
 
-function buildPlaceIndex(places: UniversalPlaces): PlaceIndex {
-  const byKey = new Map<string, UniversalPlace>();
-  const byName = new Map<string, UniversalPlace>();
-  for (const { place } of places.results) {
-    const parsed = parseUniversalId(place.place_id);
-    if (!parsed) continue;
-    const keyId = `${parsed.venue}:${parsed.leaf}`;
-    if (!byKey.has(keyId)) byKey.set(keyId, place);
-    if (place.name) {
-      const keyName = `${parsed.venue}:${normalizeUniversalName(place.name)}`;
-      if (!byName.has(keyName)) byName.set(keyName, place);
-    }
-  }
-  return { byKey, byName };
-}
-
-function matchPlace(index: PlaceIndex, attraction: ParkAttraction): UniversalPlace | null {
-  const parsed = parseUniversalId(attraction.externalId);
-  if (!parsed) return null;
+/** Enrichment richness — prefer the place carrying the most card metadata. */
+function placeRichness(place: UniversalPlace): number {
   return (
-    index.byKey.get(`${parsed.venue}:${parsed.leaf}`) ??
-    index.byName.get(`${parsed.venue}:${normalizeUniversalName(attraction.name)}`) ??
-    null
+    (place.images.length > 0 ? 1 : 0) +
+    (place.land_id ? 1 : 0) +
+    (place.urls.length > 0 ? 1 : 0) +
+    (place.long_description ? 1 : 0)
   );
 }
 
+function buildPlaceIndex(places: UniversalPlaces): PlaceIndex {
+  const byVenueName = new Map<string, Map<string, UniversalPlace>>();
+  const landById = new Map<string, string>();
+  for (const { place } of places.results) {
+    if (place.place_type?.type === "Land" && place.name) {
+      landById.set(place.place_id, place.name);
+    }
+    // Lands/parks are containers, not POIs we enrich onto an attraction.
+    if (place.place_type?.type === "Land" || place.place_type?.type === "Park") continue;
+    const venue = place.venue_id;
+    if (!venue || !place.name) continue;
+    const names = byVenueName.get(venue) ?? new Map<string, UniversalPlace>();
+    if (!byVenueName.has(venue)) byVenueName.set(venue, names);
+    const key = normalizeUniversalName(place.name);
+    const existing = names.get(key);
+    if (!existing || placeRichness(place) > placeRichness(existing)) names.set(key, place);
+  }
+  return { byVenueName, landById };
+}
+
 /**
- * Step 4 (Universal only): match each park attraction to its place and override
- * `category` from `place_type` + fill `attraction_meta` (images, detail URL,
- * land, tags). Mirrors `enrichDisneyPark`; the places feed is shared across all
- * UOR parks (fetched once), so it's passed in as a prebuilt index.
+ * Step 4 (Universal only): match each park attraction to its place (by venue +
+ * normalized name) and override `category` from `place_type` + fill
+ * `attraction_meta` (images, detail URL, land, tags). Mirrors `enrichDisneyPark`;
+ * the places feed is shared across all UOR parks (fetched once), so it's passed
+ * in as a prebuilt index.
  */
 async function enrichUniversalPark(park: ParkRow, index: PlaceIndex): Promise<void> {
+  const venue = UNIVERSAL_VENUE_BY_SLUG[park.slug];
+  const names = venue ? index.byVenueName.get(venue) : undefined;
+  if (!names) {
+    console.warn(`[geo] ${park.slug}: no Universal venue mapping — skipping places enrichment`);
+    return;
+  }
+
   const attractions = await resolveParkAttractions(park.id);
   const overrides: Array<{ id: number; category: MapCategory }> = [];
   const metaRows: Array<typeof attractionMeta.$inferInsert> = [];
   for (const attraction of attractions) {
-    const place = matchPlace(index, attraction);
+    const place = names.get(normalizeUniversalName(attraction.name));
     if (!place) continue;
 
     const cat = categoryFromUniversalPlace(place.place_type?.type, place.place_type?.categories);
@@ -436,7 +455,10 @@ async function enrichUniversalPark(park: ParkRow, index: PlaceIndex): Promise<vo
       imageHeroUrl: images.hero,
       imageAlt: images.alt,
       detailUrl: universalDetailUrl(place.urls),
-      land: universalLandLabel(place.land_id),
+      // Prefer the feed's own Land-place name; fall back to the slug label.
+      land:
+        (place.land_id ? index.landById.get(place.land_id) : null) ??
+        universalLandLabel(place.land_id),
       // Universal places carry no height-requirement field — leave null.
       heightRequirement: null,
       tags: universalPlaceTags(place.place_type?.categories),

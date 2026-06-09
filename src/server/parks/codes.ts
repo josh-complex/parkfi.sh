@@ -244,13 +244,12 @@ export function parseDisneyFacets(facets?: Array<Array<string>> | null): DisneyF
 
 // ---------------------------------------------------------------------------
 // Universal Orlando "places" feed -> geo enrichment (the UOR analog of the
-// Disney finder). The places `place_id` and the ThemeParks.wiki Universal child
-// `externalId` share one namespace: `[uo|uor].<venue>.<type>.<leaf>`
-//   uor.usf.rides.revenge_of_the_mummy      (TP externalId)
-//   uor.ioa.dining.green_eggs_and_ham_cafe  (TP externalId)
-// venue ∈ usf | ioa | ueu (the three UOR parks). We join on `<venue>:<leaf>`,
-// dropping the `<type>` segment because it drifts across the feeds
-// (rides/ride/shows/show), with a normalized-name fallback within the venue.
+// Disney finder). We can't join on ids: our `external_ids` store the
+// ThemeParks.wiki UUID (not the operator's `uor.*` id), and the places feed's
+// `place_id` prefix is unreliable for park scoping (amenities are all
+// `uor.amenities.*`, and Epic's id token `ueu` disagrees with its `venue_id`
+// `uor.eu`). Instead we join on the authoritative `venue_id` -> park map plus a
+// normalized attraction name (verified 100% coverage across USF/IOA/Epic).
 // ---------------------------------------------------------------------------
 
 const SMALL_WORDS = new Set(["a", "an", "and", "at", "for", "in", "of", "on", "the", "to"]);
@@ -263,27 +262,7 @@ function titleCase(s: string): string {
     .join(" ");
 }
 
-/**
- * Parse a Universal POI id (`[uo|uor].<venue>.<type>.<leaf...>`) into the stable
- * join identity `{ venue, leaf }`. The leading resort prefix and the volatile
- * `<type>` segment are dropped; remaining segments form the leaf. Returns null
- * for ids that can't yield a venue + leaf (e.g. resort-wide `uor.dining.<x>`).
- */
-export function parseUniversalId(id?: string | null): { venue: string; leaf: string } | null {
-  if (!id) return null;
-  const parts = id.toLowerCase().split(".");
-  let i = 0;
-  if (parts[i] === "uo" || parts[i] === "uor") i += 1;
-  const rest = parts.slice(i).filter(Boolean);
-  if (rest.length < 2) return null;
-  const venue = rest[0];
-  // 2 segments => venue.leaf (no type); 3+ => venue.<type>.leaf… (drop the type).
-  const leaf = (rest.length === 2 ? rest.slice(1) : rest.slice(2)).join("_");
-  if (!venue || !leaf) return null;
-  return { venue, leaf };
-}
-
-/** Lowercased, punctuation-stripped name for the cross-feed fallback match. */
+/** Lowercased, punctuation-stripped name — the cross-feed join key. */
 export function normalizeUniversalName(name?: string | null): string {
   return (
     (name ?? "")
@@ -358,13 +337,21 @@ export function universalPlaceTags(categories?: Array<string> | null): Array<str
   return (categories ?? []).map((c) => titleCase(c.replace(/[-_]/g, " "))).filter(Boolean);
 }
 
-/** Derive a readable land name from a `land_id` (`uor.ioa.<land>` -> "The Land"). */
+/**
+ * Fallback land label derived from a `land_id` slug (`uor.ioa.<land>` -> "The
+ * Land"). Only used when the land isn't in the feed's own Land-place registry —
+ * some parks (Epic) use cryptic slugs (`uor.eu.snw`), so the registry is
+ * preferred; this just avoids a null when a land is missing from it.
+ */
 export function universalLandLabel(landId?: string | null): string | null {
-  const parsed = parseUniversalId(landId);
-  if (!parsed) return null;
-  // For a land id the "leaf" is the land slug (the `<venue>.<land>` shape has no
-  // type segment); join handled by parseUniversalId.
-  const label = titleCase(parsed.leaf.replace(/_/g, " "));
+  if (!landId) return null;
+  const parts = landId.toLowerCase().split(".").filter(Boolean);
+  let i = 0;
+  if (parts[i] === "uo" || parts[i] === "uor") i += 1;
+  i += 1; // drop the venue segment
+  const slug = parts.slice(i).join("_");
+  if (!slug) return null;
+  const label = titleCase(slug.replace(/_/g, " "));
   return label || null;
 }
 
