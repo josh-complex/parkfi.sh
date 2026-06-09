@@ -1,6 +1,12 @@
 import { createHash } from "node:crypto";
+import { config as loadEnv } from "dotenv";
 import Redis from "ioredis";
 import type { PushSub } from "./push.ts";
+
+// The web server (vite dev) doesn't inject non-VITE_ env vars into process.env,
+// so without this REDIS_URL is undefined and ioredis silently falls back to
+// localhost:6379. No-op in prod, where the platform injects env. See db/index.ts.
+if (!process.env.REDIS_URL) loadEnv({ path: [".env.local", ".env"] });
 
 let _redis: Redis | null = null;
 

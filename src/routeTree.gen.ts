@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TicketsRouteImport } from './routes/tickets'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DisclaimersRouteImport } from './routes/disclaimers'
 import { Route as DiningRouteImport } from './routes/dining'
@@ -23,6 +24,11 @@ import { Route as DashParkSlugRouteImport } from './routes/_dash/park.$slug'
 const TicketsRoute = TicketsRouteImport.update({
   id: '/tickets',
   path: '/tickets',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -75,6 +81,7 @@ export interface FileRoutesByFullPath {
   '/dining': typeof DiningRoute
   '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/tickets': typeof TicketsRoute
   '/alerts': typeof DashAlertsRoute
   '/park/$slug': typeof DashParkSlugRoute
@@ -85,6 +92,7 @@ export interface FileRoutesByTo {
   '/dining': typeof DiningRoute
   '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/tickets': typeof TicketsRoute
   '/alerts': typeof DashAlertsRoute
   '/': typeof DashIndexRoute
@@ -98,6 +106,7 @@ export interface FileRoutesById {
   '/dining': typeof DiningRoute
   '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/tickets': typeof TicketsRoute
   '/_dash/alerts': typeof DashAlertsRoute
   '/_dash/': typeof DashIndexRoute
@@ -112,6 +121,7 @@ export interface FileRouteTypes {
     | '/dining'
     | '/disclaimers'
     | '/login'
+    | '/sitemap.xml'
     | '/tickets'
     | '/alerts'
     | '/park/$slug'
@@ -122,6 +132,7 @@ export interface FileRouteTypes {
     | '/dining'
     | '/disclaimers'
     | '/login'
+    | '/sitemap.xml'
     | '/tickets'
     | '/alerts'
     | '/'
@@ -134,6 +145,7 @@ export interface FileRouteTypes {
     | '/dining'
     | '/disclaimers'
     | '/login'
+    | '/sitemap.xml'
     | '/tickets'
     | '/_dash/alerts'
     | '/_dash/'
@@ -147,6 +159,7 @@ export interface RootRouteChildren {
   DiningRoute: typeof DiningRoute
   DisclaimersRoute: typeof DisclaimersRoute
   LoginRoute: typeof LoginRoute
+  SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   TicketsRoute: typeof TicketsRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
@@ -159,6 +172,13 @@ declare module '@tanstack/react-router' {
       path: '/tickets'
       fullPath: '/tickets'
       preLoaderRoute: typeof TicketsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -246,6 +266,7 @@ const rootRouteChildren: RootRouteChildren = {
   DiningRoute: DiningRoute,
   DisclaimersRoute: DisclaimersRoute,
   LoginRoute: LoginRoute,
+  SitemapDotxmlRoute: SitemapDotxmlRoute,
   TicketsRoute: TicketsRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,

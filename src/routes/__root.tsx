@@ -14,6 +14,8 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { TRPCRouter } from "#/integrations/trpc/router";
 import type { TRPCOptionsProxy } from "@trpc/tanstack-react-query";
 import { TooltipProvider } from "#/components/ui/tooltip";
+import { PWARegister } from "#/components/pwa-register";
+import { seo } from "#/lib/seo.ts";
 
 interface MyRouterContext {
   queryClient: QueryClient;
@@ -22,22 +24,35 @@ interface MyRouterContext {
 }
 
 export const Route = createRootRouteWithContext<MyRouterContext>()({
-  head: () => ({
-    meta: [
-      { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "ParkFish" },
-      { name: "theme-color", content: "#09090b" },
-      { name: "apple-mobile-web-app-capable", content: "yes" },
-      { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
-      { name: "apple-mobile-web-app-title", content: "ParkFish" },
-    ],
-    links: [
-      { rel: "stylesheet", href: appCss },
-      { rel: "manifest", href: "/manifest.json" },
-      { rel: "apple-touch-icon", href: "/icons/icon-192.png" },
-    ],
-  }),
+  head: () => {
+    const base = seo({
+      title: "ParkFish — Live Theme Park Wait Times, Ticket Prices & Dining",
+      description:
+        "Track real-time wait times, Lightning Lane availability, ticket pricing, and dining reservations across Walt Disney World and Universal Orlando — all on one live park map.",
+      keywords:
+        "theme park wait times, Disney World wait times, Universal Orlando wait times, Lightning Lane availability, theme park ticket prices, dining reservations, live park map",
+      path: "/",
+    });
+    return {
+      meta: [
+        { charSet: "utf-8" },
+        { name: "viewport", content: "width=device-width, initial-scale=1" },
+        { name: "theme-color", content: "#09090b" },
+        { name: "apple-mobile-web-app-capable", content: "yes" },
+        { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
+        { name: "apple-mobile-web-app-title", content: "ParkFish" },
+        { name: "robots", content: "index, follow" },
+        ...base.meta,
+      ],
+      links: [
+        { rel: "stylesheet", href: appCss },
+        { rel: "manifest", href: "/manifest.json" },
+        { rel: "apple-touch-icon", href: "/icons/icon-192.png" },
+        { rel: "icon", href: "/favicon.ico" },
+        ...base.links,
+      ],
+    };
+  },
   shellComponent: RootDocument,
 });
 
@@ -72,6 +87,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             </TooltipProvider>
           </ThemeProvider>
         </PostHogProvider>
+        <PWARegister />
         <Scripts />
       </body>
     </html>

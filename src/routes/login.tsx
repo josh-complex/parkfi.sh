@@ -13,8 +13,18 @@ import {
 } from "#/components/ui/card.tsx";
 import { Input } from "#/components/ui/input.tsx";
 import { Label } from "#/components/ui/label.tsx";
+import { seo } from "#/lib/seo.ts";
 
-export const Route = createFileRoute("/login")({ component: LoginPage });
+export const Route = createFileRoute("/login")({
+  component: LoginPage,
+  head: () =>
+    seo({
+      title: "Sign In — ParkFish",
+      description: "Sign in to ParkFish to manage alerts and personalize your park dashboard.",
+      path: "/login",
+      noindex: true,
+    }),
+});
 
 function LoginPage() {
   const navigate = useNavigate();

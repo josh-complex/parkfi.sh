@@ -4,8 +4,18 @@ import { ShieldAlertIcon } from "lucide-react";
 import { AppSidebar } from "#/components/app-sidebar.tsx";
 import { SiteHeader } from "#/components/site-header.tsx";
 import { SidebarInset, SidebarProvider } from "#/components/ui/sidebar.tsx";
+import { seo } from "#/lib/seo.ts";
 
-export const Route = createFileRoute("/disclaimers")({ component: DisclaimersPage });
+export const Route = createFileRoute("/disclaimers")({
+  component: DisclaimersPage,
+  head: () =>
+    seo({
+      title: "Disclaimers & Legal Notice — ParkFish",
+      description:
+        "ParkFish is an independent service and is not affiliated with The Walt Disney Company or Universal. Read our data, trademark, and legal disclaimers.",
+      path: "/disclaimers",
+    }),
+});
 
 function DisclaimersPage() {
   return (

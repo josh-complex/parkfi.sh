@@ -23,7 +23,11 @@ const config = defineConfig({
   resolve: { tsconfigPaths: true },
   plugins: [
     devtools(),
-    nitro({ rollupConfig: { external: [/^@sentry\//] } }),
+    nitro({
+      rollupConfig: {
+        external: [/^@sentry\//, /^ioredis/, /^bullmq/, /^web-push/, /^@node-rs\//],
+      },
+    }),
     tailwindcss(),
     tanstackStart(),
     viteReact(),
@@ -34,6 +38,10 @@ const config = defineConfig({
       filename: "sw.js",
       registerType: "autoUpdate",
       manifest: false,
+      devOptions: {
+        enabled: true,
+        type: "module",
+      },
       injectManifest: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
       },

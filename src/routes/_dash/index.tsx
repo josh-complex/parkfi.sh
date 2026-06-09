@@ -3,8 +3,18 @@ import { motion } from "motion/react";
 
 import { OverviewPanel } from "#/components/park-dashboard/overview-panel.tsx";
 import { MapSlot } from "#/components/park-map/map-stage.tsx";
+import { seo } from "#/lib/seo.ts";
 
-export const Route = createFileRoute("/_dash/")({ component: Overview });
+export const Route = createFileRoute("/_dash/")({
+  component: Overview,
+  head: () =>
+    seo({
+      title: "Live Park Map — Theme Park Wait Times | ParkFish",
+      description:
+        "Explore an interactive map of Walt Disney World and Universal Orlando with live wait times, ride status, and resort context updated in real time.",
+      path: "/",
+    }),
+});
 
 function Overview() {
   return (

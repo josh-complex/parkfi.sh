@@ -1,8 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { NotificationBell } from "#/components/notifications/notification-bell";
+import { seo } from "#/lib/seo.ts";
 
 export const Route = createFileRoute("/_dash/alerts")({
   component: AlertsPage,
+  head: () =>
+    seo({
+      title: "Alerts & Push Notifications — ParkFish",
+      description:
+        "Manage push notifications for wait times, Lightning Lane availability, and ticket price drops.",
+      path: "/alerts",
+      noindex: true,
+    }),
 });
 
 function AlertsPage() {
