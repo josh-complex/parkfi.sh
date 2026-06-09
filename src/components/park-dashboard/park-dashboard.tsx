@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
 import { MapSlot } from "#/components/park-map/map-stage.tsx";
+import { NotificationPrompt } from "#/components/notifications/notification-prompt.tsx";
 
 import { ParkBoardTable } from "./park-board-table.tsx";
 import { ParkStatCards } from "./park-stat-cards.tsx";
@@ -54,13 +55,18 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
   const operatorSlug = parks?.find((p) => p.slug === activeSlug)?.operatorSlug;
 
   return (
-    <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-      <div className="flex flex-col gap-2 px-4 sm:flex-row sm:items-end sm:justify-between lg:px-6">
+    <div
+      className="flex flex-col gap-4 py-4 md:gap-6 md:py-6"
+      style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1.5rem)" }}
+    >
+      {/* The page identity already shows in the sticky bar on mobile, so this
+          in-body header would just repeat it — desktop only. */}
+      <div className="hidden flex-col gap-2 px-4 md:flex md:flex-row md:items-end md:justify-between lg:px-6">
         <div className="flex flex-col gap-1">
-          <h2 className="text-xl font-semibold tracking-tight">
+          <h2 className="text-xl font-semibold tracking-tight text-white md:text-foreground">
             {board ? parks?.find((p) => p.slug === activeSlug)?.name : "Loading park…"}
           </h2>
-          <p className="text-muted-foreground text-sm">
+          <p className="text-sm text-blue-100/90 md:text-muted-foreground">
             Live wait times, ride status, and Lightning Lane pricing.
             {board &&
               (() => {
@@ -80,23 +86,24 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
       </div>
 
       <div className="flex flex-col gap-4 px-4 lg:px-6">
+        <NotificationPrompt />
         {/* Map and wait chart share a row at equal width; the board table spans
             the full column underneath them. The map cell is a shared-layout
             slot — the live map morphs in from the overview hero. */}
         <div className="grid items-stretch gap-4 lg:grid-cols-2">
-          <MapSlot className="relative h-[320px] overflow-hidden rounded-lg border shadow-xs lg:h-auto lg:min-h-[460px]" />
+          <MapSlot className="relative h-[320px] overflow-hidden rounded-2xl border shadow-md lg:h-auto lg:min-h-[460px]" />
           <ParkWaitChart
-            attractionId={selected?.id ?? null}
-            attractionName={selected?.name ?? null}
+            parkSlug={activeSlug ?? null}
+            focusedId={selected?.id ?? null}
             operatorSlug={operatorSlug}
-            className="shadow-xs"
+            className="shadow-md"
           />
         </div>
         <ParkStatCards
           board={board}
           loading={boardQ.isLoading || !activeSlug}
           operatorSlug={operatorSlug}
-          className="rounded-lg border shadow-xs"
+          className="rounded-2xl border shadow-md"
         />
       </div>
 
@@ -104,6 +111,7 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
         <ParkBoardTable
           board={board}
           loading={boardQ.isLoading || !activeSlug}
+          parkSlug={activeSlug ?? null}
           selectedId={selected?.id ?? null}
           onSelect={(item) => setSelected({ id: item.id, name: item.name })}
           operatorSlug={operatorSlug}

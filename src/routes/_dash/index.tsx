@@ -21,7 +21,11 @@ function Overview() {
     // Opacity-only entrance: a translate would shift the MapSlot's measured rect
     // and throw off the shared-map morph.
     <motion.div
-      className="flex min-h-0 flex-1 flex-col lg:flex-row"
+      // On desktop the map + panel are a fixed-height "app" surface: cap the row
+      // to the viewport (minus the header and the inset's m-2 gutters) so the
+      // panel scrolls internally instead of the whole row — and the stretched
+      // map with it — growing to the panel's content height.
+      className="flex min-h-0 flex-1 flex-col lg:h-[calc(100svh-var(--header-height)-1rem)] lg:flex-none lg:flex-row lg:overflow-hidden"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.25 }}

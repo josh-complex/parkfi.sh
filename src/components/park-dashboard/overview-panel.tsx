@@ -12,6 +12,7 @@ import {
   CardHeader,
   CardTitle,
 } from "#/components/ui/card.tsx";
+import { NotificationPrompt } from "#/components/notifications/notification-prompt.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { cn } from "#/lib/utils.ts";
@@ -66,17 +67,28 @@ export function OverviewPanel() {
   const { global, resorts, parks } = overview;
 
   return (
-    <div className="flex flex-col gap-4 p-4 lg:gap-6 lg:p-6">
+    <div
+      className="flex flex-col gap-4 p-4 lg:gap-6 lg:p-6"
+      style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1.5rem)" }}
+    >
       <div className="flex flex-col gap-1">
-        <h2 className="text-xl font-semibold tracking-tight">Orlando Theme Parks</h2>
-        <p className="text-sm text-muted-foreground">
+        <h2 className="text-xl font-semibold tracking-tight text-white md:text-foreground">
+          Orlando Theme Parks
+        </h2>
+        <p className="text-sm text-blue-100/90 md:text-muted-foreground">
           Live across {global.parkCount} parks at Walt Disney World &amp; Universal Orlando. Pick a
           park on the map to dive in.
         </p>
       </div>
 
-      {/* Global headline */}
-      <div className="grid grid-cols-1 gap-4 @xl/main:grid-cols-3">
+      <NotificationPrompt />
+
+      {/* Global headline — the busiest park leads full-width; the wait/rides
+          pair sits in a row beside the map on desktop, stacking on the narrow
+          full-width mobile panel. Keyed to the viewport (lg) rather than the
+          container, since the side panel is only ~40% wide and never trips the
+          @xl container breakpoint. */}
+      <div className="flex flex-col gap-4">
         <Stat
           icon={<FlameIcon className="size-4" />}
           label="Busiest park"
@@ -87,30 +99,32 @@ export function OverviewPanel() {
               : "No data"
           }
         />
-        <Stat
-          icon={<ClockIcon className="size-4" />}
-          label="All-parks average wait"
-          value={global.avgWait != null ? `${global.avgWait} min` : "—"}
-          sub="Across every operating ride"
-        />
-        <Stat
-          icon={<ActivityIcon className="size-4" />}
-          label="Rides operating"
-          value={
-            <>
-              {global.operating}
-              <span className="text-base font-normal text-muted-foreground">
-                {" "}
-                / {global.totalRides}
-              </span>
-            </>
-          }
-          sub={
-            global.totalRides > 0
-              ? `${Math.round((global.operating / global.totalRides) * 100)}% operational`
-              : "No data"
-          }
-        />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Stat
+            icon={<ClockIcon className="size-4" />}
+            label="All-parks average wait"
+            value={global.avgWait != null ? `${global.avgWait} min` : "—"}
+            sub="Across every operating ride"
+          />
+          <Stat
+            icon={<ActivityIcon className="size-4" />}
+            label="Rides operating"
+            value={
+              <>
+                {global.operating}
+                <span className="text-base font-normal text-muted-foreground">
+                  {" "}
+                  / {global.totalRides}
+                </span>
+              </>
+            }
+            sub={
+              global.totalRides > 0
+                ? `${Math.round((global.operating / global.totalRides) * 100)}% operational`
+                : "No data"
+            }
+          />
+        </div>
       </div>
 
       {/* Disney vs Universal */}

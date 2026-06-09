@@ -2,7 +2,23 @@
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRightIcon, InfoIcon } from "lucide-react";
+import {
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type ColumnDef,
+  type SortingState,
+} from "@tanstack/react-table";
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  ArrowUpDownIcon,
+  ChevronRightIcon,
+  ChevronsUpDownIcon,
+  InfoIcon,
+  SlidersHorizontalIcon,
+} from "lucide-react";
 
 import {
   RideAlertButton,
@@ -10,9 +26,19 @@ import {
 } from "#/components/notifications/ride-alert-button.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
+import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "#/components/ui/card.tsx";
+import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerTrigger,
+} from "#/components/ui/drawer.tsx";
 import {
   Select,
   SelectContent,
@@ -33,6 +59,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "#/components/ui/tooltip
 import { cn } from "#/lib/utils.ts";
 
 import { formatPriceCents, isUniversal, paidLineInfo, paidLineProduct } from "./lightning-lane.ts";
+import { Sparkline } from "./sparkline.tsx";
 import type { BoardItem } from "./types.ts";
 
 function formatReturnWindow(start: string | null, end: string | null): string | null {
@@ -108,31 +135,35 @@ const STATUS_BADGE: Record<string, "default" | "secondary" | "destructive" | "ou
   UNKNOWN: "outline",
 };
 
+/** Lower rank sorts first: operating rides on top, then troubled, then closed. */
+const STATUS_RANK: Record<string, number> = {
+  OPERATING: 0,
+  DOWN: 1,
+  REFURBISHMENT: 2,
+  CLOSED: 3,
+  UNKNOWN: 4,
+};
+
 function StatusBadge({ status }: { status: string | null }) {
   const label = status ?? "UNKNOWN";
   return <Badge variant={STATUS_BADGE[label] ?? "outline"}>{label.toLowerCase()}</Badge>;
 }
 
-/**
- * Attraction name cell: a leading thumbnail + a secondary tags/height line when
- * Disney enrichment (`meta`) is present; rows without meta (Universal, or
- * un-enriched) keep the plain text-only look.
- */
 function AttractionCell({ item }: { item: BoardItem }) {
   const meta = item.meta;
   const subtitle = [meta?.tags?.join(" · "), meta?.heightRequirement].filter(Boolean).join(" · ");
   return (
-    <div className="flex min-w-0 items-center gap-2.5">
+    <div className="flex min-w-0 items-center gap-3">
       {meta?.imageThumbUrl ? (
         <img
           src={meta.imageThumbUrl}
           alt=""
           loading="lazy"
-          className="size-9 shrink-0 rounded object-cover"
+          className="size-11 shrink-0 rounded-lg object-cover"
         />
       ) : null}
       <div className="min-w-0">
-        <span className="block truncate">{item.name}</span>
+        <span className="block truncate font-medium">{item.name}</span>
         {subtitle ? (
           <span className="text-muted-foreground block truncate text-xs font-normal">
             {subtitle}
@@ -140,6 +171,16 @@ function AttractionCell({ item }: { item: BoardItem }) {
         ) : null}
       </div>
     </div>
+  );
+}
+
+function StandbyValue({ item, className }: { item: BoardItem; className?: string }) {
+  if (item.standbyWait == null) return <span className="text-muted-foreground">—</span>;
+  return (
+    <span className={cn("tabular-nums", className)}>
+      {item.standbyWait}
+      <span className="text-muted-foreground text-xs font-normal"> min</span>
+    </span>
   );
 }
 
@@ -179,9 +220,62 @@ function PaidLineCell({
   );
 }
 
+type SortKey = "standby-desc" | "standby-asc" | "name" | "status";
+
+const SORT_LABELS: Record<SortKey, string> = {
+  "standby-desc": "Longest wait first",
+  "standby-asc": "Shortest wait first",
+  name: "Name (A–Z)",
+  status: "Status",
+};
+
+const SORT_STATE: Record<SortKey, SortingState> = {
+  "standby-desc": [{ id: "standby", desc: true }],
+  "standby-asc": [{ id: "standby", desc: false }],
+  name: [{ id: "attraction", desc: false }],
+  status: [{ id: "status", desc: false }],
+};
+
+function sortingToKey(sorting: SortingState): SortKey {
+  const s = sorting[0];
+  if (!s) return "standby-desc";
+  if (s.id === "standby") return s.desc ? "standby-desc" : "standby-asc";
+  if (s.id === "attraction") return "name";
+  if (s.id === "status") return "status";
+  return "standby-desc";
+}
+
+function SortHeader({
+  label,
+  sorted,
+  onClick,
+}: {
+  label: React.ReactNode;
+  sorted: false | "asc" | "desc";
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="-mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5 font-medium text-foreground hover:text-foreground"
+    >
+      {label}
+      {sorted === "asc" ? (
+        <ArrowUpIcon className="size-3.5" />
+      ) : sorted === "desc" ? (
+        <ArrowDownIcon className="size-3.5" />
+      ) : (
+        <ChevronsUpDownIcon className="size-3.5 opacity-40" />
+      )}
+    </button>
+  );
+}
+
 export function ParkBoardTable({
   board,
   loading,
+  parkSlug,
   selectedId,
   onSelect,
   operatorSlug,
@@ -189,6 +283,7 @@ export function ParkBoardTable({
 }: {
   board: Array<BoardItem> | undefined;
   loading: boolean;
+  parkSlug: string | null;
   selectedId: number | null;
   onSelect: (item: BoardItem) => void;
   operatorSlug: string | null | undefined;
@@ -196,9 +291,9 @@ export function ParkBoardTable({
 }) {
   const [filter, setFilter] = React.useState<StatusFilter>("ALL");
   const [linesOnly, setLinesOnly] = React.useState(true);
+  const [sorting, setSorting] = React.useState<SortingState>(SORT_STATE["standby-desc"]);
+  const isMobile = useIsMobile();
 
-  // The current user's alerts (if signed in) keyed by ride, so each row's bell
-  // reflects its tracked state. The list query is protected — gate it on session.
   const trpc = useTRPC();
   const { data: session } = authClient.useSession();
   const loggedIn = !!session?.user;
@@ -218,6 +313,31 @@ export function ParkBoardTable({
     return m;
   }, [alertsQ.data]);
 
+  // 24h standby series for the per-row sparklines (shares the cache with the
+  // chart when it's on the default standby/24h view).
+  const sparkQ = useQuery({
+    ...trpc.parks.parkHistory.queryOptions({
+      parkSlug: parkSlug ?? "",
+      queueType: 1,
+      hours: 24,
+    }),
+    enabled: !!parkSlug,
+  });
+  const sparkByRide = React.useMemo(() => {
+    const points = sparkQ.data?.points ?? [];
+    const m = new Map<number, Array<number | null>>();
+    for (const ride of sparkQ.data?.rides ?? []) {
+      m.set(
+        ride.id,
+        points.map((p) => {
+          const v = p[String(ride.id)];
+          return typeof v === "number" ? v : null;
+        }),
+      );
+    }
+    return m;
+  }, [sparkQ.data]);
+
   const rides = React.useMemo(
     () => (board ?? []).filter((b) => b.entityType === "ATTRACTION"),
     [board],
@@ -228,28 +348,120 @@ export function ParkBoardTable({
     [rides],
   );
 
-  const rows = React.useMemo(() => {
-    const sorted = [...rides].sort((a, b) => {
-      const scoreA = a.standbyWait ?? a.histStandbyWait ?? -1;
-      const scoreB = b.standbyWait ?? b.histStandbyWait ?? -1;
-      return scoreB - scoreA;
-    });
+  // Status / lines-only filtering happens before the table so the row count and
+  // sort apply to the visible set; sorting itself is owned by the table.
+  const data = React.useMemo(() => {
     const lineFiltered =
-      linesOnly && hasLineRides ? sorted.filter((r) => r.supportsQueueTypes.includes(1)) : sorted;
+      linesOnly && hasLineRides ? rides.filter((r) => r.supportsQueueTypes.includes(1)) : rides;
     if (filter === "ALL") return lineFiltered;
     if (filter === "CLOSED")
       return lineFiltered.filter((r) => r.status === "CLOSED" || r.status == null);
     return lineFiltered.filter((r) => r.status === filter);
   }, [rides, filter, linesOnly, hasLineRides]);
 
+  const columns = React.useMemo<Array<ColumnDef<BoardItem>>>(
+    () => [
+      {
+        id: "attraction",
+        accessorFn: (r) => r.name,
+        header: "Attraction",
+        cell: ({ row }) => <AttractionCell item={row.original} />,
+        sortingFn: (a, b) => a.original.name.localeCompare(b.original.name),
+      },
+      {
+        id: "trend",
+        header: "24h trend",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const series = sparkByRide.get(row.original.id);
+          const down = row.original.status === "DOWN" || row.original.status === "REFURBISHMENT";
+          return (
+            <Sparkline data={series ?? []} color={down ? "var(--destructive)" : "var(--primary)"} />
+          );
+        },
+      },
+      {
+        id: "status",
+        accessorFn: (r) => r.status ?? "UNKNOWN",
+        header: "Status",
+        cell: ({ row }) => <StatusBadge status={row.original.status} />,
+        sortingFn: (a, b) =>
+          (STATUS_RANK[a.original.status ?? "UNKNOWN"] ?? 9) -
+          (STATUS_RANK[b.original.status ?? "UNKNOWN"] ?? 9),
+      },
+      {
+        id: "standby",
+        accessorFn: (r) => r.standbyWait ?? undefined,
+        header: "Standby",
+        sortUndefined: "last",
+        cell: ({ row }) => <StandbyValue item={row.original} className="text-right text-base" />,
+        meta: { align: "right" } as const,
+      },
+      {
+        id: "paidline",
+        header: () => <PaidLineHeader operatorSlug={operatorSlug} />,
+        enableSorting: false,
+        cell: ({ row }) => <PaidLineCell item={row.original} operatorSlug={operatorSlug} />,
+      },
+      {
+        id: "return",
+        header: "Next Available LL",
+        enableSorting: false,
+        cell: ({ row }) => <ReturnWindowCell item={row.original} operatorSlug={operatorSlug} />,
+      },
+      {
+        id: "alert",
+        header: () => <span className="sr-only">Alert</span>,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <div onClick={(e) => e.stopPropagation()}>
+            <RideAlertButton
+              attractionId={row.original.id}
+              attractionName={row.original.name}
+              alert={alertByAttraction.get(row.original.id)}
+              loggedIn={loggedIn}
+            />
+          </div>
+        ),
+      },
+      {
+        id: "chevron",
+        header: () => null,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <ChevronRightIcon
+            className={cn(
+              "size-4",
+              row.original.id === selectedId ? "text-foreground" : "text-muted-foreground",
+            )}
+          />
+        ),
+      },
+    ],
+    [sparkByRide, operatorSlug, alertByAttraction, loggedIn, selectedId],
+  );
+
+  const table = useReactTable({
+    data,
+    columns,
+    state: { sorting },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getRowId: (row) => String(row.id),
+  });
+
+  const sortedRows = table.getRowModel().rows;
+
   return (
     <Card className={cn("flex flex-col", className)}>
       <CardHeader>
         <CardTitle>Live Ride Board</CardTitle>
         <CardDescription>
-          {loading ? "Loading…" : `${rows.length} attractions · select a ride to chart its history`}
+          {loading ? "Loading…" : `${data.length} attractions · select a ride to chart its history`}
         </CardDescription>
-        <CardAction>
+        {/* Desktop controls live in the header; mobile gets a FAB (below). */}
+        <CardAction className="hidden md:block">
           <div className="flex items-center gap-2">
             {hasLineRides && (
               <Button
@@ -279,81 +491,280 @@ export function ParkBoardTable({
           </div>
         </CardAction>
       </CardHeader>
-      <div className="min-h-0 flex-1 overflow-x-auto px-2 pb-2 sm:px-6 sm:pb-4">
-        {loading ? (
-          <div className="flex flex-col gap-2">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <Skeleton key={i} className="h-10 w-full" />
-            ))}
-          </div>
-        ) : rows.length === 0 ? (
-          <div className="text-muted-foreground py-12 text-center text-sm">
-            No attractions match this filter.
-          </div>
-        ) : (
+
+      {loading ? (
+        <div className="flex flex-col gap-2 px-4 pb-4 sm:px-6">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <Skeleton key={i} className="h-14 w-full" />
+          ))}
+        </div>
+      ) : sortedRows.length === 0 ? (
+        <div className="text-muted-foreground py-12 text-center text-sm">
+          No attractions match this filter.
+        </div>
+      ) : isMobile ? (
+        <MobileCardList
+          rows={sortedRows.map((r) => r.original)}
+          selectedId={selectedId}
+          onSelect={onSelect}
+          operatorSlug={operatorSlug}
+          sparkByRide={sparkByRide}
+          alertByAttraction={alertByAttraction}
+          loggedIn={loggedIn}
+        />
+      ) : (
+        <div className="min-h-0 flex-1 overflow-x-auto px-2 pb-2 sm:px-6 sm:pb-4">
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>Attraction</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Standby</TableHead>
-                <TableHead>
-                  <PaidLineHeader operatorSlug={operatorSlug} />
-                </TableHead>
-                <TableHead>Next return</TableHead>
-                <TableHead className="w-10 text-center">Alert</TableHead>
-                <TableHead className="w-8" />
-              </TableRow>
+              {table.getHeaderGroups().map((hg) => (
+                <TableRow key={hg.id}>
+                  {hg.headers.map((header) => {
+                    const align =
+                      (header.column.columnDef.meta as { align?: string } | undefined)?.align ??
+                      "left";
+                    const canSort = header.column.getCanSort();
+                    return (
+                      <TableHead
+                        key={header.id}
+                        className={cn(
+                          header.column.id === "alert" && "w-10 text-center",
+                          header.column.id === "chevron" && "w-8",
+                          align === "right" && "text-right",
+                        )}
+                      >
+                        {header.isPlaceholder ? null : canSort ? (
+                          <SortHeader
+                            label={flexRender(header.column.columnDef.header, header.getContext())}
+                            sorted={header.column.getIsSorted()}
+                            onClick={() => header.column.toggleSorting()}
+                          />
+                        ) : (
+                          flexRender(header.column.columnDef.header, header.getContext())
+                        )}
+                      </TableHead>
+                    );
+                  })}
+                </TableRow>
+              ))}
             </TableHeader>
             <TableBody>
-              {rows.map((item) => (
+              {sortedRows.map((row) => (
                 <TableRow
-                  key={item.id}
-                  onClick={() => onSelect(item)}
-                  data-state={item.id === selectedId ? "selected" : undefined}
-                  className={cn("cursor-pointer", item.id === selectedId && "bg-muted/60")}
+                  key={row.id}
+                  onClick={() => onSelect(row.original)}
+                  data-state={row.original.id === selectedId ? "selected" : undefined}
+                  className={cn(
+                    "h-16 cursor-pointer",
+                    row.original.id === selectedId && "bg-muted/60",
+                  )}
                 >
-                  <TableCell className="max-w-0 w-full font-medium">
-                    <AttractionCell item={item} />
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge status={item.status} />
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {item.standbyWait != null ? (
-                      `${item.standbyWait} min`
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <PaidLineCell item={item} operatorSlug={operatorSlug} />
-                  </TableCell>
-                  <TableCell>
-                    <ReturnWindowCell item={item} operatorSlug={operatorSlug} />
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <RideAlertButton
-                      attractionId={item.id}
-                      attractionName={item.name}
-                      alert={alertByAttraction.get(item.id)}
-                      loggedIn={loggedIn}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <ChevronRightIcon
-                      className={cn(
-                        "size-4",
-                        item.id === selectedId ? "text-foreground" : "text-muted-foreground",
-                      )}
-                    />
-                  </TableCell>
+                  {row.getVisibleCells().map((cell) => {
+                    const align =
+                      (cell.column.columnDef.meta as { align?: string } | undefined)?.align ??
+                      "left";
+                    return (
+                      <TableCell
+                        key={cell.id}
+                        className={cn(
+                          cell.column.id === "attraction" && "max-w-0 w-full",
+                          cell.column.id === "alert" && "text-center",
+                          align === "right" && "text-right",
+                        )}
+                      >
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    );
+                  })}
                 </TableRow>
               ))}
             </TableBody>
           </Table>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* Mobile-only sort/filter FAB, center-bottom, above the safe area. */}
+      {isMobile && !loading && (
+        <MobileControls
+          sortKey={sortingToKey(sorting)}
+          onSortKey={(k) => setSorting(SORT_STATE[k])}
+          filter={filter}
+          onFilter={setFilter}
+          linesOnly={linesOnly}
+          onLinesOnly={setLinesOnly}
+          hasLineRides={hasLineRides}
+        />
+      )}
     </Card>
+  );
+}
+
+function MobileCardList({
+  rows,
+  selectedId,
+  onSelect,
+  operatorSlug,
+  sparkByRide,
+  alertByAttraction,
+  loggedIn,
+}: {
+  rows: Array<BoardItem>;
+  selectedId: number | null;
+  onSelect: (item: BoardItem) => void;
+  operatorSlug: string | null | undefined;
+  sparkByRide: Map<number, Array<number | null>>;
+  alertByAttraction: Map<number, RideAlertEntry>;
+  loggedIn: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-2.5 px-3 pb-24">
+      {rows.map((item) => {
+        const down = item.status === "DOWN" || item.status === "REFURBISHMENT";
+        return (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => onSelect(item)}
+            className={cn(
+              "flex flex-col gap-2.5 rounded-2xl border bg-card p-3 text-left transition-colors",
+              item.id === selectedId ? "border-primary bg-muted/50" : "hover:bg-muted/40",
+            )}
+          >
+            <div className="flex items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <AttractionCell item={item} />
+              </div>
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                <StandbyValue item={item} className="text-lg font-semibold" />
+                <StatusBadge status={item.status} />
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <Sparkline
+                data={sparkByRide.get(item.id) ?? []}
+                width={120}
+                height={26}
+                color={down ? "var(--destructive)" : "var(--primary)"}
+              />
+              <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                <RideAlertButton
+                  attractionId={item.id}
+                  attractionName={item.name}
+                  alert={alertByAttraction.get(item.id)}
+                  loggedIn={loggedIn}
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <PaidLineCell item={item} operatorSlug={operatorSlug} />
+              <ReturnWindowCell item={item} operatorSlug={operatorSlug} />
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function MobileControls({
+  sortKey,
+  onSortKey,
+  filter,
+  onFilter,
+  linesOnly,
+  onLinesOnly,
+  hasLineRides,
+}: {
+  sortKey: SortKey;
+  onSortKey: (k: SortKey) => void;
+  filter: StatusFilter;
+  onFilter: (f: StatusFilter) => void;
+  linesOnly: boolean;
+  onLinesOnly: (v: boolean) => void;
+  hasLineRides: boolean;
+}) {
+  const filterActive = filter !== "ALL" || (hasLineRides && linesOnly);
+  return (
+    <div
+      className="fixed left-1/2 z-40 -translate-x-1/2 md:hidden"
+      style={{ bottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
+    >
+      <div className="flex items-center gap-1 rounded-full border bg-popover/95 p-1 shadow-xl supports-backdrop-filter:backdrop-blur">
+        {/* Sort */}
+        <Drawer>
+          <DrawerTrigger asChild>
+            <Button variant="ghost" size="sm" className="rounded-full">
+              <ArrowUpDownIcon data-icon="inline-start" />
+              Sort
+            </Button>
+          </DrawerTrigger>
+          <DrawerContent>
+            <DrawerHeader>
+              <DrawerTitle>Sort rides</DrawerTitle>
+              <DrawerDescription>Choose how the ride board is ordered.</DrawerDescription>
+            </DrawerHeader>
+            <div className="flex flex-col gap-1 px-4 pb-4">
+              {(Object.keys(SORT_LABELS) as Array<SortKey>).map((key) => (
+                <DrawerClose key={key} asChild>
+                  <Button
+                    variant={sortKey === key ? "secondary" : "ghost"}
+                    className="justify-start"
+                    onClick={() => onSortKey(key)}
+                  >
+                    {SORT_LABELS[key]}
+                  </Button>
+                </DrawerClose>
+              ))}
+            </div>
+          </DrawerContent>
+        </Drawer>
+
+        <span className="h-5 w-px bg-border" />
+
+        {/* Filter */}
+        <Drawer>
+          <DrawerTrigger asChild>
+            <Button variant="ghost" size="sm" className="rounded-full">
+              <SlidersHorizontalIcon data-icon="inline-start" />
+              Filter
+              {filterActive ? <span className="size-1.5 rounded-full bg-primary" /> : null}
+            </Button>
+          </DrawerTrigger>
+          <DrawerContent>
+            <DrawerHeader>
+              <DrawerTitle>Filter rides</DrawerTitle>
+              <DrawerDescription>Narrow the board by status and line type.</DrawerDescription>
+            </DrawerHeader>
+            <div className="flex flex-col gap-4 px-4 pb-4">
+              {hasLineRides && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Rides with lines only</span>
+                  <Button
+                    variant={linesOnly ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => onLinesOnly(!linesOnly)}
+                  >
+                    {linesOnly ? "On" : "Off"}
+                  </Button>
+                </div>
+              )}
+              <div className="flex flex-col gap-1">
+                <span className="text-muted-foreground text-xs font-medium uppercase">Status</span>
+                {(Object.keys(FILTER_LABELS) as Array<StatusFilter>).map((key) => (
+                  <DrawerClose key={key} asChild>
+                    <Button
+                      variant={filter === key ? "secondary" : "ghost"}
+                      className="justify-start"
+                      onClick={() => onFilter(key)}
+                    >
+                      {FILTER_LABELS[key]}
+                    </Button>
+                  </DrawerClose>
+                ))}
+              </div>
+            </div>
+          </DrawerContent>
+        </Drawer>
+      </div>
+    </div>
   );
 }

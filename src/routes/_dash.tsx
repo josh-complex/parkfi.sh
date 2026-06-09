@@ -1,17 +1,31 @@
 import { Outlet, createFileRoute, useParams } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 
 import { AppSidebar } from "#/components/app-sidebar.tsx";
 import { SelectionProvider } from "#/components/park-dashboard/selection-context.tsx";
 import { MapStageProvider } from "#/components/park-map/map-stage.tsx";
 import { SiteHeader } from "#/components/site-header.tsx";
 import { SidebarInset, SidebarProvider } from "#/components/ui/sidebar.tsx";
+import { useTRPC } from "#/integrations/trpc/react.ts";
 
-export const Route = createFileRoute("/_dash")({ component: DashLayout });
+/** "magic-kingdom" -> "Magic Kingdom" for a readable title while the park loads. */
+function titleizeSlug(slug: string): string {
+  return slug
+    .split("-")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
 
 function DashLayout() {
   // strict:false so this resolves on both `/` and `/park/$slug`.
   const params = useParams({ strict: false }) as { slug?: string };
   const activeSlug = params.slug ?? null;
+
+  const trpc = useTRPC();
+  const parksQ = useQuery(trpc.parks.list.queryOptions());
+  const parkName = activeSlug
+    ? (parksQ.data?.find((p) => p.slug === activeSlug)?.name ?? titleizeSlug(activeSlug))
+    : null;
 
   return (
     <SidebarProvider
@@ -23,8 +37,8 @@ function DashLayout() {
       }
     >
       <AppSidebar variant="inset" />
-      <SidebarInset>
-        <SiteHeader title={activeSlug ? "Live Park Board" : "Live Park Map"} />
+      <SidebarInset className="max-md:bg-sidebar">
+        <SiteHeader title="Live Park Map" mobileTitle={parkName ?? undefined} />
         {/* One ParkMap lives in the stage and is lent to whichever route mounts
             a <MapSlot>. It never remounts, so moving between the overview hero
             and the park card is a single smooth morph rather than a redraw. */}
@@ -37,3 +51,5 @@ function DashLayout() {
     </SidebarProvider>
   );
 }
+
+export const Route = createFileRoute("/_dash")({ component: DashLayout });

@@ -83,6 +83,20 @@
   --sidebar-ring: oklch(1 0 0 / 50%);
 }
 
+/* The mobile flyout (offcanvas sheet) reads as a wall of blue in light mode.
+   Scope a light palette to just that surface (`data-mobile`) so it's white in
+   light mode while the docked desktop sidebar and dark mode stay blue. */
+:root:not(.dark) [data-mobile="true"] {
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.205 0 0);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: var(--primary);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: var(--ring);
+}
+
 @theme inline {
   --font-sans: "Instrument Sans Variable", sans-serif;
   --color-background: var(--background);

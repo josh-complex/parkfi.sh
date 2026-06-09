@@ -443,4 +443,86 @@ export const parksRouter = {
         samples: Number(r.samples),
       }));
     }),
+
+  /**
+   * Whole-park bucketed history for one queue type, pivoted per attraction.
+   *
+   * Powers the multi-series park chart (one togglable line per ride) and the
+   * board's per-row wait sparklines. Same bucket-width scaling as `history`, but
+   * grouped by attraction so the client can pivot into `{ bucket, [rideId]: v }`
+   * rows. `value` is the avg standby wait, or — for the paid-return queue type
+   * (4) — the avg Lightning Lane price in dollars, matching `ParkWaitChart`'s
+   * per-ride mode.
+   */
+  parkHistory: publicProcedure
+    .input(
+      z.object({
+        parkSlug: z.string(),
+        queueType: z.number().int().min(1).max(6).default(1),
+        hours: z
+          .number()
+          .int()
+          .min(1)
+          .max(24 * 90)
+          .default(24 * 7),
+      }),
+    )
+    .query(async ({ input }) => {
+      const bucket =
+        input.hours <= 24
+          ? "15 minutes"
+          : input.hours <= 72
+            ? "30 minutes"
+            : input.hours <= 24 * 7
+              ? "1 hour"
+              : input.hours <= 24 * 30
+                ? "6 hours"
+                : "1 day";
+      const isPrice = input.queueType === 4;
+      const result = await db.execute<{
+        attraction_id: string;
+        name: string;
+        bucket: string;
+        value: number | null;
+      }>(sql`
+        SELECT q.attraction_id,
+               a.name,
+               time_bucket(${bucket}::interval, q.observed_at) AS bucket,
+               ${isPrice ? sql`(avg(q.price_cents) / 100.0)` : sql`avg(q.wait_min)::int`} AS value
+        FROM queue_obs q
+        JOIN attractions a ON a.id = q.attraction_id
+        WHERE a.park_id = (SELECT id FROM parks WHERE slug = ${input.parkSlug})
+          AND a.active = true
+          AND q.queue_type = ${input.queueType}
+          AND q.observed_at >= now() - (${input.hours} * INTERVAL '1 hour')
+        GROUP BY q.attraction_id, a.name, bucket
+        ORDER BY bucket
+      `);
+
+      // Pivot the long rows into one record per bucket keyed by attraction id,
+      // and summarize each ride (peak value) so the client can order the legend
+      // busiest-first and pick which series to enable by default.
+      type Point = { bucket: string } & Record<string, number | string | null>;
+      const buckets = new Map<string, Point>();
+      const rideMap = new Map<number, { id: number; name: string; peak: number }>();
+      for (const r of result.rows) {
+        const id = Number(r.attraction_id);
+        const value = r.value == null ? null : Number(r.value);
+        let point = buckets.get(r.bucket);
+        if (!point) {
+          point = { bucket: r.bucket };
+          buckets.set(r.bucket, point);
+        }
+        point[String(id)] = value;
+        const ride = rideMap.get(id) ?? { id, name: r.name, peak: 0 };
+        if (value != null && value > ride.peak) ride.peak = value;
+        rideMap.set(id, ride);
+      }
+
+      const rides = [...rideMap.values()].sort((a, b) => b.peak - a.peak);
+      const points = [...buckets.values()].sort((a, b) =>
+        String(a.bucket).localeCompare(String(b.bucket)),
+      );
+      return { rides, points };
+    }),
 } satisfies TRPCRouterRecord;
