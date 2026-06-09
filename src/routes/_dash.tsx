@@ -1,4 +1,4 @@
-import { Outlet, createFileRoute, useParams } from "@tanstack/react-router";
+import { Outlet, createFileRoute, useParams, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
 import { AppSidebar } from "#/components/app-sidebar.tsx";
@@ -21,6 +21,11 @@ function DashLayout() {
   const params = useParams({ strict: false }) as { slug?: string };
   const activeSlug = params.slug ?? null;
 
+  // Static dashboard pages set their own header title; the map views keep the
+  // default and surface the park name as the mobile title.
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const title = pathname === "/alerts" ? "Alerts" : "Live Park Map";
+
   const trpc = useTRPC();
   const parksQ = useQuery(trpc.parks.list.queryOptions());
   const parkName = activeSlug
@@ -38,7 +43,7 @@ function DashLayout() {
     >
       <AppSidebar variant="inset" />
       <SidebarInset className="max-md:bg-sidebar">
-        <SiteHeader title="Live Park Map" mobileTitle={parkName ?? undefined} />
+        <SiteHeader title={title} mobileTitle={parkName ?? undefined} />
         {/* One ParkMap lives in the stage and is lent to whichever route mounts
             a <MapSlot>. It never remounts, so moving between the overview hero
             and the park card is a single smooth morph rather than a redraw. */}

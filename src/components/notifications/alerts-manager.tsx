@@ -98,7 +98,7 @@ export function AlertsManager() {
 
   if (!loggedIn) {
     return (
-      <div className="rounded-lg border p-6 text-center">
+      <div className="rounded-lg border bg-card text-card-foreground p-6 text-center">
         <p className="text-sm font-medium">Sign in to track rides</p>
         <p className="text-muted-foreground mt-1 text-xs">
           Get a push notification when a ride’s wait drops or changes.
@@ -117,7 +117,7 @@ export function AlertsManager() {
   const parks = listQ.data?.parks ?? [];
   if (parks.length === 0) {
     return (
-      <div className="rounded-lg border p-6 text-center">
+      <div className="rounded-lg border bg-card text-card-foreground p-6 text-center">
         <p className="text-sm font-medium">No ride alerts yet</p>
         <p className="text-muted-foreground mt-1 text-xs">
           Open a park and tap the bell on any ride to start tracking its wait time.
@@ -129,7 +129,10 @@ export function AlertsManager() {
   return (
     <div className="space-y-4">
       {parks.map((park) => (
-        <div key={park.parkId} className="overflow-hidden rounded-lg border">
+        <div
+          key={park.parkId}
+          className="overflow-hidden rounded-lg border bg-card text-card-foreground"
+        >
           <div className="bg-muted/40 flex items-center justify-between px-4 py-2.5">
             <Link
               to="/park/$slug"
