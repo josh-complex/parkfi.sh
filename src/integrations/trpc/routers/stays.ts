@@ -1,7 +1,13 @@
 import { z } from "zod";
 
 import { config } from "#/server/parks/config.ts";
-import { fetchResortAvailability } from "#/server/stays/availability.ts";
+import {
+  buildPartyKey,
+  fetchResortAvailability,
+  readStayObs,
+  upsertStayQuery,
+  writeStayObs,
+} from "#/server/stays/availability.ts";
 import { RESORT_CATALOG } from "#/server/stays/resort-catalog.generated.ts";
 import { publicProcedure } from "../init.ts";
 
@@ -17,8 +23,12 @@ export const staysRouter = {
   catalog: publicProcedure.query(() => RESORT_CATALOG),
 
   /**
-   * Live resort availability + per-night pricing for a stay. Proxies Disney's
-   * public resort-availability API server-side and joins to the catalog.
+   * Resort availability + per-night pricing for a stay, served stale-while-fresh
+   * from `stay_obs`. Disney's resort API is slow, so we don't call it on every
+   * request: a fresh cached generation (< STAYS_CACHE_TTL_MS) returns instantly,
+   * and only a miss/stale tuple fetches live (then writes the obs the next reader
+   * serves from). Either way we bump `stay_query.last_requested_at` so the sweep
+   * keeps this tuple warm.
    */
   availability: publicProcedure
     .input(
@@ -37,10 +47,23 @@ export const staysRouter = {
       }),
     )
     .query(async ({ input }) => {
-      const offers = await fetchResortAvailability(
-        input,
-        AbortSignal.timeout(config.fetchTimeoutMs),
-      );
-      return { checkInDate: input.checkInDate, checkOutDate: input.checkOutDate, offers };
+      const partyKey = buildPartyKey(input);
+      const cached = await readStayObs(input, partyKey, config.staysCacheTtlMs);
+      let offers = cached;
+      if (!offers) {
+        offers = await fetchResortAvailability(input, AbortSignal.timeout(config.fetchTimeoutMs));
+        await writeStayObs(input, partyKey, offers);
+      }
+      // Record demand so the sweeper keeps this tuple warm (best-effort: a cache
+      // bookkeeping failure must not fail an otherwise-good availability read).
+      await upsertStayQuery(input, partyKey).catch((err) => {
+        console.error("[stays] upsertStayQuery failed:", err);
+      });
+      return {
+        checkInDate: input.checkInDate,
+        checkOutDate: input.checkOutDate,
+        offers,
+        cached: cached != null,
+      };
     }),
 } satisfies TRPCRouterRecord;

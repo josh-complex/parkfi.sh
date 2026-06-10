@@ -8,6 +8,11 @@
  * Calling it server-side (rather than from the browser) sidesteps CORS and lets
  * us keep the `personalizationId` and Florida-resident postal trick in one place.
  */
+import { and, eq, max } from "drizzle-orm";
+
+import { db } from "#/db/index.ts";
+import { stayObs, stayQuery } from "#/db/schema.ts";
+import { Source } from "#/server/parks/codes.ts";
 import { config } from "../parks/config.ts";
 import { RESORT_BY_ID, type ResortTier } from "./resort-catalog.generated.ts";
 
@@ -132,10 +137,178 @@ export async function fetchResortAvailability(
     });
   }
 
-  offers.sort((a, b) => {
+  return sortOffers(offers);
+}
+
+/** Cheapest available first, then unavailable resorts by name (display order). */
+function sortOffers(offers: Array<ResortOffer>): Array<ResortOffer> {
+  return offers.sort((a, b) => {
     if (a.available !== b.available) return a.available ? -1 : 1;
     if (a.available && b.available) return (a.pricePerNight ?? 0) - (b.pricePerNight ?? 0);
     return a.name.localeCompare(b.name);
   });
-  return offers;
+}
+
+// ---------------------------------------------------------------------------
+// Server-side cache (stay_obs) + sweep frontier (stay_query)
+// ---------------------------------------------------------------------------
+
+/**
+ * Canonical string encoding of the non-date search dims (party mix + accessible
+ * + Florida resident, plus a billing ZIP override when it actually changes the
+ * price). The read path and the sweep both key on this so a returning user's
+ * search collides with the swept generation. Child ages are sorted so order
+ * doesn't fork the key (Disney prices the multiset, not the sequence), and the
+ * ZIP only participates when `floridaResident` makes it matter.
+ */
+export function buildPartyKey(params: ResortSearchParams): string {
+  const ages = [...params.childAges].sort((a, b) => a - b).join(",");
+  const acc = params.accessible ? 1 : 0;
+  const fl = params.floridaResident ? 1 : 0;
+  const zip = params.floridaResident && params.postalCode ? `|zip${params.postalCode}` : "";
+  return `a${params.adults}c${params.children}:${ages}|acc${acc}|fl${fl}${zip}`;
+}
+
+/** Build a `ResortOffer` from a catalog id + the observed price/availability. */
+function catalogOffer(
+  resortId: string,
+  fields: { available: boolean; pricePerNight: number | null; reasonCode: string | null },
+): ResortOffer | null {
+  const entry = RESORT_BY_ID.get(resortId);
+  if (!entry) return null; // dropped from the catalog since this obs was written
+  return {
+    id: resortId,
+    name: entry.name,
+    slug: entry.slug,
+    tier: entry.tier,
+    area: entry.area,
+    image: entry.image,
+    detailUrl: entry.detailUrl,
+    pricePerNight: fields.pricePerNight,
+    available: fields.available,
+    reasonCode: fields.reasonCode,
+  };
+}
+
+/**
+ * Read the freshest cached generation for a (dates, party) tuple. Returns the
+ * reconstructed offers when the latest `stay_obs` write is younger than
+ * `ttlMs`, else null (miss/stale → caller fetches live). One sweep writes all
+ * resorts under a single `observed_at`, so "latest generation" = every row at
+ * `max(observed_at)`.
+ */
+export async function readStayObs(
+  params: ResortSearchParams,
+  partyKey: string,
+  ttlMs: number,
+  now: number = Date.now(),
+): Promise<Array<ResortOffer> | null> {
+  const where = and(
+    eq(stayObs.checkIn, params.checkInDate),
+    eq(stayObs.checkOut, params.checkOutDate),
+    eq(stayObs.partyKey, partyKey),
+  );
+  const [latest] = await db
+    .select({ observedAt: max(stayObs.observedAt) })
+    .from(stayObs)
+    .where(where);
+  const observedAt = latest?.observedAt;
+  if (!observedAt) return null;
+  if (now - observedAt.getTime() > ttlMs) return null;
+
+  const rows = await db
+    .select({
+      resortId: stayObs.resortId,
+      available: stayObs.available,
+      pricePerNight: stayObs.pricePerNight,
+      reasonCode: stayObs.reasonCode,
+    })
+    .from(stayObs)
+    .where(and(where, eq(stayObs.observedAt, observedAt)));
+
+  const offers: Array<ResortOffer> = [];
+  for (const r of rows) {
+    const offer = catalogOffer(r.resortId, {
+      available: r.available,
+      pricePerNight: r.pricePerNight,
+      reasonCode: r.reasonCode,
+    });
+    if (offer) offers.push(offer);
+  }
+  return sortOffers(offers);
+}
+
+/** Persist one observation generation (~30 resort rows under one timestamp). */
+export async function writeStayObs(
+  params: ResortSearchParams,
+  partyKey: string,
+  offers: Array<ResortOffer>,
+  observedAt: Date = new Date(),
+): Promise<void> {
+  if (offers.length === 0) return;
+  const rows: Array<typeof stayObs.$inferInsert> = offers.map((o) => ({
+    observedAt,
+    resortId: o.id,
+    checkIn: params.checkInDate,
+    checkOut: params.checkOutDate,
+    partyKey,
+    available: o.available,
+    pricePerNight: o.pricePerNight,
+    reasonCode: o.reasonCode,
+    source: Source.DISNEY_DIRECT,
+  }));
+  await db.insert(stayObs).values(rows).onConflictDoNothing();
+}
+
+/**
+ * Record demand for a (dates, party) tuple so the sweeper keeps it warm. Upsert
+ * on the dims unique index: bump `last_requested_at` (and refresh the raw dims)
+ * without disturbing sweep/alert bookkeeping.
+ */
+export async function upsertStayQuery(
+  params: ResortSearchParams,
+  partyKey: string,
+  now: Date = new Date(),
+): Promise<void> {
+  const childAges = [...params.childAges].sort((a, b) => a - b).join(",");
+  await db
+    .insert(stayQuery)
+    .values({
+      checkIn: params.checkInDate,
+      checkOut: params.checkOutDate,
+      partyKey,
+      adults: params.adults,
+      children: params.children,
+      childAges,
+      accessible: params.accessible,
+      floridaResident: params.floridaResident,
+      postalCode: params.postalCode ?? null,
+      lastRequestedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [stayQuery.checkIn, stayQuery.checkOut, stayQuery.partyKey],
+      set: {
+        lastRequestedAt: now,
+        adults: params.adults,
+        children: params.children,
+        childAges,
+        accessible: params.accessible,
+        floridaResident: params.floridaResident,
+        postalCode: params.postalCode ?? null,
+      },
+    });
+}
+
+/** Rebuild the search params from a stored `stay_query` row (for the sweep). */
+export function stayQueryToParams(q: typeof stayQuery.$inferSelect): ResortSearchParams {
+  return {
+    checkInDate: q.checkIn,
+    checkOutDate: q.checkOut,
+    adults: q.adults,
+    children: q.children,
+    childAges: q.childAges ? q.childAges.split(",").map(Number).filter(Number.isFinite) : [],
+    accessible: q.accessible,
+    floridaResident: q.floridaResident,
+    postalCode: q.postalCode ?? undefined,
+  };
 }

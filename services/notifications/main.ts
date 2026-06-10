@@ -1,8 +1,9 @@
 /**
- * parkfi.sh push notification worker (Railway service, replica = 1).
+ * parkfi.sh notification worker (Railway service, replica = 1).
  *
- * Long-running BullMQ worker that dequeues push-notification jobs and fans
- * them out to all registered devices for the target user.
+ * Long-running process hosting TWO BullMQ workers on one Redis connection:
+ *  - `push-notifications` — fans web-push jobs out to a user's devices.
+ *  - `stay-alerts` — renders + sends durable, retried stay-alert EMAIL (Resend).
  *
  * Run:  bun run notifications
  */
@@ -13,6 +14,11 @@ import { createServer } from "node:http";
 import { Worker } from "bullmq";
 
 import { sendPush } from "#/server/notifications/push.ts";
+import { STAY_ALERT_QUEUE, type StayAlertJob } from "#/server/notifications/queue.ts";
+import {
+  markStayNotificationFailed,
+  sendStayNotification,
+} from "#/server/notifications/stayMailer.tsx";
 import { getSubsForUser, removeStale } from "#/server/notifications/subscriptions.ts";
 import type { PushJob } from "#/server/notifications/queue.ts";
 
@@ -51,6 +57,28 @@ worker.on("failed", (job, err) => {
   console.error(`[notifications] job=${job?.id} failed:`, err);
 });
 
+// Second worker: durable stay-alert email. Low concurrency — a slow provider
+// must not stall the queue, and email volume is modest vs. push.
+const stayWorker = new Worker<StayAlertJob>(
+  STAY_ALERT_QUEUE,
+  async (job) => {
+    await sendStayNotification(job.data.notificationId);
+    console.log(`[stay-alerts] job=${job.id} notification=${job.data.notificationId} sent`);
+  },
+  {
+    connection: { url: process.env.REDIS_URL },
+    concurrency: 4,
+  },
+);
+
+stayWorker.on("failed", (job, err) => {
+  console.error(`[stay-alerts] job=${job?.id} failed:`, err);
+  // On the final attempt, record the terminal failure on the notification row.
+  if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
+    void markStayNotificationFailed(job.data.notificationId, err?.message ?? String(err));
+  }
+});
+
 const port = Number(process.env.PORT ?? 8080);
 createServer((req, res) => {
   if (req.url === "/health" || req.url === "/") {
@@ -63,8 +91,8 @@ createServer((req, res) => {
 }).listen(port, () => console.log(`[notifications] health on :${port}`));
 
 async function shutdown(sig: string) {
-  console.log(`[notifications] ${sig} received, closing worker…`);
-  await worker.close();
+  console.log(`[notifications] ${sig} received, closing workers…`);
+  await Promise.all([worker.close(), stayWorker.close()]);
   console.log("[notifications] drained, exiting");
   process.exit(0);
 }

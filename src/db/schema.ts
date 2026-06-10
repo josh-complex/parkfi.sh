@@ -8,6 +8,7 @@ import {
   doublePrecision,
   index,
   integer,
+  jsonb,
   pgTable,
   primaryKey,
   smallint,
@@ -485,6 +486,87 @@ export const scraperSession = pgTable("scraper_session", {
 });
 
 // ---------------------------------------------------------------------------
+// Stays (Disney resort availability) — server-side cache + sweep frontier
+// ---------------------------------------------------------------------------
+
+/**
+ * (I) Resort-availability observations — the stays analog of `dining_obs`, and
+ * the cache that lets `stays.availability` stop calling Disney on every request.
+ * Grain = one row per resort per swept (dates, party) query. One Disney call
+ * returns ~30 resorts for a (dates, party) tuple, so a sweep writes ~30 rows
+ * sharing one `observed_at`. Reads take the latest `observed_at` for the tuple;
+ * if it's fresh (< STAYS_CACHE_TTL_MS) it's a cache hit, else we fetch live and
+ * insert a new generation. `resort_id` is Disney's numeric facility id (joins
+ * the static `RESORT_BY_ID` catalog in app code — no dim table, no FK).
+ */
+export const stayObs = pgTable(
+  "stay_obs",
+  {
+    observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
+    resortId: text("resort_id").notNull(),
+    checkIn: date("check_in").notNull(),
+    checkOut: date("check_out").notNull(),
+    // Canonical encoding of the non-date dims (party mix + accessible + FL
+    // resident); see `buildPartyKey`. The read path and the sweep build it the
+    // same way so keys collide correctly.
+    partyKey: text("party_key").notNull(),
+    available: boolean("available").notNull(),
+    // null when unavailable (no bookable subtotal).
+    pricePerNight: integer("price_per_night"),
+    reasonCode: text("reason_code"),
+    source: smallint("source")
+      .notNull()
+      .references(() => refSource.id),
+  },
+  (t) => [
+    primaryKey({
+      columns: [t.resortId, t.checkIn, t.checkOut, t.partyKey, t.observedAt],
+    }),
+    // Latest-generation lookup for the read path: newest obs for a (dates,party).
+    index("stay_obs_latest_idx").on(t.checkIn, t.checkOut, t.partyKey, t.observedAt.desc()),
+  ],
+);
+
+/**
+ * (J) The stays sweep frontier — which (dates, party) tuples the
+ * `stays-availability` cron keeps warm, mirroring how `restaurant_dim.priority`
+ * + least-recently-swept ordering drive the dining sweep. Rows arrive three
+ * ways: a seeded rolling warm set (next weekends × small parties, so cold
+ * browse is instant), user searches (which bump `last_requested_at`), and
+ * (phase 2) alert subscriptions (`alert_backed`). The raw dims are stored so
+ * the sweep can rebuild the Disney request body from a row alone. Demand-only
+ * rows age out once cold so the swept space stays bounded.
+ */
+export const stayQuery = pgTable(
+  "stay_query",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    checkIn: date("check_in").notNull(),
+    checkOut: date("check_out").notNull(),
+    partyKey: text("party_key").notNull(),
+
+    // Raw dims to rebuild the resort-availability request body.
+    adults: smallint("adults").notNull(),
+    children: smallint("children").notNull(),
+    // Comma-joined sorted child ages ("" when none); parsed back on sweep.
+    childAges: text("child_ages").notNull().default(""),
+    accessible: boolean("accessible").notNull().default(false),
+    floridaResident: boolean("florida_resident").notNull().default(false),
+    postalCode: text("postal_code"),
+
+    // Demand signal (bumped on user search) + sweeper bookkeeping.
+    lastRequestedAt: timestamp("last_requested_at", { withTimezone: true }),
+    lastSweptAt: timestamp("last_swept_at", { withTimezone: true }),
+    // Has ≥1 active alert (phase 2); pins the row past demand age-out.
+    alertBacked: boolean("alert_backed").notNull().default(false),
+  },
+  (t) => [
+    uniqueIndex("stay_query_dims_uq").on(t.checkIn, t.checkOut, t.partyKey),
+    index("stay_query_swept_idx").on(t.lastSweptAt),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // User-facing alerts
 // ---------------------------------------------------------------------------
 
@@ -540,3 +622,97 @@ export const rideAlert = pgTable(
       .where(sql`active`),
   ],
 );
+
+/**
+ * Per-user resort-availability alert subscriptions (the stays analog of
+ * `ride_alert`). Each row points at a swept `stay_query` (the dates + party the
+ * sweeper keeps warm) and is evaluated against that query's latest `stay_obs`
+ * generation after every sweep — no separate fetch path. Firing carries the same
+ * edge-trigger + cooldown state as ride alerts (`armed`/`last_fired_at`), with
+ * `last_available`/`last_price` as the becomes-available / price baseline.
+ *
+ * `resort_id = ''` means "any resort" (a non-null sentinel so the partial unique
+ * index keys on plain columns, like `ride_alert`); a numeric id targets one
+ * resort. Cap = 3 active per user *total* (no park axis), enforced in the router.
+ * Delivery is logged + retried EMAIL (see `notification`), not best-effort push.
+ */
+export const stayAlert = pgTable(
+  "stay_alert",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    queryId: bigint("query_id", { mode: "number" })
+      .notNull()
+      .references(() => stayQuery.id, { onDelete: "cascade" }),
+    // '' = any resort; otherwise a Disney facility id (joins RESORT_BY_ID).
+    resortId: text("resort_id").notNull().default(""),
+
+    // rule: 1 = becomes_available (fire when any room opens),
+    //       2 = price_below       (fire when available price <= priceBelow)
+    mode: smallint("mode").notNull(),
+    priceBelow: integer("price_below"),
+    // 'email' (v1) | 'sms' (later) — the queue + worker already accommodate sms.
+    channel: text("channel").notNull().default("email"),
+
+    // firing state (edge-trigger + cooldown)
+    armed: boolean("armed").notNull().default(true),
+    lastFiredAt: timestamp("last_fired_at", { withTimezone: true }),
+    lastAvailable: boolean("last_available"),
+    lastPrice: integer("last_price"),
+
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("stay_alert_active_query_idx")
+      .on(t.queryId)
+      .where(sql`active`),
+    uniqueIndex("stay_alert_user_resort_query_uq")
+      .on(t.userId, t.resortId, t.queryId)
+      .where(sql`active`),
+  ],
+);
+
+/**
+ * Durable send log for stay-alert delivery — one row per fire, written
+ * (status `queued`) BEFORE the send job runs, so it's a dedupe key + audit
+ * trail + the "what we sent" inbox + unsubscribe correlation. The worker flips
+ * it to `sent` (+ `provider_msg_id`) or `failed` (+ `error`) after Resend.
+ */
+export const notification = pgTable(
+  "notification",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    alertId: bigint("alert_id", { mode: "number" })
+      .notNull()
+      .references(() => stayAlert.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    channel: text("channel").notNull(),
+    // resort, dates, matched price, rendered subject — enough to render + audit.
+    payload: jsonb("payload").notNull(),
+    // 'queued' | 'sent' | 'failed'
+    status: text("status").notNull(),
+    providerMsgId: text("provider_msg_id"),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+  },
+  (t) => [index("notification_user_created_idx").on(t.userId, t.createdAt.desc())],
+);
+
+/**
+ * Global per-user kill switch for stay-alert email, hit by the one-click
+ * unsubscribe link — silences all stay-alert mail without deleting individual
+ * alerts. The evaluator skips users whose `stay_email_opt_out` is set.
+ */
+export const alertOptout = pgTable("alert_optout", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  stayEmailOptOut: boolean("stay_email_opt_out").notNull().default(false),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

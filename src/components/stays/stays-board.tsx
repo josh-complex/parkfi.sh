@@ -7,6 +7,7 @@ import { differenceInCalendarDays, format } from "date-fns";
 import { type DateRange } from "react-day-picker";
 import { CheckIcon, MinusIcon, PlusIcon, SearchIcon } from "lucide-react";
 
+import { StayAlertButton, type StayAlertDims } from "#/components/stays/stay-alert-button.tsx";
 import { StaysMobileControls } from "#/components/stays/stays-controls.tsx";
 import {
   EMPTY_FILTERS,
@@ -45,6 +46,7 @@ import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { Switch } from "#/components/ui/switch.tsx";
 import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
+import { authClient } from "#/lib/auth-client.ts";
 import { cn } from "#/lib/utils.ts";
 import type { ResortCatalogEntry, ResortTier } from "#/server/stays/resort-catalog.generated.ts";
 
@@ -80,6 +82,7 @@ function ResortCard({
   available,
   reasonCode,
   nights,
+  alertSlot,
 }: {
   name: string;
   area: string | null;
@@ -90,9 +93,10 @@ function ResortCard({
   available?: boolean;
   reasonCode?: string | null;
   nights?: number;
+  alertSlot?: React.ReactNode;
 }) {
   const hasResult = pricePerNight !== undefined;
-  return (
+  const card = (
     <a
       href={detailUrl}
       target="_blank"
@@ -141,6 +145,15 @@ function ResortCard({
         )}
       </div>
     </a>
+  );
+  if (!alertSlot) return card;
+  // The card is an <a>, so the alert control lives as an overlay sibling (not a
+  // nested button) — top-right, opposite the tier badge.
+  return (
+    <div className="relative">
+      {card}
+      <div className="absolute top-3 right-3 z-10">{alertSlot}</div>
+    </div>
   );
 }
 
@@ -283,6 +296,7 @@ export function StaysBoard({ areaKey }: { areaKey: string | null }) {
   const trpc = useTRPC();
   const isMobile = useIsMobile();
   const navigate = useNavigate();
+  const { data: session } = authClient.useSession();
 
   // Draft search inputs (the pill); committed to `search` on submit so the
   // availability query only fires for a complete, intentional search.
@@ -610,6 +624,16 @@ export function StaysBoard({ areaKey }: { areaKey: string | null }) {
             onSortKey={setSortKey}
             onRetry={() => void availabilityQ.refetch()}
             onEditDates={() => setDatesOpen(true)}
+            alertDims={{
+              checkInDate: iso(search.range.from!),
+              checkOutDate: iso(search.range.to!),
+              adults: search.adults,
+              children: search.children,
+              childAges: Array.from({ length: search.children }, () => 10),
+              accessible: search.filters.accessible,
+              floridaResident: search.filters.floridaResident,
+            }}
+            loggedIn={!!session?.user}
           />
         ) : (
           <BrowseView
@@ -776,6 +800,8 @@ function ResultsView({
   onSortKey,
   onRetry,
   onEditDates,
+  alertDims,
+  loggedIn,
 }: {
   isLoading: boolean;
   isError: boolean;
@@ -800,6 +826,8 @@ function ResultsView({
   onSortKey: (k: StaySortKey) => void;
   onRetry: () => void;
   onEditDates: () => void;
+  alertDims: StayAlertDims;
+  loggedIn: boolean;
 }) {
   const chips: Array<{ key: ResortTier | "ALL"; label: string }> = [
     { key: "ALL", label: "All resorts" },
@@ -920,6 +948,14 @@ function ResultsView({
               available={o.available}
               reasonCode={o.reasonCode}
               nights={nights}
+              alertSlot={
+                <StayAlertButton
+                  resortId={o.id}
+                  resortName={o.name}
+                  dims={alertDims}
+                  loggedIn={loggedIn}
+                />
+              }
             />
           ))}
         </div>

@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as UnsubscribeRouteImport } from './routes/unsubscribe'
 import { Route as TicketsRouteImport } from './routes/tickets'
 import { Route as StaysRouteImport } from './routes/stays'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
@@ -17,12 +18,18 @@ import { Route as DisclaimersRouteImport } from './routes/disclaimers'
 import { Route as DiningRouteImport } from './routes/dining'
 import { Route as DashRouteImport } from './routes/_dash'
 import { Route as DashIndexRouteImport } from './routes/_dash/index'
+import { Route as StaysAlertsRouteImport } from './routes/stays_.alerts'
 import { Route as DashAlertsRouteImport } from './routes/_dash/alerts'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
 import { Route as ApiPushSubscribeRouteImport } from './routes/api/push/subscribe'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as DashParkSlugRouteImport } from './routes/_dash/park.$slug'
 
+const UnsubscribeRoute = UnsubscribeRouteImport.update({
+  id: '/unsubscribe',
+  path: '/unsubscribe',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TicketsRoute = TicketsRouteImport.update({
   id: '/tickets',
   path: '/tickets',
@@ -62,6 +69,11 @@ const DashIndexRoute = DashIndexRouteImport.update({
   path: '/',
   getParentRoute: () => DashRoute,
 } as any)
+const StaysAlertsRoute = StaysAlertsRouteImport.update({
+  id: '/stays_/alerts',
+  path: '/stays/alerts',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashAlertsRoute = DashAlertsRouteImport.update({
   id: '/alerts',
   path: '/alerts',
@@ -96,7 +108,9 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/stays': typeof StaysRoute
   '/tickets': typeof TicketsRoute
+  '/unsubscribe': typeof UnsubscribeRoute
   '/alerts': typeof DashAlertsRoute
+  '/stays/alerts': typeof StaysAlertsRoute
   '/park/$slug': typeof DashParkSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
@@ -109,7 +123,9 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/stays': typeof StaysRoute
   '/tickets': typeof TicketsRoute
+  '/unsubscribe': typeof UnsubscribeRoute
   '/alerts': typeof DashAlertsRoute
+  '/stays/alerts': typeof StaysAlertsRoute
   '/': typeof DashIndexRoute
   '/park/$slug': typeof DashParkSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -125,7 +141,9 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/stays': typeof StaysRoute
   '/tickets': typeof TicketsRoute
+  '/unsubscribe': typeof UnsubscribeRoute
   '/_dash/alerts': typeof DashAlertsRoute
+  '/stays_/alerts': typeof StaysAlertsRoute
   '/_dash/': typeof DashIndexRoute
   '/_dash/park/$slug': typeof DashParkSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -142,7 +160,9 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/stays'
     | '/tickets'
+    | '/unsubscribe'
     | '/alerts'
+    | '/stays/alerts'
     | '/park/$slug'
     | '/api/auth/$'
     | '/api/push/subscribe'
@@ -155,7 +175,9 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/stays'
     | '/tickets'
+    | '/unsubscribe'
     | '/alerts'
+    | '/stays/alerts'
     | '/'
     | '/park/$slug'
     | '/api/auth/$'
@@ -170,7 +192,9 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/stays'
     | '/tickets'
+    | '/unsubscribe'
     | '/_dash/alerts'
+    | '/stays_/alerts'
     | '/_dash/'
     | '/_dash/park/$slug'
     | '/api/auth/$'
@@ -186,6 +210,8 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   StaysRoute: typeof StaysRoute
   TicketsRoute: typeof TicketsRoute
+  UnsubscribeRoute: typeof UnsubscribeRoute
+  StaysAlertsRoute: typeof StaysAlertsRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiPushSubscribeRoute: typeof ApiPushSubscribeRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
@@ -193,6 +219,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/unsubscribe': {
+      id: '/unsubscribe'
+      path: '/unsubscribe'
+      fullPath: '/unsubscribe'
+      preLoaderRoute: typeof UnsubscribeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/tickets': {
       id: '/tickets'
       path: '/tickets'
@@ -248,6 +281,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof DashIndexRouteImport
       parentRoute: typeof DashRoute
+    }
+    '/stays_/alerts': {
+      id: '/stays_/alerts'
+      path: '/stays/alerts'
+      fullPath: '/stays/alerts'
+      preLoaderRoute: typeof StaysAlertsRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_dash/alerts': {
       id: '/_dash/alerts'
@@ -309,6 +349,8 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   StaysRoute: StaysRoute,
   TicketsRoute: TicketsRoute,
+  UnsubscribeRoute: UnsubscribeRoute,
+  StaysAlertsRoute: StaysAlertsRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiPushSubscribeRoute: ApiPushSubscribeRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,

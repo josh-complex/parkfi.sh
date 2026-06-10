@@ -77,6 +77,39 @@ export const config = {
   fetchTimeoutMs: num("FETCH_TIMEOUT_MS", 9_000),
 
   /**
+   * Stays cache freshness: how long a swept `stay_obs` generation serves the
+   * `stays.availability` read path before the next request fetches live. ~15min
+   * matches the sweep cadence so a returning user almost always hits the cache.
+   */
+  staysCacheTtlMs: num("STAYS_CACHE_TTL_MS", 15 * 60_000),
+  /** Wall-clock budget for one stays sweep run; the tail leads the next run. */
+  staysSweepBudgetMs: num("STAYS_SWEEP_BUDGET_MS", 300_000),
+  /**
+   * Forward horizon (days) the sweep seeds a rolling warm set over — upcoming
+   * weekends × small parties, so cold browse for popular dates is instant.
+   */
+  staysWarmHorizonDays: num("STAYS_WARM_HORIZON_DAYS", 56),
+  /**
+   * Demand-only `stay_query` rows (no active alert) are dropped once they
+   * haven't been requested in this many days, bounding the swept space.
+   */
+  staysDemandAgeOutDays: num("STAYS_DEMAND_AGE_OUT_DAYS", 14),
+
+  /**
+   * Stay-alert email delivery. `alertsSendEnabled` gates the actual Resend send
+   * — defaults OFF so dev/test runs log instead of mailing (the secrets
+   * RESEND_API_KEY / UNSUBSCRIBE_SECRET are read directly where used, like
+   * SESSION_ENC_KEY). `appBaseUrl` builds absolute unsubscribe + manage links.
+   */
+  alertsSendEnabled: process.env.ALERTS_SEND_ENABLED === "true",
+  alertFromEmail: process.env.ALERT_FROM_EMAIL ?? "alerts@parkfi.sh",
+  alertPostalAddress: process.env.ALERT_POSTAL_ADDRESS ?? "",
+  appBaseUrl: (process.env.APP_BASE_URL ?? process.env.SERVER_URL ?? "https://parkfi.sh").replace(
+    /\/+$/,
+    "",
+  ),
+
+  /**
    * ThemeParks.wiki allows 300 req/min. Hold below that across the process to
    * leave headroom for /schedule and retries.
    */

@@ -10,16 +10,25 @@ from `bun.lock`, so bun is available at build and runtime for every service.
 Deploy each as its own Railway service pointed at this same repo, with a distinct
 **start command** (set the root in Railway → "Custom Start Command"):
 
-| Service               | Start command                 | Railway type        | Notes                                            |
-| --------------------- | ----------------------------- | ------------------- | ------------------------------------------------ |
-| `worker`              | `bun run worker`              | long-running, 1 rep | self-scheduling 60s poller; `/health` on `$PORT` |
-| `cron-tickets`        | `bun run cron:tickets`        | Cron `0 8 * * *`    | single-shot; gated ticket/Express feeds          |
-| `geo`                 | `bun run cron:geo`            | Cron `0 6 1 * *`    | monthly; geo enrichment of `parks`/`attractions` |
-| `dining-facilities`   | `bun run dining:facilities`   | Cron `0 6 * * 1`    | weekly; refresh `restaurant_dim` catalog         |
-| `dining-availability` | `bun run dining:availability` | Cron `*/10 * * * *` | frequent; dine-vas reservation sweep (logged-in) |
+| Service               | Start command                 | Railway type        | Notes                                                            |
+| --------------------- | ----------------------------- | ------------------- | ---------------------------------------------------------------- |
+| `worker`              | `bun run worker`              | long-running, 1 rep | self-scheduling 60s poller; `/health` on `$PORT`                 |
+| `cron-tickets`        | `bun run cron:tickets`        | Cron `0 8 * * *`    | single-shot; gated ticket/Express feeds                          |
+| `geo`                 | `bun run cron:geo`            | Cron `0 6 1 * *`    | monthly; geo enrichment of `parks`/`attractions`                 |
+| `dining-facilities`   | `bun run dining:facilities`   | Cron `0 6 * * 1`    | weekly; refresh `restaurant_dim` catalog                         |
+| `dining-availability` | `bun run dining:availability` | Cron `*/10 * * * *` | frequent; dine-vas reservation sweep (logged-in)                 |
+| `stays-availability`  | `bun run stays:availability`  | Cron `*/10 * * * *` | frequent; resort-availability sweep → `stay_obs` cache (keyless) |
 
 The web app (`bun run start`) is a third service with a public domain. DB/Redis
 ride the Railway private network — only the app gets a public URL.
+
+The `notifications` worker (`bun run notifications`, long-running) hosts TWO BullMQ
+workers on one Redis connection: `push-notifications` (web push) and `stay-alerts`
+(durable, retried resort-availability EMAIL via Resend). Stay alerts are evaluated
+at the end of each `stays-availability` sweep, which writes a `notification` row
+(status `queued`) and enqueues a `stay-alerts` job; the worker renders a React Email
+template and sends it. Set `ALERTS_SEND_ENABLED=true` to actually send — it defaults
+OFF so dev/test runs log instead of mailing.
 
 The two `dining-*` services share one logged-in MyDisney (OneID) session
 (encrypted in `scraper_session`); they require a logged-in browser, so they need
@@ -39,6 +48,14 @@ geo columns on `parks` (center, bounds, `map_zoom`) and `attractions` (lat/lng,
 coverage at both resorts), with the WDW finder explorer (`DISNEY_FINDER_BASE`)
 layered on for Disney pin categories + precise map center/zoom. Pure dimension
 enrichment — no fact table, no `ref_source`. Monthly is plenty (geo rarely moves).
+
+The `stays-availability` sweep is keyless too (Disney's resort-availability API is
+public + cookieless), needing only `DATABASE_URL`. It re-seeds a rolling warm set
+(upcoming weekends × parties of 2 & 4) into `stay_query`, sweeps that frontier
+least-recently-swept under `STAYS_SWEEP_BUDGET_MS`, and writes a fresh `stay_obs`
+generation per tuple — the cache the `stays.availability` read path serves from
+(`STAYS_CACHE_TTL_MS`). Knobs: `STAYS_WARM_HORIZON_DAYS` (56), `STAYS_DEMAND_AGE_OUT_DAYS`
+(14). No Browserless, no login.
 
 ## Environment
 
@@ -64,6 +81,20 @@ Universal: `research/universal-ticket-deep-dive.md`):
 | `UNIVERSAL_CONTRACT_ID`                 | `4000000000000000003`               | priceAndInventory contract id (prices standard + FL SKUs)                    |
 | `UNIVERSAL_PRICE_WINDOW_DAYS`           | `180`                               | forward window of per-date pricing (one call covers it; max ~365)            |
 | `UNIVERSAL_PRICE_BATCH`                 | `20`                                | partNumbers per priceAndInventory call                                       |
+
+Stay-alert email (`notifications` worker; see `docs/plans/stays-caching-and-alerts.md`).
+Secrets are read directly from `process.env` (like `SESSION_ENC_KEY`), not `src/env.ts`:
+
+| Var                     | Default             | Purpose                                                                   |
+| ----------------------- | ------------------- | ------------------------------------------------------------------------- |
+| `ALERTS_SEND_ENABLED`   | `false`             | actually send via Resend; OFF logs instead (safe default for dev/test)    |
+| `RESEND_API_KEY`        | _(req. to send)_    | Resend API key                                                            |
+| `ALERT_FROM_EMAIL`      | `alerts@parkfi.sh`  | verified Resend sender (verify the domain's SPF/DKIM/DMARC before launch) |
+| `UNSUBSCRIBE_SECRET`    | _(req.)_            | HMAC key for signed one-click unsubscribe tokens                          |
+| `ALERT_POSTAL_ADDRESS`  | _(empty)_           | physical address in the email footer (CAN-SPAM)                           |
+| `APP_BASE_URL`          | `https://parkfi.sh` | origin for absolute unsubscribe + manage links                            |
+| `STAYS_CACHE_TTL_MS`    | `900000`            | how long a swept `stay_obs` generation serves the read path               |
+| `STAYS_SWEEP_BUDGET_MS` | `300000`            | wall-clock budget for one stays sweep; the tail leads the next run        |
 
 `dining-*` services (logged-in MyDisney session; see `disney-ticket-deep-dive.md` §7-8):
 
