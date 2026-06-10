@@ -2,6 +2,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { LogInIcon, LogOutIcon } from "lucide-react";
 
 import { authClient } from "#/lib/auth-client.ts";
+import { NotificationCenter } from "#/components/notifications/notification-center.tsx";
 import { Avatar, AvatarFallback, AvatarImage } from "#/components/ui/avatar.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import {
@@ -25,7 +26,11 @@ import { EllipsisVerticalIcon } from "lucide-react";
 export function NavUser() {
   const { data: session, isPending } = authClient.useSession();
   const navigate = useNavigate();
-  const { isMobile } = useSidebar();
+  const { isMobile, state } = useSidebar();
+  // The bell lives in the top bar on mobile and when the panel is collapsed
+  // (the footer slides offcanvas there); when expanded on desktop it sits beside
+  // the user button instead.
+  const showBell = !isMobile && state === "expanded";
 
   const handleSignOut = async () => {
     await authClient.signOut();
@@ -65,10 +70,12 @@ export function NavUser() {
 
   return (
     <SidebarMenu>
-      <SidebarMenuItem>
+      <SidebarMenuItem className="flex items-center gap-1">
         <DropdownMenu>
           <DropdownMenuTrigger
-            render={<SidebarMenuButton size="lg" className="aria-expanded:bg-sidebar-accent" />}
+            render={
+              <SidebarMenuButton size="lg" className="flex-1 aria-expanded:bg-sidebar-accent" />
+            }
           >
             <Avatar className="size-8 rounded-lg grayscale">
               <AvatarImage src={user.image ?? undefined} alt={user.name ?? user.email} />
@@ -107,6 +114,7 @@ export function NavUser() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        {showBell && <NotificationCenter />}
       </SidebarMenuItem>
     </SidebarMenu>
   );

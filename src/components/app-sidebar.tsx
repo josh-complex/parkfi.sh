@@ -3,13 +3,14 @@ import { Link, useNavigate, useParams, useRouterState } from "@tanstack/react-ro
 import { useQuery } from "@tanstack/react-query";
 import {
   ActivityIcon,
-  FerrisWheelIcon,
+  BedDoubleIcon,
   ShieldAlertIcon,
   TicketIcon,
   UtensilsIcon,
 } from "lucide-react";
 
 import { NavUser } from "#/components/nav-user.tsx";
+import { ConstructionIcon } from "#/components/ui/anim-icons/construction.tsx";
 import { SidebarThemeToggle } from "#/components/theme-toggle.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import {
@@ -29,9 +30,10 @@ import {
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
 const NAV: Array<{ title: string; to: string; icon: React.ReactNode }> = [
-  { title: "Live Board", to: "/", icon: <ActivityIcon /> },
-  { title: "Ticket Pricing", to: "/tickets", icon: <TicketIcon /> },
-  { title: "Dining", to: "/dining", icon: <UtensilsIcon /> },
+  { title: "Waits", to: "/", icon: <ActivityIcon /> },
+  { title: "Tickets", to: "/tickets", icon: <TicketIcon /> },
+  { title: "Eats", to: "/dining", icon: <UtensilsIcon /> },
+  { title: "Stays", to: "/stays", icon: <BedDoubleIcon /> },
 ];
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
@@ -42,6 +44,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   // on both `/` and `/park/*`.
   const isDashboard = pathname === "/" || pathname.startsWith("/park");
   const activeParkSlug = params.slug;
+
+  // Stays lists the bookable operators; the park/area scope lives in the
+  // board's search bar rather than the sidebar.
+  const isStays = pathname.startsWith("/stays");
 
   const trpc = useTRPC();
   const parksQ = useQuery({ ...trpc.parks.list.queryOptions(), enabled: isDashboard });
@@ -80,8 +86,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               onClick={closeOnMobile}
               render={<Link to="/" />}
             >
-              <FerrisWheelIcon className="size-5!" />
-              <span className="text-base font-semibold">parkfi.sh</span>
+              <img src="/logo512.png" alt="ParkFi" className="size-6! shrink-0 rounded-md" />
+              <span className="text-base font-semibold">ParkFi</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -132,6 +138,44 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </SidebarGroupContent>
               </SidebarGroup>
             ))}
+          </>
+        )}
+
+        {isStays && (
+          <>
+            <SidebarSeparator />
+            <SidebarGroup>
+              <SidebarGroupLabel>Operators</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive
+                      onClick={() => {
+                        closeOnMobile();
+                        void navigate({ to: "/stays", search: {} });
+                      }}
+                    >
+                      <span>Walt Disney World</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      aria-disabled
+                      className="justify-between"
+                      title="Coming soon"
+                    >
+                      <span>Universal Orlando</span>
+                      <ConstructionIcon
+                        autoplay
+                        size={18}
+                        className="text-muted-foreground shrink-0"
+                      />
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
           </>
         )}
       </SidebarContent>

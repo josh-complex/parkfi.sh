@@ -42,6 +42,19 @@ async function flush(rows: Array<typeof diningObs.$inferInsert>): Promise<void> 
   }
 }
 
+/**
+ * A dropped Browserless session surfaces from puppeteer as a `TargetCloseError`
+ * / protocol "Target closed" (or a bare connection/session close) — recoverable
+ * by reconnecting, unlike our own budget abort (which is checked first). Match on
+ * name+message so we don't have to import puppeteer's error classes.
+ */
+function isSessionDropError(err: unknown): boolean {
+  const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+  return /TargetClose|Target closed|Session closed|Connection closed|Protocol error|detached|WebSocket|socket hang up/i.test(
+    msg,
+  );
+}
+
 async function main() {
   if (!browserlessConfigured()) {
     console.error("[dining-availability] BROWSER_WS_ENDPOINT not set");
@@ -91,80 +104,106 @@ async function main() {
 
   let total = 0;
   let swept = 0;
-  // Hoisted so the catch below can tell a budget abort (graceful — partial work
-  // is already flushed) from a genuine failure (re-throw → exit 1).
+  // One AbortSignal bounds the WHOLE run (across reconnects); the catch uses it
+  // to tell a budget abort (graceful — partial work is already flushed) from a
+  // recoverable session drop or a genuine failure.
   const signal = AbortSignal.timeout(config.browserlessTimeoutMs);
-  try {
-    await withBrowser(async (browser) => {
-      const page = await ensureLoggedIn(browser);
-      let reloggedIn = false;
 
-      // Flush per target so a mid-sweep timeout doesn't lose completed work.
-      for (const t of targets) {
-        const rows: Array<typeof diningObs.$inferInsert> = [];
-        for (const partySize of PARTY_SIZES) {
-          for (const serviceDate of dates) {
-            let res = await fetchAvailability(
-              page,
-              t.facilityId,
-              t.entityType,
-              serviceDate,
-              partySize,
-            );
-            if (!res.loggedIn && !reloggedIn) {
-              await relogin(page); // stored session died — re-seed once per run
-              reloggedIn = true;
-              res = await fetchAvailability(
+  // A Browserless session can drop mid-sweep (TargetCloseError / "Target
+  // closed"). Reconnect with a fresh browser + login and resume from the next
+  // unswept target instead of losing the run. Bounded so a hard-down upstream
+  // can't spin; `signal` still caps total wall-clock across all attempts.
+  const MAX_RECONNECTS = 5;
+  let reconnects = 0;
+  while (swept < targets.length && !signal.aborted) {
+    try {
+      await withBrowser(async (browser) => {
+        const page = await ensureLoggedIn(browser);
+        let reloggedIn = false;
+
+        // Flush per target so a drop/timeout never loses completed work; `swept`
+        // is the resume frontier (an in-flight target re-runs whole on reconnect).
+        while (swept < targets.length) {
+          const t = targets[swept];
+          const rows: Array<typeof diningObs.$inferInsert> = [];
+          for (const partySize of PARTY_SIZES) {
+            for (const serviceDate of dates) {
+              let res = await fetchAvailability(
                 page,
                 t.facilityId,
                 t.entityType,
                 serviceDate,
                 partySize,
               );
-            }
-            if (res.offers.length === 0) {
-              rows.push({
-                observedAt,
-                facilityId: t.facilityId,
-                serviceDate,
-                partySize,
-                source: Source.DISNEY_DIRECT,
-              });
-            } else {
-              for (const o of res.offers) {
+              if (!res.loggedIn && !reloggedIn) {
+                await relogin(page); // stored session died — re-seed once per run
+                reloggedIn = true;
+                res = await fetchAvailability(
+                  page,
+                  t.facilityId,
+                  t.entityType,
+                  serviceDate,
+                  partySize,
+                );
+              }
+              if (res.offers.length === 0) {
                 rows.push({
                   observedAt,
                   facilityId: t.facilityId,
                   serviceDate,
                   partySize,
-                  mealPeriod: o.mealPeriod ?? "",
-                  offerTime: o.offerTime ?? "00:00:00",
-                  offerId: o.offerId,
                   source: Source.DISNEY_DIRECT,
                 });
+              } else {
+                for (const o of res.offers) {
+                  rows.push({
+                    observedAt,
+                    facilityId: t.facilityId,
+                    serviceDate,
+                    partySize,
+                    mealPeriod: o.mealPeriod ?? "",
+                    offerTime: o.offerTime ?? "00:00:00",
+                    offerId: o.offerId,
+                    source: Source.DISNEY_DIRECT,
+                  });
+                }
               }
             }
           }
+          await flush(rows);
+          total += rows.length;
+          swept++;
         }
-        await flush(rows);
-        total += rows.length;
-        swept++;
+      }, signal);
+    } catch (err) {
+      // Budget exhausted: completed venues are flushed and the unreached tail
+      // leads next run (least-recently-swept ordering), so this is partial
+      // progress — log and exit clean.
+      if (signal.aborted) {
+        console.warn(
+          `[dining-availability] budget exhausted after ${swept}/${targets.length} venues — tail leads next run`,
+        );
+        break;
       }
-    }, signal);
-  } catch (err) {
-    // The whole sweep shares one Browserless budget; when it's exhausted the run
-    // aborts mid-list. Completed venues are already flushed and the unreached
-    // tail leads the next run (least-recently-swept ordering), so a budget abort
-    // is partial progress — log it and exit clean. Anything else is a real
-    // failure → re-throw (exit 1).
-    if (!signal.aborted) throw err;
-    console.warn(
-      `[dining-availability] budget exhausted after ${swept}/${targets.length} venues — tail leads next run`,
-    );
+      // Genuine failure (login, DB, etc.) → re-throw (exit 1).
+      if (!isSessionDropError(err)) throw err;
+      // Recoverable session drop: reconnect and resume, up to the cap.
+      if (reconnects >= MAX_RECONNECTS) {
+        console.warn(
+          `[dining-availability] session kept dropping (${MAX_RECONNECTS} reconnects) at ${swept}/${targets.length} — giving up this run, tail leads next`,
+        );
+        break;
+      }
+      reconnects++;
+      console.warn(
+        `[dining-availability] session dropped at ${swept}/${targets.length} venues — reconnecting (${reconnects}/${MAX_RECONNECTS})`,
+      );
+    }
   }
 
   console.log(
-    `[dining-availability] ${swept}/${targets.length} venues × ${PARTY_SIZES.length} parties × ${dates.length} days → ${total} rows`,
+    `[dining-availability] ${swept}/${targets.length} venues × ${PARTY_SIZES.length} parties × ${dates.length} days → ${total} rows` +
+      (reconnects > 0 ? ` (${reconnects} reconnect${reconnects > 1 ? "s" : ""})` : ""),
   );
 }
 

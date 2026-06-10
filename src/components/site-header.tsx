@@ -5,6 +5,7 @@ import { NotificationCenter } from "#/components/notifications/notification-cent
 import { ThemeToggle } from "#/components/theme-toggle.tsx";
 import { MenuIcon, type MenuIconHandle } from "#/components/ui/anim-icons/menu.tsx";
 import { useSidebar } from "#/components/ui/sidebar.tsx";
+import { authClient } from "#/lib/auth-client.ts";
 
 /**
  * Desktop shows the static sidebar-panel icon; mobile shows the hamburger ⇄ X
@@ -43,9 +44,14 @@ export function SiteHeader({
   mobileTitle?: string;
 }) {
   const { isMobile, state, openMobile } = useSidebar();
+  const { data: session } = authClient.useSession();
+  const loggedIn = !!session?.user;
   // On mobile the sidebar is hidden offcanvas, so the header is the only place
   // to reach these; on desktop they live in the sidebar footer unless collapsed.
   const showActions = isMobile || state !== "expanded";
+  // On desktop the bell normally sits in the header, but when the panel is
+  // expanded and signed in it moves beside the user button in the footer.
+  const showHeaderBell = !isMobile && (showActions || !loggedIn);
   // When the offcanvas flyout is open, lift the header above the sheet overlay
   // (z-50) so the trigger (now an X) stays tappable, and strip the bar's chrome
   // so it floats over the dimmed backdrop.
@@ -56,7 +62,10 @@ export function SiteHeader({
     <header
       className={
         flyoutOpen
-          ? "pointer-events-none sticky top-0 z-[60] shrink-0 border-b border-transparent bg-transparent text-white"
+          ? // Drop `sticky`/`z` so the bar is NOT a stacking context: that keeps
+            // the title + left controls below the z-50 flyout instead of being
+            // dragged above it. The trigger is lifted on its own (see below).
+            "pointer-events-none relative shrink-0 border-b border-transparent bg-transparent text-white"
           : // Sticky on mobile only; on desktop the bar scrolls away with the page.
             "sticky top-0 z-30 shrink-0 border-b border-white/10 bg-sidebar/90 text-sidebar-foreground backdrop-blur-md transition-[height] ease-linear md:static md:border-border md:bg-transparent md:text-foreground md:backdrop-blur-none"
       }
@@ -90,13 +99,24 @@ export function SiteHeader({
               lives in the sidebar footer). */}
           {!isMobile && (
             <>
-              <NotificationCenter />
+              {showHeaderBell && <NotificationCenter />}
               {showActions && <ThemeToggle />}
             </>
           )}
-          {/* Mobile: the trigger (hamburger ⇄ X) lives on the right. */}
-          {isMobile && <MenuTrigger />}
+          {/* Mobile: the trigger (hamburger ⇄ X) lives on the right. While the
+              flyout is open it's pinned in a `fixed`, z-[60] wrapper so the X
+              floats above the z-50 sheet/backdrop — without lifting the rest of
+              the bar with it. */}
+          {isMobile && !flyoutOpen && <MenuTrigger />}
         </div>
+        {isMobile && flyoutOpen && (
+          <div
+            className="pointer-events-none fixed top-0 right-0 z-[60] flex h-(--header-height) items-center px-4 text-white lg:px-6"
+            style={{ paddingTop: "env(safe-area-inset-top)" }}
+          >
+            <MenuTrigger />
+          </div>
+        )}
       </div>
     </header>
   );

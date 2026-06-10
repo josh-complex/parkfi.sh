@@ -220,9 +220,47 @@ function CarouselNext({
   );
 }
 
+/**
+ * Inline prev/next pair for placing in normal flow (e.g. right-aligned in a
+ * section heading) rather than floating over the track like
+ * `CarouselPrevious`/`CarouselNext`. Renders nothing when there's nothing to
+ * scroll, so static rows stay clean.
+ */
+function CarouselArrows({ className }: { className?: string }) {
+  const { scrollPrev, scrollNext, canScrollPrev, canScrollNext } = useCarousel();
+
+  if (!canScrollPrev && !canScrollNext) return null;
+
+  return (
+    <div className={cn("flex items-center gap-2", className)}>
+      <Button
+        variant="outline"
+        size="icon-sm"
+        className="rounded-full"
+        disabled={!canScrollPrev}
+        onClick={scrollPrev}
+      >
+        <ChevronLeftIcon />
+        <span className="sr-only">Previous</span>
+      </Button>
+      <Button
+        variant="outline"
+        size="icon-sm"
+        className="rounded-full"
+        disabled={!canScrollNext}
+        onClick={scrollNext}
+      >
+        <ChevronRightIcon />
+        <span className="sr-only">Next</span>
+      </Button>
+    </div>
+  );
+}
+
 export {
   type CarouselApi,
   Carousel,
+  CarouselArrows,
   CarouselContent,
   CarouselItem,
   CarouselPrevious,

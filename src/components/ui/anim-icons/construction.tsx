@@ -13,10 +13,12 @@ export interface ConstructionIconHandle {
 
 interface ConstructionIconProps extends HTMLAttributes<HTMLDivElement> {
   size?: number;
+  /** Loop the barrier stripes continuously on mount instead of only on hover. */
+  autoplay?: boolean;
 }
 
 const ConstructionIcon = forwardRef<ConstructionIconHandle, ConstructionIconProps>(
-  ({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+  ({ onMouseEnter, onMouseLeave, className, size = 28, autoplay = false, ...props }, ref) => {
     const controls = useAnimation();
     const isControlledRef = useRef(false);
 
@@ -27,6 +29,10 @@ const ConstructionIcon = forwardRef<ConstructionIconHandle, ConstructionIconProp
         stopAnimation: () => controls.start("normal"),
       };
     });
+
+    useEffect(() => {
+      if (autoplay) void controls.start("animate");
+    }, [autoplay, controls]);
 
     const handleMouseEnter = useCallback(
       (e: React.MouseEvent<HTMLDivElement>) => {
