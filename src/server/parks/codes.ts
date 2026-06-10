@@ -258,6 +258,14 @@ export function disneyDiningEntityType(
 }
 
 /**
+ * Dining entity types the availability sweep polls. dine-vas getAvailability
+ * serves dinner-shows and dining-events (e.g. Hoop-Dee-Doo, Victoria & Albert's
+ * Chef's Table) over the same path as plain restaurants, so the sweep — and the
+ * `priority` curation that feeds it — treat all three as candidates.
+ */
+export const SWEEPABLE_DINING_ENTITY_TYPES = ["restaurant", "dinner-show", "dining-event"] as const;
+
+/**
  * Whether a dining facility accepts online reservations (sweepable). The finder
  * marks these with a `checkavailmodulewdw` checkAvailability facet and/or a
  * `reservations-accepted` tableService facet.

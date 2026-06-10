@@ -1,8 +1,9 @@
 /**
  * Curate the dining-availability "preferred list" — i.e. which restaurants the
  * `dining:availability` cron actually sweeps. That sweep only polls rows where
- * `priority = true AND bookable = true AND active = true AND entity_type = 'restaurant'`
- * (see services/dining-availability/main.ts), so this script flips `priority` on a
+ * `priority = true AND bookable = true AND active = true AND entity_type IN
+ * (restaurant, dinner-show, dining-event)` (see services/dining-availability/main.ts),
+ * so this script flips `priority` on a
  * CURATED subset of the bookable catalog and (optionally) demotes everything else,
  * keeping the hot set exactly what you intend.
  *
@@ -23,10 +24,11 @@
 import { config as loadEnv } from "dotenv";
 loadEnv({ path: [".env.local", ".env"] });
 
-import { and, eq, ilike, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 
 import { db } from "./index.ts";
 import { restaurantDim } from "./schema.ts";
+import { SWEEPABLE_DINING_ENTITY_TYPES } from "#/server/parks/codes.ts";
 
 const argv = new Set(process.argv.slice(2));
 const DRY_RUN = argv.has("--dry-run");
@@ -47,7 +49,7 @@ const nameFilters = parseList(process.env.DINING_PRIORITY_NAMES);
 const candidatePredicate = and(
   eq(restaurantDim.bookable, true),
   eq(restaurantDim.active, true),
-  eq(restaurantDim.entityType, "restaurant"),
+  inArray(restaurantDim.entityType, [...SWEEPABLE_DINING_ENTITY_TYPES]),
 );
 
 /** Curated subset = candidate pool ∩ (resort OR name filters). Empty filters ⇒ whole pool. */

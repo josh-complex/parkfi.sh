@@ -50,20 +50,20 @@ All services need `DATABASE_URL` (Timescale-enabled Postgres). Optional knobs
 `cron-tickets` gated feeds (Disney: `research/disney-ticket-deep-dive.md`;
 Universal: `research/universal-ticket-deep-dive.md`):
 
-| Var                                     | Default                             | Purpose                                                                     |
-| --------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------- |
-| `DISNEY_TICKET_BASE`                    | `https://disneyworld.disney.go.com` | WDW client-token + lexicon catalog/pricing host (D2)                        |
-| `DISNEY_PRICE_WINDOW_DAYS`              | `180`                               | forward window of WDW per-date pricing (calendar reaches ~17mo)             |
-| `BROWSER_WS_ENDPOINT`                   | _(unset)_                           | full `wss://…?token=…` (Railway template var); unset ⇒ Universal skipped    |
-| `BROWSERLESS_URL` + `BROWSERLESS_TOKEN` | _(unset)_                           | fallback: HTTP base (→ `ws://`) + token, e.g. `…railway.internal:3000`      |
-| `BROWSERLESS_TIMEOUT_MS`                | `60000`                             | budget for the Browserless session harvest                                  |
-| `BROWSERLESS_WS_QUERY`                  | _(unset)_                           | extra WS query, e.g. `proxy=residential&proxySticky=true` (Akamai fallback) |
-| `UNIVERSAL_STORE_URL`                   | `https://www.universalorlando.com`  | web-store front loaded once to mint the guest session                       |
-| `UNIVERSAL_API_BASE`                    | `https://api.universalparks.com`    | commerce API host (`gettickets` + `priceAndInventory/v2`)                   |
-| `UNIVERSAL_TICKETS_URL`                 | web-store default                   | tickets page whose `gettickets` request we harvest session headers from     |
-| `UNIVERSAL_CONTRACT_ID`                 | `4000000000000000003`               | priceAndInventory contract id (prices standard + FL SKUs)                   |
-| `UNIVERSAL_PRICE_WINDOW_DAYS`           | `180`                               | forward window of per-date pricing (one call covers it; max ~365)           |
-| `UNIVERSAL_PRICE_BATCH`                 | `20`                                | partNumbers per priceAndInventory call                                      |
+| Var                                     | Default                             | Purpose                                                                      |
+| --------------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------- |
+| `DISNEY_TICKET_BASE`                    | `https://disneyworld.disney.go.com` | WDW client-token + lexicon catalog/pricing host (D2)                         |
+| `DISNEY_PRICE_WINDOW_DAYS`              | `180`                               | forward window of WDW per-date pricing (calendar reaches ~17mo)              |
+| `BROWSER_WS_ENDPOINT`                   | _(unset)_                           | full `wss://…?token=…` (Railway template var); unset ⇒ Universal skipped     |
+| `BROWSERLESS_URL` + `BROWSERLESS_TOKEN` | _(unset)_                           | fallback: HTTP base (→ `ws://`) + token, e.g. `…railway.internal:3000`       |
+| `BROWSERLESS_TIMEOUT_MS`                | `600000`                            | budget for one Browserless session (sized for the dining-availability sweep) |
+| `BROWSERLESS_WS_QUERY`                  | _(unset)_                           | extra WS query, e.g. `proxy=residential&proxySticky=true` (Akamai fallback)  |
+| `UNIVERSAL_STORE_URL`                   | `https://www.universalorlando.com`  | web-store front loaded once to mint the guest session                        |
+| `UNIVERSAL_API_BASE`                    | `https://api.universalparks.com`    | commerce API host (`gettickets` + `priceAndInventory/v2`)                    |
+| `UNIVERSAL_TICKETS_URL`                 | web-store default                   | tickets page whose `gettickets` request we harvest session headers from      |
+| `UNIVERSAL_CONTRACT_ID`                 | `4000000000000000003`               | priceAndInventory contract id (prices standard + FL SKUs)                    |
+| `UNIVERSAL_PRICE_WINDOW_DAYS`           | `180`                               | forward window of per-date pricing (one call covers it; max ~365)            |
+| `UNIVERSAL_PRICE_BATCH`                 | `20`                                | partNumbers per priceAndInventory call                                       |
 
 `dining-*` services (logged-in MyDisney session; see `disney-ticket-deep-dive.md` §7-8):
 
