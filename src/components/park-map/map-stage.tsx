@@ -1,11 +1,13 @@
 "use client";
 
 import * as React from "react";
-import type maplibregl from "maplibre-gl";
 
 import { useSelection } from "#/components/park-dashboard/selection-context.tsx";
 
 import { ParkMap } from "./park-map.tsx";
+import { ParkMapLeaflet } from "./park-map-leaflet.tsx";
+import type { MapHandle } from "./shared.tsx";
+import { hasWebGl } from "./webgl.ts";
 
 type StageCtx = {
   /**
@@ -140,14 +142,21 @@ export function MapStageProvider({
   const { selected, setSelected } = useSelection();
   const hostRef = React.useRef<HTMLDivElement>(null);
   const parkRef = React.useRef<HTMLDivElement>(null);
-  const mapRef = React.useRef<maplibregl.Map | null>(null);
+  const mapRef = React.useRef<MapHandle | null>(null);
+  // Pick the renderer once on the client: MapLibre (WebGL) when available, the
+  // Leaflet DOM/raster renderer otherwise — so a WebGL-disabled browser degrades
+  // gracefully instead of crashing. `null` until detected, so SSR and the first
+  // paint render no engine (the host stays an empty box) and there's no
+  // server/client engine mismatch to hydrate.
+  const [engine, setEngine] = React.useState<"gl" | "leaflet" | null>(null);
+  React.useEffect(() => setEngine(hasWebGl() ? "gl" : "leaflet"), []);
   // Geometry of the slot we just left, carried into the next attach() to seed
   // the FLIP. Set on the outgoing slot's cleanup (mutation phase), consumed by
   // the incoming slot's layout effect.
   const prevRectRef = React.useRef<DOMRect | null>(null);
   const slotRef = React.useRef<HTMLElement | null>(null);
 
-  const onMapRef = React.useCallback((m: maplibregl.Map | null) => {
+  const onMapRef = React.useCallback((m: MapHandle | null) => {
     mapRef.current = m;
   }, []);
 
@@ -185,12 +194,22 @@ export function MapStageProvider({
       {/* Off-screen home for the singleton map whenever no slot owns it. */}
       <div ref={parkRef} className="pointer-events-none fixed -z-10 size-0 opacity-0" aria-hidden>
         <div ref={hostRef} className="size-full overflow-hidden">
-          <ParkMap
-            activeSlug={activeSlug}
-            selectedId={selected?.id ?? null}
-            onSelectAttraction={setSelected}
-            onMapRef={onMapRef}
-          />
+          {engine === "gl" && (
+            <ParkMap
+              activeSlug={activeSlug}
+              selectedId={selected?.id ?? null}
+              onSelectAttraction={setSelected}
+              onMapRef={onMapRef}
+            />
+          )}
+          {engine === "leaflet" && (
+            <ParkMapLeaflet
+              activeSlug={activeSlug}
+              selectedId={selected?.id ?? null}
+              onSelectAttraction={setSelected}
+              onMapRef={onMapRef}
+            />
+          )}
         </div>
       </div>
       {children}

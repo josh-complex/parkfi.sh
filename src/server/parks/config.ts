@@ -30,6 +30,20 @@ export const config = {
   disneyFinderBase:
     process.env.DISNEY_FINDER_BASE ??
     "https://disneyworld.disney.go.com/finder/api/v1/explorer-service",
+  /**
+   * OneID (registerdisney) refresh-token exchange that mints the dine-vas
+   * bearer over plain HTTP — no browser. The bearer (access_token) lives 24h;
+   * the refresh token lives 180d and ROTATES on each use, so it's stored as
+   * mutable state in `scraper_session` (see disney-session.refreshDineBearer).
+   * `disneyOneIdApiKey` is a static public client key (grab from any
+   * registerdisney request's `Authorization: APIKEY …` header / OneID.js).
+   * `clientId` MUST match the token's `client_id` claim (…-PROD), not the
+   * browser SDK's `getConfig` value. See research/disney-ticket-deep-dive.md.
+   */
+  disneyOneIdApiKey: process.env.DISNEY_ONEID_APIKEY ?? "",
+  disneyOneIdClientId: process.env.DISNEY_ONEID_CLIENT_ID ?? "TPR-WDW-LBJS.WEB-PROD",
+  disneyOneIdBase: process.env.DISNEY_ONEID_BASE ?? "https://registerdisney.go.com/jgc/v8",
+
   /** Universal Orlando web-store front (Akamai-protected SPA we drive in Chromium). */
   universalStoreUrl: process.env.UNIVERSAL_STORE_URL ?? "https://www.universalorlando.com",
   /** Universal commerce API host (gettickets + priceAndInventory/v2 live here). */

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import maplibregl from "maplibre-gl";
+import * as L from "leaflet";
 import { useTheme } from "next-themes";
 
 import { useTRPC } from "#/integrations/trpc/react.ts";
@@ -23,77 +23,61 @@ import {
   waitLabelFor,
 } from "./shared.tsx";
 
-import "maplibre-gl/dist/maplibre-gl.css";
+import "leaflet/dist/leaflet.css";
+import "./park-map-leaflet.css";
+
+const FLY_SECONDS = MAP_FLY_MS / 1000;
 
 /**
- * Keyless raster basemap, per the app theme:
- *  - **light** → OpenStreetMap "Standard" — the colorful, detailed style with
- *    in-park footpaths and POI icons (what makes Disney/Universal look so rich).
- *  - **dark** → Carto dark, since OSM Standard has no dark variant.
+ * Keyless raster basemap, per the app theme — the same OSM Standard (light) /
+ * Carto dark (dark) tiles the MapLibre renderer uses, so the two engines look
+ * identical. Leaflet pulls them straight as `<img>` tiles (no WebGL).
  */
-function basemapStyle(dark: boolean): maplibregl.StyleSpecification {
-  const source: maplibregl.RasterSourceSpecification = dark
-    ? {
-        type: "raster",
-        tiles: ["a", "b", "c", "d"].map(
-          (s) => `https://${s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png`,
-        ),
-        tileSize: 256,
+function makeTileLayer(dark: boolean): L.TileLayer {
+  return dark
+    ? L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png", {
+        subdomains: "abcd",
+        maxZoom: 20,
         attribution:
           '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
-      }
-    : {
-        type: "raster",
-        tiles: ["a", "b", "c"].map((s) => `https://${s}.tile.openstreetmap.org/{z}/{x}/{y}.png`),
-        tileSize: 256,
-        maxzoom: 19,
+      })
+    : L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        subdomains: "abc",
+        maxZoom: 19,
         attribution:
           '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      };
-  return {
-    version: 8,
-    sources: { base: source },
-    layers: [{ id: "base", type: "raster", source: "base" }],
-  };
+      });
 }
 
-type ParkBounds = { latMin: number; latMax: number; lngMin: number; lngMax: number };
-
-/** Generous box around the park used to cap how far the user can zoom/pan out. */
-function zoomOutBounds(b: ParkBounds): maplibregl.LngLatBoundsLike {
-  const dLng = (b.lngMax - b.lngMin) * 0.6;
-  const dLat = (b.latMax - b.latMin) * 0.6;
-  return [
-    [b.lngMin - dLng, b.latMin - dLat],
-    [b.lngMax + dLng, b.latMax + dLat],
-  ];
+/**
+ * Wrap a marker element in a zero-size DivIcon centered on its point. Leaflet
+ * anchors a DivIcon by its top-left corner; the wrapper's translate(-50%, -50%)
+ * recenters it so it sits on the coordinate exactly like a MapLibre marker
+ * (whose default anchor is the center). The translate lives on the wrapper, not
+ * the element, so the element's own hover/selection scaling never fights it.
+ */
+function pointIcon(el: HTMLElement): L.DivIcon {
+  const wrap = document.createElement("div");
+  wrap.style.transform = "translate(-50%, -50%)";
+  wrap.appendChild(el);
+  return L.divIcon({ html: wrap, className: "parkfi-marker", iconSize: [0, 0] });
 }
 
-/** Pad a LngLatBounds by `factor` of its span on each side. Falls back to a
- *  small fixed margin when the box collapses to a point (single resort). */
-function paddedBounds(b: maplibregl.LngLatBounds, factor: number): maplibregl.LngLatBoundsLike {
-  const sw = b.getSouthWest();
-  const ne = b.getNorthEast();
-  const dLng = (ne.lng - sw.lng) * factor || 0.05;
-  const dLat = (ne.lat - sw.lat) * factor || 0.05;
-  return [
-    [sw.lng - dLng, sw.lat - dLat],
-    [ne.lng + dLng, ne.lat + dLat],
-  ];
-}
-
-export function ParkMap({
+/**
+ * DOM/raster fallback for the park map, used when the browser can't give us a
+ * WebGL context (so MapLibre would crash). Mirrors `ParkMap` feature-for-feature
+ * — park badges, attraction pins, decluttering, popups, and the same fly/fit
+ * camera — using Leaflet, which renders everything as plain DOM + `<img>` tiles.
+ */
+export function ParkMapLeaflet({
   activeSlug,
   selectedId,
   onSelectAttraction,
   onMapRef,
 }: {
   activeSlug: string | null;
-  /** Currently charted attraction — its marker is highlighted. */
   selectedId?: number | null;
-  /** Clicking an attraction marker selects it (drives the wait chart). */
   onSelectAttraction?: (item: { id: number; name: string }) => void;
-  /** Exposes a resize handle so the stage can re-fit the canvas mid-morph. */
   onMapRef?: (map: MapHandle | null) => void;
 }) {
   const trpc = useTRPC();
@@ -104,26 +88,21 @@ export function ParkMap({
   const [mounted, setMounted] = React.useState(false);
   const [ready, setReady] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement | null>(null);
-  const mapRef = React.useRef<maplibregl.Map | null>(null);
-  const markersRef = React.useRef<Array<maplibregl.Marker>>([]);
-  // Attraction marker detail-layer elements by id, so selection highlight can
-  // update in place without rebuilding (rebuilding would close an open popup).
+  const mapRef = React.useRef<L.Map | null>(null);
+  const tileRef = React.useRef<L.TileLayer | null>(null);
+  const markersRef = React.useRef<Array<L.Marker>>([]);
   const markerElsRef = React.useRef<Map<number, HTMLElement>>(new Map());
-  // Per-attraction declutter state: the two visual layers + projection input +
-  // placement priority. Read by the collision pass on every pan/zoom.
   const declutterItemsRef = React.useRef<
     Array<{
       id: number;
-      lngLat: [number, number];
+      latLng: [number, number];
       detail: HTMLElement;
       dot: HTMLElement;
       priority: number;
     }>
   >([]);
   const declutterRafRef = React.useRef(0);
-  const popupRef = React.useRef<maplibregl.Popup | null>(null);
-  // Latest select callback / selection, read inside the marker effect so it
-  // doesn't rebuild every render or on each selection change.
+  const popupRef = React.useRef<L.Popup | null>(null);
   const onSelectRef = React.useRef(onSelectAttraction);
   onSelectRef.current = onSelectAttraction;
   const selectedIdRef = React.useRef(selectedId);
@@ -140,44 +119,45 @@ export function ParkMap({
   const overview = overviewQ.data;
   const board = boardQ.data;
 
-  // SSR guard: maplibre needs the DOM. Render a placeholder until mounted.
+  // SSR guard: Leaflet needs the DOM. Render a placeholder until mounted.
   React.useEffect(() => setMounted(true), []);
 
   // Init map once.
   React.useEffect(() => {
     if (!mounted || !containerRef.current || mapRef.current) return;
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: basemapStyle(dark),
-      center: ORLANDO_CENTER,
+    const map = L.map(containerRef.current, {
+      center: [ORLANDO_CENTER[1], ORLANDO_CENTER[0]],
       zoom: ORLANDO_ZOOM,
-      attributionControl: { compact: true },
+      zoomControl: false,
+      attributionControl: true,
     });
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
-    map.on("load", () => setReady(true));
+    L.control.zoom({ position: "topright" }).addTo(map);
+    tileRef.current = makeTileLayer(dark).addTo(map);
+    map.whenReady(() => setReady(true));
     mapRef.current = map;
-    onMapRef?.({ resize: () => map.resize() });
+    onMapRef?.({ resize: () => map.invalidateSize({ animate: false }) });
     return () => {
       map.remove();
       mapRef.current = null;
+      tileRef.current = null;
       onMapRef?.(null);
       setReady(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted]);
 
-  // Theme swap — DOM markers survive setStyle (they aren't style layers), so
-  // swapping the basemap is all that's needed here.
+  // Theme swap — markers live in their own pane, so just swap the tile layer.
   React.useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    map.setStyle(basemapStyle(dark));
+    tileRef.current?.remove();
+    tileRef.current = makeTileLayer(dark).addTo(map);
   }, [dark, ready]);
 
   // Keep the canvas correct as the layout width animates.
   React.useEffect(() => {
     if (!mounted || !containerRef.current) return;
-    const ro = new ResizeObserver(() => mapRef.current?.resize());
+    const ro = new ResizeObserver(() => mapRef.current?.invalidateSize({ animate: false }));
     ro.observe(containerRef.current);
     return () => ro.disconnect();
   }, [mounted]);
@@ -189,11 +169,8 @@ export function ParkMap({
     declutterItemsRef.current = [];
   }, []);
 
-  // Collision pass: project every attraction marker to screen space and, walking
-  // highest-priority first (selected, then busiest operating rides), keep a marker
-  // expanded only if its reserved box clears every already-placed one — otherwise
-  // collapse it to a dot. Re-runs cheaply on each frame of a pan/zoom (rAF-coalesced),
-  // so detail reappears as the user zooms in and markers spread apart.
+  // Collision pass — identical strategy to the MapLibre renderer, projecting via
+  // Leaflet's container-point transform.
   const declutter = React.useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -203,7 +180,7 @@ export function ParkMap({
     );
     const placed: Array<{ x: number; y: number }> = [];
     for (const it of items) {
-      const p = map.project(it.lngLat);
+      const p = map.latLngToContainerPoint(it.latLng);
       const collides =
         it.id !== sel &&
         placed.some(
@@ -238,9 +215,7 @@ export function ParkMap({
         const el = buildParkBadgeEl(p, () => {
           void navigate({ to: "/park/$slug", params: { slug: p.slug } });
         });
-        const marker = new maplibregl.Marker({ element: el })
-          .setLngLat([p.longitude, p.latitude])
-          .addTo(map);
+        const marker = L.marker([p.latitude, p.longitude], { icon: pointIcon(el) }).addTo(map);
         markersRef.current.push(marker);
       }
       return;
@@ -249,37 +224,40 @@ export function ParkMap({
     for (const a of board ?? []) {
       if (a.latitude == null || a.longitude == null) continue;
       if (a.entityType !== "ATTRACTION") continue;
-      const lngLat: [number, number] = [a.longitude, a.latitude];
+      const latLng: [number, number] = [a.latitude, a.longitude];
       const { el, detail, dot } = buildAttractionEl(a, a.id === selectedIdRef.current);
       const waitLabel = waitLabelFor(a);
-      el.addEventListener("click", (e) => {
-        e.stopPropagation();
+      const marker = L.marker(latLng, { icon: pointIcon(el) }).addTo(map);
+      marker.on("click", () => {
         onSelectRef.current?.({ id: a.id, name: a.name });
         popupRef.current?.remove();
-        popupRef.current = new maplibregl.Popup({ offset: 16, closeButton: false })
-          .setLngLat(lngLat)
-          .setHTML(attractionPopupHtml(a, waitLabel))
-          .addTo(map);
-        map.easeTo({ center: lngLat, duration: 500 });
+        popupRef.current = L.popup({
+          offset: [0, -16],
+          closeButton: false,
+          className: "parkfi-popup",
+        })
+          .setLatLng(latLng)
+          .setContent(attractionPopupHtml(a, waitLabel));
+        popupRef.current.openOn(map);
+        map.panTo(latLng, { animate: true, duration: 0.5 });
       });
 
       markerElsRef.current.set(a.id, detail);
       declutterItemsRef.current.push({
         id: a.id,
-        lngLat,
+        latLng,
         detail,
         dot,
         priority: attractionPriority(a),
       });
-      const marker = new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map);
       markersRef.current.push(marker);
     }
 
     // Initial placement, then keep it current as the user pans/zooms.
     scheduleDeclutter();
-    map.on("move", scheduleDeclutter);
+    map.on("move zoom", scheduleDeclutter);
     return () => {
-      map.off("move", scheduleDeclutter);
+      map.off("move zoom", scheduleDeclutter);
       if (declutterRafRef.current) {
         cancelAnimationFrame(declutterRafRef.current);
         declutterRafRef.current = 0;
@@ -293,66 +271,55 @@ export function ParkMap({
       const on = id === selectedId;
       for (const c of SELECTED_CLASSES) el.classList.toggle(c, on);
     }
-    // Promote the selected marker out of any decluttered dot state.
     scheduleDeclutter();
   }, [selectedId, board, ready, scheduleDeclutter]);
 
-  // Camera: fit both resorts on the overview, fly into the active park. Built
-  // as a closure recomputed each render and stashed in a ref so the delayed
-  // scheduler below always reads fresh data without re-firing the fly on every
-  // query refetch.
+  // Camera: fit both resorts on the overview, fly into the active park. Stashed
+  // in a ref so the delayed scheduler reads fresh data without re-firing on
+  // every query refetch.
   const runFly = () => {
     const map = mapRef.current;
     if (!map) return;
+    // Leaflet removes the cap when handed invalid/empty bounds.
+    const clearMaxBounds = () => map.setMaxBounds(null as unknown as L.LatLngBoundsExpression);
 
     if (!activeSlug) {
-      // Overview/home: fit both resorts, then cap pan/zoom-out to that area.
-      map.setMaxBounds(null);
-      const coords = (overview?.parks ?? []).filter(
-        (p): p is typeof p & { latitude: number; longitude: number } =>
-          p.latitude != null && p.longitude != null,
-      );
+      clearMaxBounds();
+      const coords = (overview?.parks ?? [])
+        .filter((p) => p.latitude != null && p.longitude != null)
+        .map((p) => [p.latitude!, p.longitude!] as [number, number]);
       if (coords.length === 0) {
-        map.flyTo({ center: ORLANDO_CENTER, zoom: ORLANDO_ZOOM });
+        map.flyTo([ORLANDO_CENTER[1], ORLANDO_CENTER[0]], ORLANDO_ZOOM, { duration: FLY_SECONDS });
         return;
       }
-      const b = new maplibregl.LngLatBounds();
-      for (const p of coords) b.extend([p.longitude, p.latitude]);
-      map.fitBounds(b, { padding: 80, maxZoom: 12, duration: MAP_FLY_MS });
-      void map.once("moveend", () => map.setMaxBounds(paddedBounds(b, 0.6)));
+      const b = L.latLngBounds(coords);
+      map.flyToBounds(b, { padding: [80, 80], maxZoom: 12, duration: FLY_SECONDS });
+      map.once("moveend", () => map.setMaxBounds(b.pad(0.6)));
       return;
     }
 
     const park = parks?.find((p) => p.slug === activeSlug);
     if (!park) return;
     if (park.bounds) {
-      const bounds = park.bounds;
-      // Clear first so the fit isn't constrained mid-flight, then cap the
-      // zoom-out once we've arrived at the park.
-      map.setMaxBounds(null);
-      map.fitBounds(
-        [
-          [bounds.lngMin, bounds.latMin],
-          [bounds.lngMax, bounds.latMax],
-        ],
-        { padding: 60, maxZoom: 17, duration: MAP_FLY_MS },
-      );
-      void map.once("moveend", () => map.setMaxBounds(zoomOutBounds(bounds)));
+      const bd = park.bounds;
+      const b = L.latLngBounds([
+        [bd.latMin, bd.lngMin],
+        [bd.latMax, bd.lngMax],
+      ]);
+      clearMaxBounds();
+      map.flyToBounds(b, { padding: [60, 60], maxZoom: 17, duration: FLY_SECONDS });
+      map.once("moveend", () => map.setMaxBounds(b.pad(0.6)));
     } else if (park.latitude != null && park.longitude != null) {
-      map.setMaxBounds(null);
-      map.flyTo({
-        center: [park.longitude, park.latitude],
-        zoom: park.mapZoom ?? 15,
-        duration: MAP_FLY_MS,
-      });
+      clearMaxBounds();
+      map.flyTo([park.latitude, park.longitude], park.mapZoom ?? 15, { duration: FLY_SECONDS });
     }
   };
   const runFlyRef = React.useRef(runFly);
   runFlyRef.current = runFly;
 
   // Schedule the fly after the box morph settles (layout first, then zoom). Keyed
-  // on the navigation target and data *presence* (stable booleans) — not the
-  // data objects — so a background refetch can't queue a second, competing fly.
+  // on the navigation target and data *presence* — not the data objects — so a
+  // background refetch can't queue a second, competing fly.
   const hasOverview = (overview?.parks?.length ?? 0) > 0;
   const hasParks = (parks?.length ?? 0) > 0;
   React.useEffect(() => {

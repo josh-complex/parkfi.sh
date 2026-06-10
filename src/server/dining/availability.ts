@@ -1,15 +1,22 @@
-import type { Page } from "puppeteer-core";
-
-import { getDineAccessToken } from "./disney-session.ts";
-
 /**
- * dine-vas `getAvailability` — the perishable reservation feed. Called in-page
- * on the logged-in session. Cookies are inherited but are NOT sufficient — the
- * dine-vas API 401s without the OneID bearer (verified against `facilities`),
- * so we attach `Authorization: BEARER …` alongside the SPA routing headers.
- * One row per bookable slot in `offersByAccessibility[]`.
- * See research/disney-ticket-deep-dive.md §7.
+ * dine-vas `getAvailability` — the perishable reservation feed.
+ *
+ * The per-facility availability endpoint takes a DATE RANGE and returns every
+ * bookable slot across it in ONE call, keyed by service date. Crucially it does
+ * NOT need a live browser session or cookies — only the OneID bearer plus the
+ * two `x-disney-internal-dine-vas-*` routing headers (verified live from a bare
+ * HTTP client). So we mint the bearer once via the browser (see
+ * disney-session.ts → mintDineBearer) and fire these as plain `fetch`es; no
+ * session to keep warm, and one request per (facility, partySize) covers the
+ * whole horizon instead of one per day. See research/disney-ticket-deep-dive.md §7.
  */
+
+const DINE_HOST = "https://disneyworld.disney.go.com";
+// undici sends `User-Agent: node` by default; mirror a real browser so we don't
+// trip a UA gate. The data path is bearer-gated, not cookie-gated.
+const BROWSER_UA =
+  process.env.DISNEY_BROWSER_UA ??
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 export interface DiningOffer {
   mealPeriod: string | null;
@@ -18,82 +25,86 @@ export interface DiningOffer {
 }
 
 export interface AvailabilityResult {
-  // false => session looks dead (HTTP 401 / login redirect) → caller re-logs in
+  // false => bearer rejected (HTTP 401/403 / login redirect) → caller re-mints it
   loggedIn: boolean;
-  offers: Array<DiningOffer>;
+  // service date (YYYY-MM-DD) → its offers. A date absent from the map was not
+  // returned by the feed (no availability); the caller treats it as "checked,
+  // none available".
+  offersByDate: Map<string, Array<DiningOffer>>;
 }
 
-/** Fetch availability for one (facility, date, partySize). `date` = YYYY-MM-DD. */
-export async function fetchAvailability(
-  page: Page,
-  facilityId: string,
-  entityType: string,
-  date: string,
-  partySize: number,
-): Promise<AvailabilityResult> {
-  const bearer = await getDineAccessToken(page);
+interface DineAvailabilityResponse {
+  restaurants?: Record<
+    string,
+    Array<{
+      mealPeriodType?: string;
+      mealPeriodName?: string;
+      // each entry is an accessibility tier; the bookable slots are nested under
+      // `.offers`, NOT on the tier object itself.
+      offersByAccessibility?: Array<{
+        accessibilityLevel?: string;
+        offers?: Array<{ offerId?: string; time?: string }>;
+      }>;
+    }>
+  >;
+}
 
-  return page.evaluate(
-    async (fid: string, et: string, d: string, party: number, token: string | null) => {
-      // Endpoint is under the `/dine-res/` prefix and takes a time-of-day range
-      // path segment (all-day here); the bare `/api/availability/…` path 404s.
-      const url =
-        `/dine-res/api/availability/${party}/${d},${d}/00:00:00,23:59:59` +
-        `?facilityId=${fid};entityType=${et}`;
-      const headers: Record<string, string> = {
-        Accept: "application/json, text/plain, */*",
-        "X-Function-Name": "getAvailability",
-        "X-Correlation-Id": crypto.randomUUID(),
-        "X-Conversation-Id": crypto.randomUUID(),
-        "x-disney-internal-dine-vas-eks": "true",
-        "x-disney-internal-dine-vas-365": "true",
-      };
-      if (token) headers.Authorization = `BEARER ${token}`;
-      let res: Response;
-      try {
-        res = await fetch(url, { headers });
-      } catch {
-        return { loggedIn: true, offers: [] }; // transient network error — keep session
-      }
-      if (res.status === 401 || res.redirected) return { loggedIn: false, offers: [] };
-
-      const j = (await res.json().catch(() => null)) as {
-        restaurants?: Record<
-          string,
-          Array<{
-            mealPeriodType?: string;
-            mealPeriodName?: string;
-            // each entry is an accessibility tier; the bookable slots are nested
-            // under `.offers`, NOT on the tier object itself
-            offersByAccessibility?: Array<{
-              accessibilityLevel?: string;
-              offers?: Array<{ offerId?: string; time?: string }>;
-            }>;
-          }>
-        >;
-      } | null;
-
-      // `restaurants` present => logged-in (populated or genuinely empty).
-      const periods = j?.restaurants?.[d] ?? [];
-      const offers: Array<{
-        mealPeriod: string | null;
-        offerTime: string | null;
-        offerId: string | null;
-      }> = [];
-      for (const mp of periods) {
-        const mealPeriod = mp.mealPeriodType ?? mp.mealPeriodName ?? null;
-        for (const tier of mp.offersByAccessibility ?? []) {
-          for (const off of tier.offers ?? []) {
-            offers.push({ mealPeriod, offerTime: off.time ?? null, offerId: off.offerId ?? null });
-          }
+/** Flatten a dine-vas getAvailability body into per-date offers. Exported for tests. */
+export function parseAvailability(body: unknown): Map<string, Array<DiningOffer>> {
+  const out = new Map<string, Array<DiningOffer>>();
+  const restaurants = (body as DineAvailabilityResponse | null)?.restaurants;
+  if (!restaurants) return out;
+  for (const [date, periods] of Object.entries(restaurants)) {
+    const offers: Array<DiningOffer> = [];
+    for (const mp of periods ?? []) {
+      const mealPeriod = mp.mealPeriodType ?? mp.mealPeriodName ?? null;
+      for (const tier of mp.offersByAccessibility ?? []) {
+        for (const off of tier.offers ?? []) {
+          offers.push({ mealPeriod, offerTime: off.time ?? null, offerId: off.offerId ?? null });
         }
       }
-      return { loggedIn: true, offers };
-    },
-    facilityId,
-    entityType,
-    date,
-    partySize,
-    bearer,
-  );
+    }
+    out.set(date, offers);
+  }
+  return out;
+}
+
+/**
+ * Fetch availability for one (facility, partySize) across the inclusive date
+ * range [startDate, endDate] (YYYY-MM-DD) in a single request. `partySize` ≤ 10.
+ * `signal` aborts a hung request so the cron's budget can cap the whole run.
+ */
+export async function fetchAvailability(
+  bearer: string | null,
+  facilityId: string,
+  entityType: string,
+  startDate: string,
+  endDate: string,
+  partySize: number,
+  signal?: AbortSignal,
+): Promise<AvailabilityResult> {
+  const url =
+    `${DINE_HOST}/dine-res/api/availability/${partySize}/${startDate},${endDate}` +
+    `?facilityId=${facilityId};entityType=${entityType}&entityType=${entityType}`;
+  const headers: Record<string, string> = {
+    Accept: "application/json, text/plain, */*",
+    "User-Agent": BROWSER_UA,
+    "x-disney-internal-dine-vas-eks": "true",
+    "x-disney-internal-dine-vas-365": "true",
+  };
+  if (bearer) headers.Authorization = `BEARER ${bearer}`;
+
+  let res: Response;
+  try {
+    res = await fetch(url, { headers, signal });
+  } catch (err) {
+    if (signal?.aborted) throw err; // budget abort — let the caller stop the run
+    return { loggedIn: true, offersByDate: new Map() }; // transient network error — keep the bearer
+  }
+  // 401/403 or a redirect to the login page => the bearer is dead.
+  if (res.status === 401 || res.status === 403 || res.redirected) {
+    return { loggedIn: false, offersByDate: new Map() };
+  }
+  const body = (await res.json().catch(() => null)) as unknown;
+  return { loggedIn: true, offersByDate: parseAvailability(body) };
 }

@@ -1,0 +1,12 @@
+/* Leaflet stamps every DivIcon with a white box + gray border by default; our
+   markers bring their own styling, so strip the wrapper down to a bare point. */
+.leaflet-div-icon.parkfi-marker {
+  background: transparent;
+  border: none;
+}
+
+/* The attraction popup body is self-styled (white card with dark text); trim
+   Leaflet's default chrome so it matches the MapLibre popup. */
+.parkfi-popup .leaflet-popup-content {
+  margin: 10px 12px;
+}

@@ -1,12 +1,15 @@
 /**
  * WDW dining availability sweep (Railway cron, frequent — e.g. "*&#47;10 * * * *").
- * Single-shot: reuse the maintained OneID session and poll dine-vas
- * getAvailability for the PRIORITY + bookable restaurants × party sizes × the
- * day-horizon, writing per-slot rows (+ a "checked, none available" sentinel)
- * to `dining_obs`. Re-login only on a 401. See disney-ticket-deep-dive.md §7-8.
+ * Mint the OneID bearer once via a brief browser session, then poll dine-vas
+ * getAvailability over plain HTTP for the PRIORITY + bookable restaurants ×
+ * party sizes, writing per-slot rows (+ a "checked, none available" sentinel)
+ * to `dining_obs`. One request per (facility, party) covers the whole
+ * day-horizon (the endpoint takes a date range), and the browser is needed only
+ * for the token — the data path is bearer-gated, not session-gated. Re-mint only
+ * on a 401. See disney-ticket-deep-dive.md §7-8.
  *
- * Volume note: this is facilities × parties × days authenticated calls per run —
- * keep the priority set small and BROWSERLESS_TIMEOUT_MS generous.
+ * Volume note: facilities × parties plain-HTTP calls per run — cheap; the cost
+ * is the one login. Keep the priority set curated all the same.
  *
  * Run:  bun run dining:availability
  */
@@ -20,13 +23,12 @@ import { diningObs, restaurantDim } from "#/db/schema.ts";
 import { Source, SWEEPABLE_DINING_ENTITY_TYPES } from "#/server/parks/codes.ts";
 import { config } from "#/server/parks/config.ts";
 import { fetchAvailability } from "#/server/dining/availability.ts";
-import { ensureLoggedIn, relogin } from "#/server/dining/disney-session.ts";
-import { browserlessConfigured, withBrowser } from "#/server/parks/sources/browserless.ts";
+import { refreshDineBearer } from "#/server/dining/disney-session.ts";
 
 const PARTY_SIZES = (process.env.DINING_PARTY_SIZES ?? "2,4")
   .split(",")
   .map((s) => Number(s.trim()))
-  .filter((n) => Number.isFinite(n) && n > 0);
+  .filter((n) => Number.isFinite(n) && n > 0 && n <= 10);
 const DAY_HORIZON = Number(process.env.DINING_DAY_HORIZON ?? 14);
 
 function isoDate(d: Date): string {
@@ -42,30 +44,22 @@ async function flush(rows: Array<typeof diningObs.$inferInsert>): Promise<void> 
   }
 }
 
-/**
- * A dropped Browserless session surfaces from puppeteer as a `TargetCloseError`
- * / protocol "Target closed" (or a bare connection/session close) — recoverable
- * by reconnecting, unlike our own budget abort (which is checked first). Match on
- * name+message so we don't have to import puppeteer's error classes.
- */
-function isSessionDropError(err: unknown): boolean {
-  const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-  return /TargetClose|Target closed|Session closed|Connection closed|Protocol error|detached|WebSocket|socket hang up/i.test(
-    msg,
-  );
-}
-
 async function main() {
-  if (!browserlessConfigured()) {
-    console.error("[dining-availability] BROWSER_WS_ENDPOINT not set");
+  if (!config.disneyOneIdApiKey) {
+    console.error("[dining-availability] DISNEY_ONEID_APIKEY not set");
     process.exit(1);
   }
   const observedAt = new Date();
+  // One inclusive [start, end] range covers the horizon in a single request per
+  // (facility, party); `dates` drives sentinel coverage for the days the feed
+  // omits (= no availability).
   const dates = Array.from({ length: DAY_HORIZON }, (_, i) => {
     const d = new Date(observedAt);
     d.setDate(d.getDate() + i);
     return isoDate(d);
   });
+  const startDate = dates[0];
+  const endDate = dates[dates.length - 1];
 
   // Sweep only the verified, bookable, priority restaurants (catalog widens the
   // candidate pool; `priority` controls what's actually polled). Order
@@ -83,7 +77,10 @@ async function main() {
     .groupBy(diningObs.facilityId)
     .as("last_swept");
   const targets = await db
-    .select({ facilityId: restaurantDim.facilityId, entityType: restaurantDim.entityType })
+    .select({
+      facilityId: restaurantDim.facilityId,
+      entityType: restaurantDim.entityType,
+    })
     .from(restaurantDim)
     .leftJoin(lastSwept, eq(lastSwept.facilityId, restaurantDim.facilityId))
     .where(
@@ -102,108 +99,98 @@ async function main() {
     return;
   }
 
-  let total = 0;
-  let swept = 0;
-  // One AbortSignal bounds the WHOLE run (across reconnects); the catch uses it
-  // to tell a budget abort (graceful — partial work is already flushed) from a
-  // recoverable session drop or a genuine failure.
+  // One AbortSignal bounds the WHOLE run; it caps both the (brief) browser login
+  // and any hung dine-vas fetch, and lets the catch tell a graceful budget abort
+  // (partial work already flushed) from a genuine failure.
   const signal = AbortSignal.timeout(config.browserlessTimeoutMs);
 
-  // A Browserless session can drop mid-sweep (TargetCloseError / "Target
-  // closed"). Reconnect with a fresh browser + login and resume from the next
-  // unswept target instead of losing the run. Bounded so a hard-down upstream
-  // can't spin; `signal` still caps total wall-clock across all attempts.
-  const MAX_RECONNECTS = 5;
-  let reconnects = 0;
-  while (swept < targets.length && !signal.aborted) {
-    try {
-      await withBrowser(async (browser) => {
-        const page = await ensureLoggedIn(browser);
-        let reloggedIn = false;
+  // Mint the bearer by exchanging the stored OneID refresh token over plain
+  // HTTP — no browser. One exchange covers the whole sweep; re-mint only on a
+  // 401 (below). The sweep itself is bearer-gated, not session-gated.
+  let bearer: string;
+  try {
+    bearer = await refreshDineBearer(signal);
+  } catch (err) {
+    if (signal.aborted) {
+      console.warn("[dining-availability] budget exhausted before first bearer mint");
+      return;
+    }
+    throw err; // no/expired refresh token → exit 1 (re-seed via seed-token)
+  }
 
-        // Flush per target so a drop/timeout never loses completed work; `swept`
-        // is the resume frontier (an in-flight target re-runs whole on reconnect).
-        while (swept < targets.length) {
-          const t = targets[swept];
-          const rows: Array<typeof diningObs.$inferInsert> = [];
-          for (const partySize of PARTY_SIZES) {
-            for (const serviceDate of dates) {
-              let res = await fetchAvailability(
-                page,
-                t.facilityId,
-                t.entityType,
+  let total = 0;
+  let swept = 0;
+  let reminted = false;
+  try {
+    for (; swept < targets.length && !signal.aborted; swept++) {
+      const t = targets[swept];
+      const rows: Array<typeof diningObs.$inferInsert> = [];
+      for (const partySize of PARTY_SIZES) {
+        let res = await fetchAvailability(
+          bearer,
+          t.facilityId,
+          t.entityType,
+          startDate,
+          endDate,
+          partySize,
+          signal,
+        );
+        if (!res.loggedIn && !reminted) {
+          bearer = await refreshDineBearer(signal); // bearer died → exchange refresh token again
+          reminted = true;
+          res = await fetchAvailability(
+            bearer,
+            t.facilityId,
+            t.entityType,
+            startDate,
+            endDate,
+            partySize,
+            signal,
+          );
+        }
+        for (const serviceDate of dates) {
+          const offers = res.offersByDate.get(serviceDate) ?? [];
+          if (offers.length === 0) {
+            rows.push({
+              observedAt,
+              facilityId: t.facilityId,
+              serviceDate,
+              partySize,
+              source: Source.DISNEY_DIRECT,
+            });
+          } else {
+            for (const o of offers) {
+              rows.push({
+                observedAt,
+                facilityId: t.facilityId,
                 serviceDate,
                 partySize,
-              );
-              if (!res.loggedIn && !reloggedIn) {
-                await relogin(page); // stored session died — re-seed once per run
-                reloggedIn = true;
-                res = await fetchAvailability(
-                  page,
-                  t.facilityId,
-                  t.entityType,
-                  serviceDate,
-                  partySize,
-                );
-              }
-              if (res.offers.length === 0) {
-                rows.push({
-                  observedAt,
-                  facilityId: t.facilityId,
-                  serviceDate,
-                  partySize,
-                  source: Source.DISNEY_DIRECT,
-                });
-              } else {
-                for (const o of res.offers) {
-                  rows.push({
-                    observedAt,
-                    facilityId: t.facilityId,
-                    serviceDate,
-                    partySize,
-                    mealPeriod: o.mealPeriod ?? "",
-                    offerTime: o.offerTime ?? "00:00:00",
-                    offerId: o.offerId,
-                    source: Source.DISNEY_DIRECT,
-                  });
-                }
-              }
+                mealPeriod: o.mealPeriod ?? "",
+                offerTime: o.offerTime ?? "00:00:00",
+                offerId: o.offerId,
+                source: Source.DISNEY_DIRECT,
+              });
             }
           }
-          await flush(rows);
-          total += rows.length;
-          swept++;
         }
-      }, signal);
-    } catch (err) {
-      // Budget exhausted: completed venues are flushed and the unreached tail
-      // leads next run (least-recently-swept ordering), so this is partial
-      // progress — log and exit clean.
-      if (signal.aborted) {
-        console.warn(
-          `[dining-availability] budget exhausted after ${swept}/${targets.length} venues — tail leads next run`,
-        );
-        break;
       }
-      // Genuine failure (login, DB, etc.) → re-throw (exit 1).
-      if (!isSessionDropError(err)) throw err;
-      // Recoverable session drop: reconnect and resume, up to the cap.
-      if (reconnects >= MAX_RECONNECTS) {
-        console.warn(
-          `[dining-availability] session kept dropping (${MAX_RECONNECTS} reconnects) at ${swept}/${targets.length} — giving up this run, tail leads next`,
-        );
-        break;
-      }
-      reconnects++;
-      console.warn(
-        `[dining-availability] session dropped at ${swept}/${targets.length} venues — reconnecting (${reconnects}/${MAX_RECONNECTS})`,
-      );
+      // Flush per venue so a budget abort never loses completed work; `swept`
+      // (least-recently-swept ordering) is the resume frontier for next run.
+      await flush(rows);
+      total += rows.length;
     }
+  } catch (err) {
+    // Budget exhausted: completed venues are flushed and the unreached tail leads
+    // next run — partial progress, log and exit clean.
+    if (!signal.aborted) throw err; // genuine failure (network, DB, etc.) → exit 1
+    console.warn(
+      `[dining-availability] budget exhausted after ${swept}/${targets.length} venues — tail leads next run`,
+    );
   }
 
   console.log(
     `[dining-availability] ${swept}/${targets.length} venues × ${PARTY_SIZES.length} parties × ${dates.length} days → ${total} rows` +
-      (reconnects > 0 ? ` (${reconnects} reconnect${reconnects > 1 ? "s" : ""})` : ""),
+      (reminted ? " (re-minted bearer)" : ""),
   );
 }
 

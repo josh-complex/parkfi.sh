@@ -29,8 +29,12 @@ function key(): Buffer {
   return buf;
 }
 
-/** Decrypt the stored session, or null if absent / key-mismatch / corrupt. */
-export async function loadSession(name: string): Promise<StorageState | null> {
+/**
+ * Decrypt the encrypted blob stored under `name`, or null if absent /
+ * key-mismatch / corrupt. Generic over the stored shape — `loadSession` is the
+ * `StorageState` specialisation; the OneID refresh token uses it directly.
+ */
+export async function loadSecret<T>(name: string): Promise<T | null> {
   const [row] = await db
     .select()
     .from(scraperSession)
@@ -44,22 +48,22 @@ export async function loadSession(name: string): Promise<StorageState | null> {
       decipher.update(Buffer.from(row.ciphertext, "base64")),
       decipher.final(),
     ]);
-    return JSON.parse(plain.toString("utf8")) as StorageState;
+    return JSON.parse(plain.toString("utf8")) as T;
   } catch {
-    return null; // bad key / tampered / stale format → treat as "no session"
+    return null; // bad key / tampered / stale format → treat as "absent"
   }
 }
 
-/** Encrypt + upsert the session blob (one row per `name`). */
-export async function saveSession(
+/** Encrypt + upsert an arbitrary JSON blob (one row per `name`). */
+export async function saveSecret(
   name: string,
-  state: StorageState,
+  value: unknown,
   opts: { accountLabel?: string; expiresAt?: Date } = {},
 ): Promise<void> {
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv(ALGO, key(), iv);
   const enc = Buffer.concat([
-    cipher.update(Buffer.from(JSON.stringify(state), "utf8")),
+    cipher.update(Buffer.from(JSON.stringify(value), "utf8")),
     cipher.final(),
   ]);
   const row = {
@@ -86,4 +90,18 @@ export async function saveSession(
         updatedAt: new Date(),
       },
     });
+}
+
+/** Decrypt the stored browser session (`StorageState`), or null if absent. */
+export function loadSession(name: string): Promise<StorageState | null> {
+  return loadSecret<StorageState>(name);
+}
+
+/** Encrypt + upsert a browser session blob. */
+export function saveSession(
+  name: string,
+  state: StorageState,
+  opts: { accountLabel?: string; expiresAt?: Date } = {},
+): Promise<void> {
+  return saveSecret(name, state, opts);
 }
