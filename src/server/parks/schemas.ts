@@ -153,6 +153,72 @@ export const DisneyParkDetailSchema = z.object({
 });
 export type DisneyParkDetail = z.infer<typeof DisneyParkDetailSchema>;
 
+// ---------------------------------------------------------------------------
+// Disney "finder" dining catalog — the PUBLIC, cookieless catalog source (same
+// explorer-service host as the geo finder, no OneID session, no Akamai gate):
+//   list-ancestor-entities/wdw/{destinationId}/{date}/dining -> results[]
+// One entry per dining facility (restaurants, dinner-shows, dining-events) with
+// the bare `facilityId`, location, cuisine/price/booking facets, and media. This
+// is the `restaurant_dim` catalog feed for WDW. Tolerant: every field optional.
+// ---------------------------------------------------------------------------
+const DisneyFinderMedia = z
+  .object({
+    url: z.string().optional(),
+    alt: z.string().optional(),
+    transcodeTemplate: z.string().optional(),
+  })
+  .partial();
+
+const DisneyDiningEntitySchema = z
+  .object({
+    facilityId: z.string(),
+    id: z.string().optional(),
+    // 'restaurant' | 'Dinner-Show' | 'Dining-Event' | 'Event'
+    entityType: z.string().nullable().optional(),
+    name: z.string().nullable().optional(),
+    urlFriendlyId: z.string().optional(),
+    url: z.string().optional(),
+    locationName: z.string().nullable().optional(),
+    parkIds: z.array(z.string()).default([]),
+    facets: z
+      .object({
+        cuisine: z.array(z.string()).optional(),
+        priceRangeDining: z.array(z.string()).optional(),
+        checkAvailability: z.array(z.string()).optional(),
+        tableService: z.array(z.string()).optional(),
+        reservationOfferings: z.array(z.string()).optional(),
+      })
+      .partial()
+      .passthrough()
+      .nullable()
+      .optional(),
+    facetsLabel: z.string().nullable().optional(),
+    facetGroupType: z.string().nullable().optional(),
+    quickServiceAvailable: z.boolean().optional(),
+    media: z
+      .object({
+        finderStandardThumb: DisneyFinderMedia.optional(),
+        mapBubbleThumbLarge: DisneyFinderMedia.optional(),
+      })
+      .partial()
+      .passthrough()
+      .nullable()
+      .optional(),
+    webLinks: z
+      .object({ wdwDetail: z.object({ href: z.string().optional() }).partial().optional() })
+      .partial()
+      .passthrough()
+      .nullable()
+      .optional(),
+  })
+  .passthrough();
+export type DisneyDiningEntity = z.infer<typeof DisneyDiningEntitySchema>;
+
+export const DisneyDiningListSchema = z.object({
+  results: z.array(DisneyDiningEntitySchema).default([]),
+});
+export type DisneyDiningList = z.infer<typeof DisneyDiningListSchema>;
+
 /**
  * ThemeParks.wiki `/entity/{uuid}/schedule` — the forward 30-day park calendar.
  * Two payloads we care about live here:

@@ -3,7 +3,25 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 
+import { DiningFilterBar } from "#/components/dining/dining-filter-bar.tsx";
+import {
+  AVAILABILITY_LABELS,
+  countActiveFilters,
+  DEFAULT_FILTERS,
+  deriveOptions,
+  filterRestaurants,
+  OPERATOR_LABELS,
+  sortRestaurants,
+  type AvailabilityEntry,
+  type AvailabilityMap,
+  type ClientFilters,
+  type DayEntry,
+  type Restaurant,
+  type SortKey,
+} from "#/components/dining/dining-filters.ts";
+import { DiningMobileControls } from "#/components/dining/dining-mobile-controls.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
+import { Button } from "#/components/ui/button.tsx";
 import {
   Card,
   CardContent,
@@ -12,24 +30,20 @@ import {
   CardTitle,
 } from "#/components/ui/card.tsx";
 import { Empty, EmptyDescription, EmptyTitle } from "#/components/ui/empty.tsx";
-import { Label } from "#/components/ui/label.tsx";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "#/components/ui/select.tsx";
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "#/components/ui/pagination.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
-import { ToggleGroup, ToggleGroupItem } from "#/components/ui/toggle-group.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { cn } from "#/lib/utils.ts";
 
-const DAYS_OPTIONS = [
-  { value: "7", label: "7d" },
-  { value: "14", label: "14d" },
-  { value: "30", label: "30d" },
-];
+const PAGE_SIZE = 12;
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -49,20 +63,6 @@ function relativeTime(iso: string): string {
   if (min < 60) return `${min}m ago`;
   const hr = Math.floor(min / 60);
   return `${hr}h ago`;
-}
-
-interface DayEntry {
-  date: string;
-  available: boolean;
-  offerCount: number;
-  mealPeriods: string[];
-  observedAt: string;
-}
-
-interface AvailabilityEntry {
-  facilityId: string;
-  name: string;
-  days: Array<DayEntry>;
 }
 
 function AvailabilitySparkline({
@@ -89,24 +89,14 @@ function AvailabilitySparkline({
   );
 }
 
-interface Restaurant {
-  facilityId: string;
-  name: string;
-  cuisine: string | null;
-  experienceType: string | null;
-  priceRange: string | null;
-  parkResort: string | null;
-  imageUrl: string | null;
-  detailUrl: string | null;
-  source: number;
-}
-
 function RestaurantCard({
   restaurant,
   availability,
+  windowDays,
 }: {
   restaurant: Restaurant;
   availability: AvailabilityEntry | undefined;
+  windowDays: number;
 }) {
   const todayStr = today();
   const todayData = availability?.days.find((d) => d.date === todayStr);
@@ -180,7 +170,7 @@ function RestaurantCard({
               </span>
               {latestObserved && <span>Updated {relativeTime(latestObserved)}</span>}
             </div>
-            <AvailabilitySparkline days={availability.days} windowDays={30} />
+            <AvailabilitySparkline days={availability.days} windowDays={windowDays} />
           </>
         ) : (
           <p className="text-xs text-muted-foreground">No observations yet</p>
@@ -193,10 +183,26 @@ function RestaurantCard({
   );
 }
 
+/** Page numbers to render, with `null` sentinels marking ellipsis gaps. */
+function pageList(current: number, total: number): Array<number | null> {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i);
+  const out: Array<number | null> = [0];
+  const start = Math.max(1, current - 1);
+  const end = Math.min(total - 2, current + 1);
+  if (start > 1) out.push(null);
+  for (let i = start; i <= end; i++) out.push(i);
+  if (end < total - 2) out.push(null);
+  out.push(total - 1);
+  return out;
+}
+
 export function DiningBoard() {
   const trpc = useTRPC();
   const [partySize, setPartySize] = React.useState("2");
   const [days, setDays] = React.useState("30");
+  const [filters, setFilters] = React.useState<ClientFilters>(DEFAULT_FILTERS);
+  const [sortKey, setSortKey] = React.useState<SortKey>("park");
+  const [page, setPage] = React.useState(0);
 
   const restaurantsQ = useQuery(trpc.dining.restaurants.queryOptions());
   const availabilityQ = useQuery(
@@ -207,62 +213,81 @@ export function DiningBoard() {
   );
 
   const restaurants = restaurantsQ.data;
-  const availabilityMap = React.useMemo(() => {
+  const availabilityMap: AvailabilityMap = React.useMemo(() => {
     const m = new Map<string, AvailabilityEntry>();
     for (const entry of availabilityQ.data ?? []) m.set(entry.facilityId, entry);
     return m;
   }, [availabilityQ.data]);
 
+  const options = React.useMemo(() => deriveOptions(restaurants ?? []), [restaurants]);
+
+  const todayStr = today();
+  const visible = React.useMemo(() => {
+    if (!restaurants) return [];
+    const filtered = filterRestaurants(restaurants, availabilityMap, filters, todayStr);
+    return sortRestaurants(filtered, availabilityMap, sortKey, todayStr);
+  }, [restaurants, availabilityMap, filters, sortKey, todayStr]);
+
+  const activeCount = countActiveFilters(filters);
+  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount - 1);
+  const pageItems = visible.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+
+  // Snap back to the first page whenever the result set changes shape.
+  React.useEffect(() => {
+    setPage(0);
+  }, [filters, sortKey, partySize, days]);
+
+  const onFilters = React.useCallback(
+    (patch: Partial<ClientFilters>) => setFilters((prev) => ({ ...prev, ...patch })),
+    [],
+  );
+  const onClear = React.useCallback(() => setFilters(DEFAULT_FILTERS), []);
+
+  const controls = {
+    filters,
+    onFilters,
+    options,
+    sortKey,
+    onSortKey: setSortKey,
+    partySize,
+    onPartySize: setPartySize,
+    days,
+    onDays: setDays,
+    activeCount,
+    onClear,
+  };
+
   const isLoading = restaurantsQ.isLoading || availabilityQ.isLoading;
 
   return (
-    <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-      <div className="flex flex-col gap-2 px-4 sm:flex-row sm:items-end sm:justify-between lg:px-6">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-xl font-semibold tracking-tight">Dining Reservations</h2>
-          <p className="text-muted-foreground text-sm">
-            Live reservation availability across Disney &amp; Universal restaurants.
-          </p>
-        </div>
-        <div className="flex items-end gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-muted-foreground text-xs">Party size</Label>
-            <Select
-              value={partySize}
-              onValueChange={(v) => v && setPartySize(v)}
-              items={Object.fromEntries(
-                Array.from({ length: 8 }, (_, i) => [String(i + 1), String(i + 1)]),
-              )}
-            >
-              <SelectTrigger className="w-20" aria-label="Party size">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Array.from({ length: 8 }, (_, i) => (
-                  <SelectItem key={i + 1} value={String(i + 1)}>
-                    {i + 1}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <ToggleGroup
-            multiple={false}
-            value={[days]}
-            onValueChange={(v) => setDays(v[0] ?? "30")}
-            variant="outline"
-            className="*:data-[slot=toggle-group-item]:px-3!"
-          >
-            {DAYS_OPTIONS.map((o) => (
-              <ToggleGroupItem key={o.value} value={o.value}>
-                {o.label}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-        </div>
+    <div className="flex flex-col">
+      <div className="flex flex-col gap-1 px-4 pt-4 md:pt-6 lg:px-6">
+        <h2 className="text-xl font-semibold tracking-tight">Dining Reservations</h2>
+        <p className="text-muted-foreground text-sm">
+          Live reservation availability across Disney &amp; Universal restaurants.
+        </p>
       </div>
 
-      <div className="px-4 lg:px-6">
+      <DiningFilterBar {...controls} />
+
+      <div className="flex flex-col gap-4 px-4 py-4 pb-24 md:gap-6 md:py-6 lg:px-6">
+        {/* Result summary + active-filter chips (chips are read-only here; the
+            bar / mobile drawer own editing). */}
+        {!isLoading && restaurants?.length ? (
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-muted-foreground">
+              {visible.length} {visible.length === 1 ? "restaurant" : "restaurants"}
+            </span>
+            <ActiveChips filters={filters} />
+            {activeCount > 0 && (
+              <Button variant="ghost" size="xs" onClick={onClear} className="md:hidden">
+                Clear
+              </Button>
+            )}
+          </div>
+        ) : null}
+
         {isLoading ? (
           <div className="grid gap-4 @xl/main:grid-cols-2 @4xl/main:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -276,18 +301,101 @@ export function DiningBoard() {
               The dining sweep only covers restaurants marked as priority. None are configured yet.
             </EmptyDescription>
           </Empty>
+        ) : visible.length === 0 ? (
+          <Empty>
+            <EmptyTitle>No matches</EmptyTitle>
+            <EmptyDescription>No restaurants match your current filters.</EmptyDescription>
+            <Button variant="outline" size="sm" onClick={onClear} className="mt-2">
+              Clear filters
+            </Button>
+          </Empty>
         ) : (
-          <div className="grid gap-4 @xl/main:grid-cols-2 @4xl/main:grid-cols-3">
-            {restaurants.map((r) => (
-              <RestaurantCard
-                key={r.facilityId}
-                restaurant={r}
-                availability={availabilityMap.get(r.facilityId)}
-              />
-            ))}
-          </div>
+          <>
+            <div className="grid gap-4 @xl/main:grid-cols-2 @4xl/main:grid-cols-3">
+              {pageItems.map((r) => (
+                <RestaurantCard
+                  key={r.facilityId}
+                  restaurant={r}
+                  availability={availabilityMap.get(r.facilityId)}
+                  windowDays={Number(days)}
+                />
+              ))}
+            </div>
+
+            {pageCount > 1 && (
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setPage(Math.max(0, currentPage - 1));
+                      }}
+                      aria-disabled={currentPage === 0}
+                      className={cn(currentPage === 0 && "pointer-events-none opacity-50")}
+                    />
+                  </PaginationItem>
+                  {pageList(currentPage, pageCount).map((p, i) =>
+                    p === null ? (
+                      <PaginationItem key={`gap-${i}`}>
+                        <PaginationEllipsis />
+                      </PaginationItem>
+                    ) : (
+                      <PaginationItem key={p}>
+                        <PaginationLink
+                          isActive={p === currentPage}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setPage(p);
+                          }}
+                        >
+                          {p + 1}
+                        </PaginationLink>
+                      </PaginationItem>
+                    ),
+                  )}
+                  <PaginationItem>
+                    <PaginationNext
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setPage(Math.min(pageCount - 1, currentPage + 1));
+                      }}
+                      aria-disabled={currentPage === pageCount - 1}
+                      className={cn(
+                        currentPage === pageCount - 1 && "pointer-events-none opacity-50",
+                      )}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            )}
+          </>
         )}
       </div>
+
+      <DiningMobileControls {...controls} />
     </div>
+  );
+}
+
+/** Read-only summary chips for the active client filters. */
+function ActiveChips({ filters }: { filters: ClientFilters }) {
+  const chips: Array<string> = [];
+  if (filters.search.trim()) chips.push(`"${filters.search.trim()}"`);
+  if (filters.parkResort !== "ALL") chips.push(filters.parkResort);
+  if (filters.cuisine !== "ALL") chips.push(filters.cuisine);
+  if (filters.experienceType !== "ALL") chips.push(filters.experienceType);
+  if (filters.operator !== "ALL") chips.push(OPERATOR_LABELS[filters.operator]);
+  if (filters.prices.length) chips.push(filters.prices.join(" / "));
+  if (filters.availability !== "ALL") chips.push(AVAILABILITY_LABELS[filters.availability]);
+  if (!chips.length) return null;
+  return (
+    <>
+      {chips.map((c) => (
+        <Badge key={c} variant="secondary" className="font-normal">
+          {c}
+        </Badge>
+      ))}
+    </>
   );
 }

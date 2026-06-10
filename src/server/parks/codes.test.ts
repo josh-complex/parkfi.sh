@@ -2,6 +2,10 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   categoryFromUniversalPlace,
+  disneyDiningBookable,
+  disneyDiningCuisine,
+  disneyDiningEntityType,
+  disneyDiningPriceRange,
   normalizeUniversalName,
   universalDetailUrl,
   universalDiningBookable,
@@ -122,5 +126,38 @@ describe("Universal dining classification", () => {
     expect(universalMealPeriod("13:00")).toBe("Lunch");
     expect(universalMealPeriod("21:45")).toBe("Dinner");
     expect(universalMealPeriod("")).toBe("Dining");
+  });
+});
+
+describe("Disney finder dining catalog mappers", () => {
+  it("normalizes the entity type", () => {
+    expect(disneyDiningEntityType("restaurant")).toBe("restaurant");
+    expect(disneyDiningEntityType("Dinner-Show")).toBe("dinner-show");
+    expect(disneyDiningEntityType("Dining-Event")).toBe("dining-event");
+    expect(disneyDiningEntityType("Event")).toBe("dining-event");
+  });
+
+  it("flags bookable from checkAvailability or tableService facets", () => {
+    expect(disneyDiningBookable({ checkAvailability: ["checkavailmodulewdw"] })).toBe(true);
+    expect(disneyDiningBookable({ tableService: ["reservations-accepted", "a-la-carte"] })).toBe(
+      true,
+    );
+    expect(disneyDiningBookable({ tableService: ["a-la-carte"] })).toBe(false);
+    expect(disneyDiningBookable({})).toBe(false);
+  });
+
+  it("humanizes cuisine facets", () => {
+    expect(disneyDiningCuisine(["american-cuisine", "steakhouse-cuisine"])).toBe(
+      "American, Steakhouse",
+    );
+    expect(disneyDiningCuisine([])).toBeNull();
+  });
+
+  it("extracts the price descriptor from facetsLabel, else the bare symbol", () => {
+    expect(disneyDiningPriceRange("$$$ ($35 to $59.99 per adult), American, Steakhouse")).toBe(
+      "$$$ ($35 to $59.99 per adult)",
+    );
+    expect(disneyDiningPriceRange("Mexican", ["$$"])).toBe("$$");
+    expect(disneyDiningPriceRange("Mexican", null)).toBeNull();
   });
 });

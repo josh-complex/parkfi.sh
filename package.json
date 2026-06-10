@@ -57,6 +57,7 @@
     "@tanstack/react-start": "latest",
     "@tanstack/react-store": "latest",
     "@tanstack/react-table": "^8.21.3",
+    "@tanstack/react-virtual": "^3.14.2",
     "@tanstack/router-plugin": "^1.132.0",
     "@tanstack/store": "latest",
     "@trpc/client": "^11.11.0",

@@ -243,6 +243,59 @@ export function parseDisneyFacets(facets?: Array<Array<string>> | null): DisneyF
 }
 
 // ---------------------------------------------------------------------------
+// Disney "finder" dining catalog (public list-ancestor-entities feed) -> our
+// `restaurant_dim` fields. Pure mappers over the `facets`/labels of one entry.
+// ---------------------------------------------------------------------------
+
+/** Normalize the finder `entityType` to our `restaurant_dim` entity_type enum. */
+export function disneyDiningEntityType(
+  entityType?: string | null,
+): "restaurant" | "dinner-show" | "dining-event" {
+  const t = (entityType ?? "").toLowerCase();
+  if (t === "restaurant") return "restaurant";
+  if (t.includes("dinner")) return "dinner-show";
+  return "dining-event"; // Dining-Event / Event / anything else
+}
+
+/**
+ * Whether a dining facility accepts online reservations (sweepable). The finder
+ * marks these with a `checkavailmodulewdw` checkAvailability facet and/or a
+ * `reservations-accepted` tableService facet.
+ */
+export function disneyDiningBookable(facets?: {
+  checkAvailability?: Array<string>;
+  tableService?: Array<string>;
+}): boolean {
+  return (
+    (facets?.checkAvailability ?? []).includes("checkavailmodulewdw") ||
+    (facets?.tableService ?? []).includes("reservations-accepted")
+  );
+}
+
+/** Humanize the cuisine facets (["steakhouse-cuisine"] -> "Steakhouse"). */
+export function disneyDiningCuisine(cuisine?: Array<string> | null): string | null {
+  const labels = (cuisine ?? []).map((c) =>
+    titleCase(c.replace(/-cuisine$/, "").replace(/-/g, " ")),
+  );
+  return labels.length > 0 ? labels.join(", ") : null;
+}
+
+/**
+ * The price descriptor from a finder `facetsLabel`
+ * ("$$$ ($35 to $59.99 per adult), American, Steakhouse" -> "$$$ ($35 to $59.99
+ * per adult)"), falling back to the bare `priceRangeDining` symbol. Null when the
+ * label carries no price (e.g. cuisine-only labels).
+ */
+export function disneyDiningPriceRange(
+  facetsLabel?: string | null,
+  priceRangeDining?: Array<string> | null,
+): string | null {
+  const m = (facetsLabel ?? "").match(/^\$+(?:\s*\([^)]*\))?/);
+  if (m) return m[0].trim();
+  return priceRangeDining?.[0] ?? null;
+}
+
+// ---------------------------------------------------------------------------
 // Universal Orlando "places" feed -> geo enrichment (the UOR analog of the
 // Disney finder). We can't join on ids: our `external_ids` store the
 // ThemeParks.wiki UUID (not the operator's `uor.*` id), and the places feed's

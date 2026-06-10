@@ -1,9 +1,11 @@
 /**
  * WDW dining catalog refresh (Railway cron, weekly — e.g. "0 6 * * 1").
- * Single-shot: reuse the maintained OneID session, pull /dine-res/api/dine/
- * facilities, upsert `restaurant_dim`, soft-delete venues that dropped out.
- * The catalog is near-static — this is decoupled from the availability sweep
- * and shares only the session + table. See research/disney-ticket-deep-dive.md.
+ * Single-shot, plain HTTPS: pull the PUBLIC finder dining list
+ * (`list-ancestor-entities/wdw/{destinationId}/{date}/dining`), upsert
+ * `restaurant_dim` (source DISNEY_DIRECT), soft-delete venues that dropped out.
+ * No OneID session / Browserless — the old `/dine-res/api/dine/facilities` path
+ * is now behind an Akamai bot challenge; this public catalog feed isn't. The
+ * catalog is near-static and decoupled from the availability sweep.
  *
  * Run:  bun run dining:facilities
  */
@@ -16,32 +18,26 @@ import { db } from "#/db/index.ts";
 import { restaurantDim } from "#/db/schema.ts";
 import { Source } from "#/server/parks/codes.ts";
 import { config } from "#/server/parks/config.ts";
-import { ensureLoggedIn, relogin } from "#/server/dining/disney-session.ts";
-import { fetchFacilities } from "#/server/dining/facilities.ts";
-import { browserlessConfigured, withBrowser } from "#/server/parks/sources/browserless.ts";
+import { fetchDisneyDiningCatalog } from "#/server/dining/disney-finder-catalog.ts";
+
+// WDW resort-wide destination — the ancestor the finder lists all dining under.
+const WDW_DESTINATION_ID =
+  process.env.DISNEY_DINING_DESTINATION ?? "80007798;entityType=destination";
+
+function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
 
 async function main() {
-  if (!browserlessConfigured()) {
-    console.error("[dining-facilities] BROWSER_WS_ENDPOINT not set");
-    process.exit(1);
-  }
   const now = new Date();
 
-  const rows = await withBrowser(async (browser) => {
-    const page = await ensureLoggedIn(browser);
-    try {
-      return await fetchFacilities(page);
-    } catch (err) {
-      if (err instanceof Error && err.message.includes("session invalid")) {
-        // Stored session passed cookie-check but was rejected by the API — force re-login once.
-        await relogin(page);
-        return fetchFacilities(page);
-      }
-      throw err;
-    }
-  }, AbortSignal.timeout(config.browserlessTimeoutMs));
+  const rows = await fetchDisneyDiningCatalog(
+    WDW_DESTINATION_ID,
+    isoDate(now),
+    AbortSignal.timeout(config.fetchTimeoutMs),
+  );
   if (rows.length === 0) {
-    console.warn("[dining-facilities] catalog returned no venues — session invalid?");
+    console.warn("[dining-facilities] finder returned no dining venues");
     return;
   }
 
@@ -69,6 +65,8 @@ async function main() {
           parkResortId: sql`excluded.park_resort_id`,
           bookable: sql`excluded.bookable`,
           sellableOnline: sql`excluded.sellable_online`,
+          imageUrl: sql`excluded.image_url`,
+          detailUrl: sql`excluded.detail_url`,
           active: sql`true`,
           lastSeenAt: sql`excluded.last_seen_at`,
           updatedAt: sql`excluded.updated_at`,
