@@ -55,6 +55,18 @@ Own service on this repo. `railpack.json` here selects the **python** provider
 | `ml-train`      | `0 6 * * *`    | `python main.py train` |
 | `ml-infer`      | `*/15 * * * *` | `python main.py infer` |
 
+Railpack build notes (learned the hard way):
+
+- Deps install via **`requirements.txt`** (pip), not `pyproject.toml`. A bare
+  PEP 621 `pyproject.toml` with no `[build-system]`/lockfile is the uncovered
+  case where Railpack installs nothing — keep `requirements.txt` in sync.
+- **LightGBM needs the OpenMP runtime at runtime**: `lib_lightgbm.so` dlopens
+  `libgomp.so.1`, absent from the slim runtime image → `railpack.json` adds it
+  via `deploy.aptPackages: ["libgomp1"]`. (Linux-only; not reproducible on macOS,
+  which links `libomp.dylib`.)
+- `startCommand` is set per-service in the Railway UI (train vs infer), NOT in
+  `railpack.json`, so one config serves both crons.
+
 ## Knobs (env)
 
 | Var                  | Default | Purpose                               |
