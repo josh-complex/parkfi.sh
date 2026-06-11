@@ -1,0 +1,9 @@
+# Railpack's Python provider installs deps from this file (pip). The pyproject
+# stays for local `pip install -e .` + ruff/pytest config, but Railpack only
+# installs from requirements.txt unless a poetry/pdm/uv lockfile is present —
+# keep the two in sync.
+lightgbm>=4.3
+numpy>=1.26
+pandas>=2.2
+scikit-learn>=1.4
+psycopg[binary]>=3.1
