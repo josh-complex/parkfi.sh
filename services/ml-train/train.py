@@ -36,8 +36,20 @@ def _env_int(name: str, default: int) -> int:
 
 
 TRAIN_DAYS = _env_int("ML_TRAIN_DAYS", 60)  # history window for the training frame
-VAL_DAYS = _env_int("ML_VAL_DAYS", 7)  # most-recent days held out for validation
+VAL_DAYS = _env_int("ML_VAL_DAYS", 7)  # max most-recent days held out for validation
 NUM_BOOST_ROUND = _env_int("ML_NUM_BOOST_ROUND", 400)
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, default))
+    except ValueError:
+        return default
+
+
+# Fraction of the labeled time range to hold out as validation when there isn't
+# yet `VAL_DAYS` of history (cold start) — keeps the split non-empty early on.
+VAL_FRACTION = _env_float("ML_VAL_FRACTION", 0.15)
 
 
 def _metrics(actual: np.ndarray, pred: np.ndarray) -> dict[str, float]:
@@ -80,7 +92,6 @@ def train() -> str:
     now = datetime.now(timezone.utc)
     start = (now - timedelta(days=TRAIN_DAYS)).isoformat()
     end = now.isoformat()
-    split = now - timedelta(days=VAL_DAYS)
 
     conn = connect()
     try:
@@ -93,12 +104,20 @@ def train() -> str:
         if df.empty:
             raise SystemExit("[ml-train] no labeled rows after feature join")
 
+        # Time-based split (never random — lags would leak the future). Hold out
+        # the most-recent data, but adapt to however much history exists: the
+        # later of (now − VAL_DAYS) and the (1 − VAL_FRACTION) time quantile, so a
+        # cold-start run with only a few days still leaves a non-empty train set.
         ts = pd.to_datetime(df["target_ts"], utc=True)
+        split = max(now - timedelta(days=VAL_DAYS), ts.quantile(1 - VAL_FRACTION))
         train_df = df[ts < split].reset_index(drop=True)
         val_df = df[ts >= split].reset_index(drop=True)
         if train_df.empty:
-            raise SystemExit("[ml-train] empty training split — widen ML_TRAIN_DAYS")
-        print(f"[ml-train] rows: {len(train_df)} train / {len(val_df)} val")
+            # Degenerate history (one time point): train on everything, skip val.
+            print("[ml-train] history too short for a holdout — training on all rows, no val")
+            train_df = df
+            val_df = df.iloc[0:0]
+        print(f"[ml-train] rows: {len(train_df)} train / {len(val_df)} val (split {split})")
 
         cat_idx = [F.FEATURE_COLUMNS.index(c) for c in F.CATEGORICAL_FEATURES]
         boosters = {key: _fit_quantile(train_df, a, cat_idx) for key, a in QUANTILES.items()}
