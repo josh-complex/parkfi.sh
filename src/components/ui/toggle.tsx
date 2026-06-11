@@ -4,12 +4,14 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "#/lib/utils.ts";
 
 const toggleVariants = cva(
-  "group/toggle inline-flex items-center justify-center gap-1 rounded-3xl text-sm font-medium whitespace-nowrap transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 aria-pressed:bg-muted dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/toggle relative top-0 inline-flex items-center justify-center gap-1 rounded-3xl border border-transparent text-sm font-medium whitespace-nowrap outline-none select-none transition-[box-shadow,top,background-color,border-color,color] duration-150 ease-out [--btn-3d:transparent] [--btn-glare:transparent] [--btn-glare-hover:var(--btn-glare)] shadow-[0_3px_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)] hover:-top-px hover:shadow-[0_4px_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare-hover)] focus-visible:z-10 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none aria-invalid:border-destructive aria-invalid:ring-destructive/20 aria-pressed:top-[3px] aria-pressed:shadow-[0_0_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)] dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
-        default: "bg-transparent",
-        outline: "border border-input bg-transparent hover:bg-muted",
+        default:
+          "border-border bg-background hover:bg-muted hover:text-foreground aria-pressed:bg-muted aria-pressed:text-foreground [--btn-3d:color-mix(in_oklch,var(--border),black_12%)] [--btn-glare:oklch(1_0_0/0.55)] [--btn-glare-hover:oklch(1_0_0/0.8)] dark:bg-input/30 dark:[--btn-3d:transparent] dark:[--btn-glare:oklch(1_0_0/0.08)] dark:[--btn-glare-hover:oklch(1_0_0/0.16)] dark:hover:bg-input/50",
+        outline:
+          "border-border bg-background hover:bg-muted hover:text-foreground aria-pressed:bg-muted aria-pressed:text-foreground [--btn-3d:color-mix(in_oklch,var(--border),black_12%)] [--btn-glare:oklch(1_0_0/0.55)] [--btn-glare-hover:oklch(1_0_0/0.8)] dark:bg-input/30 dark:[--btn-3d:transparent] dark:[--btn-glare:oklch(1_0_0/0.08)] dark:[--btn-glare-hover:oklch(1_0_0/0.16)] dark:hover:bg-input/50",
       },
       size: {
         default:

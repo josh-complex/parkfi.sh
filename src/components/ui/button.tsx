@@ -4,21 +4,21 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "#/lib/utils.ts";
 
 const buttonVariants = cva(
-  "group/button relative top-0 inline-flex shrink-0 items-center justify-center rounded-4xl border border-transparent text-sm font-medium whitespace-nowrap outline-none select-none transition-[box-shadow,top,background-color,border-color,color] duration-150 ease-out [--btn-3d:transparent] [--btn-glare:transparent] shadow-[0_3px_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 active:not-aria-[haspopup]:top-[3px] active:not-aria-[haspopup]:shadow-[0_0_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)] disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/button relative top-0 inline-flex shrink-0 items-center justify-center rounded-4xl border border-transparent text-sm font-medium whitespace-nowrap outline-none select-none transition-[box-shadow,top,background-color,border-color,color] duration-150 ease-out [--btn-3d:transparent] [--btn-glare:transparent] [--btn-glare-hover:var(--btn-glare)] shadow-[0_3px_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)] hover:-top-px hover:shadow-[0_4px_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare-hover)] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 active:not-aria-[haspopup]:top-[3px] active:not-aria-[haspopup]:shadow-[0_0_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)] disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground hover:bg-primary/80 [--btn-3d:color-mix(in_oklch,var(--primary),black_32%)] [--btn-glare:oklch(1_0_0/0.25)]",
+          "bg-primary text-primary-foreground hover:bg-primary/80 [--btn-3d:color-mix(in_oklch,var(--primary),black_32%)] [--btn-glare:oklch(1_0_0/0.25)] [--btn-glare-hover:oklch(1_0_0/0.4)]",
         outline:
-          "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground [--btn-3d:color-mix(in_oklch,var(--border),black_12%)] [--btn-glare:oklch(1_0_0/0.55)] dark:bg-transparent dark:hover:bg-input/30 dark:[--btn-3d:transparent] dark:[--btn-glare:oklch(1_0_0/0.08)]",
+          "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground [--btn-3d:color-mix(in_oklch,var(--border),black_12%)] [--btn-glare:oklch(1_0_0/0.55)] [--btn-glare-hover:oklch(1_0_0/0.8)] dark:bg-transparent dark:hover:bg-input/30 dark:[--btn-3d:transparent] dark:[--btn-glare:oklch(1_0_0/0.08)] dark:[--btn-glare-hover:oklch(1_0_0/0.16)]",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground [--btn-3d:color-mix(in_oklch,var(--secondary),black_14%)] [--btn-glare:oklch(1_0_0/0.7)] dark:[--btn-glare:oklch(1_0_0/0.08)]",
+          "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground [--btn-3d:color-mix(in_oklch,var(--secondary),black_14%)] [--btn-glare:oklch(1_0_0/0.7)] [--btn-glare-hover:oklch(1_0_0/0.85)] dark:[--btn-glare:oklch(1_0_0/0.08)] dark:[--btn-glare-hover:oklch(1_0_0/0.16)]",
         ghost:
-          "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
+          "hover:top-0 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
         destructive:
-          "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 [--btn-3d:color-mix(in_oklch,var(--destructive),black_10%)] [--btn-glare:oklch(1_0_0/0.18)] dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
-        link: "text-primary underline-offset-4 hover:underline",
+          "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 [--btn-3d:color-mix(in_oklch,var(--destructive),black_10%)] [--btn-glare:oklch(1_0_0/0.18)] [--btn-glare-hover:oklch(1_0_0/0.3)] dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
+        link: "hover:top-0 text-primary underline-offset-4 hover:underline",
       },
       size: {
         default:
