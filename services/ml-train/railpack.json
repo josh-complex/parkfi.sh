@@ -3,5 +3,8 @@
   "provider": "python",
   "packages": {
     "python": "3.11"
+  },
+  "build": {
+    "installCommand": "pip install ."
   }
 }
