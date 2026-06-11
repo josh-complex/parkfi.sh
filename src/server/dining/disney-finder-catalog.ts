@@ -32,6 +32,11 @@ export interface DiningCatalogRow {
   sellableOnline: boolean;
   imageUrl: string | null;
   detailUrl: string | null;
+  // Map metadata from the finder marker (for plotting venues on a map).
+  latitude: number | null;
+  longitude: number | null;
+  mapPin: string | null; // 'dine' | 'characters' | 'shop'
+  land: string | null; // granular in-park area, finer than parkResort
 }
 
 async function getJson(url: string, signal: AbortSignal): Promise<unknown> {
@@ -69,6 +74,10 @@ function toRow(entity: DisneyDiningEntity): DiningCatalogRow {
     sellableOnline: (facets.reservationOfferings ?? []).length > 0,
     imageUrl: disneyHeroUrl(thumb) ?? thumb,
     detailUrl: resolveDetailUrl(entity),
+    latitude: entity.marker?.lat ?? null,
+    longitude: entity.marker?.lng ?? null,
+    mapPin: entity.marker?.pin ?? null,
+    land: entity.marker?.card?.land ?? null,
   };
 }
 

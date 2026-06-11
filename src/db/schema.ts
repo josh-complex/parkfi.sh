@@ -428,6 +428,13 @@ export const restaurantDim = pgTable("restaurant_dim", {
   // Optional card metadata (UOR places carry these; WDW leaves them null).
   imageUrl: text("image_url"),
   detailUrl: text("detail_url"),
+  // Map metadata from the Disney finder marker (null for UOR). `land` is the
+  // granular in-park area (finer than park_resort); `map_pin` is the marker
+  // category ('dine' | 'characters' | 'shop').
+  latitude: doublePrecision("latitude"),
+  longitude: doublePrecision("longitude"),
+  mapPin: text("map_pin"),
+  land: text("land"),
   // Operator/source that owns this row (DISNEY_DIRECT default backfills the
   // pre-existing WDW catalog). Scopes each catalog cron's upsert + soft-delete.
   source: smallint("source")

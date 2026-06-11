@@ -210,6 +210,24 @@ const DisneyDiningEntitySchema = z
       .passthrough()
       .nullable()
       .optional(),
+    // Map marker the finder carries: geo coords + pin/icon category + the
+    // granular "land" (an in-park area, finer than `locationName`).
+    marker: z
+      .object({
+        lat: z.number().nullable().optional(),
+        lng: z.number().nullable().optional(),
+        pin: z.string().nullable().optional(),
+        card: z
+          .object({ land: z.string().nullable().optional() })
+          .partial()
+          .passthrough()
+          .nullable()
+          .optional(),
+      })
+      .partial()
+      .passthrough()
+      .nullable()
+      .optional(),
   })
   .passthrough();
 export type DisneyDiningEntity = z.infer<typeof DisneyDiningEntitySchema>;

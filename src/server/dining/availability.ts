@@ -6,7 +6,7 @@
  * NOT need a live browser session or cookies — only the OneID bearer plus the
  * two `x-disney-internal-dine-vas-*` routing headers (verified live from a bare
  * HTTP client). So we mint the bearer once via the browser (see
- * disney-session.ts → mintDineBearer) and fire these as plain `fetch`es; no
+ * disney-session.ts → refreshDineBearer) and fire these as plain `fetch`es; no
  * session to keep warm, and one request per (facility, partySize) covers the
  * whole horizon instead of one per day. See research/disney-ticket-deep-dive.md §7.
  */
