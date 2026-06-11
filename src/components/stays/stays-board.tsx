@@ -5,10 +5,16 @@ import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { differenceInCalendarDays, format } from "date-fns";
 import { type DateRange } from "react-day-picker";
-import { CheckIcon, MinusIcon, PlusIcon, SearchIcon } from "lucide-react";
+import {
+  ArrowUpDownIcon,
+  CheckIcon,
+  MinusIcon,
+  PlusIcon,
+  SearchIcon,
+  SlidersHorizontalIcon,
+} from "lucide-react";
 
 import { StayAlertButton, type StayAlertDims } from "#/components/stays/stay-alert-button.tsx";
-import { StaysMobileControls } from "#/components/stays/stays-controls.tsx";
 import {
   EMPTY_FILTERS,
   RESORT_AREAS,
@@ -44,6 +50,16 @@ import {
 } from "#/components/ui/select.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { Switch } from "#/components/ui/switch.tsx";
+import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerTrigger,
+} from "#/components/ui/drawer.tsx";
 import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
@@ -267,6 +283,11 @@ function SegDivider({ hide }: { hide: boolean }) {
   );
 }
 
+const TIER_CHIPS: Array<{ key: ResortTier | "ALL"; label: string }> = [
+  { key: "ALL", label: "All resorts" },
+  ...TIER_META.map((t) => ({ key: t.key, label: t.label })),
+];
+
 /** A selectable park/area row inside the "Where" popover. */
 function AreaOption({
   label,
@@ -384,10 +405,49 @@ export function StaysBoard({ areaKey }: { areaKey: string | null }) {
   const areaStr = areaStringForKey(areaKey);
   const areaLabel = areaLabelForKey(areaKey);
 
+  const activeCount = activeFilterCount(filters) + (tierFilter === "ALL" ? 0 : 1);
+  const onClear = React.useCallback(() => {
+    applyFilters(EMPTY_FILTERS);
+    setTierFilter("ALL");
+  }, [applyFilters]);
+
+  const mobileSearchLabel =
+    range?.from && range.to
+      ? `${rangeLabel(range)} · ${guestLabel}`
+      : areaLabel
+        ? `${areaLabel} · Add dates`
+        : "Search resorts";
+
+  // Refs so the auto-submit effect can read current values without re-running.
+  const searchRef = React.useRef(search);
+  searchRef.current = search;
+  const filtersRef = React.useRef(filters);
+  filtersRef.current = filters;
+  const didMountRef = React.useRef(false);
+
+  // Mobile: any change auto-submits. Desktop: auto-updates once a search is active.
+  React.useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
+    if (!range?.from || !range.to) return;
+    if (!isMobile && !searchRef.current) return;
+    setSearch({
+      range: { from: range.from, to: range.to },
+      adults,
+      children,
+      filters: filtersRef.current,
+    });
+  }, [range, adults, children, isMobile]);
+
   const offers = availabilityQ.data?.offers ?? [];
   const inArea = areaStr ? offers.filter((o) => o.area === areaStr) : offers;
   const tierScoped = tierFilter === "ALL" ? inArea : inArea.filter((o) => o.tier === tierFilter);
-  const filteredOffers = sortOffers(tierScoped, sortKey);
+  const filteredOffers = sortOffers(
+    tierScoped.filter((o) => o.available),
+    sortKey,
+  );
   const availableCount = inArea.filter((o) => o.available).length;
 
   // Browse rows (pre-search): catalog grouped by tier, in TIER_META order.
@@ -431,7 +491,7 @@ export function StaysBoard({ areaKey }: { areaKey: string | null }) {
         </h1>
         <p className="text-muted-foreground mx-auto mt-1 max-w-xl text-sm">
           Browse {areaLabel ? "these" : "every"} Disney Resort hotel
-          {areaLabel ? "s" : ""}, then add dates below to see live nightly rates.
+          {areaLabel ? "s" : ""}, then add dates to see live nightly rates.
         </p>
       </div>
 
@@ -441,170 +501,402 @@ export function StaysBoard({ areaKey }: { areaKey: string | null }) {
       {/* Search bar — compact Airbnb-style pill that collapses to a stack on mobile. */}
       <div
         className={cn(
-          "sticky top-(--header-height) z-20 px-4 py-4 transition-colors duration-200 md:top-0 lg:px-6",
+          "sticky top-(--header-height) z-20 hidden px-4 py-4 transition-colors duration-200 md:top-0 md:block lg:px-6",
           stuck
             ? "bg-background/80 border-b backdrop-blur-md"
             : "border-b border-transparent bg-transparent",
         )}
       >
-        <div className="mx-auto flex w-full max-w-sm flex-col gap-2 rounded-3xl border bg-card p-2 shadow-sm md:w-fit md:max-w-none md:flex-row md:items-center md:gap-0 md:rounded-full md:p-1.5">
-          {/* Where */}
-          <Popover open={whereOpen} onOpenChange={setWhereOpen}>
-            <PopoverTrigger
-              render={
-                <button
-                  type="button"
-                  className={segClass("first", focusKey === "where")}
-                  {...seg("where")}
-                >
-                  <SegInner
-                    label="Where"
-                    value={areaLabel ?? "All resorts"}
-                    muted={!areaLabel}
-                    active={focusKey === "where"}
-                  />
-                </button>
-              }
-            />
-            <PopoverContent align="start" className="w-64 p-1.5">
-              <AreaOption label="All resorts" selected={!areaKey} onSelect={() => pickArea(null)} />
-              {RESORT_AREAS.map((a) => (
+        <div className="mx-auto flex w-fit items-center gap-3">
+          <div className="flex items-center gap-0 rounded-full border bg-card p-1.5 shadow-sm">
+            {/* Where */}
+            <Popover open={whereOpen} onOpenChange={setWhereOpen}>
+              <PopoverTrigger
+                render={
+                  <button
+                    type="button"
+                    className={segClass("first", focusKey === "where")}
+                    {...seg("where")}
+                  >
+                    <SegInner
+                      label="Where"
+                      value={areaLabel ?? "All resorts"}
+                      muted={!areaLabel}
+                      active={focusKey === "where"}
+                    />
+                  </button>
+                }
+              />
+              <PopoverContent align="start" className="w-64 p-1.5">
                 <AreaOption
-                  key={a.key}
-                  label={a.label}
-                  selected={areaKey === a.key}
-                  onSelect={() => pickArea(a.key)}
+                  label="All resorts"
+                  selected={!areaKey}
+                  onSelect={() => pickArea(null)}
                 />
-              ))}
-            </PopoverContent>
-          </Popover>
-
-          <SegDivider hide={focusKey === "where" || focusKey === "when"} />
-
-          {/* When */}
-          <Popover open={datesOpen} onOpenChange={setDatesOpen}>
-            <PopoverTrigger
-              render={
-                <button
-                  type="button"
-                  className={segClass("middle", focusKey === "when")}
-                  {...seg("when")}
-                >
-                  <SegInner
-                    label="When"
-                    value={rangeLabel(range)}
-                    muted={!range?.from}
-                    active={focusKey === "when"}
+                {RESORT_AREAS.map((a) => (
+                  <AreaOption
+                    key={a.key}
+                    label={a.label}
+                    selected={areaKey === a.key}
+                    onSelect={() => pickArea(a.key)}
                   />
-                </button>
-              }
-            />
-            <PopoverContent align="center" className="w-auto p-2">
-              <Calendar
-                mode="range"
-                selected={range}
-                onSelect={(r) => {
-                  setRange(r);
-                  // Keep open until a real multi-night range is picked.
-                  if (r?.from && r.to && differenceInCalendarDays(r.to, r.from) >= 1) {
-                    setDatesOpen(false);
-                  }
-                }}
-                numberOfMonths={isMobile ? 1 : 2}
-                disabled={{ before: today }}
-                startMonth={today}
-                showOutsideDays
+                ))}
+              </PopoverContent>
+            </Popover>
+
+            <SegDivider hide={focusKey === "where" || focusKey === "when"} />
+
+            {/* When */}
+            <Popover open={datesOpen} onOpenChange={setDatesOpen}>
+              <PopoverTrigger
+                render={
+                  <button
+                    type="button"
+                    className={segClass("middle", focusKey === "when")}
+                    {...seg("when")}
+                  >
+                    <SegInner
+                      label="When"
+                      value={rangeLabel(range)}
+                      muted={!range?.from}
+                      active={focusKey === "when"}
+                    />
+                  </button>
+                }
               />
-              <div className="mt-1 flex items-center justify-between border-t px-2 pt-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={!range?.from}
-                  onClick={() => setRange(undefined)}
-                >
-                  Clear
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="rounded-full"
-                  onClick={() => setDatesOpen(false)}
-                >
-                  Done
-                </Button>
-              </div>
-            </PopoverContent>
-          </Popover>
+              <PopoverContent align="center" className="w-auto p-2">
+                <Calendar
+                  mode="range"
+                  selected={range}
+                  onSelect={(r) => {
+                    setRange(r);
+                    // Keep open until a real multi-night range is picked.
+                    if (r?.from && r.to && differenceInCalendarDays(r.to, r.from) >= 1) {
+                      setDatesOpen(false);
+                    }
+                  }}
+                  numberOfMonths={isMobile ? 1 : 2}
+                  disabled={{ before: today }}
+                  startMonth={today}
+                  showOutsideDays
+                />
+                <div className="mt-1 flex items-center justify-between border-t px-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={!range?.from}
+                    onClick={() => setRange(undefined)}
+                  >
+                    Clear
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="rounded-full"
+                    onClick={() => setDatesOpen(false)}
+                  >
+                    Done
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
 
-          <SegDivider hide={focusKey === "when" || focusKey === "adults"} />
+            <SegDivider hide={focusKey === "when" || focusKey === "adults"} />
 
-          {/* Adults */}
-          <Popover open={adultsOpen} onOpenChange={setAdultsOpen}>
-            <PopoverTrigger
-              render={
-                <button
-                  type="button"
-                  className={segClass("middle", focusKey === "adults")}
-                  {...seg("adults")}
-                >
-                  <SegInner label="Adults" value={guestLabel} active={focusKey === "adults"} />
-                </button>
-              }
-            />
-            <PopoverContent align="center" className="w-72">
-              <Stepper
-                label="Adults"
-                hint="Ages 10+"
-                value={adults}
-                min={1}
-                max={10}
-                onChange={setAdults}
+            {/* Adults */}
+            <Popover open={adultsOpen} onOpenChange={setAdultsOpen}>
+              <PopoverTrigger
+                render={
+                  <button
+                    type="button"
+                    className={segClass("middle", focusKey === "adults")}
+                    {...seg("adults")}
+                  >
+                    <SegInner label="Adults" value={guestLabel} active={focusKey === "adults"} />
+                  </button>
+                }
               />
-            </PopoverContent>
-          </Popover>
+              <PopoverContent align="center" className="w-72">
+                <Stepper
+                  label="Adults"
+                  hint="Ages 10+"
+                  value={adults}
+                  min={1}
+                  max={10}
+                  onChange={setAdults}
+                />
+              </PopoverContent>
+            </Popover>
 
-          <SegDivider hide={focusKey === "adults" || focusKey === "kids"} />
+            <SegDivider hide={focusKey === "adults" || focusKey === "kids"} />
 
-          {/* Kids */}
-          <Popover open={kidsOpen} onOpenChange={setKidsOpen}>
-            <PopoverTrigger
-              render={
-                <button
-                  type="button"
-                  className={segClass("last", focusKey === "kids")}
-                  {...seg("kids")}
-                >
-                  <SegInner
+            {/* Kids */}
+            <Popover open={kidsOpen} onOpenChange={setKidsOpen}>
+              <PopoverTrigger
+                render={
+                  <button
+                    type="button"
+                    className={segClass("last", focusKey === "kids")}
+                    {...seg("kids")}
+                  >
+                    <SegInner
+                      label="Kids"
+                      value={kidsLabel}
+                      muted={children === 0}
+                      active={focusKey === "kids"}
+                    />
+                  </button>
+                }
+              />
+              <PopoverContent align="end" className="w-72">
+                <Stepper
+                  label="Kids"
+                  hint="Ages 3 – 9"
+                  value={children}
+                  min={0}
+                  max={10}
+                  onChange={setChildren}
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          {!search && (
+            <Button
+              type="button"
+              size="icon"
+              onClick={submit}
+              className="size-11 shrink-0 rounded-full"
+            >
+              <SearchIcon />
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Mobile search + controls FAB — replaces the sticky pill on small screens */}
+      <div
+        className="fixed left-1/2 z-40 -translate-x-1/2 md:hidden"
+        style={{ bottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
+      >
+        <div className="bg-popover/95 supports-backdrop-filter:backdrop-blur flex items-center gap-1 rounded-full border p-1 shadow-xl">
+          {/* Search / edit search */}
+          <Drawer>
+            <DrawerTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="rounded-full gap-1.5 px-3 text-xs font-medium"
+              >
+                <SearchIcon className="size-3.5" />
+                {mobileSearchLabel}
+              </Button>
+            </DrawerTrigger>
+            <DrawerContent>
+              <DrawerHeader className="border-b pb-4">
+                <DrawerTitle className="[text-shadow:0_1px_3px_hsl(var(--foreground)/0.12)]">
+                  Search resorts
+                </DrawerTitle>
+                <DrawerDescription>Choose your dates and guests.</DrawerDescription>
+              </DrawerHeader>
+              <div className="flex flex-col gap-5 overflow-y-auto px-4 pb-4 pt-6">
+                {/* Where */}
+                <div className="flex flex-col gap-2">
+                  <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                    Where
+                  </span>
+                  <div className="flex flex-wrap gap-2 pt-3">
+                    <Button
+                      size="sm"
+                      variant={!areaKey ? "default" : "outline"}
+                      className="rounded-full"
+                      onClick={() => pickArea(null)}
+                    >
+                      All resorts
+                    </Button>
+                    {RESORT_AREAS.map((a) => (
+                      <Button
+                        key={a.key}
+                        size="sm"
+                        variant={areaKey === a.key ? "default" : "outline"}
+                        className="rounded-full"
+                        onClick={() => pickArea(a.key)}
+                      >
+                        {a.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                {/* Who */}
+                <div className="flex flex-col gap-1 border-t pt-4">
+                  <span className="text-muted-foreground mb-1 text-xs font-medium uppercase tracking-wide">
+                    Who
+                  </span>
+                  <Stepper
+                    label="Adults"
+                    hint="Ages 10+"
+                    value={adults}
+                    min={1}
+                    max={10}
+                    onChange={setAdults}
+                  />
+                  <Stepper
                     label="Kids"
-                    value={kidsLabel}
-                    muted={children === 0}
-                    active={focusKey === "kids"}
+                    hint="Ages 3–9"
+                    value={children}
+                    min={0}
+                    max={10}
+                    onChange={setChildren}
                   />
-                </button>
-              }
-            />
-            <PopoverContent align="end" className="w-72">
-              <Stepper
-                label="Kids"
-                hint="Ages 3 – 9"
-                value={children}
-                min={0}
-                max={10}
-                onChange={setChildren}
-              />
-            </PopoverContent>
-          </Popover>
+                </div>
+                {/* When */}
+                <div className="flex flex-col gap-2 border-t pt-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                      When
+                    </span>
+                    {range?.from && (
+                      <Button variant="ghost" size="xs" onClick={() => setRange(undefined)}>
+                        Clear
+                      </Button>
+                    )}
+                  </div>
+                  {/* Two months side-by-side; second hides on narrow screens instead of wrapping */}
+                  <div className="flex justify-center [&_.stay-cal-months>:nth-child(2)]:hidden sm:[&_.stay-cal-months>:nth-child(2)]:flex">
+                    <Calendar
+                      mode="range"
+                      selected={range}
+                      onSelect={setRange}
+                      numberOfMonths={2}
+                      classNames={{ months: "stay-cal-months relative flex flex-nowrap gap-4" }}
+                      disabled={{ before: today }}
+                      startMonth={today}
+                      showOutsideDays
+                    />
+                  </div>
+                </div>
+              </div>
+              <DrawerFooter>
+                <DrawerClose asChild>
+                  <Button className="rounded-full">Done</Button>
+                </DrawerClose>
+              </DrawerFooter>
+            </DrawerContent>
+          </Drawer>
 
-          <Button
-            type="button"
-            size="lg"
-            onClick={submit}
-            className="rounded-2xl md:ml-1 md:size-11 md:rounded-full md:p-0"
-          >
-            <SearchIcon />
-            <span className="md:hidden">Search resorts</span>
-          </Button>
+          {search && (
+            <>
+              <span className="bg-border h-5 w-px" />
+              {/* Sort */}
+              <Drawer>
+                <DrawerTrigger asChild>
+                  <Button variant="ghost" size="sm" className="rounded-full">
+                    <ArrowUpDownIcon data-icon="inline-start" />
+                    Sort
+                  </Button>
+                </DrawerTrigger>
+                <DrawerContent>
+                  <DrawerHeader>
+                    <DrawerTitle>Sort resorts</DrawerTitle>
+                    <DrawerDescription>Choose how the list is ordered.</DrawerDescription>
+                  </DrawerHeader>
+                  <div className="flex flex-col gap-1 px-4 pb-4">
+                    {(Object.keys(STAY_SORT_LABELS) as Array<StaySortKey>).map((k) => (
+                      <DrawerClose key={k} asChild>
+                        <Button
+                          variant={sortKey === k ? "secondary" : "ghost"}
+                          className="justify-start"
+                          onClick={() => setSortKey(k)}
+                        >
+                          {STAY_SORT_LABELS[k]}
+                        </Button>
+                      </DrawerClose>
+                    ))}
+                  </div>
+                </DrawerContent>
+              </Drawer>
+
+              <span className="bg-border h-5 w-px" />
+
+              {/* Filter */}
+              <Drawer>
+                <DrawerTrigger asChild>
+                  <Button variant="ghost" size="sm" className="rounded-full">
+                    <SlidersHorizontalIcon data-icon="inline-start" />
+                    Filters
+                    {activeCount > 0 ? <span className="bg-primary size-1.5 rounded-full" /> : null}
+                  </Button>
+                </DrawerTrigger>
+                <DrawerContent>
+                  <DrawerHeader>
+                    <DrawerTitle>Filter resorts</DrawerTitle>
+                    <DrawerDescription>Narrow by resort type and rate.</DrawerDescription>
+                  </DrawerHeader>
+                  <div className="flex flex-col gap-5 overflow-y-auto px-4 pb-4">
+                    <div className="flex flex-col gap-2">
+                      <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                        Resort type
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {TIER_CHIPS.map((c) => (
+                          <Button
+                            key={c.key}
+                            type="button"
+                            size="sm"
+                            variant={tierFilter === c.key ? "default" : "outline"}
+                            className="rounded-full"
+                            onClick={() => setTierFilter(c.key)}
+                          >
+                            {c.label}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-4 border-t pt-5">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-sm font-medium">Florida resident rates</span>
+                          <span className="text-muted-foreground text-xs">
+                            Show discounted nightly rates for Florida residents.
+                          </span>
+                        </div>
+                        <Switch
+                          checked={filters.floridaResident}
+                          onCheckedChange={(v) => applyFilters({ floridaResident: v })}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-sm font-medium">Accessible rooms only</span>
+                          <span className="text-muted-foreground text-xs">
+                            Limit results to rooms with accessibility features.
+                          </span>
+                        </div>
+                        <Switch
+                          checked={filters.accessible}
+                          onCheckedChange={(v) => applyFilters({ accessible: v })}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <DrawerFooter className="flex-row gap-2">
+                    <Button
+                      variant="outline"
+                      className={cn("flex-1", activeCount === 0 && "opacity-50")}
+                      disabled={activeCount === 0}
+                      onClick={onClear}
+                    >
+                      Clear filters
+                    </Button>
+                    <DrawerClose asChild>
+                      <Button className="flex-1">Done</Button>
+                    </DrawerClose>
+                  </DrawerFooter>
+                </DrawerContent>
+              </Drawer>
+            </>
+          )}
         </div>
       </div>
 
@@ -790,7 +1082,6 @@ function ResultsView({
   isLoading,
   isError,
   offers,
-  totalAvailable,
   tierFilter,
   onTierFilter,
   nights,
@@ -842,7 +1133,7 @@ function ResultsView({
 
   const countLabel = isLoading
     ? "Searching resorts…"
-    : `${totalAvailable} resort${totalAvailable === 1 ? "" : "s"} available`;
+    : `${offers.length} resort${offers.length === 1 ? "" : "s"} available`;
 
   return (
     <div className="flex flex-col gap-5">
@@ -960,17 +1251,6 @@ function ResultsView({
           ))}
         </div>
       )}
-
-      <StaysMobileControls
-        tierFilter={tierFilter}
-        onTierFilter={onTierFilter}
-        filters={filters}
-        onFilters={onApplyFilters}
-        sortKey={sortKey}
-        onSortKey={onSortKey}
-        activeCount={activeCount}
-        onClear={onClear}
-      />
     </div>
   );
 }
