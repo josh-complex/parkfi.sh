@@ -14,6 +14,13 @@ import {
   SlidersHorizontalIcon,
 } from "lucide-react";
 
+import {
+  CoreSearchButton,
+  coreSearchPopoverClass,
+  coreSegClass,
+  SegContent,
+  useCloseOnScroll,
+} from "#/components/core-search.tsx";
 import { StayAlertButton, type StayAlertDims } from "#/components/stays/stay-alert-button.tsx";
 import {
   EMPTY_FILTERS,
@@ -77,8 +84,6 @@ function rangeLabel(range: DateRange | undefined): string {
   if (!range.to) return format(range.from, "MMM d");
   return `${format(range.from, "MMM d")} – ${format(range.to, "MMM d")}`;
 }
-
-type SegKey = "where" | "when" | "adults" | "kids";
 
 interface SearchState {
   range: DateRange;
@@ -223,66 +228,6 @@ function Stepper({
   );
 }
 
-type SegPos = "first" | "middle" | "last";
-
-/**
- * Shared styling for a search-pill segment. On desktop the highlight keeps the
- * pill's rounded ends but squares the interior edges, so the hovered/active
- * segment reads as part of one continuous bar. Hover/active uses the accent's
- * light foreground so text stays legible over the dark fill.
- */
-function segClass(pos: SegPos, active: boolean) {
-  return cn(
-    "group flex min-w-0 flex-col rounded-2xl px-5 py-2.5 text-left outline-none transition-colors md:rounded-none",
-    pos === "first" && "md:rounded-l-full",
-    pos === "last" && "md:rounded-r-full",
-    active
-      ? "bg-accent text-accent-foreground"
-      : "hover:bg-accent/60 hover:text-accent-foreground focus-visible:bg-accent/60 focus-visible:text-accent-foreground",
-  );
-}
-
-/** Label + value stack inside a search-pill segment. */
-function SegInner({
-  label,
-  value,
-  muted,
-  active,
-}: {
-  label: string;
-  value: string;
-  muted?: boolean;
-  active: boolean;
-}) {
-  return (
-    <>
-      <span className="text-xs font-semibold">{label}</span>
-      <span
-        className={cn(
-          "truncate text-sm transition-colors",
-          !active &&
-            muted &&
-            "text-muted-foreground group-hover:text-accent-foreground group-focus-visible:text-accent-foreground",
-        )}
-      >
-        {value}
-      </span>
-    </>
-  );
-}
-
-/** Vertical hairline between two pill segments; fades when a neighbor is active. */
-function SegDivider({ hide }: { hide: boolean }) {
-  return (
-    <div
-      className={cn(
-        "mx-1 hidden h-7 w-px self-center bg-border transition-opacity md:block",
-        hide ? "opacity-0" : "opacity-100",
-      )}
-    />
-  );
-}
-
 const TIER_CHIPS: Array<{ key: ResortTier | "ALL"; label: string }> = [
   { key: "ALL", label: "All resorts" },
   ...TIER_META.map((t) => ({ key: t.key, label: t.label })),
@@ -329,10 +274,18 @@ export function StaysBoard({ areaKey }: { areaKey: string | null }) {
   const [datesOpen, setDatesOpen] = React.useState(false);
   const [adultsOpen, setAdultsOpen] = React.useState(false);
   const [kidsOpen, setKidsOpen] = React.useState(false);
-  const [hovered, setHovered] = React.useState<SegKey | null>(null);
   const [search, setSearch] = React.useState<SearchState | null>(null);
   const [tierFilter, setTierFilter] = React.useState<ResortTier | "ALL">("ALL");
   const [sortKey, setSortKey] = React.useState<StaySortKey>("recommended");
+
+  // Close any open search segment when the page scrolls under the sticky bar.
+  const closeSegments = React.useCallback(() => {
+    setWhereOpen(false);
+    setDatesOpen(false);
+    setAdultsOpen(false);
+    setKidsOpen(false);
+  }, []);
+  useCloseOnScroll(whereOpen || datesOpen || adultsOpen || kidsOpen, closeSegments);
 
   // The search pill rides a subtle blue hero wash at rest, then flips to the
   // translucent white bar once it sticks over the scrolling content. A flow
@@ -459,21 +412,6 @@ export function StaysBoard({ areaKey }: { areaKey: string | null }) {
     })).filter((g) => g.resorts.length > 0);
   }, [catalog, areaStr]);
 
-  const focusKey: SegKey | null = whereOpen
-    ? "where"
-    : datesOpen
-      ? "when"
-      : adultsOpen
-        ? "adults"
-        : kidsOpen
-          ? "kids"
-          : hovered;
-
-  const seg = (key: SegKey) => ({
-    onMouseEnter: () => setHovered(key),
-    onMouseLeave: () => setHovered((h) => (h === key ? null : h)),
-  });
-
   return (
     <div className="relative isolate flex flex-col">
       {/* Slight radial wash in the sidebar's Disney blue, behind the hero copy
@@ -507,27 +445,23 @@ export function StaysBoard({ areaKey }: { areaKey: string | null }) {
             : "border-b border-transparent bg-transparent",
         )}
       >
-        <div className="mx-auto flex w-fit items-center gap-3">
-          <div className="flex items-center gap-0 rounded-full border bg-card p-1.5 shadow-sm">
+        <div className="mx-auto flex w-fit items-stretch gap-3">
+          <div className="flex">
             {/* Where */}
             <Popover open={whereOpen} onOpenChange={setWhereOpen}>
               <PopoverTrigger
                 render={
-                  <button
-                    type="button"
-                    className={segClass("first", focusKey === "where")}
-                    {...seg("where")}
-                  >
-                    <SegInner
+                  <button type="button" className={coreSegClass("first", whereOpen)}>
+                    <SegContent
                       label="Where"
                       value={areaLabel ?? "All resorts"}
                       muted={!areaLabel}
-                      active={focusKey === "where"}
+                      active={whereOpen}
                     />
                   </button>
                 }
               />
-              <PopoverContent align="start" className="w-64 p-1.5">
+              <PopoverContent align="start" className={cn("w-64 p-1.5", coreSearchPopoverClass)}>
                 <AreaOption
                   label="All resorts"
                   selected={!areaKey}
@@ -544,27 +478,21 @@ export function StaysBoard({ areaKey }: { areaKey: string | null }) {
               </PopoverContent>
             </Popover>
 
-            <SegDivider hide={focusKey === "where" || focusKey === "when"} />
-
             {/* When */}
             <Popover open={datesOpen} onOpenChange={setDatesOpen}>
               <PopoverTrigger
                 render={
-                  <button
-                    type="button"
-                    className={segClass("middle", focusKey === "when")}
-                    {...seg("when")}
-                  >
-                    <SegInner
+                  <button type="button" className={coreSegClass("middle", datesOpen)}>
+                    <SegContent
                       label="When"
                       value={rangeLabel(range)}
                       muted={!range?.from}
-                      active={focusKey === "when"}
+                      active={datesOpen}
                     />
                   </button>
                 }
               />
-              <PopoverContent align="center" className="w-auto p-2">
+              <PopoverContent align="center" className={cn("w-auto p-2", coreSearchPopoverClass)}>
                 <Calendar
                   mode="range"
                   selected={range}
@@ -602,22 +530,21 @@ export function StaysBoard({ areaKey }: { areaKey: string | null }) {
               </PopoverContent>
             </Popover>
 
-            <SegDivider hide={focusKey === "when" || focusKey === "adults"} />
-
             {/* Adults */}
             <Popover open={adultsOpen} onOpenChange={setAdultsOpen}>
               <PopoverTrigger
                 render={
-                  <button
-                    type="button"
-                    className={segClass("middle", focusKey === "adults")}
-                    {...seg("adults")}
-                  >
-                    <SegInner label="Adults" value={guestLabel} active={focusKey === "adults"} />
+                  <button type="button" className={cn(coreSegClass("middle", adultsOpen), "w-32")}>
+                    <SegContent
+                      label="Adults"
+                      value={guestLabel}
+                      muted={false}
+                      active={adultsOpen}
+                    />
                   </button>
                 }
               />
-              <PopoverContent align="center" className="w-72">
+              <PopoverContent align="center" className={cn("w-72", coreSearchPopoverClass)}>
                 <Stepper
                   label="Adults"
                   hint="Ages 10+"
@@ -629,27 +556,21 @@ export function StaysBoard({ areaKey }: { areaKey: string | null }) {
               </PopoverContent>
             </Popover>
 
-            <SegDivider hide={focusKey === "adults" || focusKey === "kids"} />
-
             {/* Kids */}
             <Popover open={kidsOpen} onOpenChange={setKidsOpen}>
               <PopoverTrigger
                 render={
-                  <button
-                    type="button"
-                    className={segClass("last", focusKey === "kids")}
-                    {...seg("kids")}
-                  >
-                    <SegInner
+                  <button type="button" className={cn(coreSegClass("last", kidsOpen), "w-32")}>
+                    <SegContent
                       label="Kids"
                       value={kidsLabel}
                       muted={children === 0}
-                      active={focusKey === "kids"}
+                      active={kidsOpen}
                     />
                   </button>
                 }
               />
-              <PopoverContent align="end" className="w-72">
+              <PopoverContent align="end" className={cn("w-72", coreSearchPopoverClass)}>
                 <Stepper
                   label="Kids"
                   hint="Ages 3 – 9"
@@ -662,16 +583,7 @@ export function StaysBoard({ areaKey }: { areaKey: string | null }) {
             </Popover>
           </div>
 
-          {!search && (
-            <Button
-              type="button"
-              size="icon"
-              onClick={submit}
-              className="size-11 shrink-0 rounded-full"
-            >
-              <SearchIcon />
-            </Button>
-          )}
+          {!search && <CoreSearchButton onClick={submit} />}
         </div>
       </div>
 

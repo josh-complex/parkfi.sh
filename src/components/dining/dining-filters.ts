@@ -194,11 +194,27 @@ export function countActiveFilters(f: ClientFilters): number {
   return n;
 }
 
+/**
+ * Active count for the post-search "extended filters" only — excludes the three
+ * facets promoted into the search pill (`parkResort`, `cuisine`, `experienceType`),
+ * so the Filters badge reflects just what the drawer/controls own.
+ */
+export function countExtraFilters(f: ClientFilters): number {
+  let n = 0;
+  if (f.search.trim()) n++;
+  if (f.operator !== "ALL") n++;
+  if (f.prices.length) n++;
+  if (f.availability !== "ALL") n++;
+  if (f.features.length) n++;
+  if (f.hours !== "ALL") n++;
+  return n;
+}
+
 export function filterRestaurants(
   restaurants: Array<Restaurant>,
   availability: AvailabilityMap,
   f: ClientFilters,
-  todayStr: string,
+  referenceDate: string,
   hours: HoursMap,
   nowMin: number,
 ): Array<Restaurant> {
@@ -224,7 +240,7 @@ export function filterRestaurants(
     if (f.availability !== "ALL") {
       const a = availability.get(r.facilityId);
       if (f.availability === "today") {
-        const td = a?.days.find((d) => d.date === todayStr);
+        const td = a?.days.find((d) => d.date === referenceDate);
         if (!td?.available) return false;
       } else if (!a?.days.some((d) => d.available)) {
         return false;
@@ -239,10 +255,14 @@ export function featureLabels(keys: Array<FeatureKey>): Array<string> {
   return keys.map((k) => FEATURE_LABEL[k]);
 }
 
-/** Soonest available service date on/after today, or a sentinel that sorts last. */
-function nextAvailableDate(r: Restaurant, availability: AvailabilityMap, todayStr: string): string {
+/** Soonest available service date on/after the reference day, or a sentinel that sorts last. */
+function nextAvailableDate(
+  r: Restaurant,
+  availability: AvailabilityMap,
+  referenceDate: string,
+): string {
   const a = availability.get(r.facilityId);
-  const d = a?.days.find((x) => x.available && x.date >= todayStr);
+  const d = a?.days.find((x) => x.available && x.date >= referenceDate);
   return d?.date ?? "9999-99-99";
 }
 
@@ -250,7 +270,7 @@ export function sortRestaurants(
   list: Array<Restaurant>,
   availability: AvailabilityMap,
   sortKey: SortKey,
-  todayStr: string,
+  referenceDate: string,
 ): Array<Restaurant> {
   const byName = (a: Restaurant, b: Restaurant) => a.name.localeCompare(b.name);
   const arr = [...list];
@@ -267,8 +287,8 @@ export function sortRestaurants(
       break;
     case "availability":
       arr.sort((a, b) => {
-        const cmp = nextAvailableDate(a, availability, todayStr).localeCompare(
-          nextAvailableDate(b, availability, todayStr),
+        const cmp = nextAvailableDate(a, availability, referenceDate).localeCompare(
+          nextAvailableDate(b, availability, referenceDate),
         );
         return cmp || byName(a, b);
       });
@@ -278,24 +298,3 @@ export function sortRestaurants(
   }
   return arr;
 }
-
-/** Shared props for the desktop filter bar and the mobile control drawers. */
-export interface DiningControlsProps {
-  filters: ClientFilters;
-  onFilters: (patch: Partial<ClientFilters>) => void;
-  options: FilterOptions;
-  sortKey: SortKey;
-  onSortKey: (k: SortKey) => void;
-  partySize: string;
-  onPartySize: (v: string) => void;
-  days: string;
-  onDays: (v: string) => void;
-  activeCount: number;
-  onClear: () => void;
-}
-
-export const DAYS_OPTIONS = [
-  { value: "7", label: "7d" },
-  { value: "14", label: "14d" },
-  { value: "30", label: "30d" },
-];
