@@ -25,6 +25,37 @@ import { UpstreamError } from "../parks/sources/themeparks.ts";
 const DINEMENU_BASE =
   process.env.DISNEY_DINEMENU_BASE ?? "https://disneyworld.disney.go.com/dining/dinemenu/api";
 
+// These two feeds sit behind Akamai bot-manager + AWS API Gateway. A bot-shaped
+// User-Agent (the generic `config.userAgent`) plus a high-concurrency burst from
+// a datacenter IP gets rate-clamped to 403s — the dinemenu API rejects *every*
+// such request. So speak browser: a real Chrome UA + the client hints / fetch
+// metadata a browser sends, and retry the soft blocks (403/429/5xx) with
+// jittered backoff. The catalog list feed (one call) is untouched.
+const DISNEY_WEB_UA =
+  process.env.DISNEY_WEB_UA ??
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+const WEB_HEADERS: Record<string, string> = {
+  "user-agent": DISNEY_WEB_UA,
+  accept: "application/json, text/plain, */*",
+  "accept-language": "en-US,en;q=0.9",
+  referer: "https://disneyworld.disney.go.com/dining/",
+  "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+  "sec-ch-ua-mobile": "?0",
+  "sec-ch-ua-platform": '"Windows"',
+  "sec-fetch-dest": "empty",
+  "sec-fetch-mode": "cors",
+  "sec-fetch-site": "same-origin",
+};
+
+// Soft blocks worth retrying (Akamai throttle / API Gateway hiccup); a 404 or
+// other hard error is not retried.
+const RETRY_STATUS = new Set([403, 408, 425, 429, 500, 502, 503, 504]);
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export interface DiningScheduleRow {
   facilityId: string;
   scheduleDate: string; // YYYY-MM-DD
@@ -45,13 +76,36 @@ export interface DiningMenuItemRow {
   currency: string | null;
 }
 
-async function getJson(url: string, signal: AbortSignal): Promise<unknown> {
-  const res = await fetch(url, {
-    signal,
-    headers: { "user-agent": config.userAgent, accept: "application/json" },
-  });
-  if (!res.ok) throw new UpstreamError(`GET ${url} -> ${res.status}`, res.status);
-  return res.json();
+/**
+ * Browser-shaped GET with bounded retry. Each attempt gets its own
+ * `fetchTimeoutMs` budget; soft blocks back off with jitter, hard errors throw
+ * straight through. `attempts` counts total tries (so 4 = 1 + 3 retries).
+ */
+async function getJson(url: string, attempts = 4): Promise<unknown> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(config.fetchTimeoutMs),
+        headers: WEB_HEADERS,
+      });
+      if (res.ok) return await res.json();
+      const err = new UpstreamError(`GET ${url} -> ${res.status}`, res.status);
+      if (!RETRY_STATUS.has(res.status)) throw err; // hard error — don't retry
+      lastErr = err;
+    } catch (err) {
+      // Non-retryable upstream status bubbles up; network/timeout errors retry.
+      if (err instanceof UpstreamError && err.status != null && !RETRY_STATUS.has(err.status)) {
+        throw err;
+      }
+      lastErr = err;
+    }
+    if (attempt < attempts) {
+      const base = 400 * 2 ** (attempt - 1); // 400ms, 800ms, 1600ms …
+      await sleep(base + Math.random() * base); // + up to 100% jitter
+    }
+  }
+  throw lastErr;
 }
 
 const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
@@ -124,10 +178,9 @@ export async function fetchDiningSchedule(
   facilityId: string,
   slug: string,
   date: string,
-  signal: AbortSignal,
 ): Promise<Array<DiningScheduleRow>> {
   const url = `${config.disneyFinderBase}/details-entity-simple/wdw/${slug}/${date}/`;
-  const detail = DisneyDiningDetailSchema.parse(await getJson(url, signal));
+  const detail = DisneyDiningDetailSchema.parse(await getJson(url));
   return scheduleRows(facilityId, date, detail);
 }
 
@@ -161,9 +214,9 @@ function menuRows(facilityId: string, menu: DisneyDineMenu): Array<DiningMenuIte
 
 export async function fetchDiningMenu(
   facilityId: string,
-  signal: AbortSignal,
+  attempts = 4,
 ): Promise<Array<DiningMenuItemRow>> {
   const url = `${DINEMENU_BASE}/menu?searchTerm=${encodeURIComponent(facilityId)}&language=en-us`;
-  const menu = DisneyDineMenuSchema.parse(await getJson(url, signal));
+  const menu = DisneyDineMenuSchema.parse(await getJson(url, attempts));
   return menuRows(facilityId, menu);
 }

@@ -1,5 +1,5 @@
 import * as React from "react";
-import { SearchIcon, XIcon } from "lucide-react";
+import { SearchIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
 
 import { Button } from "#/components/ui/button.tsx";
 import { Input } from "#/components/ui/input.tsx";
@@ -15,13 +15,16 @@ import { ToggleGroup, ToggleGroupItem } from "#/components/ui/toggle-group.tsx";
 import {
   AVAILABILITY_LABELS,
   DAYS_OPTIONS,
+  FEATURE_FILTERS,
   OPERATOR_LABELS,
   SORT_LABELS,
   type AvailabilityFilter,
   type DiningControlsProps,
+  type FeatureKey,
   type Operator,
   type SortKey,
 } from "#/components/dining/dining-filters.ts";
+import { HOURS_LABELS, type HoursFilter } from "#/components/dining/dining-hours.ts";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -70,8 +73,45 @@ function AllSelect({
 }
 
 /**
+ * One connected segmented row of feature toggles. Several of these stack to
+ * cover all features — a single wrapping `ToggleGroup` renders square corners on
+ * wrapped items, so we split features into fixed rows that never wrap instead.
+ */
+function FeatureGroup({
+  row,
+  selected,
+  onChange,
+}: {
+  row: typeof FEATURE_FILTERS;
+  selected: Array<FeatureKey>;
+  onChange: (next: Array<FeatureKey>) => void;
+}) {
+  const rowKeys = row.map((f) => f.key);
+  const value = selected.filter((k) => rowKeys.includes(k));
+  return (
+    <ToggleGroup
+      multiple
+      value={value}
+      onValueChange={(v) =>
+        onChange([...selected.filter((k) => !rowKeys.includes(k)), ...(v as Array<FeatureKey>)])
+      }
+      variant="outline"
+      size="sm"
+    >
+      {row.map((f) => (
+        <ToggleGroupItem key={f.key} value={f.key} className="px-3!">
+          {f.label}
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
+  );
+}
+
+/**
  * Sticky desktop filter bar. Hidden on mobile (the bottom FAB drawer carries the
- * same controls there). Sticks to the top once the page header scrolls away.
+ * same controls there). Sticks to the top once the page header scrolls away. The
+ * primary search + query-shaping controls stay visible; a "Filters" button
+ * expands the rest (park, cuisine, experience, operator, price, hours, features).
  */
 export function DiningFilterBar({
   filters,
@@ -86,6 +126,12 @@ export function DiningFilterBar({
   activeCount,
   onClear,
 }: DiningControlsProps) {
+  const [expanded, setExpanded] = React.useState(false);
+  // Pairs of features, each rendered as its own connected toggle group; the
+  // container wraps between groups so they reflow without clipping at any width.
+  const featureRows = Array.from({ length: Math.ceil(FEATURE_FILTERS.length / 2) }, (_, i) =>
+    FEATURE_FILTERS.slice(i * 2, i * 2 + 2),
+  );
   return (
     <div className="bg-background/95 supports-backdrop-filter:backdrop-blur sticky top-0 z-20 hidden border-b md:block">
       <div className="flex flex-wrap items-end gap-3 px-4 py-3 lg:px-6">
@@ -102,81 +148,16 @@ export function DiningFilterBar({
           </div>
         </Field>
 
-        <AllSelect
-          label="Park / Resort"
-          value={filters.parkResort}
-          onValueChange={(v) => onFilters({ parkResort: v })}
-          allLabel="All parks"
-          options={options.parks}
-          width="w-48"
-        />
-
-        <AllSelect
-          label="Cuisine"
-          value={filters.cuisine}
-          onValueChange={(v) => onFilters({ cuisine: v })}
-          allLabel="All cuisines"
-          options={options.cuisines}
-        />
-
-        <AllSelect
-          label="Experience"
-          value={filters.experienceType}
-          onValueChange={(v) => onFilters({ experienceType: v })}
-          allLabel="All types"
-          options={options.experiences}
-        />
-
-        <Field label="Operator">
-          <ToggleGroup
-            multiple={false}
-            value={[filters.operator]}
-            onValueChange={(v) => onFilters({ operator: (v[0] as Operator) ?? "ALL" })}
-            variant="outline"
+        <Field label="Filters">
+          <Button
+            variant={expanded ? "secondary" : "outline"}
             size="sm"
+            onClick={() => setExpanded((e) => !e)}
+            aria-expanded={expanded}
           >
-            {(Object.keys(OPERATOR_LABELS) as Array<Operator>).map((k) => (
-              <ToggleGroupItem key={k} value={k} className="px-3!">
-                {k === "ALL" ? "All" : OPERATOR_LABELS[k]}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-        </Field>
-
-        {options.prices.length > 0 && (
-          <Field label="Price">
-            <ToggleGroup
-              multiple
-              value={filters.prices}
-              onValueChange={(v) => onFilters({ prices: v })}
-              variant="outline"
-              size="sm"
-            >
-              {options.prices.map((p) => (
-                <ToggleGroupItem key={p} value={p} className="px-3!">
-                  {p}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          </Field>
-        )}
-
-        <Field label="Availability">
-          <ToggleGroup
-            multiple={false}
-            value={[filters.availability]}
-            onValueChange={(v) =>
-              onFilters({ availability: (v[0] as AvailabilityFilter) ?? "ALL" })
-            }
-            variant="outline"
-            size="sm"
-          >
-            {(Object.keys(AVAILABILITY_LABELS) as Array<AvailabilityFilter>).map((k) => (
-              <ToggleGroupItem key={k} value={k} className="px-3!">
-                {k === "ALL" ? "Any" : AVAILABILITY_LABELS[k]}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+            <SlidersHorizontalIcon data-icon="inline-start" />
+            Filters{activeCount > 0 ? ` (${activeCount})` : ""}
+          </Button>
         </Field>
 
         {/* Push the query-shaping controls (these refetch) to the right. */}
@@ -246,6 +227,116 @@ export function DiningFilterBar({
           )}
         </div>
       </div>
+
+      {expanded && (
+        <div className="flex flex-wrap items-end gap-x-6 gap-y-3 border-t px-4 py-3 lg:px-6">
+          <AllSelect
+            label="Park / Resort"
+            value={filters.parkResort}
+            onValueChange={(v) => onFilters({ parkResort: v })}
+            allLabel="All parks"
+            options={options.parks}
+            width="w-48"
+          />
+
+          <AllSelect
+            label="Cuisine"
+            value={filters.cuisine}
+            onValueChange={(v) => onFilters({ cuisine: v })}
+            allLabel="All cuisines"
+            options={options.cuisines}
+          />
+
+          <AllSelect
+            label="Experience"
+            value={filters.experienceType}
+            onValueChange={(v) => onFilters({ experienceType: v })}
+            allLabel="All types"
+            options={options.experiences}
+          />
+
+          <Field label="Operator">
+            <ToggleGroup
+              multiple={false}
+              value={[filters.operator]}
+              onValueChange={(v) => onFilters({ operator: (v[0] as Operator) ?? "ALL" })}
+              variant="outline"
+              size="sm"
+            >
+              {(Object.keys(OPERATOR_LABELS) as Array<Operator>).map((k) => (
+                <ToggleGroupItem key={k} value={k} className="px-3!">
+                  {k === "ALL" ? "All" : OPERATOR_LABELS[k]}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </Field>
+
+          {options.prices.length > 0 && (
+            <Field label="Price">
+              <ToggleGroup
+                multiple
+                value={filters.prices}
+                onValueChange={(v) => onFilters({ prices: v })}
+                variant="outline"
+                size="sm"
+              >
+                {options.prices.map((p) => (
+                  <ToggleGroupItem key={p} value={p} className="px-3!">
+                    {p}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </Field>
+          )}
+
+          <Field label="Availability">
+            <ToggleGroup
+              multiple={false}
+              value={[filters.availability]}
+              onValueChange={(v) =>
+                onFilters({ availability: (v[0] as AvailabilityFilter) ?? "ALL" })
+              }
+              variant="outline"
+              size="sm"
+            >
+              {(Object.keys(AVAILABILITY_LABELS) as Array<AvailabilityFilter>).map((k) => (
+                <ToggleGroupItem key={k} value={k} className="px-3!">
+                  {k === "ALL" ? "Any" : AVAILABILITY_LABELS[k]}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </Field>
+
+          <Field label="Hours">
+            <ToggleGroup
+              multiple={false}
+              value={[filters.hours]}
+              onValueChange={(v) => onFilters({ hours: (v[0] as HoursFilter) ?? "ALL" })}
+              variant="outline"
+              size="sm"
+            >
+              {(Object.keys(HOURS_LABELS) as Array<HoursFilter>).map((k) => (
+                <ToggleGroupItem key={k} value={k} className="px-3!">
+                  {k === "ALL" ? "Any" : HOURS_LABELS[k]}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </Field>
+
+          <Field label="Features">
+            <div className="flex flex-wrap gap-2">
+              {featureRows.map((row, i) => (
+                <FeatureGroup
+                  key={i}
+                  row={row}
+                  selected={filters.features}
+                  onChange={(features) => onFilters({ features })}
+                />
+              ))}
+            </div>
+          </Field>
+        </div>
+      )}
     </div>
   );
 }

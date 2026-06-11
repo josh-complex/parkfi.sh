@@ -4,6 +4,14 @@
  * narrowing, sorting, and paging happen client-side over that data.
  */
 
+import {
+  isOpenLate,
+  isOpenNow,
+  servesBreakfast,
+  type HoursFilter,
+  type HoursMap,
+} from "#/components/dining/dining-hours.ts";
+
 // Operator/source ids (mirror of `Source` in src/server/parks/codes.ts; kept
 // local so this client module never reaches across the server boundary).
 const SOURCE_DISNEY = 3;
@@ -19,7 +27,51 @@ export interface Restaurant {
   imageUrl: string | null;
   detailUrl: string | null;
   source: number;
+  // Catalog attribute flags (DISNEY_DIRECT only; UOR rows are all false).
+  walkupWaitList: boolean;
+  mobileOrder: boolean;
+  characterDining: boolean;
+  fineDining: boolean;
+  annualPassDiscount: boolean;
+  disneyVisaDiscount: boolean;
+  diningPlanQs: boolean;
+  diningPlanTs: boolean;
+  hasMenu: boolean;
 }
+
+/** Catalog-attribute toggles. Selecting several narrows to venues with ALL of them. */
+export type FeatureKey =
+  | "walkup"
+  | "mobile"
+  | "character"
+  | "fine"
+  | "annualPass"
+  | "disneyVisa"
+  | "planQs"
+  | "planTs";
+
+export const FEATURE_FILTERS: Array<{
+  key: FeatureKey;
+  label: string;
+  has: (r: Restaurant) => boolean;
+}> = [
+  { key: "walkup", label: "No reservation needed", has: (r) => r.walkupWaitList },
+  { key: "mobile", label: "Mobile order", has: (r) => r.mobileOrder },
+  { key: "character", label: "Character dining", has: (r) => r.characterDining },
+  { key: "fine", label: "Signature dining", has: (r) => r.fineDining },
+  { key: "annualPass", label: "Passholder discount", has: (r) => r.annualPassDiscount },
+  { key: "disneyVisa", label: "Disney Visa", has: (r) => r.disneyVisaDiscount },
+  { key: "planQs", label: "Dining Plan (QS)", has: (r) => r.diningPlanQs },
+  { key: "planTs", label: "Dining Plan (TS)", has: (r) => r.diningPlanTs },
+];
+
+const FEATURE_LABEL: Record<FeatureKey, string> = Object.fromEntries(
+  FEATURE_FILTERS.map((f) => [f.key, f.label]),
+) as Record<FeatureKey, string>;
+
+const FEATURE_HAS: Record<FeatureKey, (r: Restaurant) => boolean> = Object.fromEntries(
+  FEATURE_FILTERS.map((f) => [f.key, f.has]),
+) as Record<FeatureKey, (r: Restaurant) => boolean>;
 
 export interface DayEntry {
   date: string;
@@ -71,6 +123,8 @@ export interface ClientFilters {
   operator: Operator;
   prices: string[]; // selected price tiers ("$", "$$", …); empty = all
   availability: AvailabilityFilter;
+  features: FeatureKey[]; // catalog attribute flags; AND semantics, empty = all
+  hours: HoursFilter; // operating-hours narrowing (open now / breakfast / late)
 }
 
 export const DEFAULT_FILTERS: ClientFilters = {
@@ -81,6 +135,8 @@ export const DEFAULT_FILTERS: ClientFilters = {
   operator: "ALL",
   prices: [],
   availability: "ALL",
+  features: [],
+  hours: "ALL",
 };
 
 export interface FilterOptions {
@@ -133,6 +189,8 @@ export function countActiveFilters(f: ClientFilters): number {
   if (f.operator !== "ALL") n++;
   if (f.prices.length) n++;
   if (f.availability !== "ALL") n++;
+  if (f.features.length) n++;
+  if (f.hours !== "ALL") n++;
   return n;
 }
 
@@ -141,6 +199,8 @@ export function filterRestaurants(
   availability: AvailabilityMap,
   f: ClientFilters,
   todayStr: string,
+  hours: HoursMap,
+  nowMin: number,
 ): Array<Restaurant> {
   const q = f.search.trim().toLowerCase();
   return restaurants.filter((r) => {
@@ -153,6 +213,14 @@ export function filterRestaurants(
       const t = priceTier(r.priceRange);
       if (!t || !f.prices.includes(t)) return false;
     }
+    if (f.features.length && !f.features.every((k) => FEATURE_HAS[k](r))) return false;
+    if (f.hours !== "ALL") {
+      const sched = hours.get(r.facilityId);
+      if (!sched) return false;
+      if (f.hours === "now" && !isOpenNow(sched, nowMin)) return false;
+      if (f.hours === "breakfast" && !servesBreakfast(sched)) return false;
+      if (f.hours === "late" && !isOpenLate(sched)) return false;
+    }
     if (f.availability !== "ALL") {
       const a = availability.get(r.facilityId);
       if (f.availability === "today") {
@@ -164,6 +232,11 @@ export function filterRestaurants(
     }
     return true;
   });
+}
+
+/** Human labels for the active feature/hours filters (for summary chips). */
+export function featureLabels(keys: Array<FeatureKey>): Array<string> {
+  return keys.map((k) => FEATURE_LABEL[k]);
 }
 
 /** Soonest available service date on/after today, or a sentinel that sorts last. */

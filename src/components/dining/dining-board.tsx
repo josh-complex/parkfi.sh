@@ -9,6 +9,7 @@ import {
   countActiveFilters,
   DEFAULT_FILTERS,
   deriveOptions,
+  featureLabels,
   filterRestaurants,
   OPERATOR_LABELS,
   sortRestaurants,
@@ -19,7 +20,18 @@ import {
   type Restaurant,
   type SortKey,
 } from "#/components/dining/dining-filters.ts";
+import {
+  HOURS_LABELS,
+  hoursLabel,
+  isOpenNow,
+  parkNowMinutes,
+  type HoursMap,
+  type ScheduleEntry,
+} from "#/components/dining/dining-hours.ts";
+import { DiningMenuChanges } from "#/components/dining/dining-menu-changes.tsx";
+import { DiningMenuDrawer } from "#/components/dining/dining-menu-drawer.tsx";
 import { DiningMobileControls } from "#/components/dining/dining-mobile-controls.tsx";
+import { DiningPicks } from "#/components/dining/dining-picks.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import {
@@ -93,10 +105,14 @@ function RestaurantCard({
   restaurant,
   availability,
   windowDays,
+  schedules,
+  nowMin,
 }: {
   restaurant: Restaurant;
   availability: AvailabilityEntry | undefined;
   windowDays: number;
+  schedules: Array<ScheduleEntry> | undefined;
+  nowMin: number;
 }) {
   const todayStr = today();
   const todayData = availability?.days.find((d) => d.date === todayStr);
@@ -105,6 +121,8 @@ function RestaurantCard({
   const subtitle = [restaurant.parkResort, restaurant.experienceType ?? restaurant.cuisine]
     .filter(Boolean)
     .join(" · ");
+  const todayHours = schedules ? hoursLabel(schedules) : null;
+  const openNow = schedules ? isOpenNow(schedules, nowMin) : false;
 
   return (
     <Card className="@container/card overflow-hidden pt-0">
@@ -175,8 +193,27 @@ function RestaurantCard({
         ) : (
           <p className="text-xs text-muted-foreground">No observations yet</p>
         )}
-        {restaurant.priceRange && (
-          <span className="text-xs text-muted-foreground">{restaurant.priceRange}</span>
+        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+          {restaurant.priceRange ? <span>{restaurant.priceRange}</span> : <span />}
+          {todayHours && (
+            <span className="flex items-center gap-1.5">
+              {openNow && <span className="size-1.5 rounded-full bg-emerald-500" />}
+              <span>
+                {openNow ? "Open now" : "Today"} · {todayHours}
+              </span>
+            </span>
+          )}
+        </div>
+        {restaurant.hasMenu && (
+          <DiningMenuDrawer
+            facilityId={restaurant.facilityId}
+            name={restaurant.name}
+            trigger={
+              <Button variant="outline" size="sm" className="w-full">
+                View menu
+              </Button>
+            }
+          />
         )}
       </CardContent>
     </Card>
@@ -211,6 +248,7 @@ export function DiningBoard() {
       days: Number(days),
     }),
   );
+  const hoursQ = useQuery(trpc.dining.hours.queryOptions({}));
 
   const restaurants = restaurantsQ.data;
   const availabilityMap: AvailabilityMap = React.useMemo(() => {
@@ -218,15 +256,28 @@ export function DiningBoard() {
     for (const entry of availabilityQ.data ?? []) m.set(entry.facilityId, entry);
     return m;
   }, [availabilityQ.data]);
+  const hoursMap: HoursMap = React.useMemo(() => {
+    const m = new Map<string, Array<ScheduleEntry>>();
+    for (const entry of hoursQ.data ?? []) m.set(entry.facilityId, entry.schedules);
+    return m;
+  }, [hoursQ.data]);
 
   const options = React.useMemo(() => deriveOptions(restaurants ?? []), [restaurants]);
 
   const todayStr = today();
+  const nowMin = parkNowMinutes();
   const visible = React.useMemo(() => {
     if (!restaurants) return [];
-    const filtered = filterRestaurants(restaurants, availabilityMap, filters, todayStr);
+    const filtered = filterRestaurants(
+      restaurants,
+      availabilityMap,
+      filters,
+      todayStr,
+      hoursMap,
+      nowMin,
+    );
     return sortRestaurants(filtered, availabilityMap, sortKey, todayStr);
-  }, [restaurants, availabilityMap, filters, sortKey, todayStr]);
+  }, [restaurants, availabilityMap, filters, sortKey, todayStr, hoursMap, nowMin]);
 
   const activeCount = countActiveFilters(filters);
   const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
@@ -272,6 +323,15 @@ export function DiningBoard() {
       <DiningFilterBar {...controls} />
 
       <div className="flex flex-col gap-4 px-4 py-4 pb-24 md:gap-6 md:py-6 lg:px-6">
+        {/* Discovery shelves + price-change feed — only while browsing (no filters).
+            Both self-hide when they have nothing to show. */}
+        {!isLoading && activeCount === 0 ? (
+          <>
+            <DiningMenuChanges />
+            <DiningPicks />
+          </>
+        ) : null}
+
         {/* Result summary + active-filter chips (chips are read-only here; the
             bar / mobile drawer own editing). */}
         {!isLoading && restaurants?.length ? (
@@ -318,6 +378,8 @@ export function DiningBoard() {
                   restaurant={r}
                   availability={availabilityMap.get(r.facilityId)}
                   windowDays={Number(days)}
+                  schedules={hoursMap.get(r.facilityId)}
+                  nowMin={nowMin}
                 />
               ))}
             </div>
@@ -388,6 +450,8 @@ function ActiveChips({ filters }: { filters: ClientFilters }) {
   if (filters.operator !== "ALL") chips.push(OPERATOR_LABELS[filters.operator]);
   if (filters.prices.length) chips.push(filters.prices.join(" / "));
   if (filters.availability !== "ALL") chips.push(AVAILABILITY_LABELS[filters.availability]);
+  if (filters.hours !== "ALL") chips.push(HOURS_LABELS[filters.hours]);
+  for (const label of featureLabels(filters.features)) chips.push(label);
   if (!chips.length) return null;
   return (
     <>

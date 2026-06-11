@@ -97,7 +97,17 @@ export const config = {
    * phase (catalog-only run); concurrency bounds the ~2 calls/venue fan-out.
    */
   diningDetailsEnabled: (process.env.DINING_DETAILS ?? "1") !== "0",
-  diningDetailConcurrency: num("DINING_DETAIL_CONCURRENCY", 6),
+  // Schedule fan-out concurrency (the finder host tolerates a small burst).
+  // Kept low: these feeds sit behind Akamai bot-manager, which rate-clamps a
+  // big concurrent burst from a datacenter IP. Paired with per-request retry.
+  diningDetailConcurrency: num("DINING_DETAIL_CONCURRENCY", 3),
+  // Menus hit an AWS API Gateway that rejects *concurrent* access outright and
+  // enforces a rolling per-IP rate cap. So menus are fetched strictly serially
+  // with a polite gap, and bounded per run — the least-recently-checked venues
+  // are refreshed each week (the change-only generational model makes partial
+  // coverage correct). Over a few runs the whole catalog rolls through.
+  diningMenuMaxPerRun: num("DINING_MENU_MAX_PER_RUN", 120),
+  diningMenuDelayMs: num("DINING_MENU_DELAY_MS", 700),
 
   /**
    * Stays cache freshness: how long a swept `stay_obs` generation serves the

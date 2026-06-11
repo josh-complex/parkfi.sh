@@ -127,7 +127,10 @@ function priceChanges(
  * menu is hashed and a new `dining_menu_item` generation written only when the
  * hash differs from `dining_menu_snapshot`; price moves between generations are
  * logged to `dining_menu_price_change`. Per-venue try/catch isolates a single
- * bad fetch; a bounded concurrency window keeps the ~2 calls/venue fan-out polite.
+ * bad fetch. Schedules fan out at a small concurrency (the finder host allows
+ * it); menus go strictly serial and capped per run (the dinemenu API Gateway
+ * rejects concurrency + rate-caps per IP) — least-recently-checked first, so
+ * the catalog rolls through over successive weekly runs.
  */
 async function enrichDetails(rows: Array<DiningCatalogRow>, now: Date): Promise<void> {
   const today = isoDate(now);
@@ -137,35 +140,52 @@ async function enrichDetails(rows: Array<DiningCatalogRow>, now: Date): Promise<
   let schedErr = 0;
   let menuErr = 0;
 
+  // --- Schedules: the finder host tolerates a small concurrent burst. ---
   const window = Math.max(1, config.diningDetailConcurrency);
-  for (let i = 0; i < rows.length; i += window) {
+  const withSlug = rows.filter((r) => r.urlFriendlyId);
+  for (let i = 0; i < withSlug.length; i += window) {
     await Promise.all(
-      rows.slice(i, i + window).map(async (r) => {
-        if (r.urlFriendlyId) {
-          try {
-            scheduleRows.push(
-              ...(await fetchDiningSchedule(
-                r.facilityId,
-                r.urlFriendlyId,
-                today,
-                AbortSignal.timeout(config.fetchTimeoutMs),
-              )),
-            );
-            scheduleOk.push(r.facilityId);
-          } catch {
-            schedErr++;
-          }
-        }
+      withSlug.slice(i, i + window).map(async (r) => {
         try {
-          menuByFacility.set(
-            r.facilityId,
-            await fetchDiningMenu(r.facilityId, AbortSignal.timeout(config.fetchTimeoutMs)),
-          );
+          scheduleRows.push(...(await fetchDiningSchedule(r.facilityId, r.urlFriendlyId!, today)));
+          scheduleOk.push(r.facilityId);
         } catch {
-          menuErr++;
+          schedErr++;
         }
       }),
     );
+    if (i + window < withSlug.length) await new Promise((res) => setTimeout(res, 200));
+  }
+
+  // --- Menus: the dinemenu API Gateway rejects concurrency and rate-caps per
+  // IP, so go strictly serial with a gap, capped per run. Refresh the least-
+  // recently-checked venues first (never-checked lead) so coverage rolls across
+  // weekly runs. The change-only generational model makes partial runs correct.
+  const existingChecks = await db
+    .select({
+      facilityId: diningMenuSnapshot.facilityId,
+      lastCheckedAt: diningMenuSnapshot.lastCheckedAt,
+    })
+    .from(diningMenuSnapshot)
+    .where(
+      inArray(
+        diningMenuSnapshot.facilityId,
+        rows.map((r) => r.facilityId),
+      ),
+    );
+  const checkedAt = new Map(existingChecks.map((s) => [s.facilityId, s.lastCheckedAt.getTime()]));
+  const menuTargets = [...rows]
+    .sort((a, b) => (checkedAt.get(a.facilityId) ?? 0) - (checkedAt.get(b.facilityId) ?? 0))
+    .slice(0, Math.max(0, config.diningMenuMaxPerRun));
+  for (const r of menuTargets) {
+    try {
+      menuByFacility.set(r.facilityId, await fetchDiningMenu(r.facilityId, 6));
+    } catch {
+      menuErr++;
+    }
+    if (config.diningMenuDelayMs > 0) {
+      await new Promise((res) => setTimeout(res, config.diningMenuDelayMs));
+    }
   }
 
   // Schedules: full-replace each refreshed venue, then prune past-dated rows so

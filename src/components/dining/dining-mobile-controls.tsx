@@ -20,9 +20,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "#/components/ui/select.tsx";
+import { ToggleGroup, ToggleGroupItem } from "#/components/ui/toggle-group.tsx";
 import {
   AVAILABILITY_LABELS,
   DAYS_OPTIONS,
+  FEATURE_FILTERS,
   OPERATOR_LABELS,
   SORT_LABELS,
   type AvailabilityFilter,
@@ -30,9 +32,14 @@ import {
   type Operator,
   type SortKey,
 } from "#/components/dining/dining-filters.ts";
+import { HOURS_LABELS, type HoursFilter } from "#/components/dining/dining-hours.ts";
 import { cn } from "#/lib/utils.ts";
 
-/** Row of single-select pills used throughout the filter drawer. */
+/**
+ * Full-width single-select segmented control used throughout the filter drawer.
+ * Mirrors the desktop bar's `ToggleGroup` look; items share the width and wrap
+ * their labels rather than overflowing the narrow drawer.
+ */
 function PillRow<T extends string>({
   options,
   value,
@@ -45,20 +52,24 @@ function PillRow<T extends string>({
   labelOf: (v: T) => string;
 }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <ToggleGroup
+      multiple={false}
+      value={[value]}
+      onValueChange={(v) => onSelect((v[0] as T) ?? value)}
+      variant="outline"
+      size="sm"
+      className="w-full"
+    >
       {options.map((o) => (
-        <Button
+        <ToggleGroupItem
           key={o}
-          type="button"
-          size="sm"
-          variant={value === o ? "default" : "outline"}
-          className="rounded-full"
-          onClick={() => onSelect(o)}
+          value={o}
+          className="flex-1 px-2 text-center leading-tight whitespace-normal"
         >
           {labelOf(o)}
-        </Button>
+        </ToggleGroupItem>
       ))}
-    </div>
+    </ToggleGroup>
   );
 }
 
@@ -259,6 +270,41 @@ export function DiningMobileControls({
                   onSelect={(v) => onFilters({ availability: v })}
                   labelOf={(v) => AVAILABILITY_LABELS[v]}
                 />
+              </Section>
+
+              <Section label="Hours">
+                <PillRow
+                  options={Object.keys(HOURS_LABELS) as Array<HoursFilter>}
+                  value={filters.hours}
+                  onSelect={(v) => onFilters({ hours: v })}
+                  labelOf={(v) => HOURS_LABELS[v]}
+                />
+              </Section>
+
+              <Section label="Features">
+                <div className="flex flex-wrap gap-2">
+                  {FEATURE_FILTERS.map((f) => {
+                    const on = filters.features.includes(f.key);
+                    return (
+                      <Button
+                        key={f.key}
+                        type="button"
+                        size="sm"
+                        variant={on ? "default" : "outline"}
+                        className="rounded-full"
+                        onClick={() =>
+                          onFilters({
+                            features: on
+                              ? filters.features.filter((x) => x !== f.key)
+                              : [...filters.features, f.key],
+                          })
+                        }
+                      >
+                        {f.label}
+                      </Button>
+                    );
+                  })}
+                </div>
               </Section>
 
               <Section label="Party size">
