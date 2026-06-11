@@ -1,5 +1,6 @@
 import { createTRPCRouter } from "./init";
 import { diningRouter } from "./routers/dining.ts";
+import { forecastRouter } from "./routers/forecast.ts";
 import { notificationsRouter } from "./routers/notifications.ts";
 import { parksRouter } from "./routers/parks.ts";
 import { rideAlertsRouter } from "./routers/rideAlerts.ts";
@@ -11,6 +12,7 @@ export const trpcRouter = createTRPCRouter({
   parks: parksRouter,
   tickets: ticketsRouter,
   dining: diningRouter,
+  forecast: forecastRouter,
   stays: staysRouter,
   notifications: notificationsRouter,
   rideAlerts: rideAlertsRouter,

@@ -13,6 +13,7 @@ import { Route as UnsubscribeRouteImport } from './routes/unsubscribe'
 import { Route as TicketsRouteImport } from './routes/tickets'
 import { Route as StaysRouteImport } from './routes/stays'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as PredictionsRouteImport } from './routes/predictions'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DisclaimersRouteImport } from './routes/disclaimers'
 import { Route as DiningRouteImport } from './routes/dining'
@@ -43,6 +44,11 @@ const StaysRoute = StaysRouteImport.update({
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PredictionsRoute = PredictionsRouteImport.update({
+  id: '/predictions',
+  path: '/predictions',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -105,6 +111,7 @@ export interface FileRoutesByFullPath {
   '/dining': typeof DiningRoute
   '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
+  '/predictions': typeof PredictionsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/stays': typeof StaysRoute
   '/tickets': typeof TicketsRoute
@@ -120,6 +127,7 @@ export interface FileRoutesByTo {
   '/dining': typeof DiningRoute
   '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
+  '/predictions': typeof PredictionsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/stays': typeof StaysRoute
   '/tickets': typeof TicketsRoute
@@ -138,6 +146,7 @@ export interface FileRoutesById {
   '/dining': typeof DiningRoute
   '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
+  '/predictions': typeof PredictionsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/stays': typeof StaysRoute
   '/tickets': typeof TicketsRoute
@@ -157,6 +166,7 @@ export interface FileRouteTypes {
     | '/dining'
     | '/disclaimers'
     | '/login'
+    | '/predictions'
     | '/sitemap.xml'
     | '/stays'
     | '/tickets'
@@ -172,6 +182,7 @@ export interface FileRouteTypes {
     | '/dining'
     | '/disclaimers'
     | '/login'
+    | '/predictions'
     | '/sitemap.xml'
     | '/stays'
     | '/tickets'
@@ -189,6 +200,7 @@ export interface FileRouteTypes {
     | '/dining'
     | '/disclaimers'
     | '/login'
+    | '/predictions'
     | '/sitemap.xml'
     | '/stays'
     | '/tickets'
@@ -207,6 +219,7 @@ export interface RootRouteChildren {
   DiningRoute: typeof DiningRoute
   DisclaimersRoute: typeof DisclaimersRoute
   LoginRoute: typeof LoginRoute
+  PredictionsRoute: typeof PredictionsRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   StaysRoute: typeof StaysRoute
   TicketsRoute: typeof TicketsRoute
@@ -245,6 +258,13 @@ declare module '@tanstack/react-router' {
       path: '/sitemap.xml'
       fullPath: '/sitemap.xml'
       preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/predictions': {
+      id: '/predictions'
+      path: '/predictions'
+      fullPath: '/predictions'
+      preLoaderRoute: typeof PredictionsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -346,6 +366,7 @@ const rootRouteChildren: RootRouteChildren = {
   DiningRoute: DiningRoute,
   DisclaimersRoute: DisclaimersRoute,
   LoginRoute: LoginRoute,
+  PredictionsRoute: PredictionsRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   StaysRoute: StaysRoute,
   TicketsRoute: TicketsRoute,

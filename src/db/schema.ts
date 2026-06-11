@@ -4,6 +4,7 @@ import {
   bigserial,
   boolean,
   char,
+  customType,
   date,
   doublePrecision,
   index,
@@ -18,6 +19,13 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+
+/** Raw Postgres `bytea` — used for serialized model artifacts (F8). */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
 
 import { user } from "./auth-schema.ts";
 
@@ -1045,3 +1053,22 @@ export const modelMetrics = pgTable(
   },
   (t) => [primaryKey({ columns: [t.modelVersion, t.window] })],
 );
+
+/**
+ * (F8) Serialized model artifact, one row per trained `model_version`. Postgres
+ * is the only contract between the (daily) `train` and (15-min) `infer` runs of
+ * the Python ml-train service — they run in separate Railway containers with no
+ * shared volume, so the booster bundle rides the DB rather than a filesystem.
+ * `artifact` is a tar of the three quantile LightGBM `.txt` boosters + a
+ * `meta.json` (feature order, categoricals); `format` versions that layout.
+ * Written + read ONLY by the model service; the app never touches it.
+ */
+export const modelArtifact = pgTable("model_artifact", {
+  modelVersion: text("model_version")
+    .primaryKey()
+    .references(() => modelRun.modelVersion),
+  // layout of the blob, e.g. 'lgb-quantile-tar-v1'
+  format: text("format").notNull(),
+  artifact: bytea("artifact").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

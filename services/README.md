@@ -17,6 +17,9 @@ Deploy each as its own Railway service pointed at this same repo, with a distinc
 | `geo`                 | `bun run cron:geo`            | Cron `0 6 1 * *`    | monthly; geo enrichment of `parks`/`attractions`                                                                                                                                                                                          |
 | `cron-weather`        | `bun run cron:weather`        | Cron `0 0,2,...`    | every ~2h; OpenWeather → `weather_obs` (forecast + actual)                                                                                                                                                                                |
 | `cron-calendar`       | `bun run cron:calendar`       | Cron `0 6 * * 1`    | weekly; holidays/breaks → `calendar_day` + `park_calendar_map`                                                                                                                                                                            |
+| `cron-eval`           | `bun run cron:eval`           | Cron `0 * * * *`    | hourly; backfill `forecast_eval` (forecasts vs actuals) + recompute `model_metrics`. Keyless                                                                                                                                              |
+| `ml-train`            | `python main.py train`        | Cron `0 6 * * *`    | daily; **Python** (`services/ml-train`, own railpack.json) — fit quantile model → `model_run`/`model_artifact`, emit next-day curve → `queue_forecast`                                                                                    |
+| `ml-infer`            | `python main.py infer`        | Cron `*/15 * * * *` | frequent; **Python** (same service code) — near-term now+30/60/120 forecasts → `queue_forecast`                                                                                                                                           |
 | `dining-facilities`   | `bun run dining:facilities`   | Cron `0 6 * * 1`    | weekly; refresh `restaurant_dim` catalog + `dining_location`, enrich `dining_schedule` (hours), and capture change-only menu generations (`dining_menu_item` + `dining_menu_snapshot` pointer/hash) with a `dining_menu_price_change` log |
 | `dining-availability` | `bun run dining:availability` | Cron `*/10 * * * *` | frequent; dine-vas reservation sweep (logged-in)                                                                                                                                                                                          |
 | `stays-availability`  | `bun run stays:availability`  | Cron `*/10 * * * *` | frequent; resort-availability sweep → `stay_obs` cache (keyless)                                                                                                                                                                          |
@@ -61,6 +64,21 @@ park lat/lng). **`cron-calendar`** writes `calendar_day` (US federal holidays fr
 the keyless Nager.Date API + a coarse, clearly-labeled school-break heuristic) and
 seeds `park_calendar_map` (every active park → region `US`).
 
+The **model pipeline** turns those features into forecasts. **`ml-train`** /
+**`ml-infer`** are one **Python** service (`services/ml-train/`, see its README) —
+the only non-TS service here. It never imports app code; Postgres is the sole
+contract. `train` (daily 06:00 UTC) fits a global quantile LightGBM
+(`attraction_id` categorical, p10/p50/p90 → band) over `queue_15min` + weather +
+calendar + schedule, writes the booster bundle to `model_artifact` (bytea) and a
+`model_run` ledger row, then emits tomorrow's hourly curve. `infer` (every 15
+min) loads the active model and writes near-term now+30/60/120 forecasts — both
+into `queue_forecast` (30-day retention). **`cron-eval`** (TS, hourly, keyless)
+closes the loop: it joins past-due `queue_forecast` rows to the actual wait from
+`queue_15min` into `forecast_eval`, then rolls `model_metrics` (MAE/RMSE/MAPE/R²
+
+- verified coverage) per window — the numbers the `/predictions` tiles read. A
+  2-hour grace lets the 15-min continuous aggregate materialize before evaluating.
+
 | Var                    | Default                                   | Service         | Purpose                                                       |
 | ---------------------- | ----------------------------------------- | --------------- | ------------------------------------------------------------- |
 | `OPENWEATHER_API_KEY`  | _(unset ⇒ weather cron logs + skips)_     | `cron-weather`  | One Call 3.0 key (paid tier; required to write `weather_obs`) |
@@ -68,6 +86,9 @@ seeds `park_calendar_map` (every active park → region `US`).
 | `NAGER_BASE`           | `https://date.nager.at/api/v3`            | `cron-calendar` | federal-holiday API (keyless)                                 |
 | `CALENDAR_YEARS_AHEAD` | `2`                                       | `cron-calendar` | forward years of calendar to seed                             |
 | `CALENDAR_YEARS_BACK`  | `1`                                       | `cron-calendar` | back years to seed (history for backtesting)                  |
+| `ML_TRAIN_DAYS`        | `60`                                      | `ml-train`      | history window for the training frame                         |
+| `ML_VAL_DAYS`          | `7`                                       | `ml-train`      | most-recent days held out for time-based validation           |
+| `ML_NUM_BOOST_ROUND`   | `400`                                     | `ml-train`      | LightGBM boosting rounds per quantile fit                     |
 
 The `stays-availability` sweep is keyless too (Disney's resort-availability API is
 public + cookieless), needing only `DATABASE_URL`. It re-seeds a rolling warm set

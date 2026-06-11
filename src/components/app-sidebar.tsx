@@ -6,6 +6,7 @@ import {
   BedDoubleIcon,
   ShieldAlertIcon,
   TicketIcon,
+  TrendingUpIcon,
   UtensilsIcon,
 } from "lucide-react";
 
@@ -34,6 +35,7 @@ const NAV: Array<{ title: string; to: string; icon: React.ReactNode }> = [
   { title: "Tickets", to: "/tickets", icon: <TicketIcon /> },
   { title: "Eats", to: "/dining", icon: <UtensilsIcon /> },
   { title: "Stays", to: "/stays", icon: <BedDoubleIcon /> },
+  { title: "Forecast", to: "/predictions", icon: <TrendingUpIcon /> },
 ];
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {

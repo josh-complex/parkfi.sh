@@ -23,6 +23,7 @@
     "cron:geo": "bun services/geo/main.ts",
     "cron:weather": "bun services/cron-weather/main.ts",
     "cron:calendar": "bun services/cron-calendar/main.ts",
+    "cron:eval": "bun services/cron-eval/main.ts",
     "dining:facilities": "bun services/dining-facilities/main.ts",
     "dining:availability": "bun services/dining-availability/main.ts",
     "dining:facilities:universal": "bun services/dining-facilities-universal/main.ts",
