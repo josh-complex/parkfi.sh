@@ -180,6 +180,14 @@ const DisneyDiningEntitySchema = z
     url: z.string().optional(),
     locationName: z.string().nullable().optional(),
     parkIds: z.array(z.string()).default([]),
+    // Granular in-park land entity id ("80007973;entityType=land"), finer than
+    // the marker `land` label and the `parkResort`.
+    landId: z.string().nullable().optional(),
+    // Cap on the booking party size (string in the feed, e.g. "50"); mostly set
+    // on dining-events. Parsed to int.
+    maximumPartySize: z.coerce.string().nullable().optional(),
+    // Internal `dine-product-svc` product links (menu/product data per venue).
+    productUrls: z.array(z.string()).default([]),
     facets: z
       .object({
         cuisine: z.array(z.string()).optional(),
@@ -187,6 +195,21 @@ const DisneyDiningEntitySchema = z
         checkAvailability: z.array(z.string()).optional(),
         tableService: z.array(z.string()).optional(),
         reservationOfferings: z.array(z.string()).optional(),
+        // Catalog attribute facets (see disney-finder-catalog `toRow`):
+        // `dining` carries the "walkupWaitList" tag; `features` carries
+        // "mobile-orders"; `tableService` also carries "character-dining" /
+        // "fine-signature-dining". The rec/discount facets below feed the
+        // picks shelves and discount filters.
+        dining: z.array(z.string()).optional(),
+        features: z.array(z.string()).optional(),
+        annualPass: z.array(z.string()).optional(),
+        discounts: z.array(z.string()).optional(),
+        diningPlan: z.array(z.string()).optional(),
+        disneyFavorites: z.array(z.string()).optional(),
+        diningInterests: z.array(z.string()).optional(),
+        entertainmentType: z.array(z.string()).optional(),
+        "eec-category": z.array(z.string()).optional(),
+        restaurantAttributes: z.array(z.string()).optional(),
       })
       .partial()
       .passthrough()
@@ -232,10 +255,109 @@ const DisneyDiningEntitySchema = z
   .passthrough();
 export type DisneyDiningEntity = z.infer<typeof DisneyDiningEntitySchema>;
 
+// Ancestor locations the finder lists dining under: 4 theme parks, 2 water
+// parks, Disney Springs/ESPN/BoardWalk, + the resorts. A near-static reference
+// table (`dining_location`) and a proper FK target for `parkResortId`.
+const DisneyDiningLocationSchema = z
+  .object({
+    id: z.string(),
+    title: z.string().nullable().optional(),
+    urlFriendlyId: z.string().nullable().optional(),
+    locationType: z.string().nullable().optional(),
+  })
+  .passthrough();
+export type DisneyDiningLocation = z.infer<typeof DisneyDiningLocationSchema>;
+
 export const DisneyDiningListSchema = z.object({
   results: z.array(DisneyDiningEntitySchema).default([]),
+  locations: z.array(DisneyDiningLocationSchema).default([]),
 });
 export type DisneyDiningList = z.infer<typeof DisneyDiningListSchema>;
+
+// ---------------------------------------------------------------------------
+// Dining detail enrichment — two per-venue endpoints the weekly catalog cron
+// fetches for schedules + menus (the list feed above carries neither):
+//   • details-entity-simple/wdw/{urlFriendlyId}/{date}/ -> schedule
+//   • dining/dinemenu/api/menu?searchTerm={facilityId}  -> menu
+// ---------------------------------------------------------------------------
+
+// `structuredData.openingHoursSpecification[]` — schema.org OpeningHours: a
+// forward ~7-day week, one entry per weekday with opens/closes (HH:MM) and a
+// [validFrom, validThrough] date range. `description` is the schedule type
+// ("Operating", "Extended Evening", …). Cleaner than the nested
+// `aagData.schedule.schedules` shape, so we parse from here.
+const DisneyOpeningHours = z
+  .object({
+    dayOfWeek: z.union([z.string(), z.array(z.string())]).optional(),
+    opens: z.string().optional(),
+    closes: z.string().optional(),
+    description: z.string().nullable().optional(),
+    validFrom: z.string().nullable().optional(),
+    validThrough: z.string().nullable().optional(),
+  })
+  .partial()
+  .passthrough();
+
+export const DisneyDiningDetailSchema = z
+  .object({
+    structuredData: z
+      .object({
+        openingHoursSpecification: z.array(DisneyOpeningHours).default([]),
+      })
+      .partial()
+      .passthrough()
+      .nullable()
+      .optional(),
+  })
+  .passthrough();
+export type DisneyDiningDetail = z.infer<typeof DisneyDiningDetailSchema>;
+
+// dinemenu API: meal periods -> groups -> items. Prices are an array (an item
+// can be priced per-serving/per-glass/etc.); some items carry an empty array
+// (section descriptions). `withoutTax` is a number in dollars (may be decimal).
+const DisneyMenuPrice = z
+  .object({
+    withoutTax: z.number().nullable().optional(),
+    type: z.string().nullable().optional(),
+    currency: z.string().nullable().optional(),
+  })
+  .partial()
+  .passthrough();
+
+const DisneyMenuItem = z
+  .object({
+    title: z.string().nullable().optional(),
+    description: z.string().nullable().optional(),
+    prices: z.array(DisneyMenuPrice).default([]),
+  })
+  .partial()
+  .passthrough();
+
+const DisneyMenuGroup = z
+  .object({
+    name: z.string().nullable().optional(),
+    type: z.string().nullable().optional(),
+    items: z.array(DisneyMenuItem).default([]),
+  })
+  .partial()
+  .passthrough();
+
+const DisneyMenuMealPeriod = z
+  .object({
+    name: z.string().nullable().optional(),
+    label: z.string().nullable().optional(),
+    groups: z.array(DisneyMenuGroup).default([]),
+  })
+  .partial()
+  .passthrough();
+
+export const DisneyDineMenuSchema = z
+  .object({
+    name: z.string().nullable().optional(),
+    mealPeriods: z.array(DisneyMenuMealPeriod).default([]),
+  })
+  .passthrough();
+export type DisneyDineMenu = z.infer<typeof DisneyDineMenuSchema>;
 
 /**
  * ThemeParks.wiki `/entity/{uuid}/schedule` — the forward 30-day park calendar.

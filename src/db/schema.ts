@@ -420,6 +420,9 @@ export const restaurantDim = pgTable("restaurant_dim", {
   // 'restaurant' | 'dinner-show' | 'dining-event'
   entityType: text("entity_type").notNull(),
   name: text("name").notNull(),
+  // Finder slug ("jaleo") — keys the `details-entity-simple` schedule endpoint
+  // and the detail/menu web URLs (the numeric `facility_id` keys the dinemenu API).
+  urlFriendlyId: text("url_friendly_id"),
   cuisine: text("cuisine"),
   experienceType: text("experience_type"),
   priceRange: text("price_range"),
@@ -440,6 +443,33 @@ export const restaurantDim = pgTable("restaurant_dim", {
   longitude: doublePrecision("longitude"),
   mapPin: text("map_pin"),
   land: text("land"),
+  // Granular in-park land entity id from the finder ("80007973"), finer than
+  // `land` (a label) and `park_resort`. FK-shaped against `dining_location`.
+  landId: text("land_id"),
+  // Booking party-size cap (mostly dining-events); null when unbounded.
+  maximumPartySize: integer("maximum_party_size"),
+  // Catalog attribute flags (DISNEY_DIRECT only; UOR leaves them at default).
+  // Derived in `disney-finder-catalog.toRow` from the finder facets. Power the
+  // "no reservation needed" / "mobile order" / "character dining" filters.
+  walkupWaitList: boolean("walkup_wait_list").notNull().default(false),
+  mobileOrder: boolean("mobile_order").notNull().default(false),
+  characterDining: boolean("character_dining").notNull().default(false),
+  fineDining: boolean("fine_dining").notNull().default(false),
+  annualPassDiscount: boolean("annual_pass_discount").notNull().default(false),
+  disneyVisaDiscount: boolean("disney_visa_discount").notNull().default(false),
+  tripAdvisorAward: boolean("trip_advisor_award").notNull().default(false),
+  // Which Disney Dining Plan credit tiers apply (2026/2027 QS + TS meals).
+  diningPlanQs: boolean("dining_plan_qs").notNull().default(false),
+  diningPlanTs: boolean("dining_plan_ts").notNull().default(false),
+  // Recommendation/taxonomy arrays that feed the "Disney Picks" shelves:
+  // franchise affinity (`star-wars-rec`…), rec buckets (`character-dining-rec`…),
+  // venue entertainment (`live-music`…), and premium-events categories.
+  disneyFavorites: text("disney_favorites").array().notNull().default([]),
+  diningInterests: text("dining_interests").array().notNull().default([]),
+  entertainmentType: text("entertainment_type").array().notNull().default([]),
+  eecCategory: text("eec_category").array().notNull().default([]),
+  // Internal `dine-product-svc` product links (menu/product data per venue).
+  productUrls: text("product_urls").array().notNull().default([]),
   // Operator/source that owns this row (DISNEY_DIRECT default backfills the
   // pre-existing WDW catalog). Scopes each catalog cron's upsert + soft-delete.
   source: smallint("source")
@@ -450,6 +480,130 @@ export const restaurantDim = pgTable("restaurant_dim", {
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * (F.1) Dining ancestor locations — the 43 reference entities the WDW finder
+ * lists dining under (4 theme parks, 2 water parks, Disney Springs/ESPN/
+ * BoardWalk, + the resorts). Near-static; refreshed by the same weekly catalog
+ * cron as `restaurant_dim`. A proper lookup for `restaurant_dim.park_resort_id`
+ * / `land_id` (no FK enforced — the catalog and this table refresh together and
+ * either can lead). `id` is the finder entity id ("80007944;entityType=theme-park").
+ */
+export const diningLocation = pgTable("dining_location", {
+  id: text("id").primaryKey(),
+  title: text("title"),
+  urlFriendlyId: text("url_friendly_id"),
+  // 'theme-park' | 'water-park' | 'Entertainment-Venue' | 'resort-area' | 'resort'
+  locationType: text("location_type"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * (F.2) Per-venue operating hours, enriched weekly by the `dining-facilities`
+ * cron from `details-entity-simple` (`structuredData.openingHoursSpecification`).
+ * One row per (venue, date, schedule type, start). `schedule_type` is
+ * "Operating" / "Extended Evening" / etc. Powers "open now / open late / open
+ * for breakfast" filters without hitting Disney per request. The forward ~7-day
+ * window is re-fetched weekly and stale rows pruned, so this stays bounded.
+ */
+export const diningSchedule = pgTable(
+  "dining_schedule",
+  {
+    facilityId: text("facility_id")
+      .notNull()
+      .references(() => restaurantDim.facilityId),
+    scheduleDate: date("schedule_date").notNull(),
+    scheduleType: text("schedule_type").notNull().default("Operating"),
+    startTime: time("start_time").notNull(),
+    endTime: time("end_time").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.facilityId, t.scheduleDate, t.scheduleType, t.startTime] }),
+    // "what's open on date D" reads scan by date.
+    index("dining_schedule_date_idx").on(t.scheduleDate),
+  ],
+);
+
+/**
+ * (F.3) Menu items, enriched weekly by the `dining-facilities` cron from the
+ * public `dining/dinemenu/api/menu?searchTerm={facility_id}` feed (numeric id,
+ * NOT the slug). Flattened meal-period → group → item; `price` is the first
+ * priced entry's `withoutTax` (dollars, nullable for section/description rows).
+ *
+ * APPEND-ONLY, change-only: each run hashes a venue's menu and writes a NEW
+ * generation (all rows stamped with that run's `observed_at`) ONLY when the
+ * hash changed vs `dining_menu_snapshot`. So history accrues just when menus
+ * actually change. The current menu = the rows whose `observed_at` matches the
+ * venue's `dining_menu_snapshot.observed_at` pointer; diffing two generations
+ * shows what was added/removed. Surrogate `id` PK — titles repeat within a menu
+ * (e.g. duplicate beers, identical lunch/dinner wine lists).
+ */
+export const diningMenuItem = pgTable(
+  "dining_menu_item",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    facilityId: text("facility_id")
+      .notNull()
+      .references(() => restaurantDim.facilityId),
+    // Generation key: the run timestamp this snapshot was captured at.
+    observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
+    mealPeriod: text("meal_period").notNull(),
+    groupName: text("group_name"),
+    itemType: text("item_type"),
+    title: text("title").notNull(),
+    description: text("description"),
+    price: real("price"),
+    priceType: text("price_type"),
+    currency: text("currency"),
+  },
+  (t) => [index("dining_menu_item_facility_idx").on(t.facilityId, t.observedAt)],
+);
+
+/**
+ * (F.4) One row per venue: the current menu generation pointer + the content
+ * hash that drives change detection. The cron hashes each venue's fetched menu;
+ * on a hash change it writes a new `dining_menu_item` generation and advances
+ * `observed_at` here. `last_checked_at` bumps every run (proves liveness even
+ * when unchanged); `first_seen_at` is when we first captured a menu.
+ */
+export const diningMenuSnapshot = pgTable("dining_menu_snapshot", {
+  facilityId: text("facility_id")
+    .primaryKey()
+    .references(() => restaurantDim.facilityId),
+  contentHash: text("content_hash").notNull(),
+  observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
+  itemCount: integer("item_count").notNull().default(0),
+  firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * (F.5) Price-change log — one row per item whose price moved between two
+ * generations. Derived by the cron when a venue's menu changes: items matched
+ * by (meal period, group, title, price type) with a differing price emit a
+ * delta here. Append-only; powers cheap price-trend queries without diffing
+ * full menu generations. New/removed items are NOT logged here (the snapshot
+ * generations capture those) — only genuine price moves on persisting items.
+ */
+export const diningMenuPriceChange = pgTable(
+  "dining_menu_price_change",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    facilityId: text("facility_id")
+      .notNull()
+      .references(() => restaurantDim.facilityId),
+    mealPeriod: text("meal_period").notNull(),
+    groupName: text("group_name"),
+    title: text("title").notNull(),
+    oldPrice: real("old_price"),
+    newPrice: real("new_price"),
+    priceType: text("price_type"),
+    currency: text("currency"),
+    changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("dining_menu_price_change_facility_idx").on(t.facilityId, t.changedAt)],
+);
 
 /**
  * (G) Dining reservation availability (dine-vas getAvailability). One row per

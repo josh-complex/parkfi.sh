@@ -10,16 +10,16 @@ from `bun.lock`, so bun is available at build and runtime for every service.
 Deploy each as its own Railway service pointed at this same repo, with a distinct
 **start command** (set the root in Railway → "Custom Start Command"):
 
-| Service               | Start command                 | Railway type        | Notes                                                            |
-| --------------------- | ----------------------------- | ------------------- | ---------------------------------------------------------------- |
-| `worker`              | `bun run worker`              | long-running, 1 rep | self-scheduling 60s poller; `/health` on `$PORT`                 |
-| `cron-tickets`        | `bun run cron:tickets`        | Cron `0 8 * * *`    | single-shot; gated ticket/Express feeds                          |
-| `geo`                 | `bun run cron:geo`            | Cron `0 6 1 * *`    | monthly; geo enrichment of `parks`/`attractions`                 |
-| `cron-weather`        | `bun run cron:weather`        | Cron `0 0,2,...`    | every ~2h; OpenWeather → `weather_obs` (forecast + actual)       |
-| `cron-calendar`       | `bun run cron:calendar`       | Cron `0 6 * * 1`    | weekly; holidays/breaks → `calendar_day` + `park_calendar_map`   |
-| `dining-facilities`   | `bun run dining:facilities`   | Cron `0 6 * * 1`    | weekly; refresh `restaurant_dim` catalog                         |
-| `dining-availability` | `bun run dining:availability` | Cron `*/10 * * * *` | frequent; dine-vas reservation sweep (logged-in)                 |
-| `stays-availability`  | `bun run stays:availability`  | Cron `*/10 * * * *` | frequent; resort-availability sweep → `stay_obs` cache (keyless) |
+| Service               | Start command                 | Railway type        | Notes                                                                                                                                                                                                                                     |
+| --------------------- | ----------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `worker`              | `bun run worker`              | long-running, 1 rep | self-scheduling 60s poller; `/health` on `$PORT`                                                                                                                                                                                          |
+| `cron-tickets`        | `bun run cron:tickets`        | Cron `0 8 * * *`    | single-shot; gated ticket/Express feeds                                                                                                                                                                                                   |
+| `geo`                 | `bun run cron:geo`            | Cron `0 6 1 * *`    | monthly; geo enrichment of `parks`/`attractions`                                                                                                                                                                                          |
+| `cron-weather`        | `bun run cron:weather`        | Cron `0 0,2,...`    | every ~2h; OpenWeather → `weather_obs` (forecast + actual)                                                                                                                                                                                |
+| `cron-calendar`       | `bun run cron:calendar`       | Cron `0 6 * * 1`    | weekly; holidays/breaks → `calendar_day` + `park_calendar_map`                                                                                                                                                                            |
+| `dining-facilities`   | `bun run dining:facilities`   | Cron `0 6 * * 1`    | weekly; refresh `restaurant_dim` catalog + `dining_location`, enrich `dining_schedule` (hours), and capture change-only menu generations (`dining_menu_item` + `dining_menu_snapshot` pointer/hash) with a `dining_menu_price_change` log |
+| `dining-availability` | `bun run dining:availability` | Cron `*/10 * * * *` | frequent; dine-vas reservation sweep (logged-in)                                                                                                                                                                                          |
+| `stays-availability`  | `bun run stays:availability`  | Cron `*/10 * * * *` | frequent; resort-availability sweep → `stay_obs` cache (keyless)                                                                                                                                                                          |
 
 The web app (`bun run start`) is a third service with a public domain. DB/Redis
 ride the Railway private network — only the app gets a public URL.
@@ -118,12 +118,14 @@ Secrets are read directly from `process.env` (like `SESSION_ENC_KEY`), not `src/
 
 `dining-*` services (logged-in MyDisney session; see `disney-ticket-deep-dive.md` §7-8):
 
-| Var                            | Default  | Purpose                                                                |
-| ------------------------------ | -------- | ---------------------------------------------------------------------- |
-| `DISNEY_EMAIL` / `DISNEY_PASS` | _(req.)_ | OneID login for a **dedicated throwaway account** (no payment on file) |
-| `SESSION_ENC_KEY`              | _(req.)_ | AES-256-GCM key (hex-64 or base64-32) for the `scraper_session` blob   |
-| `DINING_PARTY_SIZES`           | `2,4`    | comma list of party sizes to sweep                                     |
-| `DINING_DAY_HORIZON`           | `14`     | forward days to sweep per restaurant                                   |
+| Var                            | Default  | Purpose                                                                     |
+| ------------------------------ | -------- | --------------------------------------------------------------------------- |
+| `DISNEY_EMAIL` / `DISNEY_PASS` | _(req.)_ | OneID login for a **dedicated throwaway account** (no payment on file)      |
+| `SESSION_ENC_KEY`              | _(req.)_ | AES-256-GCM key (hex-64 or base64-32) for the `scraper_session` blob        |
+| `DINING_PARTY_SIZES`           | `2,4`    | comma list of party sizes to sweep                                          |
+| `DINING_DAY_HORIZON`           | `14`     | forward days to sweep per restaurant                                        |
+| `DINING_DETAILS`               | `1`      | `dining-facilities` schedule+menu enrichment; `0` = catalog-only run        |
+| `DINING_DETAIL_CONCURRENCY`    | `6`      | concurrent per-venue detail fetches (~2 calls/venue) in `dining-facilities` |
 
 Both dining services also need `BROWSER_WS_ENDPOINT` (+ `BROWSERLESS_WS_QUERY=stealth&proxy=residential`
 — login from a datacenter IP is the main failure point) and a generous

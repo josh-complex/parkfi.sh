@@ -91,6 +91,15 @@ export const config = {
   fetchTimeoutMs: num("FETCH_TIMEOUT_MS", 9_000),
 
   /**
+   * Dining catalog detail enrichment (schedules + menus): the weekly
+   * `dining-facilities` cron fetches `details-entity-simple` (hours) and the
+   * dinemenu API (menus) per active WDW venue. `DINING_DETAILS=0` skips this
+   * phase (catalog-only run); concurrency bounds the ~2 calls/venue fan-out.
+   */
+  diningDetailsEnabled: (process.env.DINING_DETAILS ?? "1") !== "0",
+  diningDetailConcurrency: num("DINING_DETAIL_CONCURRENCY", 6),
+
+  /**
    * Stays cache freshness: how long a swept `stay_obs` generation serves the
    * `stays.availability` read path before the next request fetches live. ~15min
    * matches the sweep cadence so a returning user almost always hits the cache.
