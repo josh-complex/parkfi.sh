@@ -37,6 +37,8 @@ export const Source = {
   QUEUE_TIMES: 2,
   DISNEY_DIRECT: 3,
   UNIVERSAL_DIRECT: 4,
+  // External feature feeds for wait-time forecasting (services/cron-weather).
+  OPENWEATHER: 5,
 } as const;
 export type SourceCode = (typeof Source)[keyof typeof Source];
 

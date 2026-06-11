@@ -124,6 +124,20 @@ export const config = {
   ),
 
   /**
+   * Wait-time forecasting feature feeds (services/cron-weather, cron-calendar).
+   * `openweatherApiKey` is required for the weather cron — unset ⇒ it logs and
+   * skips (no row written), like the Browserless gate. One Call 3.0 covers both
+   * the hourly forecast block and current-conditions actual in one call/park.
+   * Nager.Date (federal holidays) is keyless. `calendarYearsAhead`/`Back` bound
+   * how far the calendar cron seeds (back ⇒ history for backtesting).
+   */
+  openweatherApiKey: process.env.OPENWEATHER_API_KEY ?? "",
+  openweatherBase: process.env.OPENWEATHER_BASE ?? "https://api.openweathermap.org/data/3.0",
+  nagerBase: process.env.NAGER_BASE ?? "https://date.nager.at/api/v3",
+  calendarYearsAhead: num("CALENDAR_YEARS_AHEAD", 2),
+  calendarYearsBack: num("CALENDAR_YEARS_BACK", 1),
+
+  /**
    * ThemeParks.wiki allows 300 req/min. Hold below that across the process to
    * leave headroom for /schedule and retries.
    */

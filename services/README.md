@@ -15,6 +15,8 @@ Deploy each as its own Railway service pointed at this same repo, with a distinc
 | `worker`              | `bun run worker`              | long-running, 1 rep | self-scheduling 60s poller; `/health` on `$PORT`                 |
 | `cron-tickets`        | `bun run cron:tickets`        | Cron `0 8 * * *`    | single-shot; gated ticket/Express feeds                          |
 | `geo`                 | `bun run cron:geo`            | Cron `0 6 1 * *`    | monthly; geo enrichment of `parks`/`attractions`                 |
+| `cron-weather`        | `bun run cron:weather`        | Cron `0 0,2,...`    | every ~2h; OpenWeather → `weather_obs` (forecast + actual)       |
+| `cron-calendar`       | `bun run cron:calendar`       | Cron `0 6 * * 1`    | weekly; holidays/breaks → `calendar_day` + `park_calendar_map`   |
 | `dining-facilities`   | `bun run dining:facilities`   | Cron `0 6 * * 1`    | weekly; refresh `restaurant_dim` catalog                         |
 | `dining-availability` | `bun run dining:availability` | Cron `*/10 * * * *` | frequent; dine-vas reservation sweep (logged-in)                 |
 | `stays-availability`  | `bun run stays:availability`  | Cron `*/10 * * * *` | frequent; resort-availability sweep → `stay_obs` cache (keyless) |
@@ -48,6 +50,24 @@ geo columns on `parks` (center, bounds, `map_zoom`) and `attractions` (lat/lng,
 coverage at both resorts), with the WDW finder explorer (`DISNEY_FINDER_BASE`)
 layered on for Disney pin categories + precise map center/zoom. Pure dimension
 enrichment — no fact table, no `ref_source`. Monthly is plenty (geo rarely moves).
+
+The forecasting feature crons (wait-time prediction; tables in `src/db/schema.ts`
+§ "Wait-time forecasting") follow the same single-shot, per-step-isolated pattern
+as `geo`. **`cron-weather`** writes `weather_obs` from OpenWeather One Call 3.0 —
+one call per active park lat/lng yields the 48h `hourly[]` block (FORECAST rows)
+plus `current` (one ACTUAL row at the current hour); running every ~2h densifies
+the actuals for backtesting. It needs geo populated first (`cron:geo` fills
+park lat/lng). **`cron-calendar`** writes `calendar_day` (US federal holidays from
+the keyless Nager.Date API + a coarse, clearly-labeled school-break heuristic) and
+seeds `park_calendar_map` (every active park → region `US`).
+
+| Var                    | Default                                   | Service         | Purpose                                                       |
+| ---------------------- | ----------------------------------------- | --------------- | ------------------------------------------------------------- |
+| `OPENWEATHER_API_KEY`  | _(unset ⇒ weather cron logs + skips)_     | `cron-weather`  | One Call 3.0 key (paid tier; required to write `weather_obs`) |
+| `OPENWEATHER_BASE`     | `https://api.openweathermap.org/data/3.0` | `cron-weather`  | One Call API host                                             |
+| `NAGER_BASE`           | `https://date.nager.at/api/v3`            | `cron-calendar` | federal-holiday API (keyless)                                 |
+| `CALENDAR_YEARS_AHEAD` | `2`                                       | `cron-calendar` | forward years of calendar to seed                             |
+| `CALENDAR_YEARS_BACK`  | `1`                                       | `cron-calendar` | back years to seed (history for backtesting)                  |
 
 The `stays-availability` sweep is keyless too (Disney's resort-availability API is
 public + cookieless), needing only `DATABASE_URL`. It re-seeds a rolling warm set
@@ -137,8 +157,10 @@ fallback above for Universal; not wired for Disney by default).
 ```bash
 bun run db:migrate   # tables + transaction-safe Timescale DDL (hypertables,
                      # compression, retention, index) — drizzle/ migrations
-bun run db:cagg      # queue_hourly continuous aggregate + refresh policy
-                     # (can't run in a migration's transaction; see cagg.sql)
+bun run db:cagg      # queue_hourly + queue_15min continuous aggregates +
+                     # refresh policies (can't run in a migration's
+                     # transaction; see cagg.sql). queue_15min is the
+                     # forecasting feature store; this also backfills it.
 bun run db:seed      # reference data + WDW & Universal Orlando parks
 ```
 

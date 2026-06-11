@@ -11,6 +11,7 @@ import {
   jsonb,
   pgTable,
   primaryKey,
+  real,
   smallint,
   text,
   time,
@@ -39,8 +40,12 @@ export * from "./auth-schema.ts";
  *   (LL Multi, Universal Express tiers) lives in `product_price_obs`.
  * - Hot tables use smallint codes + reference tables (great Timescale
  *   compression). Hypertables/compression/retention live in the custom
- *   migration `drizzle/*_timescale_hypertables`; the `queue_hourly` continuous
- *   aggregate is applied via `bun run db:cagg` (see `src/db/cagg.sql`).
+ *   migration `drizzle/*_timescale_hypertables`; the `queue_hourly` and
+ *   `queue_15min` continuous aggregates are applied via `bun run db:cagg`
+ *   (see `src/db/cagg.sql`).
+ * - `queue_15min` is the permanent feature store for wait-time forecasting:
+ *   a 15-minute continuous aggregate with NO retention (raw `queue_obs` keeps
+ *   its 90-day drop). Models train on the aggregate, not raw rows.
  */
 
 // ---------------------------------------------------------------------------
@@ -723,3 +728,166 @@ export const alertOptout = pgTable("alert_optout", {
   stayEmailOptOut: boolean("stay_email_opt_out").notNull().default(false),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ===========================================================================
+// Wait-time forecasting (see docs/plans + services/cron-weather, cron-calendar,
+// and the out-of-app ml-train/cron-eval pipeline). Postgres is the integration
+// boundary: the app only READS from these; the Python model service WRITES
+// `queue_forecast` / `model_run` / `forecast_eval` / `model_metrics`.
+//
+// Hypertable + retention DDL for `weather_obs` / `queue_forecast` /
+// `forecast_eval` lives in the custom migration `drizzle/*_forecast_timescale`
+// (drizzle-kit can't emit create_hypertable), same pattern as the queue_obs
+// hypertable. Plain tables here carry no Timescale DDL.
+// ===========================================================================
+
+/**
+ * (F1) Per-park weather, both forecast and actual, keyed by the time the
+ * weather is FOR (`observed_at`). `kind` separates the forecast we'll have at
+ * inference time from the actual used to backtest — train on FORECAST, evaluate
+ * against ACTUAL (avoids leakage). One row per (park, kind, hour); the weather
+ * cron upserts the latest forecast and appends the current-conditions actual.
+ * Hypertable on `observed_at` (7-day chunks), NO retention — this is a feature
+ * store. Populated by services/cron-weather from OpenWeather One Call 3.0.
+ */
+export const weatherObs = pgTable(
+  "weather_obs",
+  {
+    parkId: bigint("park_id", { mode: "number" })
+      .notNull()
+      .references(() => parks.id),
+    observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
+    // 'FORECAST' (predicted, available at inference) | 'ACTUAL' (for backtest)
+    kind: text("kind").notNull(),
+    tempC: real("temp_c"),
+    precipMm: real("precip_mm"),
+    // probability of precipitation 0..1 (forecast only; null on actuals)
+    precipProb: real("precip_prob"),
+    windKph: real("wind_kph"),
+    humidity: smallint("humidity"),
+    // OpenWeather `weather[0].main`, e.g. 'Rain' | 'Clear' | 'Clouds'
+    condition: text("condition"),
+    source: smallint("source")
+      .notNull()
+      .references(() => refSource.id),
+  },
+  (t) => [primaryKey({ columns: [t.parkId, t.kind, t.observedAt] })],
+);
+
+/**
+ * (F2) School/holiday calendar — a tiny seeded dimension keyed by region. US
+ * federal holidays come from Nager.Date; school breaks are a coarse heuristic
+ * for v1 (real per-district calendars need a richer source). `region` matches
+ * `park_calendar_map.region`. Populated weekly by services/cron-calendar.
+ */
+export const calendarDay = pgTable(
+  "calendar_day",
+  {
+    // e.g. 'US' (federal) — finer state/district regions can be added later
+    region: text("region").notNull(),
+    date: date("date").notNull(),
+    isUsFederalHoliday: boolean("is_us_federal_holiday").notNull().default(false),
+    isSchoolBreak: boolean("is_school_break").notNull().default(false),
+    // e.g. 'Independence Day', 'Summer break', 'Winter break'; null on plain days
+    breakLabel: text("break_label"),
+  },
+  (t) => [primaryKey({ columns: [t.region, t.date] })],
+);
+
+/** (F3) Which calendar region each park keys off (one region per park). */
+export const parkCalendarMap = pgTable("park_calendar_map", {
+  parkId: bigint("park_id", { mode: "number" })
+    .primaryKey()
+    .references(() => parks.id),
+  region: text("region").notNull(),
+});
+
+/**
+ * (F4) Emitted forecasts: predicted standby wait at `target_ts` for a given
+ * `horizon_min` ahead, with a confidence band (`lower`/`upper` from the p10/p90
+ * quantile models). Hypertable on `target_ts` (7-day chunks), ~30-day retention
+ * (forecasts are disposable). Written by the model service, NOT the app.
+ */
+export const queueForecast = pgTable(
+  "queue_forecast",
+  {
+    attractionId: bigint("attraction_id", { mode: "number" }).notNull(),
+    queueType: smallint("queue_type")
+      .notNull()
+      .references(() => refQueueType.id),
+    targetTs: timestamp("target_ts", { withTimezone: true }).notNull(),
+    horizonMin: integer("horizon_min").notNull(),
+    predictedWait: real("predicted_wait").notNull(),
+    lower: real("lower"),
+    upper: real("upper"),
+    modelVersion: text("model_version").notNull(),
+    generatedAt: timestamp("generated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({
+      columns: [t.attractionId, t.queueType, t.horizonMin, t.modelVersion, t.targetTs],
+    }),
+    index("queue_forecast_target_idx").on(t.attractionId, t.targetTs.desc()),
+  ],
+);
+
+/** (F5) One row per trained model version (the training-run ledger). */
+export const modelRun = pgTable("model_run", {
+  modelVersion: text("model_version").primaryKey(),
+  trainedAt: timestamp("trained_at", { withTimezone: true }).notNull(),
+  trainRows: bigint("train_rows", { mode: "number" }),
+  // human label of the feature set used, e.g. 'v1:lags+weather+calendar'
+  featureSet: text("feature_set"),
+  metricsJson: jsonb("metrics_json"),
+  // 'training' | 'active' | 'retired' | 'failed'
+  status: text("status").notNull(),
+});
+
+/**
+ * (F6) Backtest ledger: each emitted forecast joined to the actual wait once
+ * `target_ts` is in the past. Powers `model_metrics`. Hypertable on `target_ts`
+ * (7-day chunks), ~90-day retention. Written by the eval job, NOT the app.
+ */
+export const forecastEval = pgTable(
+  "forecast_eval",
+  {
+    modelVersion: text("model_version").notNull(),
+    attractionId: bigint("attraction_id", { mode: "number" }).notNull(),
+    queueType: smallint("queue_type").notNull(),
+    targetTs: timestamp("target_ts", { withTimezone: true }).notNull(),
+    horizonMin: integer("horizon_min").notNull(),
+    predictedWait: real("predicted_wait").notNull(),
+    actualWait: real("actual_wait"),
+    absErr: real("abs_err"),
+    generatedAt: timestamp("generated_at", { withTimezone: true }).notNull(),
+    evaluatedAt: timestamp("evaluated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({
+      columns: [t.modelVersion, t.attractionId, t.queueType, t.horizonMin, t.targetTs],
+    }),
+  ],
+);
+
+/**
+ * (F7) Rolled-up accuracy per model + window — the numbers the /predictions
+ * dashboard tiles read directly (MAE → "±9.8 min", coverage_pct → "% verified",
+ * etc.). Plain table (tiny), recomputed by the eval job.
+ */
+export const modelMetrics = pgTable(
+  "model_metrics",
+  {
+    modelVersion: text("model_version").notNull(),
+    // '24h' | '7d' | '30d' | 'all'
+    window: text("window").notNull(),
+    computedAt: timestamp("computed_at", { withTimezone: true }).notNull().defaultNow(),
+    mae: real("mae"),
+    rmse: real("rmse"),
+    mape: real("mape"),
+    r2: real("r2"),
+    nPredictions: bigint("n_predictions", { mode: "number" }),
+    // evaluated / generated within the window — the "verified coverage" tile
+    coveragePct: real("coverage_pct"),
+  },
+  (t) => [primaryKey({ columns: [t.modelVersion, t.window] })],
+);
