@@ -1,6 +1,5 @@
 import * as React from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { FerrisWheelIcon } from "lucide-react";
 
 import { authClient } from "#/lib/auth-client.ts";
 import { Button } from "#/components/ui/button.tsx";
@@ -23,6 +22,7 @@ declare global {
         options: {
           sitekey: string;
           theme?: "light" | "dark" | "auto";
+          size?: "normal" | "compact" | "flexible";
           callback: (token: string) => void;
           "expired-callback": () => void;
         },
@@ -82,6 +82,8 @@ function LoginPage() {
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [pending, setPending] = React.useState(false);
+  const hasCaptcha = !!import.meta.env.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY;
+  const [captchaReady, setCaptchaReady] = React.useState(!hasCaptcha);
   const turnstileToken = React.useRef<string | null>(null);
   const turnstileWidgetId = React.useRef<string | null>(null);
   const turnstileContainerRef = React.useRef<HTMLDivElement>(null);
@@ -104,11 +106,14 @@ function LoginPage() {
       turnstileWidgetId.current = window.turnstile.render(container, {
         sitekey: siteKey,
         theme: "auto",
+        size: "flexible",
         callback: (token) => {
           turnstileToken.current = token;
+          setCaptchaReady(true);
         },
         "expired-callback": () => {
           turnstileToken.current = null;
+          setCaptchaReady(false);
         },
       });
     };
@@ -165,11 +170,11 @@ function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <div className="flex w-full max-w-sm flex-col gap-6">
         <div className="flex flex-col items-center gap-2">
-          <FerrisWheelIcon className="size-8 text-primary" />
+          <img src="/logo192.png" alt="ParkFi" className="size-12" />
           <h1 className="text-xl font-semibold tracking-tight">parkfi.sh</h1>
         </div>
 
-        <Card>
+        <Card className="shadow-none ring-0 border border-border border-t-3">
           <CardHeader>
             <CardTitle>{mode === "signin" ? "Sign in" : "Create account"}</CardTitle>
             <CardDescription>
@@ -180,28 +185,30 @@ function LoginPage() {
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             {/* Social providers */}
-            <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
               <Button
                 variant="outline"
                 type="button"
-                className="w-full gap-2"
+                className="flex-1 gap-2"
+                disabled={!captchaReady}
                 onClick={() =>
                   void authClient.signIn.social({ provider: "google", callbackURL: "/" })
                 }
               >
                 <GoogleIcon />
-                Continue with Google
+                Google
               </Button>
               <Button
                 variant="outline"
                 type="button"
-                className="w-full gap-2"
+                className="flex-1 gap-2"
+                disabled={!captchaReady}
                 onClick={() =>
                   void authClient.signIn.social({ provider: "apple", callbackURL: "/" })
                 }
               >
                 <AppleIcon />
-                Continue with Apple
+                Apple
               </Button>
             </div>
 
@@ -252,9 +259,23 @@ function LoginPage() {
                 />
               </div>
 
-              {/* Turnstile challenge — only rendered when site key is configured */}
-              {import.meta.env.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY && (
-                <div ref={turnstileContainerRef} />
+              {/* Turnstile — invisible mode runs silently; widget only visible in test mode */}
+              {hasCaptcha && (
+                <div
+                  className="overflow-hidden rounded-xl border border-border border-t-3"
+                  style={{ height: 66 }}
+                >
+                  <div
+                    ref={turnstileContainerRef}
+                    style={{
+                      margin: "-1px",
+                      lineHeight: 0,
+                      marginTop: "-1px",
+                      transform: "scale(1.0)",
+                      transformOrigin: "center",
+                    }}
+                  />
+                </div>
               )}
 
               {error && (
@@ -262,7 +283,7 @@ function LoginPage() {
                   {error}
                 </p>
               )}
-              <Button type="submit" disabled={pending} className="w-full">
+              <Button type="submit" disabled={pending || !captchaReady} className="w-full">
                 {pending
                   ? mode === "signin"
                     ? "Signing in…"

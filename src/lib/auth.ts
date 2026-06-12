@@ -16,21 +16,21 @@ export const auth = betterAuth({
   },
   socialProviders: {
     google: {
-      clientId: import.meta.env.GOOGLE_CLIENT_ID,
-      clientSecret: import.meta.env.GOOGLE_CLIENT_SECRET,
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       accessType: "offline",
     },
     apple: {
-      clientId: import.meta.env.APPLE_CLIENT_ID,
-      clientSecret: import.meta.env.APPLE_CLIENT_SECRET,
-      appBundleIdentifier: import.meta.env.APPLE_BUNDLE_ID,
+      clientId: process.env.APPLE_CLIENT_ID!,
+      clientSecret: process.env.APPLE_CLIENT_SECRET!,
+      appBundleIdentifier: process.env.APPLE_BUNDLE_ID,
     },
   },
   plugins: [
     dash(),
     oAuthProxy({
-      productionURL: import.meta.env.BETTER_AUTH_URL,
-      secret: import.meta.env.OAUTH_PROXY_SECRET,
+      productionURL: process.env.PRODUCTION_URL ?? process.env.BETTER_AUTH_URL,
+      secret: process.env.OAUTH_PROXY_SECRET,
     }),
     tanstackStartCookies(),
     // Google One Tap — uses the google social provider clientId automatically
@@ -38,7 +38,7 @@ export const auth = betterAuth({
     // Cloudflare Turnstile on email sign-in, sign-up, and password reset
     captcha({
       provider: "cloudflare-turnstile",
-      secretKey: import.meta.env.CLOUDFLARE_TURNSTILE_SECRET_KEY,
+      secretKey: process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY!,
     }),
     // Reject passwords found in known breach databases via HIBP k-anonymity API
     haveIBeenPwned(),
