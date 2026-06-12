@@ -969,10 +969,10 @@ function StaysEmptyState({
   return (
     <Empty>
       <img
-        src="/img/oops.png"
+        src="/img/oops-map.png"
         alt=""
         aria-hidden
-        className="mb-1 w-full max-w-[320px] select-none"
+        className="-mb-7 -mt-10 w-full max-w-[320px] select-none"
       />
       <EmptyTitle>{title}</EmptyTitle>
       <EmptyDescription className="max-w-md">{description}</EmptyDescription>
@@ -1049,56 +1049,55 @@ function ResultsView({
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Desktop controls: resort-type chips and the rate toggles sit together
-          on the left; the live count and sort are pinned to the right. The
-          mobile FAB carries the same set. */}
-      <div className="hidden items-center gap-3 md:flex">
-        <div className="flex min-w-0 items-center gap-2 overflow-x-auto pb-1">
+      {/* Desktop controls: tier chips wrap on their own row; toggles, count,
+          and sort sit on the row below. The mobile FAB carries the same set. */}
+      <div className="hidden flex-col gap-2 md:flex">
+        <div className="flex flex-wrap items-center gap-2">
           {chips.map((c) => (
             <Button
               key={c.key}
               type="button"
               size="sm"
               variant={tierFilter === c.key ? "default" : "outline"}
-              className="shrink-0 rounded-full"
+              className="rounded-full"
               onClick={() => onTierFilter(c.key)}
             >
               {c.label}
             </Button>
           ))}
+          <div className="bg-border mx-1 h-6 w-px" />
+          <InlineToggle
+            id="flt-fl"
+            label="Florida resident"
+            checked={filters.floridaResident}
+            onCheckedChange={(v) => onApplyFilters({ floridaResident: v })}
+          />
+          <InlineToggle
+            id="flt-access"
+            label="Accessible rooms"
+            checked={filters.accessible}
+            onCheckedChange={(v) => onApplyFilters({ accessible: v })}
+          />
+          <span className="text-muted-foreground ml-auto shrink-0 text-sm whitespace-nowrap">
+            {countLabel}
+          </span>
+          <Select
+            value={sortKey}
+            onValueChange={(v) => v && onSortKey(v as StaySortKey)}
+            items={STAY_SORT_LABELS}
+          >
+            <SelectTrigger size="sm" className="w-44 shrink-0" aria-label="Sort resorts">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(STAY_SORT_LABELS) as Array<StaySortKey>).map((k) => (
+                <SelectItem key={k} value={k}>
+                  {STAY_SORT_LABELS[k]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-        <div className="bg-border h-6 w-px shrink-0" />
-        <InlineToggle
-          id="flt-fl"
-          label="Florida resident"
-          checked={filters.floridaResident}
-          onCheckedChange={(v) => onApplyFilters({ floridaResident: v })}
-        />
-        <InlineToggle
-          id="flt-access"
-          label="Accessible rooms"
-          checked={filters.accessible}
-          onCheckedChange={(v) => onApplyFilters({ accessible: v })}
-        />
-        <span className="text-muted-foreground ml-auto shrink-0 text-sm whitespace-nowrap">
-          {countLabel}
-        </span>
-        <Select
-          value={sortKey}
-          onValueChange={(v) => v && onSortKey(v as StaySortKey)}
-          items={STAY_SORT_LABELS}
-        >
-          <SelectTrigger size="sm" className="w-44 shrink-0" aria-label="Sort resorts">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {(Object.keys(STAY_SORT_LABELS) as Array<StaySortKey>).map((k) => (
-              <SelectItem key={k} value={k}>
-                {STAY_SORT_LABELS[k]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
       </div>
 
       {/* Mobile summary — the FAB owns sort/filter editing here. */}

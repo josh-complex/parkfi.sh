@@ -91,7 +91,7 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
             the full column underneath them. The map cell is a shared-layout
             slot — the live map morphs in from the overview hero. */}
         <div className="grid items-stretch gap-4 lg:grid-cols-2">
-          <MapSlot className="relative h-[320px] overflow-hidden rounded-2xl border shadow-md lg:h-auto lg:min-h-[460px]" />
+          <MapSlot className="relative isolate h-[320px] overflow-hidden rounded-2xl border shadow-md lg:h-auto lg:min-h-[460px]" />
           <ParkWaitChart
             parkSlug={activeSlug ?? null}
             focusedId={selected?.id ?? null}

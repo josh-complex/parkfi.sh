@@ -4,7 +4,8 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { DayButton } from "react-day-picker";
 
-import { Button } from "#/components/ui/button.tsx";
+import { Store, useSelector } from "@tanstack/react-store";
+
 import { Calendar } from "#/components/ui/calendar.tsx";
 import { Card, CardDescription, CardHeader, CardTitle } from "#/components/ui/card.tsx";
 import { Empty, EmptyDescription, EmptyTitle } from "#/components/ui/empty.tsx";
@@ -13,6 +14,7 @@ import { ToggleGroup, ToggleGroupItem } from "#/components/ui/toggle-group.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { UOR_PARKS, WDW_PARKS } from "#/lib/parks.ts";
 import { cn } from "#/lib/utils.ts";
+import { Button } from "../ui/button";
 
 type Resort = "WDW" | "UOR";
 type AgeGroup = "ADULT" | "CHILD";
@@ -46,27 +48,27 @@ const DAY_CELL_CLASS =
   "[&:last-child[data-selected=true]_button]:rounded-r-(--cell-radius) " +
   "[&:first-child[data-selected=true]_button]:rounded-l-(--cell-radius)";
 
-interface PricingCtx {
+interface PricingState {
   priceMap: Map<string, DayPrice>;
   min: number | undefined;
 }
-const PricingContext = React.createContext<PricingCtx>({ priceMap: new Map(), min: undefined });
+
+const pricingStore = new Store<PricingState>({ priceMap: new Map(), min: undefined });
 
 // Defined at module level so the component type is stable across renders.
-// Reads live data from PricingContext instead of a closure.
 function PriceDayButton({
   className,
   day,
   modifiers,
-  children: _children,
   ...props
 }: React.ComponentProps<typeof DayButton>) {
-  const { priceMap, min } = React.useContext(PricingContext);
+  const priceMap = useSelector(pricingStore, (s) => s.priceMap);
+  const min = useSelector(pricingStore, (s) => s.min);
   const info = priceMap.get(localIso(day.date));
   const isCheapest = info != null && min != null && info.priceCents === min;
   return (
     <Button
-      variant="ghost"
+      variant="outlineCal"
       className={cn(
         "flex h-full w-full flex-col items-center justify-center gap-0.5 p-0 leading-none font-normal",
         modifiers.outside && "opacity-40",
@@ -144,10 +146,11 @@ export function PricingCalendar() {
     return { today: t, endDate: e };
   }, []);
 
-  const pricingCtx = React.useMemo<PricingCtx>(
-    () => ({ priceMap, min: stats?.min }),
-    [priceMap, stats?.min],
-  );
+  React.useEffect(() => {
+    pricingStore.setState(() => ({ priceMap, min: stats?.min }));
+  }, [priceMap, stats?.min]);
+
+  console.log(pricingStore.state);
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -297,19 +300,18 @@ export function PricingCalendar() {
                 </EmptyDescription>
               </Empty>
             ) : (
-              <PricingContext.Provider value={pricingCtx}>
-                <Calendar
-                  month={month}
-                  onMonthChange={setMonth}
-                  startMonth={today}
-                  endMonth={endDate}
-                  disabled={{ before: today, after: endDate }}
-                  showOutsideDays
-                  className="w-full"
-                  classNames={{ day: DAY_CELL_CLASS }}
-                  components={{ DayButton: PriceDayButton }}
-                />
-              </PricingContext.Provider>
+              <Calendar
+                month={month}
+                onMonthChange={setMonth}
+                startMonth={today}
+                endMonth={endDate}
+                disabled={{ before: today, after: endDate }}
+                showOutsideDays
+                className="w-full"
+                classNames={{ day: DAY_CELL_CLASS }}
+                components={{ DayButton: PriceDayButton }}
+                onDayClick={() => {}}
+              />
             )}
           </div>
         </Card>

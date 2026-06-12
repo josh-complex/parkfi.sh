@@ -31,7 +31,7 @@ function Overview() {
       transition={{ duration: 0.25 }}
     >
       {/* Wide map hero next to the resort summary. */}
-      <MapSlot className="relative h-64 shrink-0 overflow-hidden border-b lg:h-auto lg:w-[60%] lg:border-b-0 lg:border-r" />
+      <MapSlot className="relative isolate h-64 shrink-0 overflow-hidden border-b lg:h-auto lg:w-[60%] lg:border-b-0 lg:border-r" />
       <div className="min-w-0 flex-1 overflow-auto">
         <div className="@container/main flex flex-1 flex-col gap-2">
           <OverviewPanel />

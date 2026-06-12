@@ -12,6 +12,8 @@ const buttonVariants = cva(
           "bg-primary text-primary-foreground hover:bg-primary/80 [--btn-3d:color-mix(in_oklch,var(--primary),black_32%)] [--btn-glare:oklch(1_0_0/0.25)] [--btn-glare-hover:oklch(1_0_0/0.4)]",
         outline:
           "dark:border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground [--btn-3d:color-mix(in_oklch,var(--border),var(--border))] [--btn-glare:oklch(1_0_0/0.55)] [--btn-glare-hover:oklch(1_0_0/0.8)] dark:bg-transparent dark:hover:bg-input/30 dark:[--btn-3d:transparent] dark:[--btn-glare:oklch(1_0_0/0.08)] dark:[--btn-glare-hover:oklch(1_0_0/0.16)]",
+        outlineCal:
+          "rounded-lg dark:border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground [--btn-3d:color-mix(in_oklch,var(--border),var(--border))] [--btn-glare:oklch(1_0_0/0.55)] [--btn-glare-hover:oklch(1_0_0/0.8)] dark:bg-transparent dark:hover:bg-input/30 dark:[--btn-3d:transparent] dark:[--btn-glare:oklch(1_0_0/0.08)] dark:[--btn-glare-hover:oklch(1_0_0/0.16)]",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground [--btn-3d:color-mix(in_oklch,var(--secondary),black_14%)] [--btn-glare:oklch(1_0_0/0.7)] [--btn-glare-hover:oklch(1_0_0/0.85)] dark:[--btn-glare:oklch(1_0_0/0.08)] dark:[--btn-glare-hover:oklch(1_0_0/0.16)]",
         ghost:

@@ -5,8 +5,18 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { db } from "#/db/index.ts";
 import { account, session, user, verification } from "#/db/auth-schema.ts";
+import { generateBotAvatar } from "#/lib/avatar.ts";
 
 export const auth = betterAuth({
+  databaseHooks: {
+    user: {
+      create: {
+        before: async (newUser) => ({
+          data: { ...newUser, image: generateBotAvatar(newUser.id ?? newUser.email) },
+        }),
+      },
+    },
+  },
   database: drizzleAdapter(db, {
     provider: "pg",
     schema: { user, session, account, verification },

@@ -1,6 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { LogInIcon, LogOutIcon } from "lucide-react";
-
 import { authClient } from "#/lib/auth-client.ts";
 import { NotificationCenter } from "#/components/notifications/notification-center.tsx";
 import { Avatar, AvatarFallback, AvatarImage } from "#/components/ui/avatar.tsx";
@@ -21,7 +20,6 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "#/components/ui/sidebar.tsx";
-import { EllipsisVerticalIcon } from "lucide-react";
 
 export function NavUser() {
   const { data: session, isPending } = authClient.useSession();
@@ -77,15 +75,11 @@ export function NavUser() {
               <SidebarMenuButton size="lg" className="flex-1 aria-expanded:bg-sidebar-accent" />
             }
           >
-            <Avatar className="size-8 rounded-lg grayscale">
+            <Avatar className="size-8 shrink-0 rounded-lg">
               <AvatarImage src={user.image ?? undefined} alt={user.name ?? user.email} />
               <AvatarFallback className="rounded-lg">{initials}</AvatarFallback>
             </Avatar>
-            <div className="grid flex-1 text-left text-sm leading-tight">
-              <span className="truncate font-medium">{user.name ?? user.email}</span>
-              <span className="truncate text-xs text-sidebar-foreground/70">{user.email}</span>
-            </div>
-            <EllipsisVerticalIcon className="ml-auto size-4" />
+            <span className="truncate text-sm font-medium">{user.name ?? user.email}</span>
           </DropdownMenuTrigger>
           <DropdownMenuContent
             className="min-w-56"
