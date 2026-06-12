@@ -27,14 +27,19 @@ export const diningRouter = {
       dining_plan_qs: boolean;
       dining_plan_ts: boolean;
       has_menu: boolean;
+      entity_type: string;
+      location_type: string | null;
     }>(sql`
       SELECT r.facility_id, r.name, r.cuisine, r.experience_type, r.price_range, r.park_resort,
              r.image_url, r.detail_url, r.source,
              r.walkup_wait_list, r.mobile_order, r.character_dining, r.fine_dining,
              r.annual_pass_discount, r.disney_visa_discount, r.dining_plan_qs, r.dining_plan_ts,
-             (m.facility_id IS NOT NULL AND m.item_count > 0) AS has_menu
+             (m.facility_id IS NOT NULL AND m.item_count > 0) AS has_menu,
+             r.entity_type,
+             dl.location_type
       FROM restaurant_dim r
       LEFT JOIN dining_menu_snapshot m ON m.facility_id = r.facility_id
+      LEFT JOIN dining_location dl ON dl.id = r.park_resort_id
       WHERE r.priority = true AND r.active = true AND r.bookable = true
       ORDER BY r.park_resort NULLS LAST, r.name
     `);
@@ -57,6 +62,8 @@ export const diningRouter = {
       diningPlanQs: r.dining_plan_qs,
       diningPlanTs: r.dining_plan_ts,
       hasMenu: r.has_menu,
+      dinnerShow: r.entity_type === "dinner-show",
+      requiresParkTicket: r.location_type === "theme-park" || r.location_type === "water-park",
     }));
   }),
 

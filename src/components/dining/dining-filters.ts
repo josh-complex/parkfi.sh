@@ -37,6 +37,8 @@ export interface Restaurant {
   diningPlanQs: boolean;
   diningPlanTs: boolean;
   hasMenu: boolean;
+  dinnerShow: boolean;
+  requiresParkTicket: boolean;
 }
 
 /** Catalog-attribute toggles. Selecting several narrows to venues with ALL of them. */

@@ -37,7 +37,12 @@ def _env_int(name: str, default: int) -> int:
 
 TRAIN_DAYS = _env_int("ML_TRAIN_DAYS", 60)  # history window for the training frame
 VAL_DAYS = _env_int("ML_VAL_DAYS", 7)  # max most-recent days held out for validation
-NUM_BOOST_ROUND = _env_int("ML_NUM_BOOST_ROUND", 400)
+NUM_BOOST_ROUND = _env_int("ML_NUM_BOOST_ROUND", 400)  # full-data ceiling
+
+# Minimum labeled rows to attempt training. Below this the model would overfit
+# to noise and produce misleading forecasts. The run exits cleanly so Railway
+# retries the next scheduled slot rather than writing a junk model.
+MIN_TRAIN_ROWS = _env_int("ML_MIN_TRAIN_ROWS", 200)
 
 
 def _env_float(name: str, default: float) -> float:
@@ -50,6 +55,29 @@ def _env_float(name: str, default: float) -> float:
 # Fraction of the labeled time range to hold out as validation when there isn't
 # yet `VAL_DAYS` of history (cold start) — keeps the split non-empty early on.
 VAL_FRACTION = _env_float("ML_VAL_FRACTION", 0.15)
+
+
+def _scaled_lgb_params(n_rows: int) -> dict:
+    """Scale LightGBM complexity down for sparse early-life data.
+
+    Full params need ~50k rows to avoid overfitting. We scale linearly down to
+    a safe floor so the first train runs at day 1 produce something useful
+    rather than memorising noise. The thresholds are checkpoints, not cliff edges.
+
+      ≥50k rows  → full params  (400 rounds, 63 leaves, min_leaf 200)
+      ≥10k rows  → medium       (200 rounds, 31 leaves, min_leaf  50)
+      ≥1k  rows  → light        ( 80 rounds, 15 leaves, min_leaf  10)
+      <1k  rows  → minimal      ( 40 rounds,  7 leaves, min_leaf   5)
+    """
+    if n_rows >= 50_000:
+        return {"num_boost_round": NUM_BOOST_ROUND, "num_leaves": 63, "min_data_in_leaf": 200}
+    if n_rows >= 10_000:
+        rounds = max(200, int(NUM_BOOST_ROUND * n_rows / 50_000))
+        return {"num_boost_round": rounds, "num_leaves": 31, "min_data_in_leaf": 50}
+    if n_rows >= 1_000:
+        rounds = max(80, int(NUM_BOOST_ROUND * n_rows / 50_000))
+        return {"num_boost_round": rounds, "num_leaves": 15, "min_data_in_leaf": 10}
+    return {"num_boost_round": 40, "num_leaves": 7, "min_data_in_leaf": 5}
 
 
 def _metrics(actual: np.ndarray, pred: np.ndarray) -> dict[str, float]:
@@ -66,7 +94,7 @@ def _metrics(actual: np.ndarray, pred: np.ndarray) -> dict[str, float]:
 
 
 def _fit_quantile(
-    train: pd.DataFrame, alpha: float, cat_idx: list[int]
+    train: pd.DataFrame, alpha: float, cat_idx: list[int], lgb_params: dict
 ) -> lgb.Booster:
     dataset = lgb.Dataset(
         train[F.FEATURE_COLUMNS],
@@ -78,14 +106,14 @@ def _fit_quantile(
         "objective": "quantile",
         "alpha": alpha,
         "learning_rate": 0.05,
-        "num_leaves": 63,
-        "min_data_in_leaf": 200,
+        "num_leaves": lgb_params["num_leaves"],
+        "min_data_in_leaf": lgb_params["min_data_in_leaf"],
         "feature_fraction": 0.8,
         "bagging_fraction": 0.8,
         "bagging_freq": 1,
         "verbosity": -1,
     }
-    return lgb.train(params, dataset, num_boost_round=NUM_BOOST_ROUND)
+    return lgb.train(params, dataset, num_boost_round=lgb_params["num_boost_round"])
 
 
 def train() -> str:
@@ -104,6 +132,12 @@ def train() -> str:
         if df.empty:
             raise SystemExit("[ml-train] no labeled rows after feature join")
 
+        if len(df) < MIN_TRAIN_ROWS:
+            raise SystemExit(
+                f"[ml-train] only {len(df)} labeled rows — need ≥{MIN_TRAIN_ROWS} to train "
+                f"(cold start: wait for more queue_15min history)"
+            )
+
         # Time-based split (never random — lags would leak the future). Hold out
         # the most-recent data, but adapt to however much history exists: the
         # later of (now − VAL_DAYS) and the (1 − VAL_FRACTION) time quantile, so a
@@ -117,12 +151,27 @@ def train() -> str:
             print("[ml-train] history too short for a holdout — training on all rows, no val")
             train_df = df
             val_df = df.iloc[0:0]
+
+        lgb_params = _scaled_lgb_params(len(train_df))
+        cold_start = len(train_df) < 50_000
+        if cold_start:
+            print(
+                f"[ml-train] cold-start mode: {len(train_df)} train rows → "
+                f"rounds={lgb_params['num_boost_round']} leaves={lgb_params['num_leaves']} "
+                f"min_leaf={lgb_params['min_data_in_leaf']} "
+                f"(full params kick in at ~50k rows)"
+            )
         print(f"[ml-train] rows: {len(train_df)} train / {len(val_df)} val (split {split})")
 
         cat_idx = [F.FEATURE_COLUMNS.index(c) for c in F.CATEGORICAL_FEATURES]
-        boosters = {key: _fit_quantile(train_df, a, cat_idx) for key, a in QUANTILES.items()}
+        boosters = {key: _fit_quantile(train_df, a, cat_idx, lgb_params) for key, a in QUANTILES.items()}
 
-        metrics: dict = {"train_rows": len(train_df), "val_rows": len(val_df)}
+        metrics: dict = {
+            "train_rows": len(train_df),
+            "val_rows": len(val_df),
+            "cold_start": cold_start,
+            "lgb_params": lgb_params,
+        }
         if not val_df.empty:
             p50 = boosters["q50"].predict(val_df[F.FEATURE_COLUMNS])
             metrics["val"] = _metrics(val_df["y"].to_numpy(), np.asarray(p50))

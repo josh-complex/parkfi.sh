@@ -317,6 +317,7 @@ export const forecastRouter = {
       model_version: string;
       trained_at: string;
       status: string;
+      metrics_json: string | null;
       window: string;
       mae: number | null;
       rmse: number | null;
@@ -326,10 +327,10 @@ export const forecastRouter = {
       coverage_pct: number | null;
     }>(sql`
       WITH active AS (
-        SELECT model_version, trained_at, status FROM model_run
+        SELECT model_version, trained_at, status, metrics_json FROM model_run
         WHERE status = 'active' ORDER BY trained_at DESC LIMIT 1
       )
-      SELECT a.model_version, a.trained_at, a.status,
+      SELECT a.model_version, a.trained_at, a.status, a.metrics_json,
              m.window, m.mae, m.rmse, m.mape, m.r2, m.n_predictions, m.coverage_pct
       FROM active a
       LEFT JOIN model_metrics m ON m.model_version = a.model_version
@@ -338,6 +339,15 @@ export const forecastRouter = {
 
     const head = result.rows[0];
     if (!head) return { model: null, windows: [] as Array<never> };
+
+    // `cold_start` is written into metrics_json by train.py when < 50k training rows.
+    let coldStart = false;
+    try {
+      const mj = head.metrics_json ? JSON.parse(head.metrics_json) : null;
+      coldStart = mj?.cold_start === true;
+    } catch {
+      /* malformed json — treat as unknown */
+    }
 
     const windows = result.rows
       .filter((r) => r.window != null)
@@ -357,6 +367,7 @@ export const forecastRouter = {
         version: head.model_version,
         trainedAt: head.trained_at,
         status: head.status,
+        coldStart,
       },
       windows,
     };

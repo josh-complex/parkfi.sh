@@ -21,6 +21,7 @@ import {
   FEATURE_FILTERS,
   filterRestaurants,
   OPERATOR_LABELS,
+  priceTier,
   SORT_LABELS,
   sortRestaurants,
   type AvailabilityEntry,
@@ -95,42 +96,44 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function formatDate(iso: string): string {
-  return new Date(`${iso}T00:00:00`).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function relativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const min = Math.floor(diff / 60_000);
-  if (min < 1) return "just now";
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  return `${hr}h ago`;
-}
-
-function AvailabilitySparkline({
+function AvailabilityCalendar({
   days,
   windowDays,
+  referenceDate,
 }: {
   days: Array<DayEntry>;
   windowDays: number;
+  referenceDate: string;
 }) {
-  const shown = days.slice(0, windowDays);
+  const shown = days.slice(0, Math.min(windowDays, 7));
   return (
-    <div className="flex gap-0.5">
-      {shown.map((d) => (
-        <div
-          key={d.date}
-          title={`${formatDate(d.date)}: ${d.available ? `${d.offerCount} slot${d.offerCount === 1 ? "" : "s"}` : "none"}`}
-          className={cn(
-            "h-2 w-1.5 rounded-sm",
-            d.available ? "bg-primary" : "bg-muted-foreground/20",
-          )}
-        />
-      ))}
+    <div className="flex gap-1">
+      {shown.map((d) => {
+        const date = new Date(`${d.date}T00:00:00`);
+        const dayName = date.toLocaleDateString("en-US", { weekday: "short" });
+        const dayNum = date.getDate();
+        const isToday = d.date === referenceDate;
+        return (
+          <div
+            key={d.date}
+            title={
+              d.available
+                ? `${d.offerCount} slot${d.offerCount === 1 ? "" : "s"}`
+                : "No availability"
+            }
+            className={cn(
+              "flex flex-1 flex-col items-center gap-0.5 rounded py-1",
+              d.available
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground/60",
+              isToday && "ring-2 ring-inset ring-foreground/20",
+            )}
+          >
+            <span className="text-[10px] leading-none">{dayName}</span>
+            <span className="text-xs font-medium leading-none">{dayNum}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -150,18 +153,45 @@ function RestaurantCard({
   schedules: Array<ScheduleEntry> | undefined;
   nowMin: number;
 }) {
-  const refData = availability?.days.find((d) => d.date === referenceDate);
-  const nextAvailable = availability?.days.find((d) => d.available && d.date >= referenceDate);
-  const latestObserved = availability?.days[0]?.observedAt;
   const subtitle = [restaurant.parkResort, restaurant.experienceType ?? restaurant.cuisine]
     .filter(Boolean)
     .join(" · ");
   const todayHours = schedules ? hoursLabel(schedules) : null;
   const openNow = schedules ? isOpenNow(schedules, nowMin) : false;
-  const dateLabel = formatDate(referenceDate);
+
+  const hasTags =
+    restaurant.requiresParkTicket ||
+    restaurant.characterDining ||
+    restaurant.dinnerShow ||
+    restaurant.fineDining;
+
+  const tagBadges = hasTags && (
+    <>
+      {restaurant.requiresParkTicket && (
+        <Badge className="bg-black/60 text-white text-xs font-normal border-0 shadow-none backdrop-blur-sm">
+          Park ticket
+        </Badge>
+      )}
+      {restaurant.characterDining && (
+        <Badge className="bg-black/60 text-white text-xs font-normal border-0 shadow-none backdrop-blur-sm">
+          Characters
+        </Badge>
+      )}
+      {restaurant.dinnerShow && (
+        <Badge className="bg-black/60 text-white text-xs font-normal border-0 shadow-none backdrop-blur-sm">
+          Dinner show
+        </Badge>
+      )}
+      {restaurant.fineDining && (
+        <Badge className="bg-black/60 text-white text-xs font-normal border-0 shadow-none backdrop-blur-sm">
+          Signature
+        </Badge>
+      )}
+    </>
+  );
 
   return (
-    <Card className="@container/card overflow-hidden pt-0">
+    <Card className="@container/card overflow-hidden pt-0 gap-2 pb-2">
       {restaurant.imageUrl && (
         <div className="bg-muted relative h-32 w-full overflow-hidden">
           <img
@@ -170,22 +200,32 @@ function RestaurantCard({
             loading="lazy"
             className="size-full object-cover"
           />
-          {availability &&
-            (refData?.available ? (
-              <Badge className="absolute top-3 right-3 bg-emerald-500 text-white shadow">
-                Open {dateLabel}
+          {restaurant.priceRange && (
+            <Badge className="absolute top-2 left-2 bg-black/60 text-white text-xs font-normal border-0 shadow-none backdrop-blur-sm">
+              {priceTier(restaurant.priceRange)}
+            </Badge>
+          )}
+          {todayHours &&
+            (openNow ? (
+              <Badge className="absolute top-2 right-2 bg-emerald-500 text-white shadow">
+                Open · {todayHours}
               </Badge>
             ) : (
-              <Badge variant="secondary" className="absolute top-3 right-3 shadow">
-                None {dateLabel}
+              <Badge variant="secondary" className="absolute top-2 right-2 shadow">
+                Closed · {todayHours}
               </Badge>
             ))}
+          {hasTags && (
+            <div className="absolute bottom-2 left-2 flex flex-wrap gap-1">{tagBadges}</div>
+          )}
         </div>
       )}
-      <CardHeader className={restaurant.imageUrl ? "pt-4" : undefined}>
+      <CardHeader
+        className={cn("px-3 sm:px-4 pb-1", restaurant.imageUrl ? "pt-2 sm:pt-3" : "pt-3 sm:pt-4")}
+      >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <CardTitle className="line-clamp-1">
+            <CardTitle className="line-clamp-1 text-base sm:text-lg">
               {restaurant.detailUrl ? (
                 <a
                   href={restaurant.detailUrl}
@@ -201,45 +241,39 @@ function RestaurantCard({
             </CardTitle>
             <CardDescription className="mt-0.5 line-clamp-1">{subtitle}</CardDescription>
           </div>
-          {/* Status badge lives on the image when present; show it here otherwise. */}
-          {!restaurant.imageUrl && availability ? (
-            refData?.available ? (
-              <Badge className="bg-emerald-500 text-white shrink-0">Open {dateLabel}</Badge>
-            ) : (
-              <Badge variant="outline" className="shrink-0 text-muted-foreground">
-                None {dateLabel}
-              </Badge>
-            )
-          ) : null}
+          {!restaurant.imageUrl && todayHours && openNow && (
+            <Badge className="bg-emerald-500 text-white shrink-0">Open · {todayHours}</Badge>
+          )}
         </div>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3">
+      <CardContent className="px-3 sm:px-4 flex flex-col gap-1 pt-0 pb-2">
         {availability ? (
           <>
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>
-                {nextAvailable
-                  ? `Next: ${nextAvailable.date === referenceDate ? dateLabel : formatDate(nextAvailable.date)}`
-                  : "No availability in window"}
-              </span>
-              {latestObserved && <span>Updated {relativeTime(latestObserved)}</span>}
-            </div>
-            <AvailabilitySparkline days={availability.days} windowDays={windowDays} />
+            <AvailabilityCalendar
+              days={availability.days}
+              windowDays={windowDays}
+              referenceDate={referenceDate}
+            />
           </>
         ) : (
           <p className="text-xs text-muted-foreground">No observations yet</p>
         )}
-        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-          {restaurant.priceRange ? <span>{restaurant.priceRange}</span> : <span />}
-          {todayHours && (
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          {availability ? (
             <span className="flex items-center gap-1.5">
-              {openNow && <span className="size-1.5 rounded-full bg-emerald-500" />}
-              <span>
-                {openNow ? "Open now" : "Today"} · {todayHours}
-              </span>
+              <span className="size-2 rounded-sm bg-primary shrink-0" />
+              Reservations available
             </span>
+          ) : (
+            <span>No availability data</span>
+          )}
+          {!restaurant.imageUrl && restaurant.priceRange && (
+            <Badge variant="outline" className="font-normal text-xs shrink-0">
+              {priceTier(restaurant.priceRange)}
+            </Badge>
           )}
         </div>
+        {!restaurant.imageUrl && hasTags && <div className="flex flex-wrap gap-1">{tagBadges}</div>}
         {restaurant.hasMenu && (
           <DiningMenuDrawer facilityId={restaurant.facilityId} name={restaurant.name} />
         )}
@@ -1041,7 +1075,7 @@ function ResultsView({
   return (
     <div className="flex flex-col gap-5">
       {/* Desktop controls: Filters popover + active chips on the left; count + sort right. */}
-      <div className="hidden items-center gap-3 md:flex">
+      <div className="hidden items-center gap-2 md:flex">
         <Popover>
           <PopoverTrigger
             render={
