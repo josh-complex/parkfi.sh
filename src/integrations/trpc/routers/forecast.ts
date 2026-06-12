@@ -186,6 +186,122 @@ export const forecastRouter = {
     }),
 
   /**
+   * Per-date crowd index + daily weather summary for a park over a date range.
+   * Runs one SQL round-trip for crowd (vs N × parkCurve) by computing the
+   * historical percentile distribution once and scoring all prediction dates
+   * against it in a single pass. Powers the pricing-calendar overlay.
+   */
+  parkCalendar: publicProcedure
+    .input(
+      z.object({
+        parkSlug: z.string(),
+        startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      }),
+    )
+    .query(async ({ input }) => {
+      const crowdP = db.execute<{ date: string; percentile: number | null }>(sql`
+        WITH park AS (SELECT id, timezone FROM parks WHERE slug = ${input.parkSlug}),
+        active AS (
+          SELECT model_version FROM model_run WHERE status = 'active'
+          ORDER BY trained_at DESC LIMIT 1
+        ),
+        pred AS (
+          SELECT (qf.target_ts AT TIME ZONE (SELECT timezone FROM park))::date AS d,
+                 avg(qf.predicted_wait) AS v
+          FROM queue_forecast qf
+          JOIN attractions a ON a.id = qf.attraction_id
+          WHERE a.park_id = (SELECT id FROM park)
+            AND qf.queue_type = ${STANDBY}
+            AND qf.model_version = (SELECT model_version FROM active)
+            AND (qf.target_ts AT TIME ZONE (SELECT timezone FROM park))::date
+                BETWEEN ${input.startDate}::date AND ${input.endDate}::date
+          GROUP BY d
+        ),
+        hist AS (
+          SELECT (q.bucket AT TIME ZONE (SELECT timezone FROM park))::date AS d,
+                 avg(q.avg_wait) AS day_avg
+          FROM queue_15min q
+          JOIN attractions a ON a.id = q.attraction_id
+          WHERE a.park_id = (SELECT id FROM park)
+            AND q.queue_type = ${STANDBY}
+            AND q.avg_wait IS NOT NULL
+            AND q.bucket >= now() - INTERVAL '90 days'
+          GROUP BY d
+        ),
+        hist_n AS (SELECT count(*)::float AS n FROM hist)
+        SELECT pred.d::text AS date,
+               CASE WHEN (SELECT n FROM hist_n) = 0 OR pred.v IS NULL THEN NULL
+                    ELSE (SELECT count(*)::float FROM hist WHERE day_avg <= pred.v)
+                         / (SELECT n FROM hist_n)
+               END AS percentile
+        FROM pred
+        ORDER BY pred.d
+      `);
+
+      const weatherP = db.execute<{
+        date: string;
+        high_c: number | null;
+        precip_prob: number | null;
+        condition: string | null;
+      }>(sql`
+        WITH park AS (SELECT id, timezone FROM parks WHERE slug = ${input.parkSlug}),
+        hourly AS (
+          SELECT
+            (wo.observed_at AT TIME ZONE (SELECT timezone FROM park))::date AS d,
+            wo.temp_c,
+            wo.precip_prob,
+            wo.condition,
+            abs(extract(hour from wo.observed_at AT TIME ZONE (SELECT timezone FROM park)) - 13)
+              AS noon_dist
+          FROM weather_obs wo
+          WHERE wo.park_id = (SELECT id FROM park)
+            AND wo.kind = 'FORECAST'
+            AND (wo.observed_at AT TIME ZONE (SELECT timezone FROM park))::date
+                BETWEEN ${input.startDate}::date AND ${input.endDate}::date
+        ),
+        daily_max AS (
+          SELECT d, max(temp_c) AS high_c, max(precip_prob) AS precip_prob
+          FROM hourly GROUP BY d
+        ),
+        noon_cond AS (
+          SELECT DISTINCT ON (d) d, condition
+          FROM hourly ORDER BY d, noon_dist
+        )
+        SELECT dm.d::text AS date, dm.high_c, dm.precip_prob, nc.condition
+        FROM daily_max dm
+        LEFT JOIN noon_cond nc ON nc.d = dm.d
+        ORDER BY dm.d
+      `);
+
+      const [crowd, weather] = await Promise.all([crowdP, weatherP]);
+
+      const weatherByDate = new Map(
+        weather.rows.map((r) => [
+          r.date,
+          {
+            highF: r.high_c != null ? Math.round((r.high_c * 9) / 5 + 32) : null,
+            precipProb: r.precip_prob,
+            condition: r.condition,
+          },
+        ]),
+      );
+
+      return {
+        days: crowd.rows.map((r) => {
+          const pct = r.percentile;
+          const crowdIndex =
+            pct == null ? null : Math.max(1, Math.min(10, Math.round(1 + 9 * pct)));
+          return {
+            date: r.date,
+            crowdIndex,
+            weather: weatherByDate.get(r.date) ?? null,
+          };
+        }),
+      };
+    }),
+
+  /**
    * Accuracy tiles for the active model, per rolling window. Numbers come from
    * `model_metrics` (recomputed by cron-eval). `ready` enforces the cold-start
    * gate: false ⇒ the window hasn't cleared the `ACCURACY_MIN_N` floor and the

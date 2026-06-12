@@ -421,16 +421,24 @@ export function StaysBoard({ areaKey }: { areaKey: string | null }) {
         className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-60 bg-[radial-gradient(120%_140%_at_50%_-25%,color-mix(in_oklab,var(--color-sidebar)_26%,transparent),transparent_70%)]"
       />
 
-      {/* Hero — the page's stay headline sits above the search, which becomes
-          sticky beneath it. */}
-      <div className="px-4 pt-8 pb-5 text-center lg:px-6">
-        <h1 className="text-2xl font-bold tracking-tight">
-          {areaLabel ? `Stays near ${areaLabel}` : "Find your stay at Walt Disney World"}
-        </h1>
-        <p className="text-muted-foreground mx-auto mt-1 max-w-xl text-sm">
-          Browse {areaLabel ? "these" : "every"} Disney Resort hotel
-          {areaLabel ? "s" : ""}, then add dates to see live nightly rates.
-        </p>
+      {/* Hero — collapses away once the user commits a search. */}
+      <div
+        className={cn(
+          "grid transition-all duration-500 ease-in-out",
+          search ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100",
+        )}
+      >
+        <div className="overflow-hidden">
+          <div className="px-4 pt-8 pb-5 text-center lg:px-6">
+            <h1 className="text-2xl font-bold tracking-tight">
+              {areaLabel ? `Stays near ${areaLabel}` : "Find your stay at Walt Disney World"}
+            </h1>
+            <p className="text-muted-foreground mx-auto mt-1 max-w-xl text-sm">
+              Browse {areaLabel ? "these" : "every"} Disney Resort hotel
+              {areaLabel ? "s" : ""}, then add dates to see live nightly rates.
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Flow sentinel: marks where the bar starts sticking (see the effect). */}

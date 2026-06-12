@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { DayButton } from "react-day-picker";
+import { Cloud, CloudDrizzle, CloudLightning, CloudRain, CloudSnow, Sun } from "lucide-react";
 
 import { Store, useSelector } from "@tanstack/react-store";
 
@@ -12,7 +13,7 @@ import { Empty, EmptyDescription, EmptyTitle } from "#/components/ui/empty.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { ToggleGroup, ToggleGroupItem } from "#/components/ui/toggle-group.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
-import { UOR_PARKS, WDW_PARKS } from "#/lib/parks.ts";
+import { RESORT_DEFAULT_SLUG, UOR_PARKS, WDW_PARKS } from "#/lib/parks.ts";
 import { cn } from "#/lib/utils.ts";
 import { Button } from "../ui/button";
 
@@ -31,6 +32,13 @@ interface DayPrice {
   available: boolean;
 }
 
+interface DayOverlay {
+  crowdIndex: number | null;
+  highF: number | null;
+  precipProb: number | null;
+  condition: string | null;
+}
+
 function localIso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
     d.getDate(),
@@ -41,6 +49,32 @@ function dollars(cents: number): string {
   return `$${Math.round(cents / 100)}`;
 }
 
+function crowdColor(index: number): string {
+  if (index <= 3) return "bg-emerald-500";
+  if (index <= 5) return "bg-yellow-400";
+  if (index <= 7) return "bg-orange-400";
+  return "bg-red-500";
+}
+
+function WeatherIcon({ condition, className }: { condition: string | null; className?: string }) {
+  const c = condition?.toLowerCase() ?? "";
+  const Icon = c.includes("thunder")
+    ? CloudLightning
+    : c.includes("snow")
+      ? CloudSnow
+      : c.includes("rain")
+        ? CloudRain
+        : c.includes("drizzle")
+          ? CloudDrizzle
+          : c.includes("cloud")
+            ? Cloud
+            : c.includes("clear")
+              ? Sun
+              : null;
+  if (!Icon) return null;
+  return <Icon className={cn("shrink-0", className)} />;
+}
+
 // Day cell classNames override — removes aspect-square so cells use a fixed
 // height rather than growing as tall as they are wide in a full-width calendar.
 const DAY_CELL_CLASS =
@@ -48,12 +82,17 @@ const DAY_CELL_CLASS =
   "[&:last-child[data-selected=true]_button]:rounded-r-(--cell-radius) " +
   "[&:first-child[data-selected=true]_button]:rounded-l-(--cell-radius)";
 
-interface PricingState {
+interface CalendarState {
   priceMap: Map<string, DayPrice>;
   min: number | undefined;
+  overlayMap: Map<string, DayOverlay>;
 }
 
-const pricingStore = new Store<PricingState>({ priceMap: new Map(), min: undefined });
+const calendarStore = new Store<CalendarState>({
+  priceMap: new Map(),
+  min: undefined,
+  overlayMap: new Map(),
+});
 
 // Defined at module level so the component type is stable across renders.
 function PriceDayButton({
@@ -62,21 +101,32 @@ function PriceDayButton({
   modifiers,
   ...props
 }: React.ComponentProps<typeof DayButton>) {
-  const priceMap = useSelector(pricingStore, (s) => s.priceMap);
-  const min = useSelector(pricingStore, (s) => s.min);
-  const info = priceMap.get(localIso(day.date));
+  const priceMap = useSelector(calendarStore, (s) => s.priceMap);
+  const min = useSelector(calendarStore, (s) => s.min);
+  const overlayMap = useSelector(calendarStore, (s) => s.overlayMap);
+  const iso = localIso(day.date);
+  const info = priceMap.get(iso);
+  const overlay = overlayMap.get(iso);
   const isCheapest = info != null && min != null && info.priceCents === min;
   return (
     <Button
       variant="outlineCal"
       className={cn(
-        "flex h-full w-full flex-col items-center justify-center gap-0.5 p-0 leading-none font-normal",
+        "relative flex h-full w-full flex-col items-center justify-center gap-0.5 overflow-hidden p-0 leading-none font-normal",
         modifiers.outside && "opacity-40",
         className,
       )}
       {...props}
     >
       <span className="text-xs">{day.date.getDate()}</span>
+      {overlay?.condition != null || overlay?.highF != null ? (
+        <span className="flex items-center gap-0.5 text-muted-foreground">
+          <WeatherIcon condition={overlay.condition} className="h-2.5 w-2.5" />
+          {overlay.highF != null && (
+            <span className="text-[9px] tabular-nums">{overlay.highF}°</span>
+          )}
+        </span>
+      ) : null}
       {info ? (
         <span
           className={cn(
@@ -89,6 +139,14 @@ function PriceDayButton({
         </span>
       ) : (
         <span className="text-[10px]">·</span>
+      )}
+      {overlay?.crowdIndex != null && (
+        <span
+          className={cn(
+            "absolute bottom-0 left-0 h-0.5 w-full opacity-70",
+            crowdColor(overlay.crowdIndex),
+          )}
+        />
       )}
     </Button>
   );
@@ -138,19 +196,49 @@ export function PricingCalendar() {
     return { min, max, cheapest };
   }, [rows]);
 
-  const { today, endDate } = React.useMemo(() => {
+  const { today, endDate, startIso, endIso } = React.useMemo(() => {
     const t = new Date();
     t.setHours(0, 0, 0, 0);
     const e = new Date(t);
     e.setDate(e.getDate() + DAYS);
-    return { today: t, endDate: e };
+    return { today: t, endDate: e, startIso: localIso(t), endIso: localIso(e) };
   }, []);
 
-  React.useEffect(() => {
-    pricingStore.setState(() => ({ priceMap, min: stats?.min }));
-  }, [priceMap, stats?.min]);
+  // Derive the park slug for crowd/weather: use the selected park's slug,
+  // or fall back to the resort's primary park when "All" is selected.
+  const parkSlug = React.useMemo(() => {
+    if (park) {
+      const entry = parks.find((p) => p.code === park);
+      return entry?.slug ?? null;
+    }
+    return RESORT_DEFAULT_SLUG[resort] ?? null;
+  }, [park, parks, resort]);
 
-  console.log(pricingStore.state);
+  const overlayQ = useQuery({
+    ...trpc.forecast.parkCalendar.queryOptions({
+      parkSlug: parkSlug ?? "",
+      startDate: startIso,
+      endDate: endIso,
+    }),
+    enabled: !!parkSlug,
+  });
+
+  const overlayMap = React.useMemo(() => {
+    const m = new Map<string, DayOverlay>();
+    for (const d of overlayQ.data?.days ?? []) {
+      m.set(d.date, {
+        crowdIndex: d.crowdIndex,
+        highF: d.weather?.highF ?? null,
+        precipProb: d.weather?.precipProb ?? null,
+        condition: d.weather?.condition ?? null,
+      });
+    }
+    return m;
+  }, [overlayQ.data]);
+
+  React.useEffect(() => {
+    calendarStore.setState(() => ({ priceMap, min: stats?.min, overlayMap }));
+  }, [priceMap, stats?.min, overlayMap]);
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -283,9 +371,31 @@ export function PricingCalendar() {
         <Card>
           <CardHeader>
             <CardTitle>{RESORTS.find((r) => r.value === resort)?.label}</CardTitle>
-            <CardDescription>
-              {productLabel} · cheapest dates in <span className="text-primary">color</span>,
-              sold-out struck through
+            <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span>
+                {productLabel} · cheapest in <span className="text-primary">color</span>, sold-out
+                struck through
+              </span>
+              {overlayQ.data && (
+                <span className="flex items-center gap-2 text-xs">
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block h-1.5 w-4 rounded-full bg-emerald-500 opacity-70" />
+                    Low
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block h-1.5 w-4 rounded-full bg-yellow-400 opacity-70" />
+                    Moderate
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block h-1.5 w-4 rounded-full bg-orange-400 opacity-70" />
+                    Busy
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block h-1.5 w-4 rounded-full bg-red-500 opacity-70" />
+                    Packed
+                  </span>
+                </span>
+              )}
             </CardDescription>
           </CardHeader>
           <div className="px-2 pb-4 sm:px-6">

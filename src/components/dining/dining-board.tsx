@@ -657,13 +657,22 @@ export function DiningBoard() {
         className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-60 bg-[radial-gradient(120%_140%_at_50%_-25%,color-mix(in_oklab,var(--color-sidebar)_26%,transparent),transparent_70%)]"
       />
 
-      {/* Short hero */}
-      <div className="px-4 pt-8 pb-5 text-center lg:px-6">
-        <h1 className="text-2xl font-bold tracking-tight">Find a table at the parks</h1>
-        <p className="text-muted-foreground mx-auto mt-1 max-w-xl text-sm">
-          Browse Disney &amp; Universal restaurants, then search to see live reservation
-          availability.
-        </p>
+      {/* Short hero — collapses away once the user commits a search. */}
+      <div
+        className={cn(
+          "grid transition-all duration-500 ease-in-out",
+          searched ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100",
+        )}
+      >
+        <div className="overflow-hidden">
+          <div className="px-4 pt-8 pb-5 text-center lg:px-6">
+            <h1 className="text-2xl font-bold tracking-tight">Find a table at the parks</h1>
+            <p className="text-muted-foreground mx-auto mt-1 max-w-xl text-sm">
+              Browse Disney &amp; Universal restaurants, then search to see live reservation
+              availability.
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Flow sentinel: marks where the bar starts sticking (see the effect). */}
