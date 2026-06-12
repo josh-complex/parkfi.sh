@@ -236,13 +236,14 @@ export const diningRouter = {
     const items = await db.execute<{
       meal_period: string;
       group_name: string | null;
+      item_type: string | null;
       title: string;
       description: string | null;
       price: number | null;
       price_type: string | null;
       currency: string | null;
     }>(sql`
-        SELECT i.meal_period, i.group_name, i.title, i.description, i.price, i.price_type, i.currency
+        SELECT i.meal_period, i.group_name, i.item_type, i.title, i.description, i.price, i.price_type, i.currency
         FROM dining_menu_item i
         JOIN dining_menu_snapshot s
           ON s.facility_id = i.facility_id AND s.observed_at = i.observed_at
@@ -258,7 +259,7 @@ export const diningRouter = {
       priceType: string | null;
       currency: string | null;
     };
-    type Group = { groupName: string | null; items: Array<Item> };
+    type Group = { groupName: string | null; itemType: string | null; items: Array<Item> };
     const periods: Array<{ mealPeriod: string; groups: Array<Group> }> = [];
     const periodIdx = new Map<string, number>();
     const groupIdx = new Map<string, number>();
@@ -269,12 +270,12 @@ export const diningRouter = {
         periodIdx.set(r.meal_period, pi);
         periods.push({ mealPeriod: r.meal_period, groups: [] });
       }
-      const gkey = `${pi}|${r.group_name ?? ""}`;
+      const gkey = `${pi}|${r.group_name ?? ""}|${r.item_type ?? ""}`;
       let gi = groupIdx.get(gkey);
       if (gi === undefined) {
         gi = periods[pi]!.groups.length;
         groupIdx.set(gkey, gi);
-        periods[pi]!.groups.push({ groupName: r.group_name, items: [] });
+        periods[pi]!.groups.push({ groupName: r.group_name, itemType: r.item_type, items: [] });
       }
       periods[pi]!.groups[gi]!.items.push({
         title: r.title,

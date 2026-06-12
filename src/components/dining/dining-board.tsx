@@ -241,15 +241,7 @@ function RestaurantCard({
           )}
         </div>
         {restaurant.hasMenu && (
-          <DiningMenuDrawer
-            facilityId={restaurant.facilityId}
-            name={restaurant.name}
-            trigger={
-              <Button variant="outline" size="sm" className="w-full">
-                View menu
-              </Button>
-            }
-          />
+          <DiningMenuDrawer facilityId={restaurant.facilityId} name={restaurant.name} />
         )}
       </CardContent>
     </Card>

@@ -1,19 +1,128 @@
 "use client";
 
 import * as React from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { useQuery } from "@tanstack/react-query";
+import { XIcon } from "lucide-react";
 
 import {
   Drawer,
   DrawerContent,
-  DrawerDescription,
   DrawerHeader,
   DrawerTitle,
   DrawerTrigger,
 } from "#/components/ui/drawer.tsx";
+import { Button } from "#/components/ui/button.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
+import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { cn } from "#/lib/utils.ts";
+
+// ── Type taxonomy ──────────────────────────────────────────────────────────────
+
+const TYPE_ORDER = [
+  "Featured",
+  "Appetizer",
+  "Entree",
+  "Side",
+  "Snack",
+  "Dessert",
+  "Beverage",
+  "Alcoholic Beverage",
+  "Kids",
+  "Allergy Friendly",
+  "Holiday",
+];
+
+const TYPE_LABELS: Record<string, string> = {
+  Featured: "Featured",
+  Appetizer: "Appetizers",
+  Entree: "Entrées",
+  Side: "Sides",
+  Snack: "Snacks",
+  Dessert: "Desserts",
+  Beverage: "Beverages",
+  "Alcoholic Beverage": "Cocktails & Wine",
+  Kids: "Kids",
+  "Allergy Friendly": "Allergy Friendly",
+  "Allergy-Friendly Request": "Allergy Friendly",
+  Holiday: "Holiday",
+};
+
+const ALLERGY_TYPES = new Set(["Allergy Friendly", "Allergy-Friendly Request"]);
+
+function primaryType(itemType: string | null): string {
+  if (!itemType) return "Other";
+  const parts = itemType.split("|").map((t) => t.trim());
+  return parts.find((p) => !ALLERGY_TYPES.has(p)) ?? parts[0] ?? "Other";
+}
+
+function hasTag(itemType: string | null, tag: string): boolean {
+  if (!itemType) return false;
+  return itemType.split("|").some((t) => t.trim() === tag);
+}
+
+// ── Data types ─────────────────────────────────────────────────────────────────
+
+interface MenuItemData {
+  title: string;
+  description: string | null;
+  price: number | null;
+  priceType: string | null;
+  currency: string | null;
+}
+
+interface RawGroup {
+  groupName: string | null;
+  itemType: string | null;
+  items: MenuItemData[];
+}
+
+interface TypeSectionGroup {
+  groupName: string | null;
+  allergyFriendly: boolean;
+  isKids: boolean;
+  items: MenuItemData[];
+}
+
+interface TypeSection {
+  typeKey: string;
+  label: string;
+  groups: TypeSectionGroup[];
+}
+
+function buildTypeSections(rawGroups: RawGroup[]): TypeSection[] {
+  const sectionMap = new Map<string, TypeSection>();
+  const insertOrder: string[] = [];
+
+  for (const group of rawGroups) {
+    const key = primaryType(group.itemType);
+    const label = TYPE_LABELS[key] ?? key;
+    if (!sectionMap.has(key)) {
+      sectionMap.set(key, { typeKey: key, label, groups: [] });
+      insertOrder.push(key);
+    }
+    sectionMap.get(key)!.groups.push({
+      groupName: group.groupName,
+      allergyFriendly:
+        ALLERGY_TYPES.has(group.itemType ?? "") ||
+        hasTag(group.itemType, "Allergy Friendly") ||
+        hasTag(group.itemType, "Allergy-Friendly Request"),
+      isKids: hasTag(group.itemType, "Kids"),
+      items: group.items,
+    });
+  }
+
+  return insertOrder
+    .map((k) => sectionMap.get(k)!)
+    .sort((a, b) => {
+      const oa = TYPE_ORDER.indexOf(a.typeKey);
+      const ob = TYPE_ORDER.indexOf(b.typeKey);
+      return (oa === -1 ? 999 : oa) - (ob === -1 ? 999 : ob);
+    });
+}
+
+// ── Formatting ─────────────────────────────────────────────────────────────────
 
 function formatPrice(price: number | null, currency: string | null): string | null {
   if (price === null) return null;
@@ -28,246 +137,415 @@ function formatPrice(price: number | null, currency: string | null): string | nu
   }
 }
 
-interface MenuItemData {
-  title: string;
-  description: string | null;
-  price: number | null;
-  currency: string | null;
+// ── Item components ────────────────────────────────────────────────────────────
+
+function ItemBadge({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center rounded border px-1 py-px text-[10px] font-medium leading-none text-muted-foreground">
+      {children}
+    </span>
+  );
 }
 
-function MenuItem({ item }: { item: MenuItemData }) {
+function MenuItem({
+  item,
+  allergyFriendly,
+  isKids,
+}: {
+  item: MenuItemData;
+  allergyFriendly: boolean;
+  isKids: boolean;
+}) {
   const price = formatPrice(item.price, item.currency);
   return (
-    <div className="flex items-start justify-between gap-4 py-4">
+    <div className="flex items-start justify-between gap-3 border-b border-border/40 py-3 last:border-0">
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold leading-snug">{item.title}</p>
+        <div className="flex flex-wrap items-baseline gap-1.5">
+          <p className="text-sm font-medium leading-snug">{item.title}</p>
+          {isKids && <ItemBadge>Kids</ItemBadge>}
+          {allergyFriendly && (
+            <span className="inline-flex items-center rounded border border-emerald-200 px-1 py-px text-[10px] font-medium leading-none text-emerald-600">
+              AF
+            </span>
+          )}
+        </div>
         {item.description && (
-          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+          <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
             {item.description}
           </p>
         )}
       </div>
       {price && (
-        <span className="shrink-0 text-sm font-medium tabular-nums text-muted-foreground">
-          {price}
-        </span>
+        <span className="shrink-0 text-sm tabular-nums text-muted-foreground">{price}</span>
       )}
     </div>
   );
 }
 
+// ── Shared menu content ────────────────────────────────────────────────────────
+
 /**
- * Per-venue menu drawer with Uber Eats-style navigation:
- * - Meal periods (Lunch/Dinner) are tabs that swap content, not scroll anchors.
- * - Named groups within the active period appear as quick-scroll pills below
- *   the period tabs; IntersectionObserver highlights the one in view.
- * - Items are laid out in a responsive two-column grid; sections are separated
- *   by a label + full-width rule rather than a muted background band.
+ * The scrollable body shared by both the desktop dialog and mobile drawer.
+ * `twoColumn` splits type sections into a left + right column with a vertical
+ * divider rule between them, like a traditional printed menu. On mobile
+ * sections stack single-column.
  */
-export function DiningMenuDrawer({
-  facilityId,
-  name,
-  trigger,
+function MenuBody({
+  periods,
+  activePeriodIdx,
+  onSwitchPeriod,
+  typeSections,
+  onJumpToType,
+  sectionRefs,
+  scrollRef,
+  pillsRef,
+  twoColumn,
+  menuIsLoading,
 }: {
-  facilityId: string;
-  name: string;
-  trigger: React.ReactNode;
+  periods: Array<{ mealPeriod: string; groups: RawGroup[] }>;
+  activePeriodIdx: number;
+  onSwitchPeriod: (i: number) => void;
+  typeSections: TypeSection[];
+  onJumpToType: (key: string) => void;
+  sectionRefs: React.RefObject<Map<string, HTMLElement>>;
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+  pillsRef: React.RefObject<HTMLDivElement | null>;
+  twoColumn: boolean;
+  menuIsLoading: boolean;
 }) {
+  const hasMultiplePeriods = periods.length > 1;
+  const hasTypeSections = typeSections.length > 1;
+
+  function renderSection(section: TypeSection) {
+    return (
+      <div
+        key={section.typeKey}
+        data-type-key={section.typeKey}
+        ref={(el) => {
+          if (el) sectionRefs.current.set(section.typeKey, el);
+          else sectionRefs.current.delete(section.typeKey);
+        }}
+        className="mb-10 mt-6 first:mt-0"
+        style={{ breakInside: "avoid" }}
+      >
+        {/* Section header — decorative underline marks each category */}
+        <p className="mb-3 text-sm font-semibold [text-decoration:underline] [text-decoration-color:hsl(var(--primary)/0.45)] [text-decoration-thickness:2px] [text-underline-offset:5px]">
+          {section.label}
+        </p>
+
+        {section.groups.map((group, gi) => (
+          <div key={`${group.groupName ?? "g"}-${gi}`}>
+            {group.groupName && (
+              <p className="pb-0.5 pt-4 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50 first:pt-0">
+                {group.groupName}
+              </p>
+            )}
+            {group.items.map((item, ii) => (
+              <MenuItem
+                key={`${item.title}-${ii}`}
+                item={item}
+                allergyFriendly={group.allergyFriendly}
+                isKids={group.isKids}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {/* Period tabs */}
+      {hasMultiplePeriods && (
+        <div className="flex shrink-0 gap-2 border-b px-4 pb-3">
+          {periods.map((p, i) => (
+            <button
+              key={p.mealPeriod}
+              type="button"
+              onClick={() => onSwitchPeriod(i)}
+              className={cn(
+                "rounded-full px-4 py-1.5 text-sm font-semibold transition-colors",
+                i === activePeriodIdx
+                  ? "bg-foreground text-background"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {p.mealPeriod}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Type quick-jump pills — stateless, clicking just scrolls to that section */}
+      {hasTypeSections && (
+        <div
+          ref={pillsRef}
+          className="flex shrink-0 gap-1.5 overflow-x-auto border-b px-4 py-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          {typeSections.map((s) => (
+            <button
+              key={s.typeKey}
+              type="button"
+              onClick={() => onJumpToType(s.typeKey)}
+              className="shrink-0 rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Scrollable sections */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+        {menuIsLoading ? (
+          <div className="flex flex-col gap-0 px-6 pt-6">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div
+                key={i}
+                className="flex items-start justify-between gap-3 border-b border-border/40 py-3"
+              >
+                <div className="flex-1 space-y-1.5">
+                  <Skeleton className="h-4 w-36" />
+                  <Skeleton className="h-3 w-56" />
+                </div>
+                <Skeleton className="h-4 w-10 shrink-0" />
+              </div>
+            ))}
+          </div>
+        ) : twoColumn && typeSections.length > 1 ? (
+          /*
+           * Desktop masonry: CSS `column-count: 2` auto-balances sections into two
+           * columns of equal height. `break-inside: avoid` on each section ensures
+           * they never split mid-content. The column-rule draws the vertical divider.
+           */
+          <div
+            className="px-8 pt-6 pb-12"
+            style={{
+              columnCount: 2,
+              columnGap: "3.5rem",
+              columnRule: "1px solid hsl(var(--border))",
+            }}
+          >
+            {typeSections.map((s) => renderSection(s))}
+          </div>
+        ) : (
+          /* Mobile / single-column */
+          <div className="px-4 pt-6 pb-10">{typeSections.map((s) => renderSection(s))}</div>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ── Shared state / query hook ──────────────────────────────────────────────────
+
+function useMenuState(facilityId: string, open: boolean) {
   const trpc = useTRPC();
-  const [open, setOpen] = React.useState(false);
   const menuQ = useQuery({
     ...trpc.dining.menu.queryOptions({ facilityId }),
     enabled: open,
   });
 
-  const periods = menuQ.data?.mealPeriods ?? [];
+  const periods = (menuQ.data?.mealPeriods ?? []) as Array<{
+    mealPeriod: string;
+    groups: RawGroup[];
+  }>;
 
   const [activePeriodIdx, setActivePeriodIdx] = React.useState(0);
-  const [activeGroupName, setActiveGroupName] = React.useState<string | null>(null);
 
   const currentPeriod = periods[activePeriodIdx];
-  const groups = currentPeriod?.groups ?? [];
-  const namedGroups = groups.filter((g) => g.groupName);
+  const typeSections = React.useMemo(
+    () => buildTypeSections(currentPeriod?.groups ?? []),
+    [currentPeriod],
+  );
 
-  const groupRefs = React.useRef<Map<string, HTMLElement>>(new Map());
+  const sectionRefs = React.useRef<Map<string, HTMLElement>>(new Map());
   const scrollRef = React.useRef<HTMLDivElement>(null);
-  const subNavRef = React.useRef<HTMLDivElement>(null);
+  const pillsRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (open) setActivePeriodIdx(0);
+  }, [open]);
 
   function switchPeriod(idx: number) {
     setActivePeriodIdx(idx);
-    setActiveGroupName(null);
-    groupRefs.current.clear();
+    sectionRefs.current.clear();
     scrollRef.current?.scrollTo({ top: 0, behavior: "instant" });
   }
 
-  function jumpToGroup(groupName: string) {
-    setActiveGroupName(groupName);
-    groupRefs.current.get(groupName)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  function jumpToType(key: string) {
+    sectionRefs.current.get(key)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  // Reset period selection whenever the drawer opens.
+  return {
+    menuQ,
+    periods,
+    activePeriodIdx,
+    typeSections,
+    sectionRefs,
+    scrollRef,
+    pillsRef,
+    switchPeriod,
+    jumpToType,
+  };
+}
+
+// ── Desktop dialog (motion-powered) ───────────────────────────────────────────
+
+const LAYOUT_ID_PREFIX = "menu-popup-";
+
+function DesktopMenuDialog({ facilityId, name }: { facilityId: string; name: string }) {
+  const [open, setOpen] = React.useState(false);
+  const layoutId = `${LAYOUT_ID_PREFIX}${facilityId}`;
+
+  const state = useMenuState(facilityId, open);
+
+  // Close on Escape.
   React.useEffect(() => {
-    if (open) {
-      setActivePeriodIdx(0);
-      setActiveGroupName(null);
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
     }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  // Highlight the group currently in the viewport.
-  React.useEffect(() => {
-    if (!scrollRef.current || !namedGroups.length) return;
-    const container = scrollRef.current;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            setActiveGroupName(entry.target.getAttribute("data-group"));
-            break;
-          }
-        }
-      },
-      { root: container, threshold: 0, rootMargin: "-15% 0px -70% 0px" },
-    );
-    for (const [, el] of groupRefs.current) observer.observe(el);
-    return () => observer.disconnect();
-  }, [namedGroups.length, activePeriodIdx]);
+  return (
+    <>
+      {/*
+       * The trigger button stays mounted and uses the same layoutId as the dialog
+       * popup. When the dialog opens, the trigger fades out; motion's layoutId
+       * animates the popup from the trigger's last known position/size.
+       * When the dialog closes, the popup exits and the trigger fades back in.
+       */}
+      <motion.button
+        layoutId={layoutId}
+        type="button"
+        onClick={() => setOpen(true)}
+        animate={{ opacity: open ? 0 : 1 }}
+        transition={{ opacity: { duration: open ? 0.05 : 0.15, delay: open ? 0 : 0.25 } }}
+        style={{ borderRadius: 8 }}
+        className="inline-flex h-8 w-full items-center justify-center rounded-md border border-input bg-background px-3 text-xs font-medium shadow-xs hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        aria-label={`View menu for ${name}`}
+      >
+        View menu
+      </motion.button>
 
-  // Scroll the active group pill into view in the sub-nav bar.
-  React.useEffect(() => {
-    if (!activeGroupName || !subNavRef.current) return;
-    const btn = subNavRef.current.querySelector<HTMLElement>(
-      `[data-group-btn="${activeGroupName}"]`,
-    );
-    btn?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
-  }, [activeGroupName]);
+      <AnimatePresence>
+        {open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            {/* Backdrop */}
+            <motion.div
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={() => setOpen(false)}
+            />
 
-  const hasMultiplePeriods = periods.length > 1;
-  const hasSubNav = namedGroups.length > 1;
+            {/* Dialog popup — shares layoutId with the trigger button */}
+            <motion.div
+              layoutId={layoutId}
+              role="dialog"
+              aria-modal="true"
+              aria-label={name}
+              style={{ borderRadius: 24 }}
+              className="relative z-10 flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden bg-popover shadow-2xl ring-1 ring-foreground/5 dark:ring-foreground/10"
+            >
+              {/* Compact header */}
+              <motion.div
+                layout="position"
+                className="flex shrink-0 items-center justify-between gap-4 px-6 py-4"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-base font-semibold">{name}</p>
+                  <p className="text-xs text-muted-foreground">Prices excl. tax &amp; gratuity</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="shrink-0 bg-secondary"
+                  onClick={() => setOpen(false)}
+                  aria-label="Close"
+                >
+                  <XIcon className="size-4" />
+                </Button>
+              </motion.div>
+
+              <motion.div layout="position" className="contents">
+                <MenuBody
+                  periods={state.periods}
+                  activePeriodIdx={state.activePeriodIdx}
+                  onSwitchPeriod={state.switchPeriod}
+                  typeSections={state.typeSections}
+                  onJumpToType={state.jumpToType}
+                  sectionRefs={state.sectionRefs}
+                  scrollRef={state.scrollRef}
+                  pillsRef={state.pillsRef}
+                  twoColumn
+                  menuIsLoading={state.menuQ.isLoading}
+                />
+              </motion.div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </>
+  );
+}
+
+// ── Mobile drawer ──────────────────────────────────────────────────────────────
+
+function MobileMenuDrawer({ facilityId, name }: { facilityId: string; name: string }) {
+  const [open, setOpen] = React.useState(false);
+  const state = useMenuState(facilityId, open);
 
   return (
     <Drawer open={open} onOpenChange={setOpen}>
-      <DrawerTrigger asChild>{trigger}</DrawerTrigger>
+      <DrawerTrigger asChild>
+        <Button variant="outline" size="sm" className="w-full">
+          View menu
+        </Button>
+      </DrawerTrigger>
       <DrawerContent className="flex max-h-[90vh] flex-col">
         <DrawerHeader className="shrink-0 pb-3 text-left">
           <DrawerTitle>{name}</DrawerTitle>
-          {!menuQ.isLoading && periods.length > 0 && (
-            <DrawerDescription>Prices exclude tax &amp; gratuity and may change.</DrawerDescription>
-          )}
-          {!menuQ.isLoading && periods.length === 0 && (
-            <DrawerDescription>No menu captured for this restaurant yet.</DrawerDescription>
-          )}
         </DrawerHeader>
-
-        {/* ── Meal-period tab bar ── */}
-        {hasMultiplePeriods && (
-          <div className="flex shrink-0 gap-2 border-b px-4 pb-3">
-            {periods.map((p, i) => (
-              <button
-                key={p.mealPeriod}
-                type="button"
-                onClick={() => switchPeriod(i)}
-                className={cn(
-                  "rounded-full px-4 py-1.5 text-sm font-semibold transition-colors",
-                  i === activePeriodIdx
-                    ? "bg-foreground text-background"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {p.mealPeriod}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* ── Group quick-scroll sub-nav ── */}
-        {hasSubNav && (
-          <div
-            ref={subNavRef}
-            className="flex shrink-0 gap-1.5 overflow-x-auto border-b px-4 py-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          >
-            {namedGroups.map((g) => {
-              const active =
-                activeGroupName === g.groupName ||
-                (!activeGroupName && namedGroups[0]?.groupName === g.groupName);
-              return (
-                <button
-                  key={g.groupName}
-                  type="button"
-                  data-group-btn={g.groupName}
-                  onClick={() => jumpToGroup(g.groupName!)}
-                  className={cn(
-                    "shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                    active
-                      ? "border-foreground bg-foreground text-background"
-                      : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
-                  )}
-                >
-                  {g.groupName}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* ── Scrollable menu content ── */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto">
-          {menuQ.isLoading ? (
-            <div className="grid grid-cols-1 gap-x-8 px-6 pt-4 sm:grid-cols-2">
-              {Array.from({ length: 10 }).map((_, i) => (
-                <div key={i} className="flex items-start justify-between gap-4 py-4">
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-4 w-36" />
-                    <Skeleton className="h-3 w-56" />
-                  </div>
-                  <Skeleton className="h-4 w-10 shrink-0" />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="pb-10">
-              {groups.map((group, gi) => (
-                <div
-                  key={`${group.groupName ?? "g"}-${gi}`}
-                  data-group={group.groupName ?? undefined}
-                  ref={(el) => {
-                    if (group.groupName) {
-                      if (el) groupRefs.current.set(group.groupName, el);
-                      else groupRefs.current.delete(group.groupName);
-                    }
-                  }}
-                >
-                  {/* Section divider */}
-                  {group.groupName && (
-                    <div
-                      className={cn(
-                        "flex items-center gap-3 px-6",
-                        gi === 0 ? "pb-1 pt-6" : "pb-1 pt-10",
-                      )}
-                    >
-                      <span className="shrink-0 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                        {group.groupName}
-                      </span>
-                      <div className="h-px flex-1 bg-border" />
-                    </div>
-                  )}
-
-                  {/* Two-column item grid */}
-                  <div className="grid grid-cols-1 gap-x-8 px-6 sm:grid-cols-2">
-                    {group.items.map((item, ii) => (
-                      <div
-                        key={`${item.title}-${ii}`}
-                        className="border-b border-border/40 last:border-0"
-                      >
-                        <MenuItem item={item} />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <MenuBody
+          periods={state.periods}
+          activePeriodIdx={state.activePeriodIdx}
+          onSwitchPeriod={state.switchPeriod}
+          typeSections={state.typeSections}
+          onJumpToType={state.jumpToType}
+          sectionRefs={state.sectionRefs}
+          scrollRef={state.scrollRef}
+          pillsRef={state.pillsRef}
+          twoColumn={false}
+          menuIsLoading={state.menuQ.isLoading}
+        />
       </DrawerContent>
     </Drawer>
+  );
+}
+
+// ── Public export ──────────────────────────────────────────────────────────────
+
+/**
+ * Renders a "View menu" button that:
+ *  - On desktop: morphs into a full dialog via motion's `layoutId` shared-layout
+ *    animation. Sections are displayed in two columns with a vertical divider.
+ *  - On mobile: opens a bottom Drawer with single-column sections.
+ *
+ * The `trigger` prop is no longer accepted; the button is owned internally so
+ * that the motion layout animation has full control of the element.
+ */
+export function DiningMenuDrawer({ facilityId, name }: { facilityId: string; name: string }) {
+  const isMobile = useIsMobile();
+  return isMobile ? (
+    <MobileMenuDrawer facilityId={facilityId} name={name} />
+  ) : (
+    <DesktopMenuDialog facilityId={facilityId} name={name} />
   );
 }

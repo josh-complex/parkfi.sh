@@ -1,9 +1,8 @@
 import { dash } from "@better-auth/infra";
 import { betterAuth } from "better-auth";
-import { oAuthProxy } from "better-auth/plugins";
+import { captcha, haveIBeenPwned, lastLoginMethod, oAuthProxy, oneTap } from "better-auth/plugins";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
-
 import { db } from "#/db/index.ts";
 import { account, session, user, verification } from "#/db/auth-schema.ts";
 
@@ -15,6 +14,18 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
   },
+  socialProviders: {
+    google: {
+      clientId: import.meta.env.GOOGLE_CLIENT_ID,
+      clientSecret: import.meta.env.GOOGLE_CLIENT_SECRET,
+      accessType: "offline",
+    },
+    apple: {
+      clientId: import.meta.env.APPLE_CLIENT_ID,
+      clientSecret: import.meta.env.APPLE_CLIENT_SECRET,
+      appBundleIdentifier: import.meta.env.APPLE_BUNDLE_ID,
+    },
+  },
   plugins: [
     dash(),
     oAuthProxy({
@@ -22,6 +33,17 @@ export const auth = betterAuth({
       secret: import.meta.env.OAUTH_PROXY_SECRET,
     }),
     tanstackStartCookies(),
+    // Google One Tap — uses the google social provider clientId automatically
+    oneTap(),
+    // Cloudflare Turnstile on email sign-in, sign-up, and password reset
+    captcha({
+      provider: "cloudflare-turnstile",
+      secretKey: import.meta.env.CLOUDFLARE_TURNSTILE_SECRET_KEY,
+    }),
+    // Reject passwords found in known breach databases via HIBP k-anonymity API
+    haveIBeenPwned(),
+    // Cookie-based tracking of the last method used to sign in
+    lastLoginMethod(),
   ],
   trustedOrigins: import.meta.env.DEV ? ["http://localhost:3000"] : [],
 });
