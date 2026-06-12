@@ -23,13 +23,13 @@ import { diningObs, restaurantDim } from "#/db/schema.ts";
 import { Source, SWEEPABLE_DINING_ENTITY_TYPES } from "#/server/parks/codes.ts";
 import { config } from "#/server/parks/config.ts";
 import { fetchAvailability } from "#/server/dining/availability.ts";
-import { refreshDineBearer } from "#/server/dining/disney-session.ts";
+import { refreshDineBearer, seedDineRefreshToken } from "#/server/dining/disney-session.ts";
 
-const PARTY_SIZES = (process.env.DINING_PARTY_SIZES ?? "2,4")
+const PARTY_SIZES = (process.env.DINING_PARTY_SIZES ?? "1,2,3,4,5,6,7,8,9,10")
   .split(",")
   .map((s) => Number(s.trim()))
   .filter((n) => Number.isFinite(n) && n > 0 && n <= 10);
-const DAY_HORIZON = Number(process.env.DINING_DAY_HORIZON ?? 14);
+const DAY_HORIZON = Number(process.env.DINING_DAY_HORIZON ?? 30);
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -48,6 +48,11 @@ async function main() {
   if (!config.disneyOneIdApiKey) {
     console.error("[dining-availability] DISNEY_ONEID_APIKEY not set");
     process.exit(1);
+  }
+  const seedToken = process.env.DISNEY_REFRESH_TOKEN?.trim();
+  if (seedToken) {
+    await seedDineRefreshToken(seedToken);
+    console.log("[dining-availability] seeded OneID refresh token from DISNEY_REFRESH_TOKEN");
   }
   const observedAt = new Date();
   // One inclusive [start, end] range covers the horizon in a single request per

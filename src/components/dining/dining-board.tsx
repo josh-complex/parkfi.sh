@@ -161,7 +161,7 @@ function RestaurantCard({
   const dateLabel = formatDate(referenceDate);
 
   return (
-    <Card className="@container/card overflow-hidden pt-0 shadow-none ring-0 border border-border border-t-3">
+    <Card className="@container/card overflow-hidden pt-0">
       {restaurant.imageUrl && (
         <div className="bg-muted relative h-32 w-full overflow-hidden">
           <img

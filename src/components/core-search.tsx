@@ -54,7 +54,7 @@ export function coreSegClass(pos: SegPos, active: boolean) {
     pos === "first" && "rounded-l-full pl-7",
     pos === "last" && "rounded-r-full pr-7",
     active &&
-      "top-[3px] z-10 border-primary bg-primary text-primary-foreground shadow-[0_0_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)] hover:top-[3px] hover:bg-primary hover:shadow-[0_0_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)]",
+      "top-[3px] z-10 bg-primary text-primary-foreground [--btn-3d:color-mix(in_oklch,var(--primary),black_32%)] [--btn-glare:color-mix(in_oklch,var(--primary),black_32%)] shadow-[0_0_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)] hover:top-[3px] hover:bg-primary hover:shadow-[0_0_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)]",
   );
 }
 
