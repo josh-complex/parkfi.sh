@@ -276,6 +276,7 @@ export const forecastRouter = {
 
       const [crowd, weather] = await Promise.all([crowdP, weatherP]);
 
+      const crowdByDate = new Map(crowd.rows.map((r) => [r.date, r.percentile]));
       const weatherByDate = new Map(
         weather.rows.map((r) => [
           r.date,
@@ -287,15 +288,19 @@ export const forecastRouter = {
         ]),
       );
 
+      // Union of all dates from either source — weather data shouldn't be
+      // gated on the ML model having a forecast for that day.
+      const allDates = [...new Set([...crowdByDate.keys(), ...weatherByDate.keys()])].sort();
+
       return {
-        days: crowd.rows.map((r) => {
-          const pct = r.percentile;
+        days: allDates.map((date) => {
+          const pct = crowdByDate.get(date) ?? null;
           const crowdIndex =
             pct == null ? null : Math.max(1, Math.min(10, Math.round(1 + 9 * pct)));
           return {
-            date: r.date,
+            date,
             crowdIndex,
-            weather: weatherByDate.get(r.date) ?? null,
+            weather: weatherByDate.get(date) ?? null,
           };
         }),
       };

@@ -55,8 +55,8 @@ async function parksWithGeo(): Promise<Array<ParkLoc>> {
   }));
 }
 
-/** Minimal shape of the One Call 3.0 fields we read (metric units). */
-interface OneCallBlock {
+/** Minimal shape of the One Call 3.0 hourly/current fields we read (metric units). */
+interface HourlyBlock {
   dt: number;
   temp?: number;
   humidity?: number;
@@ -65,9 +65,39 @@ interface OneCallBlock {
   rain?: { "1h"?: number };
   weather?: Array<{ main?: string }>;
 }
+
+/** One Call 3.0 daily block — temp is an object, rain is total mm for the day. */
+interface DailyBlock {
+  dt: number;
+  temp?: { max?: number };
+  humidity?: number;
+  wind_speed?: number;
+  pop?: number;
+  rain?: number;
+  weather?: Array<{ main?: string }>;
+}
+
+/**
+ * /data/2.5/forecast/daily block — same shape as DailyBlock but wind field is
+ * `speed` (m/s) not `wind_speed`, matching the older Forecast API convention.
+ */
+interface ForecastDailyBlock {
+  dt: number;
+  temp?: { max?: number };
+  humidity?: number;
+  speed?: number;
+  pop?: number;
+  rain?: number;
+  weather?: Array<{ main?: string }>;
+}
+interface ForecastDailyResponse {
+  list?: Array<ForecastDailyBlock>;
+}
+
 interface OneCallResponse {
-  current?: OneCallBlock;
-  hourly?: Array<OneCallBlock>;
+  current?: HourlyBlock;
+  hourly?: Array<HourlyBlock>;
+  daily?: Array<DailyBlock>;
 }
 
 type WeatherRow = typeof weatherObs.$inferInsert;
@@ -78,7 +108,18 @@ function hourBucket(dtSeconds: number): Date {
   return new Date(Math.floor((dtSeconds * 1000) / MS_PER_HOUR) * MS_PER_HOUR);
 }
 
-function row(parkId: number, kind: "FORECAST" | "ACTUAL", b: OneCallBlock): WeatherRow {
+/**
+ * Pin a daily entry to 13:00 UTC on its calendar day so the calendar-overlay
+ * query (`ORDER BY noon_dist`) always prefers a real hourly reading (days 1–2)
+ * and falls back to the daily summary cleanly for days 3–8.
+ */
+function noonBucket(dtSeconds: number): Date {
+  const d = new Date(dtSeconds * 1000);
+  d.setUTCHours(13, 0, 0, 0);
+  return d;
+}
+
+function hourlyRow(parkId: number, kind: "FORECAST" | "ACTUAL", b: HourlyBlock): WeatherRow {
   return {
     parkId,
     observedAt: hourBucket(b.dt),
@@ -94,16 +135,60 @@ function row(parkId: number, kind: "FORECAST" | "ACTUAL", b: OneCallBlock): Weat
   };
 }
 
+function dailyRow(parkId: number, b: DailyBlock): WeatherRow {
+  return {
+    parkId,
+    observedAt: noonBucket(b.dt),
+    kind: "FORECAST",
+    tempC: b.temp?.max ?? null,
+    precipMm: b.rain ?? 0,
+    precipProb: b.pop ?? null,
+    windKph: b.wind_speed == null ? null : Math.round(b.wind_speed * 3.6 * 10) / 10,
+    humidity: b.humidity ?? null,
+    condition: b.weather?.[0]?.main ?? null,
+    source: Source.OPENWEATHER,
+  };
+}
+
+function forecastDailyRow(parkId: number, b: ForecastDailyBlock): WeatherRow {
+  return {
+    parkId,
+    observedAt: noonBucket(b.dt),
+    kind: "FORECAST",
+    tempC: b.temp?.max ?? null,
+    precipMm: b.rain ?? 0,
+    precipProb: b.pop ?? null,
+    windKph: b.speed == null ? null : Math.round(b.speed * 3.6 * 10) / 10,
+    humidity: b.humidity ?? null,
+    condition: b.weather?.[0]?.main ?? null,
+    source: Source.OPENWEATHER,
+  };
+}
+
 async function fetchOneCall(park: ParkLoc): Promise<OneCallResponse> {
   const url =
     `${config.openweatherBase}/onecall?lat=${park.lat}&lon=${park.lng}` +
-    `&exclude=minutely,daily,alerts&units=metric&appid=${config.openweatherApiKey}`;
+    `&exclude=minutely,alerts&units=metric&appid=${config.openweatherApiKey}`;
   const res = await fetch(url, {
     signal: AbortSignal.timeout(config.fetchTimeoutMs),
     headers: { "user-agent": config.userAgent, accept: "application/json" },
   });
   if (!res.ok) throw new Error(`GET onecall ${park.slug} -> ${res.status}`);
   return (await res.json()) as OneCallResponse;
+}
+
+/** 16-day daily forecast from the standard Forecast API (days 9–16 extend One Call). */
+async function fetchDailyForecast(park: ParkLoc): Promise<ForecastDailyResponse> {
+  const base = config.openweatherBase.replace("/data/3.0", "/data/2.5");
+  const url =
+    `${base}/forecast/daily?lat=${park.lat}&lon=${park.lng}` +
+    `&cnt=16&units=metric&appid=${config.openweatherApiKey}`;
+  const res = await fetch(url, {
+    signal: AbortSignal.timeout(config.fetchTimeoutMs),
+    headers: { "user-agent": config.userAgent, accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`GET forecast/daily ${park.slug} -> ${res.status}`);
+  return (await res.json()) as ForecastDailyResponse;
 }
 
 /** Upsert: latest forecast wins; the newest reading wins for an actual hour. */
@@ -136,17 +221,41 @@ async function runStep(label: string, fn: () => Promise<void>): Promise<void> {
 }
 
 async function ingestPark(park: ParkLoc): Promise<void> {
-  const data = await fetchOneCall(park);
-  const rows: Array<WeatherRow> = [];
-  if (data.current) rows.push(row(park.id, "ACTUAL", data.current));
-  for (const h of data.hourly ?? []) rows.push(row(park.id, "FORECAST", h));
-  if (rows.length === 0) {
+  // Fetch both APIs concurrently; 16-day failure is non-fatal (plan gate).
+  const [data, extended] = await Promise.all([
+    fetchOneCall(park),
+    fetchDailyForecast(park).catch((err: unknown) => {
+      console.warn(
+        `[cron-weather] ${park.slug} forecast/daily skipped:`,
+        err instanceof Error ? err.message : err,
+      );
+      return null;
+    }),
+  ]);
+
+  // Hourly rows (current + forecast) — upsert first so hourly data wins
+  // over the daily summary for overlapping noon timestamps.
+  const hourlyRows: Array<WeatherRow> = [];
+  if (data.current) hourlyRows.push(hourlyRow(park.id, "ACTUAL", data.current));
+  for (const h of data.hourly ?? []) hourlyRows.push(hourlyRow(park.id, "FORECAST", h));
+
+  // One Call daily rows (days 1–8) — separate batch to avoid same-PK collisions
+  // with hourly rows at 13:00 UTC within a single INSERT.
+  const oneCallDailyRows = (data.daily ?? []).map((d) => dailyRow(park.id, d));
+
+  // 16-day forecast rows (days 1–16); days 1–8 overlap with One Call daily and
+  // will simply overwrite via onConflictDoUpdate — that's fine.
+  const extendedRows = (extended?.list ?? []).map((d) => forecastDailyRow(park.id, d));
+
+  if (hourlyRows.length === 0 && oneCallDailyRows.length === 0 && extendedRows.length === 0) {
     console.warn(`[cron-weather] ${park.slug}: empty One Call response`);
     return;
   }
-  await upsert(rows);
+  if (hourlyRows.length > 0) await upsert(hourlyRows);
+  if (oneCallDailyRows.length > 0) await upsert(oneCallDailyRows);
+  if (extendedRows.length > 0) await upsert(extendedRows);
   console.log(
-    `[cron-weather] ${park.slug}: ${data.hourly?.length ?? 0} forecast + ${data.current ? 1 : 0} actual`,
+    `[cron-weather] ${park.slug}: ${data.hourly?.length ?? 0} hourly + ${data.daily?.length ?? 0} daily + ${extendedRows.length} extended + ${data.current ? 1 : 0} actual`,
   );
 }
 

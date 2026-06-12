@@ -31,6 +31,7 @@
     "stays:availability": "bun services/stays-availability/main.ts",
     "notifications": "bun services/notifications/main.ts",
     "dining:priority": "bun src/db/set-dining-priority.ts",
+    "backfill:qt": "bun scripts/backfill-queue-times.ts",
     "debug:universal": "bun services/cron-tickets/debug-universal.ts",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
