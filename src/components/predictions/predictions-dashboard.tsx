@@ -93,43 +93,53 @@ function AccuracyTiles() {
   const byWindow = new Map(data.windows.map((w) => [w.window, w]));
   const win = byWindow.get("7d") ?? byWindow.get("30d") ?? data.windows[0];
 
-  if (!win || !win.ready) {
-    const n = win?.nPredictions ?? 0;
+  if (!win) {
     return (
       <Empty>
         <EmptyTitle>Accuracy is still calibrating</EmptyTitle>
         <EmptyDescription>
-          We hold back public accuracy numbers until the backtest has enough verified predictions to
-          be honest. {n.toLocaleString()} so far.
+          Numbers appear once the backtest has run against verified wait-time actuals.
         </EmptyDescription>
       </Empty>
     );
   }
 
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
-      <Tile label="Mean error (MAE)" value={`±${fmt1(win.mae)} min`} sub={`${win.window} window`} />
-      <Tile label="RMSE" value={`±${fmt1(win.rmse)} min`} sub="penalizes big misses" />
-      <Tile
-        label="MAPE"
-        value={win.mape == null ? "—" : `${Math.round(win.mape * 100)}%`}
-        sub="avg percent error"
-      />
-      <Tile
-        label="R²"
-        value={win.r2 == null ? "—" : (Math.round(win.r2 * 100) / 100).toFixed(2)}
-        sub="variance explained"
-      />
-      <Tile
-        label="Predictions"
-        value={win.nPredictions.toLocaleString()}
-        sub="verified vs actuals"
-      />
-      <Tile
-        label="Verified coverage"
-        value={win.coveragePct == null ? "—" : `${Math.round(win.coveragePct * 100)}%`}
-        sub="forecasts checked against actuals"
-      />
+    <div className="flex flex-col gap-4">
+      {!win.ready && (
+        <p className="text-sm text-muted-foreground">
+          Early data · {win.nPredictions.toLocaleString()} predictions verified so far. Numbers will
+          stabilize as more actuals accumulate.
+        </p>
+      )}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+        <Tile
+          label="Mean error (MAE)"
+          value={`±${fmt1(win.mae)} min`}
+          sub={`${win.window} window`}
+        />
+        <Tile label="RMSE" value={`±${fmt1(win.rmse)} min`} sub="penalizes big misses" />
+        <Tile
+          label="MAPE"
+          value={win.mape == null ? "—" : `${Math.round(win.mape * 100)}%`}
+          sub="avg percent error"
+        />
+        <Tile
+          label="R²"
+          value={win.r2 == null ? "—" : (Math.round(win.r2 * 100) / 100).toFixed(2)}
+          sub="variance explained"
+        />
+        <Tile
+          label="Predictions"
+          value={win.nPredictions.toLocaleString()}
+          sub="verified vs actuals"
+        />
+        <Tile
+          label="Verified coverage"
+          value={win.coveragePct == null ? "—" : `${Math.round(win.coveragePct * 100)}%`}
+          sub="forecasts checked against actuals"
+        />
+      </div>
     </div>
   );
 }
@@ -198,7 +208,8 @@ function ParkCurve() {
             </span>
             {crowd.percentile != null && (
               <span className="text-xs text-muted-foreground">
-                busier than {Math.round(crowd.percentile * 100)}% of the last {crowd.basisDays} days
+                busier than {Math.round(crowd.percentile * 100)}% of the last {crowd.basisDays}{" "}
+                {(crowd.basisDays ?? 0) < 30 ? "days (early data)" : "days"}
               </span>
             )}
           </div>

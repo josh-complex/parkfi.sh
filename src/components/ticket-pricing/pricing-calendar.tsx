@@ -3,9 +3,18 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { DayButton } from "react-day-picker";
-import { Cloud, CloudDrizzle, CloudLightning, CloudRain, CloudSnow, Sun } from "lucide-react";
 
 import { Store, useSelector } from "@tanstack/react-store";
+import { CloudDrizzle } from "#/components/animate-ui/icons/cloud-drizzle.tsx";
+import { CloudHail } from "#/components/animate-ui/icons/cloud-hail.tsx";
+import { AnimateIcon } from "#/components/animate-ui/icons/icon.tsx";
+import { CloudLightning } from "#/components/animate-ui/icons/cloud-lightning.tsx";
+import { CloudRain } from "#/components/animate-ui/icons/cloud-rain.tsx";
+import { CloudRainWind } from "#/components/animate-ui/icons/cloud-rain-wind.tsx";
+import { CloudSnow } from "#/components/animate-ui/icons/cloud-snow.tsx";
+import { CloudSun } from "#/components/animate-ui/icons/cloud-sun.tsx";
+import { CloudSunRain } from "#/components/animate-ui/icons/cloud-sun-rain.tsx";
+import { Sun } from "#/components/animate-ui/icons/sun.tsx";
 
 import { Calendar } from "#/components/ui/calendar.tsx";
 import { Card, CardDescription, CardHeader, CardTitle } from "#/components/ui/card.tsx";
@@ -35,6 +44,7 @@ interface DayPrice {
 
 interface DayOverlay {
   crowdIndex: number | null;
+  crowdIsEstimate: boolean;
   highF: number | null;
   precipProb: number | null;
   condition: string | null;
@@ -50,36 +60,84 @@ function dollars(cents: number): string {
   return `$${Math.round(cents / 100)}`;
 }
 
-function crowdColor(index: number): string {
-  if (index <= 3) return "bg-emerald-500";
-  if (index <= 5) return "bg-yellow-400";
-  if (index <= 7) return "bg-orange-400";
-  return "bg-red-500";
+interface CrowdConfig {
+  bg: string;
+  pill: string;
+  label: string;
 }
 
-function WeatherIcon({ condition, className }: { condition: string | null; className?: string }) {
-  const c = condition?.toLowerCase() ?? "";
-  const Icon = c.includes("thunder")
-    ? CloudLightning
-    : c.includes("snow")
-      ? CloudSnow
-      : c.includes("rain")
-        ? CloudRain
-        : c.includes("drizzle")
-          ? CloudDrizzle
-          : c.includes("cloud")
-            ? Cloud
-            : c.includes("clear")
-              ? Sun
-              : null;
-  if (!Icon) return null;
-  return <Icon className={cn("shrink-0", className)} />;
+function crowdConfig(index: number): CrowdConfig {
+  if (index <= 3)
+    return {
+      bg: "bg-emerald-500",
+      pill: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300",
+      label: "Low",
+    };
+  if (index <= 5)
+    return {
+      bg: "bg-amber-400",
+      pill: "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
+      label: "Moderate",
+    };
+  if (index <= 7)
+    return {
+      bg: "bg-orange-400",
+      pill: "bg-orange-100 text-orange-600 dark:bg-orange-900/50 dark:text-orange-300",
+      label: "Busy",
+    };
+  return {
+    bg: "bg-red-500",
+    pill: "bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-300",
+    label: "Packed",
+  };
 }
+
+function WeatherIcon({
+  condition,
+  precipProb = null,
+  size = 14,
+}: {
+  condition: string | null;
+  precipProb?: number | null;
+  size?: number;
+}) {
+  const c = condition?.toLowerCase() ?? "";
+  const p = { size, className: "shrink-0" };
+  if (c.includes("thunder") || c.includes("lightning")) return <CloudLightning {...p} />;
+  if (c.includes("hail")) return <CloudHail {...p} />;
+  if (c.includes("snow")) return <CloudSnow {...p} />;
+  if (c.includes("drizzle")) return <CloudDrizzle {...p} />;
+  if (c.includes("wind") && c.includes("rain")) return <CloudRainWind {...p} />;
+  if ((c.includes("rain") || c.includes("shower")) && (c.includes("sun") || c.includes("partly")))
+    return <CloudSunRain {...p} />;
+  if (c.includes("rain") || c.includes("shower")) return <CloudRain {...p} />;
+  if (c.includes("partly") || (c.includes("cloud") && c.includes("sun")))
+    return <CloudSun {...p} />;
+  if (c.includes("cloud") || c.includes("overcast")) return <CloudSun {...p} />;
+  if (c.includes("clear") || c.includes("sun") || c.includes("fair")) return <Sun {...p} />;
+  // Fallback: infer from precip probability when condition string is absent
+  if (precipProb != null) {
+    const pct = precipProb > 1 ? precipProb : precipProb * 100;
+    if (pct >= 70) return <CloudRain {...p} />;
+    if (pct >= 30) return <CloudSunRain {...p} />;
+    return <CloudSun {...p} />;
+  }
+  return <Sun {...p} />;
+}
+
+function formatPrecip(precipProb: number | null): string | null {
+  if (precipProb == null) return null;
+  // Normalize: stored as 0-100 or 0-1
+  const pct = precipProb > 1 ? Math.round(precipProb) : Math.round(precipProb * 100);
+  return pct >= 20 ? `${pct}%` : null;
+}
+
+const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
 // Day cell classNames override — removes aspect-square so cells use a fixed
 // height rather than growing as tall as they are wide in a full-width calendar.
 const DAY_CELL_CLASS =
-  "group/day relative h-16 w-full rounded-(--cell-radius) p-0 text-center select-none " +
+  "group/day relative h-[72px] sm:h-[90px] lg:h-[100px] w-full rounded-(--cell-radius) p-0 text-center select-none " +
   "[&:last-child[data-selected=true]_button]:rounded-r-(--cell-radius) " +
   "[&:first-child[data-selected=true]_button]:rounded-l-(--cell-radius)";
 
@@ -109,47 +167,177 @@ function PriceDayButton({
   const info = priceMap.get(iso);
   const overlay = overlayMap.get(iso);
   const isCheapest = info != null && min != null && info.priceCents === min;
+  const crowd = overlay?.crowdIndex != null ? crowdConfig(overlay.crowdIndex) : null;
+  const precip = formatPrecip(overlay?.precipProb ?? null);
+
   return (
-    <Button
-      variant="outlineCal"
-      className={cn(
-        "relative flex h-full w-full flex-col items-center justify-center gap-0.5 overflow-hidden p-0 leading-none font-normal",
-        modifiers.outside && "opacity-40",
-        className,
-      )}
-      {...props}
-    >
-      <span className="text-xs">{day.date.getDate()}</span>
-      {overlay?.condition != null || overlay?.highF != null ? (
-        <span className="flex items-center gap-0.5 text-muted-foreground">
-          <WeatherIcon condition={overlay.condition} className="h-2.5 w-2.5" />
-          {overlay.highF != null && (
-            <span className="text-[9px] tabular-nums">{overlay.highF}°</span>
+    <AnimateIcon animateOnHover asChild>
+      <Button
+        variant="outlineCal"
+        className={cn(
+          "relative flex h-full w-full overflow-hidden p-0 font-normal",
+          modifiers.outside && "opacity-40",
+          className,
+        )}
+        {...props}
+      >
+        {/* ── MOBILE (< sm): date + price only ── */}
+        <div className="flex h-full w-full flex-col items-center justify-between p-1.5 pb-2.5 sm:hidden">
+          <span className="text-[13px] font-bold tabular-nums leading-none">
+            {day.date.getDate()}
+          </span>
+          {info ? (
+            <span
+              className={cn(
+                "tabular-nums leading-none",
+                !info.available
+                  ? "text-[9px] text-muted-foreground/40 line-through"
+                  : isCheapest
+                    ? "text-[12px] font-extrabold text-primary"
+                    : "text-[10px] font-semibold text-foreground/75",
+              )}
+            >
+              {dollars(info.priceCents)}
+            </span>
+          ) : (
+            <span className="text-[9px] text-muted-foreground/25">—</span>
           )}
-        </span>
-      ) : null}
-      {info ? (
-        <span
-          className={cn(
-            "text-[10px] tabular-nums",
-            !info.available && "text-muted-foreground line-through",
-            isCheapest && info.available ? "font-semibold text-primary" : "text-muted-foreground",
+        </div>
+
+        {/* ── TABLET (sm–lg): centered stack with all data ── */}
+        <div className="hidden h-full w-full flex-col items-center justify-between p-2 pb-3 sm:flex lg:hidden">
+          <div className="flex flex-col items-center gap-[2px]">
+            <span className="text-[15px] font-bold tabular-nums leading-none">
+              {day.date.getDate()}
+            </span>
+            <span className="text-[7px] font-medium uppercase tracking-widest text-muted-foreground/55 leading-none">
+              {DOW[day.date.getDay()]}
+            </span>
+          </div>
+
+          {overlay?.highF != null ? (
+            <span className="text-[10px] tabular-nums text-muted-foreground/80 leading-none">
+              {overlay.highF}°
+              {precip && <span className="ml-1 text-sky-500 dark:text-sky-400">{precip}</span>}
+            </span>
+          ) : (
+            <span className="h-[14px]" />
           )}
-        >
-          {dollars(info.priceCents)}
-        </span>
-      ) : (
-        <span className="text-[10px]">·</span>
-      )}
-      {overlay?.crowdIndex != null && (
-        <span
-          className={cn(
-            "absolute bottom-0 left-0 h-0.5 w-full opacity-70",
-            crowdColor(overlay.crowdIndex),
+
+          {info ? (
+            <span
+              className={cn(
+                "tabular-nums leading-none",
+                !info.available
+                  ? "text-[9px] text-muted-foreground/40 line-through"
+                  : isCheapest
+                    ? "text-[14px] font-extrabold text-primary"
+                    : "text-[11px] font-semibold text-foreground/80",
+              )}
+            >
+              {dollars(info.priceCents)}
+            </span>
+          ) : (
+            <span className="text-[9px] text-muted-foreground/25">—</span>
           )}
-        />
-      )}
-    </Button>
+
+          {crowd ? (
+            <span
+              className={cn(
+                "shrink-0 rounded-full px-1.5 py-[2px] text-[6px] font-bold uppercase tracking-widest leading-none",
+                crowd.pill,
+                overlay?.crowdIsEstimate && "opacity-60",
+              )}
+            >
+              {crowd.label}
+            </span>
+          ) : (
+            <span className="h-[14px]" />
+          )}
+        </div>
+
+        {/* ── DESKTOP (lg+): date+dow left / overflowing icon bg / price+pill bottom ── */}
+        <div className="hidden h-full w-full flex-col justify-between p-2.5 lg:flex">
+          <div className="relative flex w-full items-start justify-between">
+            <div className="flex flex-col gap-0.75">
+              <span className="text-[18px] font-bold tabular-nums leading-none">
+                {day.date.getDate()}
+              </span>
+              <span className="text-[8px] font-medium uppercase tracking-widest text-muted-foreground/60 leading-none">
+                {DOW[day.date.getDay()]}
+              </span>
+            </div>
+
+            <div className="relative z-10 flex flex-col items-end gap-0.75">
+              {overlay?.highF != null && (
+                <span className="text-[12px] font-semibold tabular-nums leading-none text-foreground/80">
+                  {overlay.highF}°
+                </span>
+              )}
+              {precip && (
+                <span className="text-[9px] font-medium tabular-nums leading-none text-sky-500 dark:text-sky-400">
+                  {precip} rain
+                </span>
+              )}
+            </div>
+
+            {(overlay?.condition != null ||
+              overlay?.highF != null ||
+              overlay?.precipProb != null) && (
+              <div className="pointer-events-none absolute -right-5 -top-5 text-foreground/[0.12] [&_svg]:lg:size-15! [&_svg]:xl:size-18!">
+                <WeatherIcon
+                  condition={overlay?.condition ?? null}
+                  precipProb={overlay?.precipProb ?? null}
+                  size={96}
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="flex w-full items-end justify-between gap-1">
+            {info ? (
+              <span
+                className={cn(
+                  "tabular-nums leading-none",
+                  !info.available
+                    ? "text-[10px] text-muted-foreground/40 line-through"
+                    : isCheapest
+                      ? "text-[15px] font-extrabold text-primary"
+                      : "text-[12px] font-semibold text-foreground/80",
+                )}
+              >
+                {dollars(info.priceCents)}
+              </span>
+            ) : (
+              <span className="text-[10px] text-muted-foreground/25">—</span>
+            )}
+
+            {crowd && (
+              <span
+                className={cn(
+                  "shrink-0 rounded-full px-1.5 py-[3px] text-[7px] font-bold uppercase tracking-widest leading-none",
+                  crowd.pill,
+                  overlay?.crowdIsEstimate && "opacity-60",
+                )}
+              >
+                {crowd.label}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Crowd accent bar — visible at all breakpoints */}
+        {crowd && (
+          <span
+            className={cn(
+              "absolute bottom-0 left-0 right-0 h-[3px]",
+              crowd.bg,
+              overlay?.crowdIsEstimate ? "opacity-20" : "opacity-45",
+            )}
+          />
+        )}
+      </Button>
+    </AnimateIcon>
   );
 }
 
@@ -235,6 +423,7 @@ export function PricingCalendar() {
     for (const d of overlayQ.data?.days ?? []) {
       m.set(d.date, {
         crowdIndex: d.crowdIndex,
+        crowdIsEstimate: d.crowdIsEstimate,
         highF: d.weather?.highF ?? null,
         precipProb: d.weather?.precipProb ?? null,
         condition: d.weather?.condition ?? null,
@@ -384,23 +573,21 @@ export function PricingCalendar() {
                 struck through
               </span>
               {overlayQ.data && (
-                <span className="flex items-center gap-2 text-xs">
-                  <span className="flex items-center gap-1">
-                    <span className="inline-block h-1.5 w-4 rounded-full bg-emerald-500 opacity-70" />
-                    Low
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="inline-block h-1.5 w-4 rounded-full bg-yellow-400 opacity-70" />
-                    Moderate
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="inline-block h-1.5 w-4 rounded-full bg-orange-400 opacity-70" />
-                    Busy
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="inline-block h-1.5 w-4 rounded-full bg-red-500 opacity-70" />
-                    Packed
-                  </span>
+                <span className="flex flex-wrap items-center gap-1.5">
+                  {([1, 4, 6, 8] as const).map((idx) => {
+                    const cfg = crowdConfig(idx);
+                    return (
+                      <span
+                        key={cfg.label}
+                        className={cn(
+                          "rounded-full px-2 py-[3px] text-[9px] font-semibold uppercase tracking-widest leading-none",
+                          cfg.pill,
+                        )}
+                      >
+                        {cfg.label}
+                      </span>
+                    );
+                  })}
                 </span>
               )}
             </CardDescription>
@@ -427,7 +614,7 @@ export function PricingCalendar() {
                 modifiersClassNames={{ past: "opacity-60" }}
                 showOutsideDays
                 className="w-full"
-                classNames={{ day: DAY_CELL_CLASS }}
+                classNames={{ day: DAY_CELL_CLASS, week: "mt-2 flex w-full gap-1" }}
                 components={{ DayButton: PriceDayButton }}
                 onDayClick={() => {}}
               />

@@ -22,6 +22,34 @@ const STANDBY = 1;
  */
 const ACCURACY_MIN_N = 50_000;
 
+// Day-of-week base scores (0=Sun … 6=Sat). Theme parks are busiest on weekends
+// and lightest mid-week — these anchors are intentionally conservative so
+// school-break and holiday boosts push into the busy/packed range.
+const DOW_BASE = [5, 3, 3, 3, 3, 4, 6] as const;
+
+/**
+ * Rules-based crowd index (1–10) for dates beyond the ML model's horizon.
+ * Uses day-of-week, federal holidays, and school-break labels from calendarDay.
+ * Returns null when no calendar row exists for the date (calendarDay not seeded).
+ */
+function heuristicCrowdIndex(
+  date: string,
+  cal: { isFedHoliday: boolean; isSchoolBreak: boolean; breakLabel: string | null } | undefined,
+): number | null {
+  if (!cal) return null;
+  const dow = new Date(`${date}T12:00:00Z`).getUTCDay();
+  let score = DOW_BASE[dow];
+  if (cal.isFedHoliday) score += 2;
+  if (cal.isSchoolBreak) {
+    const label = cal.breakLabel?.toLowerCase() ?? "";
+    if (label.includes("summer")) score += 4;
+    else if (label.includes("winter") || label.includes("christmas")) score += 3;
+    else if (label.includes("spring") || label.includes("thanksgiving")) score += 3;
+    else score += 2;
+  }
+  return Math.max(1, Math.min(10, score));
+}
+
 export const forecastRouter = {
   /**
    * Latest forecast curve for one attraction/queue type from the newest model
@@ -160,11 +188,43 @@ export const forecastRouter = {
         FROM hist
       `);
 
-      const [pts, crowd] = await Promise.all([ptsP, crowdP]);
+      const calP = db.execute<{
+        is_federal_holiday: boolean;
+        is_school_break: boolean;
+        break_label: string | null;
+      }>(sql`
+        SELECT cd.is_us_federal_holiday AS is_federal_holiday,
+               cd.is_school_break, cd.break_label
+        FROM calendar_day cd
+        JOIN park_calendar_map pcm ON pcm.region = cd.region
+        JOIN parks p ON p.id = pcm.park_id
+        WHERE p.slug = ${input.parkSlug}
+          AND cd.date = ${input.date}::date
+        LIMIT 1
+      `);
+
+      const [pts, crowd, cal] = await Promise.all([ptsP, crowdP, calP]);
       const c = crowd.rows[0];
       const percentile = c?.percentile ?? null;
-      const crowdIndex =
+      const mlCrowdIndex =
         percentile == null ? null : Math.max(1, Math.min(10, Math.round(1 + 9 * percentile)));
+      const calRow = cal.rows[0];
+      const heuristic = heuristicCrowdIndex(
+        input.date,
+        calRow
+          ? {
+              isFedHoliday: calRow.is_federal_holiday,
+              isSchoolBreak: calRow.is_school_break,
+              breakLabel: calRow.break_label,
+            }
+          : undefined,
+      );
+      const crowdIndex =
+        mlCrowdIndex == null
+          ? heuristic
+          : heuristic == null
+            ? mlCrowdIndex
+            : Math.max(mlCrowdIndex, heuristic);
 
       return {
         parkSlug: input.parkSlug,
@@ -274,7 +334,23 @@ export const forecastRouter = {
         ORDER BY dm.d
       `);
 
-      const [crowd, weather] = await Promise.all([crowdP, weatherP]);
+      const calendarP = db.execute<{
+        date: string;
+        is_federal_holiday: boolean;
+        is_school_break: boolean;
+        break_label: string | null;
+      }>(sql`
+        SELECT cd.date::text, cd.is_us_federal_holiday AS is_federal_holiday,
+               cd.is_school_break, cd.break_label
+        FROM calendar_day cd
+        JOIN park_calendar_map pcm ON pcm.region = cd.region
+        JOIN parks p ON p.id = pcm.park_id
+        WHERE p.slug = ${input.parkSlug}
+          AND cd.date BETWEEN ${input.startDate}::date AND ${input.endDate}::date
+        ORDER BY cd.date
+      `);
+
+      const [crowd, weather, calendar] = await Promise.all([crowdP, weatherP, calendarP]);
 
       const crowdByDate = new Map(crowd.rows.map((r) => [r.date, r.percentile]));
       const weatherByDate = new Map(
@@ -287,19 +363,41 @@ export const forecastRouter = {
           },
         ]),
       );
+      const calByDate = new Map(
+        calendar.rows.map((r) => [
+          r.date,
+          {
+            isFedHoliday: r.is_federal_holiday,
+            isSchoolBreak: r.is_school_break,
+            breakLabel: r.break_label,
+          },
+        ]),
+      );
 
-      // Union of all dates from either source — weather data shouldn't be
-      // gated on the ML model having a forecast for that day.
-      const allDates = [...new Set([...crowdByDate.keys(), ...weatherByDate.keys()])].sort();
+      // Union of all dates from any source.
+      const allDates = [
+        ...new Set([...crowdByDate.keys(), ...weatherByDate.keys(), ...calByDate.keys()]),
+      ].sort();
 
       return {
         days: allDates.map((date) => {
           const pct = crowdByDate.get(date) ?? null;
-          const crowdIndex =
+          const mlCrowdIndex =
             pct == null ? null : Math.max(1, Math.min(10, Math.round(1 + 9 * pct)));
+          const heuristic = heuristicCrowdIndex(date, calByDate.get(date));
+          // Heuristic acts as a floor: prevents partially-elapsed days from showing
+          // an artificially low ML score (e.g. a Saturday reading as green because
+          // only remaining evening hours contributed to the daily average).
+          const crowdIndex =
+            mlCrowdIndex == null
+              ? heuristic
+              : heuristic == null
+                ? mlCrowdIndex
+                : Math.max(mlCrowdIndex, heuristic);
           return {
             date,
             crowdIndex,
+            crowdIsEstimate: mlCrowdIndex == null && crowdIndex != null,
             weather: weatherByDate.get(date) ?? null,
           };
         }),
