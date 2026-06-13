@@ -21,10 +21,16 @@ import { Route as DashRouteImport } from './routes/_dash'
 import { Route as DashIndexRouteImport } from './routes/_dash/index'
 import { Route as StaysAlertsRouteImport } from './routes/stays_.alerts'
 import { Route as DashAlertsRouteImport } from './routes/_dash/alerts'
+import { Route as DashAccountRouteImport } from './routes/_dash/account'
+import { Route as DashAccountIndexRouteImport } from './routes/_dash/account/index'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
 import { Route as ApiPushSubscribeRouteImport } from './routes/api/push/subscribe'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as DashParkSlugRouteImport } from './routes/_dash/park.$slug'
+import { Route as DashAccountSessionsRouteImport } from './routes/_dash/account/sessions'
+import { Route as DashAccountSecurityRouteImport } from './routes/_dash/account/security'
+import { Route as DashAccountProfileRouteImport } from './routes/_dash/account/profile'
+import { Route as DashAccountConnectionsRouteImport } from './routes/_dash/account/connections'
 
 const UnsubscribeRoute = UnsubscribeRouteImport.update({
   id: '/unsubscribe',
@@ -85,6 +91,16 @@ const DashAlertsRoute = DashAlertsRouteImport.update({
   path: '/alerts',
   getParentRoute: () => DashRoute,
 } as any)
+const DashAccountRoute = DashAccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => DashRoute,
+} as any)
+const DashAccountIndexRoute = DashAccountIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => DashAccountRoute,
+} as any)
 const ApiTrpcSplatRoute = ApiTrpcSplatRouteImport.update({
   id: '/api/trpc/$',
   path: '/api/trpc/$',
@@ -105,6 +121,26 @@ const DashParkSlugRoute = DashParkSlugRouteImport.update({
   path: '/park/$slug',
   getParentRoute: () => DashRoute,
 } as any)
+const DashAccountSessionsRoute = DashAccountSessionsRouteImport.update({
+  id: '/sessions',
+  path: '/sessions',
+  getParentRoute: () => DashAccountRoute,
+} as any)
+const DashAccountSecurityRoute = DashAccountSecurityRouteImport.update({
+  id: '/security',
+  path: '/security',
+  getParentRoute: () => DashAccountRoute,
+} as any)
+const DashAccountProfileRoute = DashAccountProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => DashAccountRoute,
+} as any)
+const DashAccountConnectionsRoute = DashAccountConnectionsRouteImport.update({
+  id: '/connections',
+  path: '/connections',
+  getParentRoute: () => DashAccountRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof DashIndexRoute
@@ -116,12 +152,18 @@ export interface FileRoutesByFullPath {
   '/stays': typeof StaysRoute
   '/tickets': typeof TicketsRoute
   '/unsubscribe': typeof UnsubscribeRoute
+  '/account': typeof DashAccountRouteWithChildren
   '/alerts': typeof DashAlertsRoute
   '/stays/alerts': typeof StaysAlertsRoute
+  '/account/connections': typeof DashAccountConnectionsRoute
+  '/account/profile': typeof DashAccountProfileRoute
+  '/account/security': typeof DashAccountSecurityRoute
+  '/account/sessions': typeof DashAccountSessionsRoute
   '/park/$slug': typeof DashParkSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
+  '/account/': typeof DashAccountIndexRoute
 }
 export interface FileRoutesByTo {
   '/dining': typeof DiningRoute
@@ -135,10 +177,15 @@ export interface FileRoutesByTo {
   '/alerts': typeof DashAlertsRoute
   '/stays/alerts': typeof StaysAlertsRoute
   '/': typeof DashIndexRoute
+  '/account/connections': typeof DashAccountConnectionsRoute
+  '/account/profile': typeof DashAccountProfileRoute
+  '/account/security': typeof DashAccountSecurityRoute
+  '/account/sessions': typeof DashAccountSessionsRoute
   '/park/$slug': typeof DashParkSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
+  '/account': typeof DashAccountIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -151,13 +198,19 @@ export interface FileRoutesById {
   '/stays': typeof StaysRoute
   '/tickets': typeof TicketsRoute
   '/unsubscribe': typeof UnsubscribeRoute
+  '/_dash/account': typeof DashAccountRouteWithChildren
   '/_dash/alerts': typeof DashAlertsRoute
   '/stays_/alerts': typeof StaysAlertsRoute
   '/_dash/': typeof DashIndexRoute
+  '/_dash/account/connections': typeof DashAccountConnectionsRoute
+  '/_dash/account/profile': typeof DashAccountProfileRoute
+  '/_dash/account/security': typeof DashAccountSecurityRoute
+  '/_dash/account/sessions': typeof DashAccountSessionsRoute
   '/_dash/park/$slug': typeof DashParkSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
+  '/_dash/account/': typeof DashAccountIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -171,12 +224,18 @@ export interface FileRouteTypes {
     | '/stays'
     | '/tickets'
     | '/unsubscribe'
+    | '/account'
     | '/alerts'
     | '/stays/alerts'
+    | '/account/connections'
+    | '/account/profile'
+    | '/account/security'
+    | '/account/sessions'
     | '/park/$slug'
     | '/api/auth/$'
     | '/api/push/subscribe'
     | '/api/trpc/$'
+    | '/account/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/dining'
@@ -190,10 +249,15 @@ export interface FileRouteTypes {
     | '/alerts'
     | '/stays/alerts'
     | '/'
+    | '/account/connections'
+    | '/account/profile'
+    | '/account/security'
+    | '/account/sessions'
     | '/park/$slug'
     | '/api/auth/$'
     | '/api/push/subscribe'
     | '/api/trpc/$'
+    | '/account'
   id:
     | '__root__'
     | '/_dash'
@@ -205,13 +269,19 @@ export interface FileRouteTypes {
     | '/stays'
     | '/tickets'
     | '/unsubscribe'
+    | '/_dash/account'
     | '/_dash/alerts'
     | '/stays_/alerts'
     | '/_dash/'
+    | '/_dash/account/connections'
+    | '/_dash/account/profile'
+    | '/_dash/account/security'
+    | '/_dash/account/sessions'
     | '/_dash/park/$slug'
     | '/api/auth/$'
     | '/api/push/subscribe'
     | '/api/trpc/$'
+    | '/_dash/account/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -316,6 +386,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashAlertsRouteImport
       parentRoute: typeof DashRoute
     }
+    '/_dash/account': {
+      id: '/_dash/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof DashAccountRouteImport
+      parentRoute: typeof DashRoute
+    }
+    '/_dash/account/': {
+      id: '/_dash/account/'
+      path: '/'
+      fullPath: '/account/'
+      preLoaderRoute: typeof DashAccountIndexRouteImport
+      parentRoute: typeof DashAccountRoute
+    }
     '/api/trpc/$': {
       id: '/api/trpc/$'
       path: '/api/trpc/$'
@@ -344,16 +428,66 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashParkSlugRouteImport
       parentRoute: typeof DashRoute
     }
+    '/_dash/account/sessions': {
+      id: '/_dash/account/sessions'
+      path: '/sessions'
+      fullPath: '/account/sessions'
+      preLoaderRoute: typeof DashAccountSessionsRouteImport
+      parentRoute: typeof DashAccountRoute
+    }
+    '/_dash/account/security': {
+      id: '/_dash/account/security'
+      path: '/security'
+      fullPath: '/account/security'
+      preLoaderRoute: typeof DashAccountSecurityRouteImport
+      parentRoute: typeof DashAccountRoute
+    }
+    '/_dash/account/profile': {
+      id: '/_dash/account/profile'
+      path: '/profile'
+      fullPath: '/account/profile'
+      preLoaderRoute: typeof DashAccountProfileRouteImport
+      parentRoute: typeof DashAccountRoute
+    }
+    '/_dash/account/connections': {
+      id: '/_dash/account/connections'
+      path: '/connections'
+      fullPath: '/account/connections'
+      preLoaderRoute: typeof DashAccountConnectionsRouteImport
+      parentRoute: typeof DashAccountRoute
+    }
   }
 }
 
+interface DashAccountRouteChildren {
+  DashAccountConnectionsRoute: typeof DashAccountConnectionsRoute
+  DashAccountProfileRoute: typeof DashAccountProfileRoute
+  DashAccountSecurityRoute: typeof DashAccountSecurityRoute
+  DashAccountSessionsRoute: typeof DashAccountSessionsRoute
+  DashAccountIndexRoute: typeof DashAccountIndexRoute
+}
+
+const DashAccountRouteChildren: DashAccountRouteChildren = {
+  DashAccountConnectionsRoute: DashAccountConnectionsRoute,
+  DashAccountProfileRoute: DashAccountProfileRoute,
+  DashAccountSecurityRoute: DashAccountSecurityRoute,
+  DashAccountSessionsRoute: DashAccountSessionsRoute,
+  DashAccountIndexRoute: DashAccountIndexRoute,
+}
+
+const DashAccountRouteWithChildren = DashAccountRoute._addFileChildren(
+  DashAccountRouteChildren,
+)
+
 interface DashRouteChildren {
+  DashAccountRoute: typeof DashAccountRouteWithChildren
   DashAlertsRoute: typeof DashAlertsRoute
   DashIndexRoute: typeof DashIndexRoute
   DashParkSlugRoute: typeof DashParkSlugRoute
 }
 
 const DashRouteChildren: DashRouteChildren = {
+  DashAccountRoute: DashAccountRouteWithChildren,
   DashAlertsRoute: DashAlertsRoute,
   DashIndexRoute: DashIndexRoute,
   DashParkSlugRoute: DashParkSlugRoute,

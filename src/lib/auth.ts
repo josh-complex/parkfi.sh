@@ -1,10 +1,25 @@
 import { dash } from "@better-auth/infra";
+import { passkey } from "@better-auth/passkey";
 import { betterAuth } from "better-auth";
-import { captcha, haveIBeenPwned, lastLoginMethod, oAuthProxy, oneTap } from "better-auth/plugins";
+import {
+  captcha,
+  haveIBeenPwned,
+  lastLoginMethod,
+  oAuthProxy,
+  oneTap,
+  twoFactor,
+} from "better-auth/plugins";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { db } from "#/db/index.ts";
-import { account, session, user, verification } from "#/db/auth-schema.ts";
+import {
+  account,
+  passkey as passkeyTable,
+  session,
+  twoFactor as twoFactorTable,
+  user,
+  verification,
+} from "#/db/auth-schema.ts";
 import { generateBotAvatar } from "#/lib/avatar.ts";
 
 export const auth = betterAuth({
@@ -19,7 +34,14 @@ export const auth = betterAuth({
   },
   database: drizzleAdapter(db, {
     provider: "pg",
-    schema: { user, session, account, verification },
+    schema: {
+      user,
+      session,
+      account,
+      verification,
+      twoFactor: twoFactorTable,
+      passkey: passkeyTable,
+    },
   }),
   emailAndPassword: {
     enabled: true,
@@ -61,6 +83,10 @@ export const auth = betterAuth({
     haveIBeenPwned(),
     // Cookie-based tracking of the last method used to sign in
     lastLoginMethod(),
+    // TOTP two-factor authentication
+    twoFactor(),
+    // WebAuthn passkeys
+    passkey(),
   ],
   trustedOrigins: import.meta.env.DEV ? ["http://localhost:3000"] : [],
 });

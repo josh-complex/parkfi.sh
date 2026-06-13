@@ -12,7 +12,6 @@ import {
 
 import { NavUser } from "#/components/nav-user.tsx";
 import { ConstructionIcon } from "#/components/ui/anim-icons/construction.tsx";
-import { SidebarThemeToggle } from "#/components/theme-toggle.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import {
   Sidebar,
@@ -182,7 +181,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         )}
       </SidebarContent>
       <SidebarFooter>
-        <div className="flex items-center justify-between px-2">
+        <div className="flex gap-1">
           <Button
             variant="ghost"
             size="sm"
@@ -192,7 +191,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <ShieldAlertIcon />
             Disclaimers
           </Button>
-          <SidebarThemeToggle />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={closeOnMobile}
+            render={<Link to="/disclaimers" />}
+          >
+            Terms & Privacy
+          </Button>
         </div>
         <NavUser />
       </SidebarFooter>

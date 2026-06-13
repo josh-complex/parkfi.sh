@@ -26,6 +26,7 @@ const RESORTS: Array<{ value: Resort; label: string }> = [
 ];
 
 const DAYS = 150;
+const PAST_DAYS = 90;
 
 interface DayPrice {
   priceCents: number;
@@ -172,6 +173,7 @@ export function PricingCalendar() {
     trpc.tickets.priceCalendar.queryOptions({
       resort,
       days: DAYS,
+      pastDays: PAST_DAYS,
       parkHopper,
       ageGroup,
       park,
@@ -187,22 +189,27 @@ export function PricingCalendar() {
     return m;
   }, [rows]);
 
-  const stats = React.useMemo(() => {
-    if (!rows || rows.length === 0) return null;
-    const prices = rows.map((r) => r.priceCents);
-    const min = Math.min(...prices);
-    const max = Math.max(...prices);
-    const cheapest = rows.find((r) => r.priceCents === min);
-    return { min, max, cheapest };
-  }, [rows]);
-
-  const { today, endDate, startIso, endIso } = React.useMemo(() => {
+  const { today, startDate, endDate, startIso, endIso } = React.useMemo(() => {
     const t = new Date();
     t.setHours(0, 0, 0, 0);
+    const s = new Date(t);
+    s.setDate(s.getDate() - PAST_DAYS);
     const e = new Date(t);
     e.setDate(e.getDate() + DAYS);
-    return { today: t, endDate: e, startIso: localIso(t), endIso: localIso(e) };
+    return { today: t, startDate: s, endDate: e, startIso: localIso(s), endIso: localIso(e) };
   }, []);
+
+  const stats = React.useMemo(() => {
+    if (!rows || rows.length === 0) return null;
+    const todayIso = localIso(today);
+    const future = rows.filter((r) => r.date >= todayIso);
+    if (future.length === 0) return null;
+    const prices = future.map((r) => r.priceCents);
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
+    const cheapest = future.find((r) => r.priceCents === min);
+    return { min, max, cheapest };
+  }, [rows, today]);
 
   // Derive the park slug for crowd/weather: use the selected park's slug,
   // or fall back to the resort's primary park when "All" is selected.
@@ -413,9 +420,11 @@ export function PricingCalendar() {
               <Calendar
                 month={month}
                 onMonthChange={setMonth}
-                startMonth={today}
+                startMonth={startDate}
                 endMonth={endDate}
-                disabled={{ before: today, after: endDate }}
+                disabled={{ before: startDate, after: endDate }}
+                modifiers={{ past: { before: today } }}
+                modifiersClassNames={{ past: "opacity-60" }}
                 showOutsideDays
                 className="w-full"
                 classNames={{ day: DAY_CELL_CLASS }}

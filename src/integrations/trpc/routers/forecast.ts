@@ -256,7 +256,7 @@ export const forecastRouter = {
               AS noon_dist
           FROM weather_obs wo
           WHERE wo.park_id = (SELECT id FROM park)
-            AND wo.kind = 'FORECAST'
+            AND wo.kind IN ('FORECAST', 'ACTUAL')
             AND (wo.observed_at AT TIME ZONE (SELECT timezone FROM park))::date
                 BETWEEN ${input.startDate}::date AND ${input.endDate}::date
         ),

@@ -1,5 +1,5 @@
 import { Avatar, Style } from "@dicebear/core";
-import botttsDefinition from "@dicebear/styles/bottts.json";
+import botttsDefinition from "@dicebear/styles/bottts-neutral.json";
 
 const style = new Style(botttsDefinition);
 

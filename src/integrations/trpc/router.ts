@@ -7,6 +7,7 @@ import { rideAlertsRouter } from "./routers/rideAlerts.ts";
 import { stayAlertsRouter } from "./routers/stayAlerts.ts";
 import { staysRouter } from "./routers/stays.ts";
 import { ticketsRouter } from "./routers/tickets.ts";
+import { uploadsRouter } from "./routers/uploads.ts";
 
 export const trpcRouter = createTRPCRouter({
   parks: parksRouter,
@@ -17,5 +18,6 @@ export const trpcRouter = createTRPCRouter({
   notifications: notificationsRouter,
   rideAlerts: rideAlertsRouter,
   stayAlerts: stayAlertsRouter,
+  uploads: uploadsRouter,
 });
 export type TRPCRouter = typeof trpcRouter;

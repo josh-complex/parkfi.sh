@@ -64,6 +64,7 @@ export const ticketsRouter = {
       z.object({
         resort: z.enum(["WDW", "UOR"]).default("WDW"),
         days: z.number().int().min(1).max(365).default(120),
+        pastDays: z.number().int().min(0).max(365).default(90),
         parkHopper: z.boolean().default(false),
         ageGroup: z.enum(["ADULT", "CHILD"]).default("ADULT"),
         park: z.string().nullable().default(null),
@@ -87,7 +88,7 @@ export const ticketsRouter = {
           JOIN product_dim d ON d.sku = sp.sku
           WHERE d.resort = ${input.resort}
             AND ${product.filter}
-            AND sp.service_date >= current_date
+            AND sp.service_date >= current_date - ${input.pastDays}::int
             AND sp.service_date < current_date + ${input.days}::int
           ORDER BY sp.sku, sp.service_date, sp.observed_at DESC
         )

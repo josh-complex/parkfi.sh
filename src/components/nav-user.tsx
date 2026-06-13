@@ -1,7 +1,8 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { LogInIcon, LogOutIcon } from "lucide-react";
+import { LogInIcon, LogOutIcon, SettingsIcon } from "lucide-react";
 import { authClient } from "#/lib/auth-client.ts";
 import { NotificationCenter } from "#/components/notifications/notification-center.tsx";
+import { SidebarThemeToggle } from "#/components/theme-toggle.tsx";
 import { Avatar, AvatarFallback, AvatarImage } from "#/components/ui/avatar.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import {
@@ -14,12 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "#/components/ui/dropdown-menu.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from "#/components/ui/sidebar.tsx";
+import { SidebarMenu, SidebarMenuItem, useSidebar } from "#/components/ui/sidebar.tsx";
 
 export function NavUser() {
   const { data: session, isPending } = authClient.useSession();
@@ -72,12 +68,15 @@ export function NavUser() {
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
-              <SidebarMenuButton size="lg" className="flex-1 aria-expanded:bg-sidebar-accent" />
+              <Button
+                variant="outline"
+                className="h-auto flex-1 justify-start gap-2 rounded-xl border-white/15 bg-transparent px-3 py-2 text-white hover:bg-white! hover:text-foreground! aria-expanded:bg-white/15! [--btn-3d:oklch(1_0_0/0.15)] [--btn-glare:oklch(1_0_0/0.08)] [--btn-glare-hover:oklch(1_0_0/0.18)]"
+              />
             }
           >
-            <Avatar className="size-8 shrink-0 rounded-lg">
+            <Avatar className="size-7 shrink-0 rounded-lg">
               <AvatarImage src={user.image ?? undefined} alt={user.name ?? user.email} />
-              <AvatarFallback className="rounded-lg">{initials}</AvatarFallback>
+              <AvatarFallback className="rounded-lg text-xs">{initials}</AvatarFallback>
             </Avatar>
             <span className="truncate text-sm font-medium">{user.name ?? user.email}</span>
           </DropdownMenuTrigger>
@@ -102,6 +101,11 @@ export function NavUser() {
               </DropdownMenuLabel>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
+            <DropdownMenuItem render={<Link to="/account" />}>
+              <SettingsIcon />
+              Account settings
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => void handleSignOut()}>
               <LogOutIcon />
               Log out
@@ -109,6 +113,7 @@ export function NavUser() {
           </DropdownMenuContent>
         </DropdownMenu>
         {showBell && <NotificationCenter />}
+        <SidebarThemeToggle />
       </SidebarMenuItem>
     </SidebarMenu>
   );
