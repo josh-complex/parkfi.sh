@@ -182,14 +182,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarContent>
       <SidebarFooter>
         <div className="flex gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={closeOnMobile}
-            render={<Link to="/disclaimers" />}
-          >
+          <Button variant="ghost" size="sm" onClick={closeOnMobile} render={<Link to="/privacy" />}>
             <ShieldAlertIcon />
-            Disclaimers
+            Terms & Privacy
           </Button>
           <Button
             variant="ghost"
@@ -197,7 +192,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             onClick={closeOnMobile}
             render={<Link to="/disclaimers" />}
           >
-            Terms & Privacy
+            Disclaimers
           </Button>
         </div>
         <NavUser />

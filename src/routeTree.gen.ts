@@ -13,6 +13,7 @@ import { Route as UnsubscribeRouteImport } from './routes/unsubscribe'
 import { Route as TicketsRouteImport } from './routes/tickets'
 import { Route as StaysRouteImport } from './routes/stays'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PredictionsRouteImport } from './routes/predictions'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DisclaimersRouteImport } from './routes/disclaimers'
@@ -50,6 +51,11 @@ const StaysRoute = StaysRouteImport.update({
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PredictionsRoute = PredictionsRouteImport.update({
@@ -148,6 +154,7 @@ export interface FileRoutesByFullPath {
   '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
   '/predictions': typeof PredictionsRoute
+  '/privacy': typeof PrivacyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/stays': typeof StaysRoute
   '/tickets': typeof TicketsRoute
@@ -170,6 +177,7 @@ export interface FileRoutesByTo {
   '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
   '/predictions': typeof PredictionsRoute
+  '/privacy': typeof PrivacyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/stays': typeof StaysRoute
   '/tickets': typeof TicketsRoute
@@ -194,6 +202,7 @@ export interface FileRoutesById {
   '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
   '/predictions': typeof PredictionsRoute
+  '/privacy': typeof PrivacyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/stays': typeof StaysRoute
   '/tickets': typeof TicketsRoute
@@ -220,6 +229,7 @@ export interface FileRouteTypes {
     | '/disclaimers'
     | '/login'
     | '/predictions'
+    | '/privacy'
     | '/sitemap.xml'
     | '/stays'
     | '/tickets'
@@ -242,6 +252,7 @@ export interface FileRouteTypes {
     | '/disclaimers'
     | '/login'
     | '/predictions'
+    | '/privacy'
     | '/sitemap.xml'
     | '/stays'
     | '/tickets'
@@ -265,6 +276,7 @@ export interface FileRouteTypes {
     | '/disclaimers'
     | '/login'
     | '/predictions'
+    | '/privacy'
     | '/sitemap.xml'
     | '/stays'
     | '/tickets'
@@ -290,6 +302,7 @@ export interface RootRouteChildren {
   DisclaimersRoute: typeof DisclaimersRoute
   LoginRoute: typeof LoginRoute
   PredictionsRoute: typeof PredictionsRoute
+  PrivacyRoute: typeof PrivacyRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   StaysRoute: typeof StaysRoute
   TicketsRoute: typeof TicketsRoute
@@ -328,6 +341,13 @@ declare module '@tanstack/react-router' {
       path: '/sitemap.xml'
       fullPath: '/sitemap.xml'
       preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/predictions': {
@@ -501,6 +521,7 @@ const rootRouteChildren: RootRouteChildren = {
   DisclaimersRoute: DisclaimersRoute,
   LoginRoute: LoginRoute,
   PredictionsRoute: PredictionsRoute,
+  PrivacyRoute: PrivacyRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   StaysRoute: StaysRoute,
   TicketsRoute: TicketsRoute,

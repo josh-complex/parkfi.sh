@@ -135,7 +135,14 @@ export function ParkMapLeaflet({
     tileRef.current = makeTileLayer(dark).addTo(map);
     map.whenReady(() => setReady(true));
     mapRef.current = map;
-    onMapRef?.({ resize: () => map.invalidateSize({ animate: false }) });
+    onMapRef?.({
+      resize: () => {
+        const c = containerRef.current;
+        if (c && c.clientWidth > 0 && c.clientHeight > 0) {
+          map.invalidateSize({ animate: false });
+        }
+      },
+    });
     return () => {
       map.remove();
       mapRef.current = null;
@@ -154,10 +161,17 @@ export function ParkMapLeaflet({
     tileRef.current = makeTileLayer(dark).addTo(map);
   }, [dark, ready]);
 
-  // Keep the canvas correct as the layout width animates.
+  // Keep the canvas correct as the layout width animates. Skip invalidateSize when
+  // the container is hidden at 0×0 (parked off-screen) — Leaflet corrupts its
+  // internal pixel origin when the container has no size, causing NaN LatLng errors.
   React.useEffect(() => {
     if (!mounted || !containerRef.current) return;
-    const ro = new ResizeObserver(() => mapRef.current?.invalidateSize({ animate: false }));
+    const ro = new ResizeObserver(() => {
+      const c = containerRef.current;
+      if (c && c.clientWidth > 0 && c.clientHeight > 0) {
+        mapRef.current?.invalidateSize({ animate: false });
+      }
+    });
     ro.observe(containerRef.current);
     return () => ro.disconnect();
   }, [mounted]);

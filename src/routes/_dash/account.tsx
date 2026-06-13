@@ -58,11 +58,11 @@ function AccountLayout() {
         </p>
       </div>
 
-      <ToggleGroup>
+      <ToggleGroup value={[activeTab]}>
         {TABS.map((tab) => (
           <ToggleGroupItem
             key={tab.id}
-            pressed={activeTab === tab.id}
+            value={tab.id}
             onClick={() => void navigate({ to: tab.path })}
           >
             {tab.label}
