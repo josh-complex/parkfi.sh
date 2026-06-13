@@ -70,7 +70,7 @@ export function NavUser() {
             render={
               <Button
                 variant="outline"
-                className="h-auto flex-1 justify-start gap-2 rounded-xl border-white/15 bg-transparent px-3 py-2 text-white hover:bg-white! hover:text-foreground! aria-expanded:bg-white/15! [--btn-3d:oklch(1_0_0/0.15)] [--btn-glare:oklch(1_0_0/0.08)] [--btn-glare-hover:oklch(1_0_0/0.18)]"
+                className="h-auto flex-1 justify-start gap-2 rounded-xl border-white/15 bg-transparent px-3 py-2 text-white hover:bg-white! hover:text-foreground! aria-expanded:bg-white/15! btn-3d-invert"
               />
             }
           >

@@ -12,7 +12,7 @@ export type SegPos = "first" | "middle" | "last";
  * bar's buttons use, so the open popover reads as part of the same surface.
  */
 export const coreSearchPopoverClass =
-  "border border-(--btn-3d) shadow-[0_3px_0_0_var(--btn-3d)] ring-0 [--btn-3d:color-mix(in_oklch,var(--border),black_12%)] dark:border-border dark:shadow-none";
+  "border-3d shadow-[0_3px_0_0_var(--btn-3d)] ring-0 btn-3d-outline dark:border-border dark:shadow-none";
 
 /**
  * Close an open search popover when the page scrolls (a sticky bar would
@@ -44,17 +44,15 @@ export function useCloseOnScroll(open: boolean, close: () => void) {
  */
 export function coreSegClass(pos: SegPos, active: boolean) {
   return cn(
-    "group relative top-0 flex min-w-0 flex-col justify-center gap-0.5 border border-(--btn-3d) bg-background px-5 py-2.5 text-left align-top text-sm whitespace-nowrap outline-none transition-[box-shadow,top,background-color,border-color,color] duration-150 ease-out dark:border-border",
-    "[--btn-3d:color-mix(in_oklch,var(--border),black_12%)] [--btn-glare:oklch(1_0_0/0.55)] [--btn-glare-hover:oklch(1_0_0/0.8)]",
-    "dark:bg-input/30 dark:[--btn-3d:transparent] dark:[--btn-glare:oklch(1_0_0/0.08)] dark:[--btn-glare-hover:oklch(1_0_0/0.16)]",
-    "shadow-[0_3px_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)]",
-    "hover:-top-px hover:z-10 hover:bg-muted hover:shadow-[0_4px_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare-hover)]",
+    "group relative top-0 flex min-w-0 flex-col justify-center gap-0.5 border-3d shadow-3d bg-background px-5 py-2.5 text-left align-top text-sm whitespace-nowrap outline-none transition-[box-shadow,top,background-color,border-color,color] duration-150 ease-out",
+    "btn-3d-outline dark:border-border dark:bg-input/30",
+    "hover:-top-px hover:z-10 hover:bg-muted hover:shadow-3d-hover",
     "focus-visible:border-ring focus-visible:z-10 focus-visible:ring-[3px] focus-visible:ring-ring/30",
     "-ml-px first:ml-0",
     pos === "first" && "rounded-l-full pl-7",
     pos === "last" && "rounded-r-full pr-7",
     active &&
-      "top-[3px] z-10 bg-primary text-primary-foreground [--btn-3d:color-mix(in_oklch,var(--primary),black_32%)] [--btn-glare:color-mix(in_oklch,var(--primary),black_32%)] shadow-[0_0_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)] hover:top-[3px] hover:bg-primary hover:shadow-[0_0_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)]",
+      "top-[3px] z-10 bg-primary text-primary-foreground [--btn-3d:color-mix(in_oklch,var(--primary),black_32%)] [--btn-glare:color-mix(in_oklch,var(--primary),black_32%)] shadow-3d-active hover:top-[3px] hover:bg-primary hover:shadow-3d-active",
   );
 }
 

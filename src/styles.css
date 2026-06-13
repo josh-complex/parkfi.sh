@@ -143,3 +143,88 @@
     @apply font-sans bg-sidebar;
   }
 }
+
+/* ── 3D surface system ────────────────────────────────────────────────────── *
+ * Three CSS variables drive every 3D-embossed surface:
+ *   --btn-3d          bottom shadow + border color (the "shelf" edge)
+ *   --btn-glare       inset top highlight at rest
+ *   --btn-glare-hover inset top highlight on hover (defaults to --btn-glare)
+ *
+ * Usage: shadow-3d sets variable defaults and the resting box-shadow.
+ * Pair with hover:shadow-3d-hover and active/aria-pressed:shadow-3d-active
+ * so each state can be overridden independently by component classes.
+ * border-3d drives the border from the same --btn-3d variable.
+ * Then add a color preset (btn-3d-*) to fill in the values.
+ * -------------------------------------------------------------------------- */
+
+@utility shadow-3d {
+  --btn-3d: transparent;
+  --btn-glare: transparent;
+  --btn-glare-hover: var(--btn-glare);
+  box-shadow:
+    0 3px 0 0 var(--btn-3d),
+    inset 0 1px 0 0 var(--btn-glare);
+}
+
+@utility shadow-3d-hover {
+  box-shadow:
+    0 4px 0 0 var(--btn-3d),
+    inset 0 1px 0 0 var(--btn-glare-hover);
+}
+
+@utility shadow-3d-active {
+  box-shadow:
+    0 0 0 0 var(--btn-3d),
+    inset 0 1px 0 0 var(--btn-glare);
+}
+
+@utility border-3d {
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--btn-3d);
+}
+
+/* ── 3D color presets ─────────────────────────────────────────────────────── */
+
+@utility btn-3d-primary {
+  --btn-3d: color-mix(in oklch, var(--primary), black 32%);
+  --btn-glare: oklch(1 0 0 / 0.25);
+  --btn-glare-hover: oklch(1 0 0 / 0.4);
+}
+
+/* Light surfaces: outline buttons, toggles, selects, search segments.
+   In dark mode --btn-3d goes transparent (shadow vanishes); pair with
+   dark:border-border on the element to keep a visible border. */
+@utility btn-3d-outline {
+  --btn-3d: color-mix(in oklch, var(--border), black 12%);
+  --btn-glare: oklch(1 0 0 / 0.55);
+  --btn-glare-hover: oklch(1 0 0 / 0.8);
+  &:is(.dark *) {
+    --btn-3d: transparent;
+    --btn-glare: oklch(1 0 0 / 0.08);
+    --btn-glare-hover: oklch(1 0 0 / 0.16);
+  }
+}
+
+@utility btn-3d-secondary {
+  --btn-3d: color-mix(in oklch, var(--secondary), black 14%);
+  --btn-glare: oklch(1 0 0 / 0.7);
+  --btn-glare-hover: oklch(1 0 0 / 0.85);
+  &:is(.dark *) {
+    --btn-glare: oklch(1 0 0 / 0.08);
+    --btn-glare-hover: oklch(1 0 0 / 0.16);
+  }
+}
+
+@utility btn-3d-destructive {
+  --btn-3d: color-mix(in oklch, var(--destructive), black 10%);
+  --btn-glare: oklch(1 0 0 / 0.18);
+  --btn-glare-hover: oklch(1 0 0 / 0.3);
+}
+
+/* For elements on dark/inverted surfaces (e.g. the sidebar). */
+@utility btn-3d-invert {
+  --btn-3d: oklch(1 0 0 / 0.15);
+  --btn-glare: oklch(1 0 0 / 0.08);
+  --btn-glare-hover: oklch(1 0 0 / 0.18);
+}

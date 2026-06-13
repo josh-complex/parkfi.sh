@@ -42,7 +42,7 @@ const FILTERS_SPRING = { type: "spring" as const, stiffness: 420, damping: 34, m
 
 // Same 3D border + glare + drop-shadow the outline Button wears.
 const FILTERS_SURFACE =
-  "bg-background border border-(--btn-3d) [--btn-3d:color-mix(in_oklch,var(--border),var(--border))] [--btn-glare:oklch(1_0_0/0.55)] shadow-[0_4px_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)] dark:bg-popover dark:[--btn-3d:transparent] dark:[--btn-glare:oklch(1_0_0/0.06)] dark:ring-1 dark:ring-foreground/10";
+  "bg-background border-3d btn-3d-outline shadow-[0_4px_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)] dark:bg-popover dark:border-border dark:ring-1 dark:ring-foreground/10";
 
 export function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (

@@ -457,7 +457,7 @@ function DesktopMenuDialog({ facilityId, name }: { facilityId: string; name: str
                 aria-label={name}
                 style={{ borderRadius: 24 }}
                 transition={{ layout: { type: "spring", stiffness: 400, damping: 30, mass: 0.9 } }}
-                className="relative z-10 flex max-h-full w-full max-w-4xl flex-col overflow-hidden bg-popover border border-(--btn-3d) [--btn-3d:color-mix(in_oklch,var(--border),var(--border))] [--btn-glare:oklch(1_0_0/0.55)] shadow-[0_4px_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)] dark:[--btn-3d:transparent] dark:[--btn-glare:oklch(1_0_0/0.06)] dark:ring-1 dark:ring-foreground/10"
+                className="relative z-10 flex max-h-full w-full max-w-4xl flex-col overflow-hidden bg-popover border-3d btn-3d-outline shadow-[0_4px_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)] dark:border-border dark:ring-1 dark:ring-foreground/10"
               >
                 {/* Content wrapper — fades in after the spring settles on open,
                     fades out immediately so the container morphs back clean. */}
