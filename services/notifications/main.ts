@@ -14,11 +14,20 @@ import { createServer } from "node:http";
 import { Worker } from "bullmq";
 
 import { sendPush } from "#/server/notifications/push.ts";
-import { STAY_ALERT_QUEUE, type StayAlertJob } from "#/server/notifications/queue.ts";
+import {
+  DINING_ALERT_QUEUE,
+  STAY_ALERT_QUEUE,
+  type DiningAlertJob,
+  type StayAlertJob,
+} from "#/server/notifications/queue.ts";
 import {
   markStayNotificationFailed,
   sendStayNotification,
 } from "#/server/notifications/stayMailer.tsx";
+import {
+  markDiningNotificationFailed,
+  sendDiningNotification,
+} from "#/server/notifications/diningMailer.tsx";
 import { getSubsForUser, removeStale } from "#/server/notifications/subscriptions.ts";
 import type { PushJob } from "#/server/notifications/queue.ts";
 
@@ -79,6 +88,26 @@ stayWorker.on("failed", (job, err) => {
   }
 });
 
+// Third worker: durable dining-alert email — same posture as stay alerts.
+const diningWorker = new Worker<DiningAlertJob>(
+  DINING_ALERT_QUEUE,
+  async (job) => {
+    await sendDiningNotification(job.data.notificationId);
+    console.log(`[dining-alerts] job=${job.id} notification=${job.data.notificationId} sent`);
+  },
+  {
+    connection: { url: process.env.REDIS_URL },
+    concurrency: 4,
+  },
+);
+
+diningWorker.on("failed", (job, err) => {
+  console.error(`[dining-alerts] job=${job?.id} failed:`, err);
+  if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
+    void markDiningNotificationFailed(job.data.notificationId, err?.message ?? String(err));
+  }
+});
+
 const port = Number(process.env.PORT ?? 8080);
 createServer((req, res) => {
   if (req.url === "/health" || req.url === "/") {
@@ -92,7 +121,7 @@ createServer((req, res) => {
 
 async function shutdown(sig: string) {
   console.log(`[notifications] ${sig} received, closing workers…`);
-  await Promise.all([worker.close(), stayWorker.close()]);
+  await Promise.all([worker.close(), stayWorker.close(), diningWorker.close()]);
   console.log("[notifications] drained, exiting");
   process.exit(0);
 }

@@ -263,7 +263,7 @@ function ProfilePage() {
       </Card>
 
       {/* Danger zone */}
-      <Card className="border-destructive/40">
+      <Card className="border-destructive! dark:border-destructive! [--btn-3d:var(--destructive)]">
         <CardHeader>
           <CardTitle className="text-destructive">Delete account</CardTitle>
           <CardDescription>

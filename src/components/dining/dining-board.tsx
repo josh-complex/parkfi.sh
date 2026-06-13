@@ -24,6 +24,7 @@ import {
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
+import { authClient } from "#/lib/auth-client.ts";
 
 const PAGE_SIZE = 12;
 
@@ -60,6 +61,7 @@ function BrowseView({ isLoading }: { isLoading: boolean }) {
 export function DiningBoard() {
   const trpc = useTRPC();
   const isMobile = useIsMobile();
+  const { data: session } = authClient.useSession();
 
   const searched = useStore(diningStore, (s) => s.searched);
   const filters = useStore(diningStore, (s) => s.filters);
@@ -179,6 +181,8 @@ export function DiningBoard() {
             options={options}
             currentPage={currentPage}
             pageCount={pageCount}
+            loggedIn={!!session?.user}
+            defaultPartySize={Number(partySize)}
           />
         ) : (
           <BrowseView isLoading={restaurantsQ.isLoading} />

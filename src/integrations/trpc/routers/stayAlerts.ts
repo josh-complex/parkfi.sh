@@ -4,7 +4,12 @@ import { z } from "zod";
 
 import { db } from "#/db/index.ts";
 import { stayAlert, stayQuery } from "#/db/schema.ts";
-import { formatDateRange, resortDisplayName } from "#/server/notifications/stayFormat.ts";
+import {
+  buildScope,
+  formatDateRange,
+  scopeLabel,
+  scopeResortPairs,
+} from "#/server/notifications/stayFormat.ts";
 import { buildPartyKey } from "#/server/stays/availability.ts";
 import { RESORT_BY_ID } from "#/server/stays/resort-catalog.generated.ts";
 import { protectedProcedure } from "../init.ts";
@@ -14,13 +19,24 @@ const MAX_PER_USER = 3;
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD");
 const modeSchema = z.union([z.literal(1), z.literal(2)]);
+const tierSchema = z.enum(["value", "moderate", "deluxe", "villa", "campground"]);
 
-// mode 2 (price_below) requires a target price; mode 1 (becomes_available) doesn't.
+// mode 2 (price_below) requires a target price; mode 1 (becomes_available) may
+// carry an optional price ceiling but doesn't require one.
 const needsPrice = (v: { mode: number; priceBelow?: number }) =>
   v.mode !== 2 || v.priceBelow != null;
 const priceError = {
   message: "A target price is required for price-drop alerts",
   path: ["priceBelow"],
+};
+
+// The match selector: one resort, a tier, an area, or any. Resolved to the
+// canonical `scope` token server-side via `buildScope`. resortId wins, then
+// tier, then area; none = any resort.
+const scopeInput = {
+  resortId: z.string().default(""),
+  tier: tierSchema.optional(),
+  area: z.string().optional(),
 };
 
 // The search dims that define which (dates, party) the alert watches — same
@@ -42,8 +58,7 @@ const queryDims = {
 const createInput = z
   .object({
     ...queryDims,
-    // '' = any resort; otherwise a catalog facility id.
-    resortId: z.string().default(""),
+    ...scopeInput,
     mode: modeSchema,
     priceBelow: z.number().int().positive().max(100_000).optional(),
   })
@@ -57,7 +72,7 @@ const updateInput = z
   })
   .refine(needsPrice, priceError);
 
-// Latest observed availability/price for an alert's query, resort-scoped — the
+// Latest observed availability/price for an alert's query, scope-resolved — the
 // same lateral the evaluator uses, so list mirrors what would fire.
 const latestObs = sql`
   LEFT JOIN LATERAL (
@@ -67,7 +82,8 @@ const latestObs = sql`
     WHERE o.check_in = sq.check_in
       AND o.check_out = sq.check_out
       AND o.party_key = sq.party_key
-      AND (sa.resort_id = '' OR o.resort_id = sa.resort_id)
+      AND (sa.scope = '' OR o.resort_id IN (
+            SELECT sm.resort_id FROM scope_map sm WHERE sm.scope = sa.scope))
       AND o.observed_at = (
         SELECT max(o2.observed_at) FROM stay_obs o2
         WHERE o2.check_in = sq.check_in
@@ -79,9 +95,11 @@ const latestObs = sql`
 export const stayAlertsRouter = {
   /** The current user's active stay alerts, with each one's current status. */
   list: protectedProcedure.query(async ({ ctx }) => {
+    const { scopes, resorts } = scopeResortPairs();
     const result = await db.execute<{
       id: string;
       resort_id: string;
+      scope: string;
       mode: number;
       price_below: number | null;
       armed: boolean;
@@ -91,7 +109,11 @@ export const stayAlertsRouter = {
       available: boolean | null;
       price: number | null;
     }>(sql`
-      SELECT sa.id, sa.resort_id, sa.mode, sa.price_below, sa.armed, sa.last_fired_at,
+      WITH scope_map AS (
+        SELECT scope, resort_id
+        FROM unnest(${scopes}::text[], ${resorts}::text[]) AS t(scope, resort_id)
+      )
+      SELECT sa.id, sa.resort_id, sa.scope, sa.mode, sa.price_below, sa.armed, sa.last_fired_at,
              sq.check_in, sq.check_out, latest.available, latest.price
       FROM stay_alert sa
       JOIN stay_query sq ON sq.id = sa.query_id
@@ -103,7 +125,8 @@ export const stayAlertsRouter = {
     const alerts = result.rows.map((r) => ({
       id: Number(r.id),
       resortId: r.resort_id,
-      resortName: r.resort_id ? resortDisplayName(r.resort_id) : "Any resort",
+      scope: r.scope,
+      resortName: scopeLabel(r.scope),
       mode: Number(r.mode),
       priceBelow: r.price_below,
       armed: r.armed,
@@ -122,6 +145,8 @@ export const stayAlertsRouter = {
     if (input.resortId && !RESORT_BY_ID.has(input.resortId)) {
       throw new TRPCError({ code: "BAD_REQUEST", message: "Unknown resort" });
     }
+    // Canonical match selector (resort wins, then tier, then area, else any).
+    const scope = buildScope({ resortId: input.resortId, tier: input.tier, area: input.area });
     const partyKey = buildPartyKey(input);
     const childAges = [...input.childAges].sort((a, b) => a - b).join(",");
 
@@ -159,7 +184,7 @@ export const stayAlertsRouter = {
     // Cap = 3 active per user total, but allow reconfiguring one already set.
     const cap = await db.execute<{ used: number; this_one: number }>(sql`
       SELECT count(*) FILTER (WHERE active) AS used,
-             count(*) FILTER (WHERE active AND resort_id = ${input.resortId} AND query_id = ${queryId}) AS this_one
+             count(*) FILTER (WHERE active AND scope = ${scope} AND query_id = ${queryId}) AS this_one
       FROM stay_alert
       WHERE user_id = ${ctx.userId}
     `);
@@ -171,20 +196,22 @@ export const stayAlertsRouter = {
       });
     }
 
-    const priceBelow = input.mode === 2 ? (input.priceBelow ?? null) : null;
+    // priceBelow is the rule target for mode 2 and an optional ceiling for mode 1.
+    const priceBelow = input.priceBelow ?? null;
     await db
       .insert(stayAlert)
       .values({
         userId: ctx.userId,
         queryId,
         resortId: input.resortId,
+        scope,
         mode: input.mode,
         priceBelow,
         armed: true,
         active: true,
       })
       .onConflictDoUpdate({
-        target: [stayAlert.userId, stayAlert.resortId, stayAlert.queryId],
+        target: [stayAlert.userId, stayAlert.scope, stayAlert.queryId],
         targetWhere: sql`active`,
         set: {
           mode: input.mode,
@@ -202,7 +229,7 @@ export const stayAlertsRouter = {
 
   /** Edit an existing alert's rule and re-arm it. */
   update: protectedProcedure.input(updateInput).mutation(async ({ ctx, input }) => {
-    const priceBelow = input.mode === 2 ? (input.priceBelow ?? null) : null;
+    const priceBelow = input.priceBelow ?? null;
     const res = await db
       .update(stayAlert)
       .set({ mode: input.mode, priceBelow, armed: true, lastFiredAt: null })

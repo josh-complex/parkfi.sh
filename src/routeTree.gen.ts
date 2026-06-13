@@ -28,10 +28,10 @@ import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
 import { Route as ApiPushSubscribeRouteImport } from './routes/api/push/subscribe'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as DashParkSlugRouteImport } from './routes/_dash/park.$slug'
-import { Route as DashAccountSessionsRouteImport } from './routes/_dash/account/sessions'
 import { Route as DashAccountSecurityRouteImport } from './routes/_dash/account/security'
 import { Route as DashAccountProfileRouteImport } from './routes/_dash/account/profile'
 import { Route as DashAccountConnectionsRouteImport } from './routes/_dash/account/connections'
+import { Route as DashAccountAlertsRouteImport } from './routes/_dash/account/alerts'
 
 const UnsubscribeRoute = UnsubscribeRouteImport.update({
   id: '/unsubscribe',
@@ -127,11 +127,6 @@ const DashParkSlugRoute = DashParkSlugRouteImport.update({
   path: '/park/$slug',
   getParentRoute: () => DashRoute,
 } as any)
-const DashAccountSessionsRoute = DashAccountSessionsRouteImport.update({
-  id: '/sessions',
-  path: '/sessions',
-  getParentRoute: () => DashAccountRoute,
-} as any)
 const DashAccountSecurityRoute = DashAccountSecurityRouteImport.update({
   id: '/security',
   path: '/security',
@@ -145,6 +140,11 @@ const DashAccountProfileRoute = DashAccountProfileRouteImport.update({
 const DashAccountConnectionsRoute = DashAccountConnectionsRouteImport.update({
   id: '/connections',
   path: '/connections',
+  getParentRoute: () => DashAccountRoute,
+} as any)
+const DashAccountAlertsRoute = DashAccountAlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
   getParentRoute: () => DashAccountRoute,
 } as any)
 
@@ -162,10 +162,10 @@ export interface FileRoutesByFullPath {
   '/account': typeof DashAccountRouteWithChildren
   '/alerts': typeof DashAlertsRoute
   '/stays/alerts': typeof StaysAlertsRoute
+  '/account/alerts': typeof DashAccountAlertsRoute
   '/account/connections': typeof DashAccountConnectionsRoute
   '/account/profile': typeof DashAccountProfileRoute
   '/account/security': typeof DashAccountSecurityRoute
-  '/account/sessions': typeof DashAccountSessionsRoute
   '/park/$slug': typeof DashParkSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
@@ -185,10 +185,10 @@ export interface FileRoutesByTo {
   '/alerts': typeof DashAlertsRoute
   '/stays/alerts': typeof StaysAlertsRoute
   '/': typeof DashIndexRoute
+  '/account/alerts': typeof DashAccountAlertsRoute
   '/account/connections': typeof DashAccountConnectionsRoute
   '/account/profile': typeof DashAccountProfileRoute
   '/account/security': typeof DashAccountSecurityRoute
-  '/account/sessions': typeof DashAccountSessionsRoute
   '/park/$slug': typeof DashParkSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
@@ -211,10 +211,10 @@ export interface FileRoutesById {
   '/_dash/alerts': typeof DashAlertsRoute
   '/stays_/alerts': typeof StaysAlertsRoute
   '/_dash/': typeof DashIndexRoute
+  '/_dash/account/alerts': typeof DashAccountAlertsRoute
   '/_dash/account/connections': typeof DashAccountConnectionsRoute
   '/_dash/account/profile': typeof DashAccountProfileRoute
   '/_dash/account/security': typeof DashAccountSecurityRoute
-  '/_dash/account/sessions': typeof DashAccountSessionsRoute
   '/_dash/park/$slug': typeof DashParkSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
@@ -237,10 +237,10 @@ export interface FileRouteTypes {
     | '/account'
     | '/alerts'
     | '/stays/alerts'
+    | '/account/alerts'
     | '/account/connections'
     | '/account/profile'
     | '/account/security'
-    | '/account/sessions'
     | '/park/$slug'
     | '/api/auth/$'
     | '/api/push/subscribe'
@@ -260,10 +260,10 @@ export interface FileRouteTypes {
     | '/alerts'
     | '/stays/alerts'
     | '/'
+    | '/account/alerts'
     | '/account/connections'
     | '/account/profile'
     | '/account/security'
-    | '/account/sessions'
     | '/park/$slug'
     | '/api/auth/$'
     | '/api/push/subscribe'
@@ -285,10 +285,10 @@ export interface FileRouteTypes {
     | '/_dash/alerts'
     | '/stays_/alerts'
     | '/_dash/'
+    | '/_dash/account/alerts'
     | '/_dash/account/connections'
     | '/_dash/account/profile'
     | '/_dash/account/security'
-    | '/_dash/account/sessions'
     | '/_dash/park/$slug'
     | '/api/auth/$'
     | '/api/push/subscribe'
@@ -448,13 +448,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashParkSlugRouteImport
       parentRoute: typeof DashRoute
     }
-    '/_dash/account/sessions': {
-      id: '/_dash/account/sessions'
-      path: '/sessions'
-      fullPath: '/account/sessions'
-      preLoaderRoute: typeof DashAccountSessionsRouteImport
-      parentRoute: typeof DashAccountRoute
-    }
     '/_dash/account/security': {
       id: '/_dash/account/security'
       path: '/security'
@@ -476,22 +469,29 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashAccountConnectionsRouteImport
       parentRoute: typeof DashAccountRoute
     }
+    '/_dash/account/alerts': {
+      id: '/_dash/account/alerts'
+      path: '/alerts'
+      fullPath: '/account/alerts'
+      preLoaderRoute: typeof DashAccountAlertsRouteImport
+      parentRoute: typeof DashAccountRoute
+    }
   }
 }
 
 interface DashAccountRouteChildren {
+  DashAccountAlertsRoute: typeof DashAccountAlertsRoute
   DashAccountConnectionsRoute: typeof DashAccountConnectionsRoute
   DashAccountProfileRoute: typeof DashAccountProfileRoute
   DashAccountSecurityRoute: typeof DashAccountSecurityRoute
-  DashAccountSessionsRoute: typeof DashAccountSessionsRoute
   DashAccountIndexRoute: typeof DashAccountIndexRoute
 }
 
 const DashAccountRouteChildren: DashAccountRouteChildren = {
+  DashAccountAlertsRoute: DashAccountAlertsRoute,
   DashAccountConnectionsRoute: DashAccountConnectionsRoute,
   DashAccountProfileRoute: DashAccountProfileRoute,
   DashAccountSecurityRoute: DashAccountSecurityRoute,
-  DashAccountSessionsRoute: DashAccountSessionsRoute,
   DashAccountIndexRoute: DashAccountIndexRoute,
 }
 

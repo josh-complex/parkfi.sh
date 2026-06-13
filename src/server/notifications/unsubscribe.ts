@@ -10,12 +10,14 @@ import crypto from "node:crypto";
 import { and, eq } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
-import { alertOptout, stayAlert } from "#/db/schema.ts";
+import { alertOptout, diningAlert, stayAlert } from "#/db/schema.ts";
 
 export interface UnsubscribePayload {
   userId: string;
-  /** A `stay_alert.id` to silence one alert, or "all" for the global opt-out. */
+  /** An alert id to silence one alert, or "all" for the domain-wide opt-out. */
   scope: number | "all";
+  /** Which alert domain this token controls. Defaults to "stay" (legacy tokens). */
+  kind?: "stay" | "dining";
 }
 
 function secret(): string {
@@ -46,22 +48,32 @@ export function verifyUnsubscribeToken(token: string): UnsubscribePayload | null
     const p = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as UnsubscribePayload;
     if (typeof p.userId !== "string") return null;
     if (p.scope !== "all" && typeof p.scope !== "number") return null;
+    if (p.kind !== undefined && p.kind !== "stay" && p.kind !== "dining") return null;
     return p;
   } catch {
     return null;
   }
 }
 
-/** Honor an unsubscribe: disable the one alert, or set the global email opt-out. */
+/** Honor an unsubscribe: disable the one alert, or set the domain email opt-out. */
 export async function applyUnsubscribe(payload: UnsubscribePayload): Promise<void> {
+  const kind = payload.kind ?? "stay";
   if (payload.scope === "all") {
+    const optOut = kind === "dining" ? { diningEmailOptOut: true } : { stayEmailOptOut: true };
     await db
       .insert(alertOptout)
-      .values({ userId: payload.userId, stayEmailOptOut: true })
+      .values({ userId: payload.userId, ...optOut })
       .onConflictDoUpdate({
         target: alertOptout.userId,
-        set: { stayEmailOptOut: true, updatedAt: new Date() },
+        set: { ...optOut, updatedAt: new Date() },
       });
+    return;
+  }
+  if (kind === "dining") {
+    await db
+      .update(diningAlert)
+      .set({ active: false })
+      .where(and(eq(diningAlert.id, payload.scope), eq(diningAlert.userId, payload.userId)));
     return;
   }
   await db

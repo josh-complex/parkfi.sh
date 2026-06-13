@@ -56,3 +56,30 @@ export function getStayAlertQueue(): Queue<StayAlertJob> {
   }
   return _stayQueue;
 }
+
+/**
+ * A fired dining alert — same durable-delivery posture as stay alerts (carries
+ * only the `dining_notification` row id; the worker loads payload + recipient).
+ */
+export interface DiningAlertJob {
+  notificationId: number;
+}
+
+export const DINING_ALERT_QUEUE = "dining-alerts";
+
+let _diningQueue: Queue<DiningAlertJob> | null = null;
+
+export function getDiningAlertQueue(): Queue<DiningAlertJob> {
+  if (!_diningQueue) {
+    _diningQueue = new Queue<DiningAlertJob>(DINING_ALERT_QUEUE, {
+      connection: { url: process.env.REDIS_URL },
+      defaultJobOptions: {
+        attempts: 5,
+        backoff: { type: "exponential", delay: 15_000 },
+        removeOnComplete: 1000,
+        removeOnFail: 1000,
+      },
+    });
+  }
+  return _diningQueue;
+}

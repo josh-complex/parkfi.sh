@@ -10,6 +10,7 @@ function row(overrides: Partial<StayAlertRow>): StayAlertRow {
     id: 1,
     userId: "u1",
     resortId: "", // any resort
+    scope: "", // any resort
     mode: StayAlertMode.BECOMES_AVAILABLE,
     priceBelow: null,
     armed: true,
@@ -73,6 +74,26 @@ describe("decideStayAlert — becomes_available", () => {
     const d = decideStayAlert(row({ available: null }), NOW, COOLDOWN);
     expect(d.fire).toBe(false);
     expect(d.set.armed).toBe(true); // not met -> re-arm
+  });
+});
+
+describe("decideStayAlert — becomes_available with a price ceiling", () => {
+  const capped = (o: Partial<StayAlertRow>) => row({ priceBelow: 300, ...o });
+
+  it("fires when a room opens at or under the ceiling", () => {
+    const d = decideStayAlert(capped({ available: true, price: 280 }), NOW, COOLDOWN);
+    expect(d.fire).toBe(true);
+  });
+
+  it("does not fire when a room is open but above the ceiling", () => {
+    const d = decideStayAlert(capped({ available: true, price: 350 }), NOW, COOLDOWN);
+    expect(d.fire).toBe(false);
+    expect(d.set.armed).toBe(true);
+  });
+
+  it("does not fire when the open room has no observed price", () => {
+    const d = decideStayAlert(capped({ available: true, price: null }), NOW, COOLDOWN);
+    expect(d.fire).toBe(false);
   });
 });
 

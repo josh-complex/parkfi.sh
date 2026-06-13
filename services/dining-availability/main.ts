@@ -24,6 +24,7 @@ import { Source, SWEEPABLE_DINING_ENTITY_TYPES } from "#/server/parks/codes.ts";
 import { config } from "#/server/parks/config.ts";
 import { fetchAvailability } from "#/server/dining/availability.ts";
 import { refreshDineBearer, seedDineRefreshToken } from "#/server/dining/disney-session.ts";
+import { evaluateDiningAlerts } from "#/server/notifications/diningAlerts.ts";
 
 const PARTY_SIZES = (process.env.DINING_PARTY_SIZES ?? "1,2,3,4,5,6,7,8,9,10")
   .split(",")
@@ -193,8 +194,17 @@ async function main() {
     );
   }
 
+  // Alerts read the obs we just wrote; isolate so a failure here never breaks the
+  // sweep (the cache write is the primary job). Mirrors the stays sweep tail.
+  let fired = 0;
+  try {
+    fired = await evaluateDiningAlerts();
+  } catch (err) {
+    console.error("[dining-availability] alert eval failed:", err);
+  }
+
   console.log(
-    `[dining-availability] ${swept}/${targets.length} venues × ${PARTY_SIZES.length} parties × ${dates.length} days → ${total} rows` +
+    `[dining-availability] ${swept}/${targets.length} venues × ${PARTY_SIZES.length} parties × ${dates.length} days → ${total} rows alerts=${fired}` +
       (reminted ? " (re-minted bearer)" : ""),
   );
 }

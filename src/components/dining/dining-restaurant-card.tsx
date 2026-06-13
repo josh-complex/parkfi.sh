@@ -1,5 +1,6 @@
 "use client";
 
+import { DiningAlertButton } from "#/components/dining/dining-alert-button.tsx";
 import { DiningMenuDrawer } from "#/components/dining/dining-menu-drawer.tsx";
 import {
   priceTier,
@@ -100,6 +101,8 @@ export function RestaurantCard({
   referenceDate,
   schedules,
   nowMin,
+  loggedIn,
+  defaultPartySize,
 }: {
   restaurant: Restaurant;
   availability: AvailabilityEntry | undefined;
@@ -107,6 +110,8 @@ export function RestaurantCard({
   referenceDate: string;
   schedules: Array<ScheduleEntry> | undefined;
   nowMin: number;
+  loggedIn: boolean;
+  defaultPartySize: number;
 }) {
   const subtitle = [restaurant.parkResort, restaurant.experienceType ?? restaurant.cuisine]
     .filter(Boolean)
@@ -173,9 +178,17 @@ export function RestaurantCard({
             </CardTitle>
             <CardDescription className="mt-0.5 line-clamp-1">{subtitle}</CardDescription>
           </div>
-          {!restaurant.imageUrl && todayHours && openNow && (
-            <Badge className="bg-emerald-500 text-white shrink-0">Open · {todayHours}</Badge>
-          )}
+          <div className="flex shrink-0 items-center gap-1.5">
+            {!restaurant.imageUrl && todayHours && openNow && (
+              <Badge className="bg-emerald-500 text-white shrink-0">Open · {todayHours}</Badge>
+            )}
+            <DiningAlertButton
+              facilityId={restaurant.facilityId}
+              restaurantName={restaurant.name}
+              defaultPartySize={defaultPartySize}
+              loggedIn={loggedIn}
+            />
+          </div>
         </div>
       </CardHeader>
       <CardContent className="px-3 sm:px-4 flex flex-col gap-1 pt-0 pb-2">

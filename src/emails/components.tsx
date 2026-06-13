@@ -20,6 +20,18 @@ export interface StayEmailProps {
   postalAddress: string;
 }
 
+export interface DiningEmailProps {
+  restaurantName: string;
+  /** Human description of the watched dates, e.g. "Jul 4" or "the next 30 days". */
+  dateLabel: string;
+  partySize: number;
+  /** Where the primary CTA points (the dining search). */
+  ctaUrl: string;
+  manageUrl: string;
+  unsubscribeUrl: string;
+  postalAddress: string;
+}
+
 const main: React.CSSProperties = {
   backgroundColor: "#f4f4f5",
   fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
@@ -44,12 +56,15 @@ export function AlertLayout({
   manageUrl,
   unsubscribeUrl,
   postalAddress,
+  footerReason = "you set a resort-availability alert on parkfi.sh",
 }: {
   preview: string;
   children: React.ReactNode;
   manageUrl: string;
   unsubscribeUrl: string;
   postalAddress: string;
+  /** Why this email was sent, e.g. "you set a dining-availability alert…". */
+  footerReason?: string;
 }) {
   return (
     <Html>
@@ -61,7 +76,7 @@ export function AlertLayout({
           <Hr style={{ borderColor: "#e4e4e7", margin: "24px 0" }} />
           <Section>
             <Text style={footerText}>
-              You're getting this because you set a resort-availability alert on parkfi.sh.{" "}
+              You're getting this because {footerReason}.{" "}
               <Link style={footerLink} href={manageUrl}>
                 Manage alerts
               </Link>{" "}

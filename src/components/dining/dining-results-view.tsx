@@ -67,6 +67,8 @@ export function ResultsView({
   options,
   currentPage,
   pageCount,
+  loggedIn,
+  defaultPartySize,
 }: {
   isLoading: boolean;
   isError: boolean;
@@ -81,6 +83,8 @@ export function ResultsView({
   options: FilterOptions;
   currentPage: number;
   pageCount: number;
+  loggedIn: boolean;
+  defaultPartySize: number;
 }) {
   const sortKey = useStore(diningStore, (s) => s.sortKey);
   const extraCount = useStore(diningStore, (s) => countExtraFilters(s.filters));
@@ -172,6 +176,8 @@ export function ResultsView({
                 referenceDate={referenceDate}
                 schedules={hoursMap.get(r.facilityId)}
                 nowMin={nowMin}
+                loggedIn={loggedIn}
+                defaultPartySize={defaultPartySize}
               />
             ))}
           </div>

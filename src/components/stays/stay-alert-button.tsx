@@ -17,6 +17,14 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "#/components/ui/popover.tsx";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "#/components/ui/select.tsx";
+import { Switch } from "#/components/ui/switch.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
 /** The search dims an alert watches — same shape the stays search sends. */
@@ -34,26 +42,43 @@ const BECOMES_AVAILABLE = 1;
 const PRICE_BELOW = 2;
 const DEFAULT_PRICE = 400;
 
+const TIER_LABEL: Record<string, string> = {
+  value: "Value resorts",
+  moderate: "Moderate resorts",
+  deluxe: "Deluxe resorts",
+  villa: "DVC villas",
+  campground: "Campgrounds",
+};
+
+type ScopeChoice = "resort" | "tier" | "area" | "any";
+
 /**
  * "Alert me" bell for one resort + the current search dates/party. Logged-out
- * users get a sign-in prompt; logged-in users pick a rule (any room opens, or
- * price drops below a target) and `create` upserts it (so it edits in place).
+ * users get a sign-in prompt; logged-in users pick a scope (this resort, its
+ * tier, its area, or any resort), a rule (a room opens, or price drops), and an
+ * optional price ceiling on the "room opens" rule. `create` upserts in place.
  */
 export function StayAlertButton({
   resortId,
   resortName,
+  tier,
+  area,
   dims,
   loggedIn,
 }: {
   resortId: string;
   resortName: string;
+  tier?: string;
+  area?: string | null;
   dims: StayAlertDims;
   loggedIn: boolean;
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const [open, setOpen] = React.useState(false);
+  const [scope, setScope] = React.useState<ScopeChoice>("resort");
   const [mode, setMode] = React.useState<number>(BECOMES_AVAILABLE);
+  const [capped, setCapped] = React.useState(false);
   const [price, setPrice] = React.useState<number>(DEFAULT_PRICE);
 
   const save = useMutation(
@@ -61,24 +86,42 @@ export function StayAlertButton({
       onSuccess: () => {
         void queryClient.invalidateQueries({ queryKey: trpc.stayAlerts.list.queryKey() });
         setOpen(false);
-        toast.success(`We'll email you about ${resortName}`);
+        toast.success("Alert saved — we'll email you");
       },
       onError: (err) => toast.error(err.message || "Could not save alert"),
     }),
   );
 
+  // mode 2 always needs a price; mode 1 needs one only when the ceiling is on.
+  const wantsPrice = mode === PRICE_BELOW || (mode === BECOMES_AVAILABLE && capped);
+
   function submit() {
-    if (mode === PRICE_BELOW && (!Number.isFinite(price) || price <= 0)) {
+    if (wantsPrice && (!Number.isFinite(price) || price <= 0)) {
       toast.error("Enter a price greater than zero");
       return;
     }
+    const scopeFields =
+      scope === "resort"
+        ? { resortId }
+        : scope === "tier" && tier
+          ? { tier: tier as "value" | "moderate" | "deluxe" | "villa" | "campground" }
+          : scope === "area" && area
+            ? { area }
+            : {};
     save.mutate({
       ...dims,
-      resortId,
+      ...scopeFields,
       mode: mode === PRICE_BELOW ? PRICE_BELOW : BECOMES_AVAILABLE,
-      ...(mode === PRICE_BELOW ? { priceBelow: price } : {}),
+      ...(wantsPrice ? { priceBelow: price } : {}),
     });
   }
+
+  const scopeItems: Record<string, string> = {
+    resort: resortName,
+    ...(tier ? { tier: TIER_LABEL[tier] ?? "Same tier" } : {}),
+    ...(area ? { area } : {}),
+    any: "Any resort",
+  };
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -125,6 +168,26 @@ export function StayAlertButton({
               <PopoverDescription>Email me when…</PopoverDescription>
             </PopoverHeader>
 
+            <div className="space-y-1.5">
+              <Label>Watch</Label>
+              <Select
+                value={scope}
+                onValueChange={(v) => v && setScope(v as ScopeChoice)}
+                items={scopeItems}
+              >
+                <SelectTrigger size="sm" className="w-full" aria-label="What to watch">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(scopeItems).map(([v, label]) => (
+                    <SelectItem key={v} value={v}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="grid grid-cols-2 gap-2">
               <Button
                 type="button"
@@ -144,7 +207,14 @@ export function StayAlertButton({
               </Button>
             </div>
 
-            {mode === PRICE_BELOW ? (
+            {mode === BECOMES_AVAILABLE && (
+              <label className="flex items-center justify-between gap-2 text-sm">
+                <span>Only under a price</span>
+                <Switch checked={capped} onCheckedChange={setCapped} />
+              </label>
+            )}
+
+            {wantsPrice ? (
               <div className="space-y-1.5">
                 <Label htmlFor="stay-alert-price">Notify under</Label>
                 <div className="flex items-center gap-2">

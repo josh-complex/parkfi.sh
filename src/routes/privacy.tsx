@@ -173,12 +173,12 @@ function PrivacyPage() {
               expire automatically after their expiry date. You can revoke individual sessions at
               any time from the{" "}
               <a
-                href="/account/sessions"
+                href="/account/security"
                 className="font-medium text-foreground underline underline-offset-4"
               >
-                Sessions
-              </a>{" "}
-              page.
+                Security settings
+              </a>
+              .
             </p>
             <p>
               You can permanently delete your account from the{" "}
@@ -267,12 +267,12 @@ function PrivacyPage() {
               activity that occurs under your account. If you believe your account has been
               compromised, change your password immediately and revoke active sessions from the{" "}
               <a
-                href="/account/sessions"
+                href="/account/security"
                 className="font-medium text-foreground underline underline-offset-4"
               >
-                Sessions
-              </a>{" "}
-              page.
+                Security settings
+              </a>
+              .
             </p>
             <p>
               Accounts are for personal use. You may not share your account with others or transfer

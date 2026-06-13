@@ -19,6 +19,7 @@ import { getStayAlertQueue } from "#/server/notifications/queue.ts";
 import {
   formatDateRange,
   resortDisplayName,
+  scopeResortPairs,
   type StayNotificationPayload,
 } from "#/server/notifications/stayFormat.ts";
 
@@ -34,6 +35,7 @@ export interface StayAlertRow {
   id: number;
   userId: string;
   resortId: string; // '' = any resort
+  scope: string; // canonical selector ('' | 'r:<id>' | 't:<tier>' | 'a:<area>')
   mode: number;
   priceBelow: number | null;
   armed: boolean;
@@ -64,7 +66,11 @@ export interface StayAlertDecision {
 /** Does the alert's *rule* currently match the latest observation? */
 function ruleMet(a: StayAlertRow): boolean {
   if (a.mode === StayAlertMode.BECOMES_AVAILABLE) {
-    return a.available === true;
+    // A room is open. An optional priceBelow tightens it into a ceiling: only
+    // fire when the open price is also at/under the cap.
+    if (a.available !== true) return false;
+    if (a.priceBelow == null) return true;
+    return a.price != null && a.price <= a.priceBelow;
   }
   if (a.mode === StayAlertMode.PRICE_BELOW) {
     return (
@@ -135,10 +141,14 @@ function buildPayload(a: StayAlertRow): StayNotificationPayload {
  * Returns the number of alerts fired this run.
  */
 export async function evaluateStayAlerts(now: number = Date.now()): Promise<number> {
+  // (scope-token → resort-id) map so the lateral can resolve a tier/area scope
+  // to its resort set in one set-based pass; '' (any) short-circuits the filter.
+  const { scopes, resorts } = scopeResortPairs();
   const result = await db.execute<{
     id: string;
     user_id: string;
     resort_id: string;
+    scope: string;
     mode: number;
     price_below: number | null;
     armed: boolean;
@@ -151,7 +161,11 @@ export async function evaluateStayAlerts(now: number = Date.now()): Promise<numb
     price: number | null;
     cheapest_resort_id: string | null;
   }>(sql`
-    SELECT sa.id, sa.user_id, sa.resort_id, sa.mode, sa.price_below,
+    WITH scope_map AS (
+      SELECT scope, resort_id
+      FROM unnest(${scopes}::text[], ${resorts}::text[]) AS t(scope, resort_id)
+    )
+    SELECT sa.id, sa.user_id, sa.resort_id, sa.scope, sa.mode, sa.price_below,
            sa.armed, sa.last_fired_at, sa.last_available, sa.last_price,
            sq.check_in, sq.check_out,
            latest.available, latest.price, latest.cheapest_resort_id
@@ -167,7 +181,8 @@ export async function evaluateStayAlerts(now: number = Date.now()): Promise<numb
       WHERE o.check_in = sq.check_in
         AND o.check_out = sq.check_out
         AND o.party_key = sq.party_key
-        AND (sa.resort_id = '' OR o.resort_id = sa.resort_id)
+        AND (sa.scope = '' OR o.resort_id IN (
+              SELECT sm.resort_id FROM scope_map sm WHERE sm.scope = sa.scope))
         AND o.observed_at = (
           SELECT max(o2.observed_at) FROM stay_obs o2
           WHERE o2.check_in = sq.check_in
@@ -183,6 +198,7 @@ export async function evaluateStayAlerts(now: number = Date.now()): Promise<numb
     id: Number(r.id),
     userId: r.user_id,
     resortId: r.resort_id,
+    scope: r.scope,
     mode: Number(r.mode),
     priceBelow: r.price_below,
     armed: r.armed,

@@ -1,5 +1,8 @@
+import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { createTRPCRouter, publicProcedure } from "../init";
+import { createTRPCRouter, protectedProcedure, publicProcedure } from "../init";
+import { db } from "#/db/index.ts";
+import { alertOptout } from "#/db/schema.ts";
 import { addSub, removeSub } from "#/server/notifications/subscriptions.ts";
 import { getPushQueue } from "#/server/notifications/queue.ts";
 
@@ -51,4 +54,51 @@ export const notificationsRouter = createTRPCRouter({
     }
     return { ok: true };
   }),
+
+  /** The current user's per-domain email-alert opt-out flags. */
+  getPrefs: protectedProcedure.query(async ({ ctx }) => {
+    const [row] = await db
+      .select({
+        stayEmailOptOut: alertOptout.stayEmailOptOut,
+        diningEmailOptOut: alertOptout.diningEmailOptOut,
+      })
+      .from(alertOptout)
+      .where(eq(alertOptout.userId, ctx.userId))
+      .limit(1);
+    return {
+      stayEmailOptOut: row?.stayEmailOptOut ?? false,
+      diningEmailOptOut: row?.diningEmailOptOut ?? false,
+    };
+  }),
+
+  /** Update one or both email-alert opt-out flags (upsert). */
+  setPrefs: protectedProcedure
+    .input(
+      z.object({
+        stayEmailOptOut: z.boolean().optional(),
+        diningEmailOptOut: z.boolean().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await db
+        .insert(alertOptout)
+        .values({
+          userId: ctx.userId,
+          stayEmailOptOut: input.stayEmailOptOut ?? false,
+          diningEmailOptOut: input.diningEmailOptOut ?? false,
+        })
+        .onConflictDoUpdate({
+          target: alertOptout.userId,
+          set: {
+            ...(input.stayEmailOptOut !== undefined
+              ? { stayEmailOptOut: input.stayEmailOptOut }
+              : {}),
+            ...(input.diningEmailOptOut !== undefined
+              ? { diningEmailOptOut: input.diningEmailOptOut }
+              : {}),
+            updatedAt: new Date(),
+          },
+        });
+      return { ok: true };
+    }),
 });

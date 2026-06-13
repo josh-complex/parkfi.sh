@@ -12,37 +12,34 @@ import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
 
-const BECOMES_AVAILABLE = 1;
-
-function ruleLabel(mode: number, priceBelow: number | null): string {
-  if (mode === BECOMES_AVAILABLE) {
-    return priceBelow != null
-      ? `When a room opens under $${priceBelow.toLocaleString()}/night`
-      : "When a room opens";
+function statusLabel(available: boolean, nextDate: string | null): string {
+  if (!available) return "No tables yet";
+  if (nextDate) {
+    const d = new Date(`${nextDate}T00:00:00Z`).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    });
+    return `Table available · ${d}`;
   }
-  return `When under $${(priceBelow ?? 0).toLocaleString()}/night`;
+  return "Table available";
 }
 
-function statusLabel(available: boolean | null, price: number | null): string {
-  if (available == null) return "No data yet";
-  if (!available) return "Currently sold out";
-  return price != null ? `Available · from $${price.toLocaleString()}/night` : "Available";
-}
-
-export function StayAlertsManager() {
+/** Lists the user's dining alerts. Mirrors `StayAlertsManager`. */
+export function DiningAlertsManager() {
   const { data: session, isPending } = authClient.useSession();
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
   const alertsQ = useQuery({
-    ...trpc.stayAlerts.list.queryOptions(),
+    ...trpc.diningAlerts.list.queryOptions(),
     enabled: !!session?.user,
   });
 
   const remove = useMutation(
-    trpc.stayAlerts.remove.mutationOptions({
+    trpc.diningAlerts.remove.mutationOptions({
       onSuccess: () => {
-        void queryClient.invalidateQueries({ queryKey: trpc.stayAlerts.list.queryKey() });
+        void queryClient.invalidateQueries({ queryKey: trpc.diningAlerts.list.queryKey() });
         toast.success("Alert removed");
       },
       onError: (err) => toast.error(err.message || "Could not remove alert"),
@@ -63,7 +60,7 @@ export function StayAlertsManager() {
       <Empty>
         <EmptyTitle>Sign in to manage alerts</EmptyTitle>
         <EmptyDescription>
-          Resort-availability alerts are tied to your account so we know where to email you.
+          Dining-availability alerts are tied to your account so we know where to email you.
         </EmptyDescription>
         <Button className="mt-4" render={<Link to="/login" />}>
           Sign in
@@ -78,8 +75,7 @@ export function StayAlertsManager() {
   return (
     <div className="space-y-3">
       <p className="text-muted-foreground text-sm">
-        We'll email you when a resort opens up or drops below your price. {alerts.length} of {limit}{" "}
-        used.
+        We'll email you when a table opens for your party. {alerts.length} of {limit} used.
       </p>
 
       {alertsQ.isLoading ? (
@@ -90,12 +86,12 @@ export function StayAlertsManager() {
       ) : alerts.length === 0 ? (
         <Empty>
           <BellIcon className="text-muted-foreground size-6" />
-          <EmptyTitle>No alerts yet</EmptyTitle>
+          <EmptyTitle>No dining alerts yet</EmptyTitle>
           <EmptyDescription>
-            Search a stay, then tap the bell on any resort to get an email when it opens up.
+            Tap the bell on any restaurant to get an email when a table opens.
           </EmptyDescription>
-          <Button className="mt-4" render={<Link to="/stays" />}>
-            Search stays
+          <Button className="mt-4" render={<Link to="/dining" />}>
+            Find a table
           </Button>
         </Empty>
       ) : (
@@ -107,7 +103,7 @@ export function StayAlertsManager() {
             >
               <div className="min-w-0 space-y-1">
                 <div className="flex items-center gap-2">
-                  <span className="truncate font-medium">{a.resortName}</span>
+                  <span className="truncate font-medium">{a.restaurantName}</span>
                   {!a.armed ? (
                     <Badge variant="secondary" className="shrink-0">
                       Notified
@@ -115,10 +111,10 @@ export function StayAlertsManager() {
                   ) : null}
                 </div>
                 <p className="text-muted-foreground text-sm">
-                  {a.dateRange} · {ruleLabel(a.mode, a.priceBelow)}
+                  Party of {a.partySize} · {a.dateLabel}
                 </p>
                 <p className="text-muted-foreground text-xs">
-                  {statusLabel(a.currentAvailable, a.currentPrice)}
+                  {statusLabel(a.currentAvailable, a.nextDate)}
                 </p>
               </div>
               <Button

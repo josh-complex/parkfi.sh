@@ -11,7 +11,7 @@ export const Route = createFileRoute("/_dash/account")({
 const TABS = [
   { id: "profile", label: "Profile", path: "/account/profile" },
   { id: "security", label: "Security", path: "/account/security" },
-  { id: "sessions", label: "Sessions", path: "/account/sessions" },
+  { id: "alerts", label: "Alerts", path: "/account/alerts" },
   { id: "connections", label: "Connections", path: "/account/connections" },
 ] as const;
 

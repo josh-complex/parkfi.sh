@@ -1162,6 +1162,8 @@ function ResultsView({
                 <StayAlertButton
                   resortId={o.id}
                   resortName={o.name}
+                  tier={o.tier}
+                  area={o.area}
                   dims={alertDims}
                   loggedIn={loggedIn}
                 />

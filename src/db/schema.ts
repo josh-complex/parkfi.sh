@@ -821,9 +821,16 @@ export const stayAlert = pgTable(
       .notNull()
       .references(() => stayQuery.id, { onDelete: "cascade" }),
     // '' = any resort; otherwise a Disney facility id (joins RESORT_BY_ID).
+    // Retained for single-resort display; `scope` is the canonical selector.
     resortId: text("resort_id").notNull().default(""),
+    // Canonical match selector (generalizes resort_id so the alert can target a
+    // set of resorts, not just one): '' = any resort, 'r:<id>' = one resort,
+    // 't:<tier>' = a resort tier, 'a:<area>' = a resort area. The evaluator
+    // resolves a tier/area scope to its resort-id set from RESORT_CATALOG.
+    scope: text("scope").notNull().default(""),
 
-    // rule: 1 = becomes_available (fire when any room opens),
+    // rule: 1 = becomes_available (fire when any room opens; honours an optional
+    //           priceBelow ceiling when set),
     //       2 = price_below       (fire when available price <= priceBelow)
     mode: smallint("mode").notNull(),
     priceBelow: integer("price_below"),
@@ -843,8 +850,8 @@ export const stayAlert = pgTable(
     index("stay_alert_active_query_idx")
       .on(t.queryId)
       .where(sql`active`),
-    uniqueIndex("stay_alert_user_resort_query_uq")
-      .on(t.userId, t.resortId, t.queryId)
+    uniqueIndex("stay_alert_user_scope_query_uq")
+      .on(t.userId, t.scope, t.queryId)
       .where(sql`active`),
   ],
 );
@@ -888,8 +895,83 @@ export const alertOptout = pgTable("alert_optout", {
     .primaryKey()
     .references(() => user.id, { onDelete: "cascade" }),
   stayEmailOptOut: boolean("stay_email_opt_out").notNull().default(false),
+  diningEmailOptOut: boolean("dining_email_opt_out").notNull().default(false),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Per-user dining-availability alert subscriptions (the eats analog of
+ * `stay_alert`). The dining sweep already polls every priority+bookable venue ×
+ * party sizes 1–10 × a rolling day horizon, so — unlike stays — there is no
+ * `stay_query`-style frontier to pin: an alert just names what to watch and the
+ * evaluator reads the latest `dining_obs` generation directly after each sweep.
+ *
+ * `facility_id = ''` means "any priority restaurant" (non-null sentinel, same
+ * trick as `stay_alert.resort_id`). The date axis is exactly one of:
+ *   - `service_date` set → watch that single day, or
+ *   - `window_days` set  → watch any day within the next N days.
+ * Cap = 3 active per user (no park axis), enforced in the router. Firing carries
+ * the same edge-trigger + cooldown state as stay alerts. Delivery is logged +
+ * retried EMAIL (see `dining_notification`).
+ */
+export const diningAlert = pgTable(
+  "dining_alert",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    // '' = any priority restaurant; otherwise a restaurant_dim facility id.
+    facilityId: text("facility_id").notNull().default(""),
+    partySize: smallint("party_size").notNull(),
+    // Exactly one of these is set (a CHECK enforces it): a single service date,
+    // or a rolling "any day in the next N" window.
+    serviceDate: date("service_date"),
+    windowDays: smallint("window_days"),
+    // 'email' (v1) — the queue + worker accommodate more channels later.
+    channel: text("channel").notNull().default("email"),
+
+    // firing state (edge-trigger + cooldown)
+    armed: boolean("armed").notNull().default(true),
+    lastFiredAt: timestamp("last_fired_at", { withTimezone: true }),
+    lastAvailable: boolean("last_available"),
+
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("dining_alert_active_facility_idx")
+      .on(t.facilityId)
+      .where(sql`active`),
+    uniqueIndex("dining_alert_user_facility_party_date_uq")
+      .on(t.userId, t.facilityId, t.partySize, t.serviceDate, t.windowDays)
+      .where(sql`active`),
+  ],
+);
+
+/** Durable send log for dining-alert delivery — mirror of `notification`. */
+export const diningNotification = pgTable(
+  "dining_notification",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    alertId: bigint("alert_id", { mode: "number" })
+      .notNull()
+      .references(() => diningAlert.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    channel: text("channel").notNull(),
+    // restaurant, party, matched date(s), rendered subject — enough to render + audit.
+    payload: jsonb("payload").notNull(),
+    // 'queued' | 'sent' | 'failed'
+    status: text("status").notNull(),
+    providerMsgId: text("provider_msg_id"),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+  },
+  (t) => [index("dining_notification_user_created_idx").on(t.userId, t.createdAt.desc())],
+);
 
 // ===========================================================================
 // Wait-time forecasting (see docs/plans + services/cron-weather, cron-calendar,
