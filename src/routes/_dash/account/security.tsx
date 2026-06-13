@@ -600,7 +600,11 @@ function SecurityPage() {
   return (
     <div className="space-y-4">
       <ChangePasswordCard hasPassword={hasPassword} />
-      <TwoFactorCard enabled={twoFaEnabled} onToggle={() => setTwoFaEnabled((v) => !v)} />
+      {/* 2FA enrollment requires confirming a password, so it's only usable once
+          the user has set one — hide it for social-only accounts. */}
+      {hasPassword && (
+        <TwoFactorCard enabled={twoFaEnabled} onToggle={() => setTwoFaEnabled((v) => !v)} />
+      )}
       <PasskeysCard />
     </div>
   );

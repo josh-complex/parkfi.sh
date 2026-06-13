@@ -87,6 +87,7 @@ export function ParkMap({
   selectedId,
   onSelectAttraction,
   onMapRef,
+  attached = true,
 }: {
   activeSlug: string | null;
   /** Currently charted attraction — its marker is highlighted. */
@@ -95,6 +96,9 @@ export function ParkMap({
   onSelectAttraction?: (item: { id: number; name: string }) => void;
   /** Exposes a resize handle so the stage can re-fit the canvas mid-morph. */
   onMapRef?: (map: MapHandle | null) => void;
+  /** True only while the map is lent to a visible slot. The camera fly is gated
+   *  on it so the fit re-runs when returning from a route with no map. */
+  attached?: boolean;
 }) {
   const trpc = useTRPC();
   const navigate = useNavigate();
@@ -303,7 +307,7 @@ export function ParkMap({
   // query refetch.
   const runFly = () => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || !attached) return;
 
     if (!activeSlug) {
       // Overview/home: fit both resorts, then cap pan/zoom-out to that area.
@@ -356,10 +360,10 @@ export function ParkMap({
   const hasOverview = (overview?.parks?.length ?? 0) > 0;
   const hasParks = (parks?.length ?? 0) > 0;
   React.useEffect(() => {
-    if (!ready) return;
+    if (!ready || !attached) return;
     const t = setTimeout(() => runFlyRef.current(), MORPH_MS);
     return () => clearTimeout(t);
-  }, [activeSlug, ready, hasOverview, hasParks]);
+  }, [activeSlug, ready, hasOverview, hasParks, attached]);
 
   if (!mounted) {
     return <div className="size-full bg-muted" aria-hidden />;

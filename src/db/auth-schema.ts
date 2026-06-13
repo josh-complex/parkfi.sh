@@ -88,7 +88,12 @@ export const passkey = pgTable("passkey", {
   userId: text("user_id")
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
-  webauthnUserid: text("webauthn_userid").notNull(),
+  // better-auth's passkey model field is `credentialID` (the WebAuthn credential
+  // id) — there is no `webAuthnUserID` field in this version. The property key
+  // MUST equal better-auth's field name or the drizzle adapter emits SQL against
+  // a column that doesn't exist (the "Failed query" 500 on register-options). The
+  // column keeps its original `webauthn_userid` name from the first migration.
+  credentialID: text("webauthn_userid").notNull(),
   counter: integer("counter").notNull(),
   deviceType: text("device_type").notNull(),
   backedUp: boolean("backed_up").notNull(),

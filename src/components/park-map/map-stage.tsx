@@ -150,6 +150,12 @@ export function MapStageProvider({
   // server/client engine mismatch to hydrate.
   const [engine, setEngine] = React.useState<"gl" | "leaflet" | null>(null);
   React.useEffect(() => setEngine(hasWebGl() ? "gl" : "leaflet"), []);
+  // Whether the singleton map is currently lent to a visible slot. While false
+  // it's parked in the 0×0 off-screen home, where camera flies must not run —
+  // Leaflet computes NaN coordinates fitting bounds into a zero-size container
+  // and throws "Invalid LatLng object: (NaN, NaN)". The engines gate their fly
+  // on this and re-fit when it flips true.
+  const [attached, setAttached] = React.useState(false);
   // Geometry of the slot we just left, carried into the next attach() to seed
   // the FLIP. Set on the outgoing slot's cleanup (mutation phase), consumed by
   // the incoming slot's layout effect.
@@ -164,6 +170,7 @@ export function MapStageProvider({
     const host = hostRef.current;
     if (!host) return;
     slotRef.current = slot;
+    setAttached(true);
     const first = prevRectRef.current;
     prevRectRef.current = null;
 
@@ -184,6 +191,7 @@ export function MapStageProvider({
       prevRectRef.current = host.getBoundingClientRect();
       parkRef.current?.appendChild(host);
       slotRef.current = null;
+      setAttached(false);
     };
   }, []);
 
@@ -200,6 +208,7 @@ export function MapStageProvider({
               selectedId={selected?.id ?? null}
               onSelectAttraction={setSelected}
               onMapRef={onMapRef}
+              attached={attached}
             />
           )}
           {engine === "leaflet" && (
@@ -208,6 +217,7 @@ export function MapStageProvider({
               selectedId={selected?.id ?? null}
               onSelectAttraction={setSelected}
               onMapRef={onMapRef}
+              attached={attached}
             />
           )}
         </div>

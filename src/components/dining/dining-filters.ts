@@ -138,7 +138,7 @@ export const DEFAULT_FILTERS: ClientFilters = {
   prices: [],
   availability: "ALL",
   features: [],
-  hours: "ALL",
+  hours: "now",
 };
 
 export interface FilterOptions {
@@ -192,14 +192,15 @@ export function countActiveFilters(f: ClientFilters): number {
   if (f.prices.length) n++;
   if (f.availability !== "ALL") n++;
   if (f.features.length) n++;
-  if (f.hours !== "ALL") n++;
+  if (f.hours !== "now") n++;
   return n;
 }
 
 /**
  * Active count for the post-search "extended filters" only — excludes the three
  * facets promoted into the search pill (`parkResort`, `cuisine`, `experienceType`),
- * so the Filters badge reflects just what the drawer/controls own.
+ * so the Filters badge reflects just what the drawer/controls own. Hours always
+ * narrows (default `now`), so only a non-default hours choice counts.
  */
 export function countExtraFilters(f: ClientFilters): number {
   let n = 0;
@@ -208,7 +209,7 @@ export function countExtraFilters(f: ClientFilters): number {
   if (f.prices.length) n++;
   if (f.availability !== "ALL") n++;
   if (f.features.length) n++;
-  if (f.hours !== "ALL") n++;
+  if (f.hours !== "now") n++;
   return n;
 }
 

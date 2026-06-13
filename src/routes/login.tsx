@@ -1,5 +1,6 @@
 import * as React from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { KeyRoundIcon } from "lucide-react";
 
 import { authClient } from "#/lib/auth-client.ts";
 import { Button } from "#/components/ui/button.tsx";
@@ -82,6 +83,7 @@ function LoginPage() {
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [pending, setPending] = React.useState(false);
+  const [passkeyPending, setPasskeyPending] = React.useState(false);
   const hasCaptcha = !!import.meta.env.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY;
   const [captchaReady, setCaptchaReady] = React.useState(!hasCaptcha);
   const turnstileToken = React.useRef<string | null>(null);
@@ -132,6 +134,17 @@ function LoginPage() {
       script.addEventListener("load", initWidget, { once: true });
     }
   }, []);
+
+  const handlePasskey = async () => {
+    setPasskeyPending(true);
+    try {
+      const { error } = await authClient.signIn.passkey();
+      if (error) setError(error.message ?? "Passkey sign-in failed");
+      else await navigate({ to: "/" });
+    } finally {
+      setPasskeyPending(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -185,31 +198,45 @@ function LoginPage() {
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             {/* Social providers */}
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                type="button"
-                className="flex-1 gap-2"
-                disabled={!captchaReady}
-                onClick={() =>
-                  void authClient.signIn.social({ provider: "google", callbackURL: "/" })
-                }
-              >
-                <GoogleIcon />
-                Google
-              </Button>
-              <Button
-                variant="outline"
-                type="button"
-                className="flex-1 gap-2"
-                disabled={!captchaReady}
-                onClick={() =>
-                  void authClient.signIn.social({ provider: "apple", callbackURL: "/" })
-                }
-              >
-                <AppleIcon />
-                Apple
-              </Button>
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  type="button"
+                  className="flex-1 gap-2"
+                  disabled={!captchaReady}
+                  onClick={() =>
+                    void authClient.signIn.social({ provider: "google", callbackURL: "/" })
+                  }
+                >
+                  <GoogleIcon />
+                  Google
+                </Button>
+                <Button
+                  variant="outline"
+                  type="button"
+                  className="flex-1 gap-2"
+                  disabled={!captchaReady}
+                  onClick={() =>
+                    void authClient.signIn.social({ provider: "apple", callbackURL: "/" })
+                  }
+                >
+                  <AppleIcon />
+                  Apple
+                </Button>
+              </div>
+              {mode === "signin" && (
+                <Button
+                  variant="outline"
+                  type="button"
+                  className="w-full gap-2"
+                  disabled={passkeyPending}
+                  onClick={() => void handlePasskey()}
+                >
+                  <KeyRoundIcon className="size-4" />
+                  {passkeyPending ? "Waiting for passkey…" : "Sign in with passkey"}
+                </Button>
+              )}
             </div>
 
             <div className="relative flex items-center gap-3">

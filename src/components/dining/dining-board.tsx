@@ -2,7 +2,9 @@
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUpDownIcon, CheckIcon, SearchIcon, SlidersHorizontalIcon } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { createPortal } from "react-dom";
+import { ArrowUpDownIcon, CheckIcon, SearchIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
 
 import {
   CoreSearchButton,
@@ -13,11 +15,9 @@ import {
   type SegPos,
 } from "#/components/core-search.tsx";
 import {
-  AVAILABILITY_LABELS,
   countExtraFilters,
   DEFAULT_FILTERS,
   deriveOptions,
-  featureLabels,
   FEATURE_FILTERS,
   filterRestaurants,
   OPERATOR_LABELS,
@@ -25,7 +25,6 @@ import {
   SORT_LABELS,
   sortRestaurants,
   type AvailabilityEntry,
-  type AvailabilityFilter,
   type AvailabilityMap,
   type ClientFilters,
   type DayEntry,
@@ -36,10 +35,10 @@ import {
 } from "#/components/dining/dining-filters.ts";
 import {
   HOURS_LABELS,
+  HOURS_OPTIONS,
   hoursLabel,
   isOpenNow,
   parkNowMinutes,
-  type HoursFilter,
   type HoursMap,
   type ScheduleEntry,
 } from "#/components/dining/dining-hours.ts";
@@ -47,7 +46,7 @@ import { DiningMenuChanges } from "#/components/dining/dining-menu-changes.tsx";
 import { DiningMenuDrawer } from "#/components/dining/dining-menu-drawer.tsx";
 import { DiningPicks } from "#/components/dining/dining-picks.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
-import { Button } from "#/components/ui/button.tsx";
+import { Button, buttonVariants } from "#/components/ui/button.tsx";
 import {
   Card,
   CardContent,
@@ -89,6 +88,7 @@ import { ToggleGroup, ToggleGroupItem } from "#/components/ui/toggle-group.tsx";
 import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { cn } from "#/lib/utils.ts";
+import { Switch } from "../animate-ui/components/switch-anim";
 
 const PAGE_SIZE = 12;
 
@@ -352,7 +352,7 @@ function OptionRow({
 
 /**
  * Post-search extended-filter body — every facet the pill doesn't own. Rendered
- * inside the desktop Filters popover and the mobile Filters drawer.
+ * inside the FiltersModal for both mobile and desktop.
  */
 function ExtendedFilters({
   filters,
@@ -367,9 +367,10 @@ function ExtendedFilters({
   partySize: string;
   onPartySize: (v: string) => void;
 }) {
+  const todayOnly = filters.availability === "today";
   return (
-    <div className="flex flex-col gap-5">
-      <div className="relative">
+    <div className="divide-y">
+      <div className="relative py-4">
         <SearchIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
         <Input
           value={filters.search}
@@ -400,7 +401,7 @@ function ExtendedFilters({
                   type="button"
                   size="sm"
                   variant={on ? "default" : "outline"}
-                  className="rounded-full"
+                  className="min-w-10 rounded-full"
                   onClick={() =>
                     onFilters({
                       prices: on ? filters.prices.filter((x) => x !== p) : [...filters.prices, p],
@@ -416,20 +417,21 @@ function ExtendedFilters({
       )}
 
       <Section label="Availability">
-        <PillRow
-          options={Object.keys(AVAILABILITY_LABELS) as Array<AvailabilityFilter>}
-          value={filters.availability}
-          onSelect={(v) => onFilters({ availability: v })}
-          labelOf={(v) => (v === "ALL" ? "Any" : AVAILABILITY_LABELS[v])}
-        />
+        <label className="flex cursor-pointer items-center gap-3">
+          <Switch
+            checked={todayOnly}
+            onCheckedChange={(checked) => onFilters({ availability: checked ? "today" : "ALL" })}
+          />
+          <span className="text-sm font-medium">Open today</span>
+        </label>
       </Section>
 
       <Section label="Hours">
         <PillRow
-          options={Object.keys(HOURS_LABELS) as Array<HoursFilter>}
+          options={[...HOURS_OPTIONS]}
           value={filters.hours}
           onSelect={(v) => onFilters({ hours: v })}
-          labelOf={(v) => (v === "ALL" ? "Any" : HOURS_LABELS[v])}
+          labelOf={(v) => HOURS_LABELS[v]}
         />
       </Section>
 
@@ -473,10 +475,175 @@ function ExtendedFilters({
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-2">
-      <span className="text-muted-foreground text-xs font-medium uppercase">{label}</span>
+    <div className="flex flex-col gap-3 py-4">
+      <span className="text-muted-foreground text-[11px] font-semibold tracking-widest uppercase">
+        {label}
+      </span>
       {children}
     </div>
+  );
+}
+
+// Shared-layout ids: the panel id morphs the trigger box ↔ the modal container;
+// the label id carries the "Filters" word from the button into the dialog title.
+const FILTERS_PANEL_ID = "dining-filters-panel";
+const FILTERS_LABEL_ID = "dining-filters-label";
+// Matched border radius on both ends so the box morph interpolates cleanly.
+const FILTERS_RADIUS = 18;
+// One spring drives the box morph in both directions (and the title travel),
+// so opening and closing feel symmetrical.
+const FILTERS_SPRING = { type: "spring" as const, stiffness: 420, damping: 34, mass: 0.9 };
+
+// Same 3D border + glare + drop-shadow the outline Button wears, so the panel
+// reads as the very same surface the trigger grew out of.
+const FILTERS_SURFACE =
+  "bg-background border border-(--btn-3d) [--btn-3d:color-mix(in_oklch,var(--border),var(--border))] [--btn-glare:oklch(1_0_0/0.55)] shadow-[0_4px_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)] dark:bg-popover dark:[--btn-3d:transparent] dark:[--btn-glare:oklch(1_0_0/0.06)] dark:ring-1 dark:ring-foreground/10";
+
+/**
+ * The desktop "Filters" control. The trigger is a standard outline button that
+ * physically morphs into the filter modal (and back) via shared-layout: the box
+ * itself grows, while the "Filters" label travels from the button into the
+ * dialog title. Only the container's position/size and the label's position
+ * change — the surface styling is identical at both ends.
+ */
+function FiltersModal({
+  filters,
+  onFilters,
+  options,
+  partySize,
+  onPartySize,
+  extraCount,
+  onClearExtra,
+}: {
+  filters: ClientFilters;
+  onFilters: (patch: Partial<ClientFilters>) => void;
+  options: FilterOptions;
+  partySize: string;
+  onPartySize: (v: string) => void;
+  extraCount: number;
+  onClearExtra: () => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  return (
+    <>
+      <motion.button
+        layoutId={FILTERS_PANEL_ID}
+        type="button"
+        onClick={() => setOpen(true)}
+        // Fade out fast on open (the modal carries the morph on top); delay
+        // fade-in on close so the icon appears after the box has mostly shrunk.
+        animate={{ opacity: open ? 0 : 1 }}
+        transition={{
+          layout: FILTERS_SPRING,
+          opacity: { duration: open ? 0.06 : 0.18, delay: open ? 0 : 0.2 },
+        }}
+        style={{ borderRadius: FILTERS_RADIUS }}
+        className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+      >
+        <SlidersHorizontalIcon data-icon="inline-start" />
+        {!open && (
+          <motion.span
+            layoutId={FILTERS_LABEL_ID}
+            transition={{ layout: FILTERS_SPRING }}
+            className="inline-block"
+          >
+            Filters
+          </motion.span>
+        )}
+      </motion.button>
+
+      {createPortal(
+        <AnimatePresence>
+          {open && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+              <motion.div
+                className="absolute inset-0 bg-black/40 supports-backdrop-filter:backdrop-blur-sm"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1, transition: { duration: 0.14 } }}
+                exit={{ opacity: 0, transition: { duration: 0.07 } }}
+                onClick={() => setOpen(false)}
+              />
+
+              <motion.div
+                layoutId={FILTERS_PANEL_ID}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Filters"
+                style={{ borderRadius: FILTERS_RADIUS }}
+                transition={{ layout: FILTERS_SPRING }}
+                className={cn(
+                  "relative z-10 flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden",
+                  FILTERS_SURFACE,
+                )}
+              >
+                <div className="flex shrink-0 items-center justify-between gap-4 border-b px-5 py-3.5">
+                  <motion.span
+                    layoutId={FILTERS_LABEL_ID}
+                    transition={{ layout: FILTERS_SPRING }}
+                    className="inline-block text-base font-semibold"
+                  >
+                    Filters
+                  </motion.span>
+                  <motion.button
+                    type="button"
+                    onClick={() => setOpen(false)}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1, transition: { delay: 0.16, duration: 0.12 } }}
+                    exit={{ opacity: 0, transition: { duration: 0.05 } }}
+                    className="text-muted-foreground hover:bg-muted hover:text-foreground -mr-1 rounded-full p-1.5 transition-colors"
+                    aria-label="Close"
+                  >
+                    <XIcon className="size-4" />
+                  </motion.button>
+                </div>
+
+                <motion.div
+                  className="flex min-h-0 flex-1 flex-col"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1, transition: { delay: 0.16, duration: 0.12 } }}
+                  exit={{ opacity: 0, transition: { duration: 0.05 } }}
+                >
+                  <div className="flex-1 overflow-y-auto px-5">
+                    <ExtendedFilters
+                      filters={filters}
+                      onFilters={onFilters}
+                      options={options}
+                      partySize={partySize}
+                      onPartySize={onPartySize}
+                    />
+                  </div>
+
+                  <div className="flex shrink-0 gap-2 border-t p-4">
+                    <Button
+                      variant="outline"
+                      className={cn("flex-1", extraCount === 0 && "opacity-40")}
+                      disabled={extraCount === 0}
+                      onClick={onClearExtra}
+                    >
+                      Clear all
+                    </Button>
+                    <Button className="flex-1" onClick={() => setOpen(false)}>
+                      Done
+                    </Button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
+    </>
   );
 }
 
@@ -721,7 +888,7 @@ export function DiningBoard() {
             : "border-b border-transparent bg-transparent",
         )}
       >
-        <div className="mx-auto flex w-fit items-stretch gap-2">
+        <div className="relative mx-auto flex w-fit items-stretch gap-2">
           <div className="flex">
             <SearchSegment
               pos="first"
@@ -916,7 +1083,7 @@ export function DiningBoard() {
 
               <span className="bg-border h-5 w-px" />
 
-              {/* Filters */}
+              {/* Filters — a bottom drawer is the right fit on mobile. */}
               <Drawer>
                 <DrawerTrigger asChild>
                   <Button variant="ghost" size="sm" className="rounded-full">
@@ -926,13 +1093,13 @@ export function DiningBoard() {
                   </Button>
                 </DrawerTrigger>
                 <DrawerContent>
-                  <DrawerHeader>
-                    <DrawerTitle>Filter restaurants</DrawerTitle>
+                  <DrawerHeader className="border-b pb-4">
+                    <DrawerTitle>Filters</DrawerTitle>
                     <DrawerDescription>
                       Narrow by price, hours, features, and more.
                     </DrawerDescription>
                   </DrawerHeader>
-                  <div className="overflow-y-auto px-4 pb-4">
+                  <div className="overflow-y-auto px-4">
                     <ExtendedFilters
                       filters={filters}
                       onFilters={onFilters}
@@ -948,7 +1115,7 @@ export function DiningBoard() {
                       disabled={extraCount === 0}
                       onClick={onClearExtra}
                     >
-                      Clear filters
+                      Clear all
                     </Button>
                     <DrawerClose asChild>
                       <Button className="flex-1">Done</Button>
@@ -961,7 +1128,7 @@ export function DiningBoard() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-8 px-4 py-6 pb-24 lg:px-6">
+      <div className="flex flex-col gap-8 p-4 pb-24 lg:px-6">
         {searched ? (
           <ResultsView
             isLoading={isLoading}
@@ -1074,28 +1241,17 @@ function ResultsView({
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Desktop controls: Filters popover + active chips on the left; count + sort right. */}
+      {/* Desktop controls: Filters modal + active chips on the left; count + sort right. */}
       <div className="hidden items-center gap-2 md:flex">
-        <Popover>
-          <PopoverTrigger
-            render={
-              <Button variant="outline" size="sm">
-                <SlidersHorizontalIcon data-icon="inline-start" />
-                Filters{extraCount > 0 ? ` (${extraCount})` : ""}
-              </Button>
-            }
-          />
-          <PopoverContent align="start" className="max-h-[70vh] w-96 overflow-y-auto">
-            <ExtendedFilters
-              filters={filters}
-              onFilters={onFilters}
-              options={options}
-              partySize={partySize}
-              onPartySize={onPartySize}
-            />
-          </PopoverContent>
-        </Popover>
-        <ActiveChips filters={filters} />
+        <FiltersModal
+          filters={filters}
+          onFilters={onFilters}
+          options={options}
+          partySize={partySize}
+          onPartySize={onPartySize}
+          extraCount={extraCount}
+          onClearExtra={onClearExtra}
+        />
         {extraCount > 0 && (
           <Button variant="ghost" size="sm" onClick={onClearExtra}>
             Clear ({extraCount})
@@ -1227,27 +1383,6 @@ function ResultsView({
           )}
         </>
       )}
-    </div>
-  );
-}
-
-/** Read-only summary chips for the active extended filters. */
-function ActiveChips({ filters }: { filters: ClientFilters }) {
-  const chips: Array<string> = [];
-  if (filters.search.trim()) chips.push(`"${filters.search.trim()}"`);
-  if (filters.operator !== "ALL") chips.push(OPERATOR_LABELS[filters.operator]);
-  if (filters.prices.length) chips.push(filters.prices.join(" / "));
-  if (filters.availability !== "ALL") chips.push(AVAILABILITY_LABELS[filters.availability]);
-  if (filters.hours !== "ALL") chips.push(HOURS_LABELS[filters.hours]);
-  for (const label of featureLabels(filters.features)) chips.push(label);
-  if (!chips.length) return null;
-  return (
-    <div className="flex min-w-0 items-center gap-2 overflow-x-auto">
-      {chips.map((c) => (
-        <Badge key={c} variant="secondary" className="shrink-0 font-normal">
-          {c}
-        </Badge>
-      ))}
     </div>
   );
 }

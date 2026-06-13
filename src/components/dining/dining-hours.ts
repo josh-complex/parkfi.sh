@@ -24,9 +24,19 @@ export type HoursFilter = "ALL" | "now" | "breakfast" | "late";
 export const HOURS_LABELS: Record<HoursFilter, string> = {
   ALL: "Any hours",
   now: "Open now",
-  breakfast: "Open for breakfast",
+  breakfast: "Breakfast",
   late: "Open late",
 };
+
+/**
+ * The hours options offered in the filter UI. There is no "Any" escape hatch —
+ * a venue's hours always narrow the list, defaulting to `now` (see DEFAULT_FILTERS).
+ */
+export const HOURS_OPTIONS: ReadonlyArray<Exclude<HoursFilter, "ALL">> = [
+  "now",
+  "breakfast",
+  "late",
+];
 
 // Breakfast = a service that begins at/before 10:30; late = one that runs to or
 // past 21:00. Thresholds in minutes-since-midnight, park-local.

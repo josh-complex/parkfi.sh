@@ -74,11 +74,15 @@ export function ParkMapLeaflet({
   selectedId,
   onSelectAttraction,
   onMapRef,
+  attached = true,
 }: {
   activeSlug: string | null;
   selectedId?: number | null;
   onSelectAttraction?: (item: { id: number; name: string }) => void;
   onMapRef?: (map: MapHandle | null) => void;
+  /** True only while the map is lent to a visible slot. Camera flies are gated
+   *  on it — flying into a 0×0 parked container yields NaN LatLngs and throws. */
+  attached?: boolean;
 }) {
   const trpc = useTRPC();
   const navigate = useNavigate();
@@ -293,7 +297,7 @@ export function ParkMapLeaflet({
   // every query refetch.
   const runFly = () => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || !attached) return;
     // Leaflet removes the cap when handed invalid/empty bounds.
     const clearMaxBounds = () => map.setMaxBounds(null as unknown as L.LatLngBoundsExpression);
 
@@ -337,10 +341,10 @@ export function ParkMapLeaflet({
   const hasOverview = (overview?.parks?.length ?? 0) > 0;
   const hasParks = (parks?.length ?? 0) > 0;
   React.useEffect(() => {
-    if (!ready) return;
+    if (!ready || !attached) return;
     const t = setTimeout(() => runFlyRef.current(), MORPH_MS);
     return () => clearTimeout(t);
-  }, [activeSlug, ready, hasOverview, hasParks]);
+  }, [activeSlug, ready, hasOverview, hasParks, attached]);
 
   if (!mounted) {
     return <div className="size-full bg-muted" aria-hidden />;
