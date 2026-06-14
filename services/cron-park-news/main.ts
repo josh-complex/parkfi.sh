@@ -51,6 +51,16 @@ const WEB_SEARCH = (process.env.NEWS_WEB_SEARCH ?? "1") !== "0";
 const SERVICE_TIER =
   (process.env.NEWS_SERVICE_TIER ?? "flex").toLowerCase() === "flex" ? ServiceTier.FLEX : undefined;
 
+/**
+ * Output ceiling AND thinking budget. Gemini 3 is a thinking model and thought
+ * tokens count toward maxOutputTokens — so with AUTOMATIC thinking (-1) a long,
+ * complex prompt can burn the entire budget on thoughts and return an EMPTY
+ * answer. We cap thinking and give the answer comfortable headroom on top.
+ * Override either via env if a future model needs more/less room.
+ */
+const MAX_OUTPUT_TOKENS = Number(process.env.NEWS_MAX_OUTPUT_TOKENS ?? 12_000);
+const THINKING_BUDGET = Number(process.env.NEWS_THINKING_BUDGET ?? 4096);
+
 const SYSTEM = `You are a staff writer for ParkFi, a live Orlando theme-park wait-times and trip-planning site. You turn ONE incoming news item into an original, genuinely useful analysis post. Write like a sharp human who actually goes to these parks — not a press release, not a content farm.
 
 VOICE — this is the part that matters most:
@@ -531,9 +541,10 @@ async function main() {
         config: {
           systemInstruction: SYSTEM,
           tools,
-          // Richer posts + grounding/thinking share this budget; too low and the
-          // JSON gets truncated mid-body → unparseable. Keep generous headroom.
-          maxOutputTokens: 8000,
+          // Bound thinking so it can't eat the whole budget (→ empty answer), and
+          // leave the answer comfortable headroom on top.
+          thinkingConfig: { thinkingBudget: THINKING_BUDGET },
+          maxOutputTokens: MAX_OUTPUT_TOKENS,
           // Background cron — latency-insensitive, so prefer the cheap Flex tier
           // (paid-tier only; configurable via NEWS_SERVICE_TIER).
           serviceTier: SERVICE_TIER,
@@ -541,8 +552,15 @@ async function main() {
       });
       const draft = parseDraft(res.text ?? "");
       if (!draft) {
+        // Surface WHY: an empty body with finishReason=MAX_TOKENS means thinking
+        // ate the budget (raise NEWS_MAX_OUTPUT_TOKENS / lower NEWS_THINKING_BUDGET);
+        // SAFETY/RECITATION means the prompt was blocked.
+        const u = res.usageMetadata;
         console.error(
-          `[park-news] unparseable draft for: ${item.title} — raw head: ${(res.text ?? "(empty)").slice(0, 200)}`,
+          `[park-news] unparseable draft for: ${item.title} — ` +
+            `finish=${res.candidates?.[0]?.finishReason ?? "?"} ` +
+            `tokens(thought=${u?.thoughtsTokenCount ?? "?"}, answer=${u?.candidatesTokenCount ?? "?"}, total=${u?.totalTokenCount ?? "?"}) ` +
+            `raw head: ${(res.text ?? "(empty)").slice(0, 200)}`,
         );
         await recordSeen(item); // don't reconsider a persistently unparseable item
         continue;

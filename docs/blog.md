@@ -60,6 +60,8 @@ NEWS_FEEDS=<csv of RSS urls>    # optional, overrides the ~10 default feeds
 NEWS_USER_AGENT=<ua string>    # optional, override the browser UA
 NEWS_WEB_SEARCH=1              # optional, set 0 to disable Google Search grounding
 NEWS_SERVICE_TIER=flex        # "flex" (cheap, PAID TIER ONLY) or "standard" (free tier)
+NEWS_MAX_OUTPUT_TOKENS=12000  # optional, output ceiling (incl. thinking tokens)
+NEWS_THINKING_BUDGET=4096     # optional, cap on thinking tokens (0=off, -1=auto)
 CLOUDFLARE_ZONE_ID / CLOUDFLARE_API_TOKEN   # optional: lets publish purge the edge
 ```
 
@@ -71,6 +73,15 @@ the light extra-research step — get a key from Google AI Studio.
 > enable billing on the Google project (cost is pennies/month at this volume), or
 > set `NEWS_SERVICE_TIER=standard` to stay on the free tier (tighter rate limits).
 > The cron stops cleanly on a 429 and retries the items next run.
+
+> **Empty / unparseable drafts.** Gemini 3 is a thinking model and thought
+> tokens count against `maxOutputTokens` — with automatic thinking a long prompt
+> can spend the whole budget thinking and return an empty answer. We cap thinking
+> (`NEWS_THINKING_BUDGET`, default 4096) and give the answer headroom
+> (`NEWS_MAX_OUTPUT_TOKENS`, default 12000). The unparseable-draft log prints the
+> `finishReason` + token usage: `finish=MAX_TOKENS` with `answer=0` means raise
+> the ceiling / lower the thinking budget; `finish=SAFETY` means the item was
+> blocked.
 
 **Feeds.** ~9 confirmed `/feed/` endpoints (Disney Parks Blog, WDW News Today,
 Blog Mickey, Inside the Magic, Attractions Magazine, AllEars, Orlando Informer,
