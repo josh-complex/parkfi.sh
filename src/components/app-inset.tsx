@@ -1,5 +1,4 @@
 import * as React from "react";
-import { createPortal } from "react-dom";
 
 import { BuyMeACoffee } from "#/components/buy-me-a-coffee.tsx";
 import { OmniSearch } from "#/components/omni-search.tsx";
@@ -20,12 +19,6 @@ import type { ReactNode } from "react";
  * so the shell stays the same blue app surface it was before.
  */
 export function AppInset({ children, className }: { children: ReactNode; className?: string }) {
-  // The FAB is portalled to <body> so it pins to the viewport: this tree has
-  // transformed/clipped ancestors (see map-stage's morph), which would otherwise
-  // contain a `position: fixed` element and strand it at the top-left.
-  const [mounted, setMounted] = React.useState(false);
-  React.useEffect(() => setMounted(true), []);
-
   return (
     <SidebarInset
       // `--toolbar-height` is the single source of truth for the blue bar's
@@ -37,7 +30,7 @@ export function AppInset({ children, className }: { children: ReactNode; classNa
     >
       {/* Blue toolbar — search on the left, support link pinned right. Desktop
           only: on mobile the search moves under the header (see SiteHeader) and
-          the support link becomes a floating button (below). */}
+          the support link is dropped entirely. */}
       <div className="hidden h-(--toolbar-height) shrink-0 items-center gap-3 px-4 py-2 text-white md:flex lg:px-6">
         <OmniSearch />
         <BuyMeACoffee className="ml-auto" />
@@ -51,18 +44,6 @@ export function AppInset({ children, className }: { children: ReactNode; classNa
       >
         {children}
       </div>
-
-      {/* Mobile support link: a small round coffee-cup FAB pinned bottom-left,
-          beside the sort/filter controls. */}
-      {mounted &&
-        createPortal(
-          <BuyMeACoffee
-            fab
-            className="fixed left-4 z-40 shadow-lg md:hidden"
-            style={{ bottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
-          />,
-          document.body,
-        )}
     </SidebarInset>
   );
 }
