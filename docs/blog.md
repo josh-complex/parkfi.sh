@@ -54,7 +54,7 @@ Env vars on that service:
 DATABASE_URL=<postgres url>     # required — same as the other cron services
 GEMINI_API_KEY=<key>            # required; without it the cron no-ops
 NEWS_MODEL=gemini-3.5-flash     # optional override
-NEWS_MAX_DRAFTS=3               # optional, per-run ceiling (skips yield fewer)
+NEWS_MAX_DRAFTS=2               # optional, per-run ceiling (skips yield fewer)
 NEWS_MAX_AGE_DAYS=4             # optional, ignore items older than this
 NEWS_FEEDS=<csv of RSS urls>    # optional, overrides the ~10 default feeds
 NEWS_USER_AGENT=<ua string>    # optional, override the browser UA
