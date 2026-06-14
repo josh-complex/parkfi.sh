@@ -5,6 +5,7 @@ import { auth } from "#/lib/auth.ts";
 
 export interface TRPCContext {
   userId?: string;
+  userEmail?: string;
 }
 
 // Resolve the Better-auth session from the request cookies. `getSession`
@@ -12,8 +13,20 @@ export interface TRPCContext {
 // public procedures keep working (they fall back to "anonymous").
 export async function createTRPCContext(opts: { req: Request }): Promise<TRPCContext> {
   const session = await auth.api.getSession({ headers: opts.req.headers });
-  return { userId: session?.user.id };
+  return { userId: session?.user.id, userEmail: session?.user.email };
 }
+
+/**
+ * Owner allowlist for admin-only procedures. Comma-separated emails in
+ * ADMIN_EMAILS. Fail-closed: if it's unset, NO ONE is admin — so an
+ * open-signup app can't have a random account manage the blog.
+ */
+const ADMIN_EMAILS = new Set(
+  (process.env.ADMIN_EMAILS ?? "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean),
+);
 
 const t = initTRPC.context<TRPCContext>().create({
   transformer: superjson,
@@ -25,5 +38,14 @@ export const publicProcedure = t.procedure;
 /** Requires an authenticated user; narrows `ctx.userId` to a string downstream. */
 export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
   if (!ctx.userId) throw new TRPCError({ code: "UNAUTHORIZED" });
+  return next({ ctx: { userId: ctx.userId } });
+});
+
+/** Requires the caller to be an owner (email in ADMIN_EMAILS). */
+export const adminProcedure = t.procedure.use(({ ctx, next }) => {
+  if (!ctx.userId) throw new TRPCError({ code: "UNAUTHORIZED" });
+  if (!ctx.userEmail || !ADMIN_EMAILS.has(ctx.userEmail.toLowerCase())) {
+    throw new TRPCError({ code: "FORBIDDEN" });
+  }
   return next({ ctx: { userId: ctx.userId } });
 });

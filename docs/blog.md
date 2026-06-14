@@ -19,7 +19,14 @@ cron-park-news (hourly/bihourly, Railway)
 ```
 
 - Posts: [src/routes/blog/index.tsx](../src/routes/blog/index.tsx), [src/routes/blog/$slug.tsx](../src/routes/blog/$slug.tsx)
-- Admin review queue: [src/routes/\_dash/admin.blog.tsx](../src/routes/_dash/admin.blog.tsx) → **/admin/blog** (auth-gated, noindex)
+- Admin review queue: [src/routes/\_dash/admin.blog.tsx](../src/routes/_dash/admin.blog.tsx) → **/admin/blog** (owner-only, noindex)
+
+> **Owner-only access.** The admin procedures use `adminProcedure`, which checks
+> the logged-in user's email against `ADMIN_EMAILS` (comma-separated) — set this
+> on the **web service**. It's **fail-closed**: if `ADMIN_EMAILS` is unset, no one
+> can see or manage drafts (important, since signup is open). Set it to your email,
+> e.g. `ADMIN_EMAILS=josh@composer.trade`.
+
 - API: [src/integrations/trpc/routers/blog.ts](../src/integrations/trpc/routers/blog.ts) (public `list`/`bySlug`; protected `drafts`/`approve`/`reject`/`update`)
 - Cron: [services/cron-park-news/main.ts](../services/cron-park-news/main.ts) (`bun run cron:park-news`)
 - Tables: `blog_post`, `news_item` (migration `drizzle/20260613210000_blog/`)
@@ -44,6 +51,7 @@ Schedule:      0 */2 * * *      # every 2 hours
 Env vars on that service:
 
 ```
+DATABASE_URL=<postgres url>     # required — same as the other cron services
 GEMINI_API_KEY=<key>            # required; without it the cron no-ops
 NEWS_MODEL=gemini-3.5-flash     # optional override
 NEWS_MAX_DRAFTS=3               # optional, per-run ceiling (skips yield fewer)

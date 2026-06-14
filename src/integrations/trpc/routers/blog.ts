@@ -6,7 +6,7 @@ import { db } from "#/db/index.ts";
 import { blogPost } from "#/db/schema.ts";
 import { renderMarkdown } from "#/server/blog/render.ts";
 import { purgeEdge } from "#/server/edge/purge.ts";
-import { protectedProcedure, publicProcedure } from "../init.ts";
+import { adminProcedure, publicProcedure } from "../init.ts";
 
 interface SourceUrl {
   title: string;
@@ -79,7 +79,7 @@ export const blogRouter = {
   // --- Admin (auth-gated): the draft → approve → publish queue ---------------
 
   /** All drafts (and archived), newest first — the review queue. */
-  drafts: protectedProcedure.query(async () => {
+  drafts: adminProcedure.query(async () => {
     return db
       .select({
         id: blogPost.id,
@@ -99,14 +99,14 @@ export const blogRouter = {
   }),
 
   /** Full draft incl. rendered preview, for the review screen. */
-  draftById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+  draftById: adminProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
     const [post] = await db.select().from(blogPost).where(eq(blogPost.id, input.id)).limit(1);
     if (!post) throw new TRPCError({ code: "NOT_FOUND" });
     return { ...post, bodyHtml: renderMarkdown(post.bodyMd) };
   }),
 
   /** Edit a draft before publishing. */
-  update: protectedProcedure
+  update: adminProcedure
     .input(
       z.object({
         id: z.number(),
@@ -123,7 +123,7 @@ export const blogRouter = {
     }),
 
   /** Approve → publish. Stamps publishedAt and purges the edge so it appears now. */
-  approve: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+  approve: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
     const [post] = await db
       .update(blogPost)
       .set({ status: "published", publishedAt: sql`now()` })
@@ -136,7 +136,7 @@ export const blogRouter = {
   }),
 
   /** Reject a draft (soft-archive; keeps provenance for audit). */
-  reject: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+  reject: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
     await db.update(blogPost).set({ status: "archived" }).where(eq(blogPost.id, input.id));
     return { ok: true };
   }),

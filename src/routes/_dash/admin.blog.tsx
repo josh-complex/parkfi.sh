@@ -90,7 +90,7 @@ function DraftEditor({ id, onClose }: { id: number; onClose: () => void }) {
 function AdminBlog() {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
-  const { data: drafts, isLoading } = useQuery(trpc.blog.drafts.queryOptions());
+  const { data: drafts, isLoading, error } = useQuery(trpc.blog.drafts.queryOptions());
   const [editingId, setEditingId] = React.useState<number | null>(null);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: trpc.blog.drafts.queryKey() });
@@ -127,7 +127,11 @@ function AdminBlog() {
         </p>
       </header>
 
-      {isLoading ? (
+      {error ? (
+        <p className="text-sm text-muted-foreground">
+          You don't have access to this page. (Owner accounts only.)
+        </p>
+      ) : isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : posts.length === 0 ? (
         <p className="text-sm text-muted-foreground">No drafts waiting. 🎉</p>

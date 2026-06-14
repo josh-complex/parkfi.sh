@@ -44,6 +44,7 @@ Schedule:      */15 * * * *
 Set these env vars on that service:
 
 ```
+DATABASE_URL=<postgres url>     # required — same as the other cron services
 R2_ACCOUNT_ID=<account id>
 R2_ACCESS_KEY_ID=<access key id>
 R2_SECRET_ACCESS_KEY=<secret>
