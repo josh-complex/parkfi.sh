@@ -140,3 +140,39 @@ export function amusementParkJsonLd(opts: {
   }
   return node;
 }
+
+/** Blog (CollectionPage) entity for the /blog index. */
+export function blogJsonLd(): Record<string, unknown> {
+  return {
+    "@context": "https://schema.org",
+    "@type": "Blog",
+    "@id": `${SITE_URL}/blog#blog`,
+    name: `${SITE_NAME} — Orlando Theme Park News & Analysis`,
+    url: `${SITE_URL}/blog`,
+    publisher: { "@id": `${SITE_URL}/#org` },
+  };
+}
+
+/** Article entity for a single blog post. */
+export function articleJsonLd(opts: {
+  slug: string;
+  title: string;
+  description: string;
+  publishedAt?: string | null;
+  image?: string;
+}): Record<string, unknown> {
+  const node: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: opts.title,
+    description: opts.description,
+    url: `${SITE_URL}/blog/${opts.slug}`,
+    mainEntityOfPage: `${SITE_URL}/blog/${opts.slug}`,
+    author: { "@id": `${SITE_URL}/#org` },
+    publisher: { "@id": `${SITE_URL}/#org` },
+  };
+  if (opts.publishedAt) node.datePublished = opts.publishedAt;
+  if (opts.image)
+    node.image = opts.image.startsWith("http") ? opts.image : `${SITE_URL}${opts.image}`;
+  return node;
+}

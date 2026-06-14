@@ -1154,3 +1154,76 @@ export const modelArtifact = pgTable("model_artifact", {
   artifact: bytea("artifact").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ---------------------------------------------------------------------------
+// Blog — park-news content pipeline
+// ---------------------------------------------------------------------------
+
+/**
+ * Dedup ledger for pulled park-news RSS items. The `cron-park-news` service
+ * records every item it sees (keyed by a hash of the canonical URL) so it only
+ * ever sends *new* items to the LLM. `clusteredInto` links an item to the
+ * `blog_post` draft it contributed to, for provenance.
+ */
+export const newsItem = pgTable(
+  "news_item",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    source: text("source").notNull(),
+    url: text("url").notNull(),
+    // sha256(url) — the dedup key (URLs can exceed btree's index size limit).
+    urlHash: char("url_hash", { length: 64 }).notNull(),
+    title: text("title").notNull(),
+    summary: text("summary"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+    clusteredInto: bigint("clustered_into", { mode: "number" }),
+  },
+  (t) => [uniqueIndex("news_item_url_hash_uq").on(t.urlHash)],
+);
+
+/**
+ * Blog posts. LLM-generated drafts land here as `status = 'draft'`; an admin
+ * approves them to `'published'` (the only status the public /blog read path
+ * serves). `bodyMd` is markdown rendered server-side; `sourceUrls` are the
+ * citations to link back to, `parkSlugs` the internal links to weave in.
+ */
+export const blogPost = pgTable(
+  "blog_post",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    slug: text("slug").notNull(),
+    title: text("title").notNull(),
+    // One-line dek / meta description.
+    dek: text("dek").notNull(),
+    bodyMd: text("body_md").notNull(),
+    // Dense, factual 1–2 sentence summary written for the LLM (not shown to
+    // readers). The news cron feeds recent posts' summaries back into the prompt
+    // so new drafts don't repeat coverage and can cross-reference prior posts.
+    aiSummary: text("ai_summary"),
+    // 'draft' | 'published' | 'archived'
+    status: text("status").notNull().default("draft"),
+    tags: text("tags")
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
+    // Park slugs referenced — drives internal links + edge-purge on publish.
+    parkSlugs: text("park_slugs")
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
+    // [{ title, url }] citations to the source articles.
+    sourceUrls: jsonb("source_urls")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    heroImageUrl: text("hero_image_url"),
+    // LLM model that drafted it, for auditing.
+    model: text("model"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("blog_post_slug_uq").on(t.slug),
+    index("blog_post_status_published_idx").on(t.status, t.publishedAt),
+  ],
+);

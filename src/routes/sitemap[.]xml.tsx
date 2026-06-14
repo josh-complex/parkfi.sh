@@ -5,7 +5,15 @@ import { db } from "#/db/index.ts";
 import { SITE_URL } from "#/lib/seo.ts";
 
 /** Public, indexable pages that always exist regardless of DB state. */
-const STATIC_PATHS = ["/", "/tickets", "/dining", "/predictions", "/stays", "/disclaimers"];
+const STATIC_PATHS = [
+  "/",
+  "/tickets",
+  "/dining",
+  "/predictions",
+  "/stays",
+  "/blog",
+  "/disclaimers",
+];
 
 interface SitemapEntry {
   path: string;
@@ -36,7 +44,28 @@ async function buildSitemap(): Promise<string> {
     // DB unavailable — still serve the static sitemap rather than 500.
   }
 
-  const entries: SitemapEntry[] = [...STATIC_PATHS.map((path) => ({ path })), ...parkEntries];
+  let blogEntries: SitemapEntry[] = [];
+  try {
+    const result = await db.execute<{ slug: string; lastmod: string | null }>(sql`
+      SELECT slug, published_at AS lastmod
+      FROM blog_post
+      WHERE status = 'published'
+      ORDER BY published_at DESC
+      LIMIT 1000
+    `);
+    blogEntries = result.rows.map((r) => ({
+      path: `/blog/${r.slug}`,
+      lastmod: r.lastmod ?? undefined,
+    }));
+  } catch {
+    // Blog table may not exist yet — skip.
+  }
+
+  const entries: SitemapEntry[] = [
+    ...STATIC_PATHS.map((path) => ({ path })),
+    ...parkEntries,
+    ...blogEntries,
+  ];
   const urls = entries
     .map(({ path, lastmod }) => {
       const lm = lastmod ? `<lastmod>${new Date(lastmod).toISOString()}</lastmod>` : "";

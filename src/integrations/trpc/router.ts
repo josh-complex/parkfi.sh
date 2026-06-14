@@ -1,4 +1,5 @@
 import { createTRPCRouter } from "./init";
+import { blogRouter } from "./routers/blog.ts";
 import { diningRouter } from "./routers/dining.ts";
 import { diningAlertsRouter } from "./routers/diningAlerts.ts";
 import { forecastRouter } from "./routers/forecast.ts";
@@ -21,5 +22,6 @@ export const trpcRouter = createTRPCRouter({
   stayAlerts: stayAlertsRouter,
   diningAlerts: diningAlertsRouter,
   uploads: uploadsRouter,
+  blog: blogRouter,
 });
 export type TRPCRouter = typeof trpcRouter;

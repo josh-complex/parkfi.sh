@@ -19,8 +19,11 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as DisclaimersRouteImport } from './routes/disclaimers'
 import { Route as DiningRouteImport } from './routes/dining'
 import { Route as DashRouteImport } from './routes/_dash'
+import { Route as BlogIndexRouteImport } from './routes/blog/index'
 import { Route as DashIndexRouteImport } from './routes/_dash/index'
 import { Route as StaysAlertsRouteImport } from './routes/stays_.alerts'
+import { Route as BlogRssDotxmlRouteImport } from './routes/blog/rss[.]xml'
+import { Route as BlogSlugRouteImport } from './routes/blog/$slug'
 import { Route as DashAlertsRouteImport } from './routes/_dash/alerts'
 import { Route as DashAccountRouteImport } from './routes/_dash/account'
 import { Route as DashAccountIndexRouteImport } from './routes/_dash/account/index'
@@ -28,6 +31,7 @@ import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
 import { Route as ApiPushSubscribeRouteImport } from './routes/api/push/subscribe'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as DashParkSlugRouteImport } from './routes/_dash/park.$slug'
+import { Route as DashAdminBlogRouteImport } from './routes/_dash/admin.blog'
 import { Route as DashAccountSecurityRouteImport } from './routes/_dash/account/security'
 import { Route as DashAccountProfileRouteImport } from './routes/_dash/account/profile'
 import { Route as DashAccountConnectionsRouteImport } from './routes/_dash/account/connections'
@@ -83,6 +87,11 @@ const DashRoute = DashRouteImport.update({
   id: '/_dash',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BlogIndexRoute = BlogIndexRouteImport.update({
+  id: '/blog/',
+  path: '/blog/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashIndexRoute = DashIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -91,6 +100,16 @@ const DashIndexRoute = DashIndexRouteImport.update({
 const StaysAlertsRoute = StaysAlertsRouteImport.update({
   id: '/stays_/alerts',
   path: '/stays/alerts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BlogRssDotxmlRoute = BlogRssDotxmlRouteImport.update({
+  id: '/blog/rss.xml',
+  path: '/blog/rss.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BlogSlugRoute = BlogSlugRouteImport.update({
+  id: '/blog/$slug',
+  path: '/blog/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashAlertsRoute = DashAlertsRouteImport.update({
@@ -126,6 +145,11 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
 const DashParkSlugRoute = DashParkSlugRouteImport.update({
   id: '/park/$slug',
   path: '/park/$slug',
+  getParentRoute: () => DashRoute,
+} as any)
+const DashAdminBlogRoute = DashAdminBlogRouteImport.update({
+  id: '/admin/blog',
+  path: '/admin/blog',
   getParentRoute: () => DashRoute,
 } as any)
 const DashAccountSecurityRoute = DashAccountSecurityRouteImport.update({
@@ -167,11 +191,15 @@ export interface FileRoutesByFullPath {
   '/unsubscribe': typeof UnsubscribeRoute
   '/account': typeof DashAccountRouteWithChildren
   '/alerts': typeof DashAlertsRoute
+  '/blog/$slug': typeof BlogSlugRoute
+  '/blog/rss.xml': typeof BlogRssDotxmlRoute
   '/stays/alerts': typeof StaysAlertsRoute
+  '/blog/': typeof BlogIndexRoute
   '/account/alerts': typeof DashAccountAlertsRoute
   '/account/connections': typeof DashAccountConnectionsRoute
   '/account/profile': typeof DashAccountProfileRoute
   '/account/security': typeof DashAccountSecurityRoute
+  '/admin/blog': typeof DashAdminBlogRoute
   '/park/$slug': typeof DashParkSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
@@ -190,12 +218,16 @@ export interface FileRoutesByTo {
   '/tickets': typeof TicketsRoute
   '/unsubscribe': typeof UnsubscribeRoute
   '/alerts': typeof DashAlertsRoute
+  '/blog/$slug': typeof BlogSlugRoute
+  '/blog/rss.xml': typeof BlogRssDotxmlRoute
   '/stays/alerts': typeof StaysAlertsRoute
   '/': typeof DashIndexRoute
+  '/blog': typeof BlogIndexRoute
   '/account/alerts': typeof DashAccountAlertsRoute
   '/account/connections': typeof DashAccountConnectionsRoute
   '/account/profile': typeof DashAccountProfileRoute
   '/account/security': typeof DashAccountSecurityRoute
+  '/admin/blog': typeof DashAdminBlogRoute
   '/park/$slug': typeof DashParkSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
@@ -217,12 +249,16 @@ export interface FileRoutesById {
   '/unsubscribe': typeof UnsubscribeRoute
   '/_dash/account': typeof DashAccountRouteWithChildren
   '/_dash/alerts': typeof DashAlertsRoute
+  '/blog/$slug': typeof BlogSlugRoute
+  '/blog/rss.xml': typeof BlogRssDotxmlRoute
   '/stays_/alerts': typeof StaysAlertsRoute
   '/_dash/': typeof DashIndexRoute
+  '/blog/': typeof BlogIndexRoute
   '/_dash/account/alerts': typeof DashAccountAlertsRoute
   '/_dash/account/connections': typeof DashAccountConnectionsRoute
   '/_dash/account/profile': typeof DashAccountProfileRoute
   '/_dash/account/security': typeof DashAccountSecurityRoute
+  '/_dash/admin/blog': typeof DashAdminBlogRoute
   '/_dash/park/$slug': typeof DashParkSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
@@ -245,11 +281,15 @@ export interface FileRouteTypes {
     | '/unsubscribe'
     | '/account'
     | '/alerts'
+    | '/blog/$slug'
+    | '/blog/rss.xml'
     | '/stays/alerts'
+    | '/blog/'
     | '/account/alerts'
     | '/account/connections'
     | '/account/profile'
     | '/account/security'
+    | '/admin/blog'
     | '/park/$slug'
     | '/api/auth/$'
     | '/api/push/subscribe'
@@ -268,12 +308,16 @@ export interface FileRouteTypes {
     | '/tickets'
     | '/unsubscribe'
     | '/alerts'
+    | '/blog/$slug'
+    | '/blog/rss.xml'
     | '/stays/alerts'
     | '/'
+    | '/blog'
     | '/account/alerts'
     | '/account/connections'
     | '/account/profile'
     | '/account/security'
+    | '/admin/blog'
     | '/park/$slug'
     | '/api/auth/$'
     | '/api/push/subscribe'
@@ -294,12 +338,16 @@ export interface FileRouteTypes {
     | '/unsubscribe'
     | '/_dash/account'
     | '/_dash/alerts'
+    | '/blog/$slug'
+    | '/blog/rss.xml'
     | '/stays_/alerts'
     | '/_dash/'
+    | '/blog/'
     | '/_dash/account/alerts'
     | '/_dash/account/connections'
     | '/_dash/account/profile'
     | '/_dash/account/security'
+    | '/_dash/admin/blog'
     | '/_dash/park/$slug'
     | '/api/auth/$'
     | '/api/push/subscribe'
@@ -319,7 +367,10 @@ export interface RootRouteChildren {
   StaysRoute: typeof StaysRoute
   TicketsRoute: typeof TicketsRoute
   UnsubscribeRoute: typeof UnsubscribeRoute
+  BlogSlugRoute: typeof BlogSlugRoute
+  BlogRssDotxmlRoute: typeof BlogRssDotxmlRoute
   StaysAlertsRoute: typeof StaysAlertsRoute
+  BlogIndexRoute: typeof BlogIndexRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiPushSubscribeRoute: typeof ApiPushSubscribeRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
@@ -398,6 +449,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/blog/': {
+      id: '/blog/'
+      path: '/blog'
+      fullPath: '/blog/'
+      preLoaderRoute: typeof BlogIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_dash/': {
       id: '/_dash/'
       path: '/'
@@ -410,6 +468,20 @@ declare module '@tanstack/react-router' {
       path: '/stays/alerts'
       fullPath: '/stays/alerts'
       preLoaderRoute: typeof StaysAlertsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/blog/rss.xml': {
+      id: '/blog/rss.xml'
+      path: '/blog/rss.xml'
+      fullPath: '/blog/rss.xml'
+      preLoaderRoute: typeof BlogRssDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/blog/$slug': {
+      id: '/blog/$slug'
+      path: '/blog/$slug'
+      fullPath: '/blog/$slug'
+      preLoaderRoute: typeof BlogSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_dash/alerts': {
@@ -459,6 +531,13 @@ declare module '@tanstack/react-router' {
       path: '/park/$slug'
       fullPath: '/park/$slug'
       preLoaderRoute: typeof DashParkSlugRouteImport
+      parentRoute: typeof DashRoute
+    }
+    '/_dash/admin/blog': {
+      id: '/_dash/admin/blog'
+      path: '/admin/blog'
+      fullPath: '/admin/blog'
+      preLoaderRoute: typeof DashAdminBlogRouteImport
       parentRoute: typeof DashRoute
     }
     '/_dash/account/security': {
@@ -523,6 +602,7 @@ interface DashRouteChildren {
   DashAccountRoute: typeof DashAccountRouteWithChildren
   DashAlertsRoute: typeof DashAlertsRoute
   DashIndexRoute: typeof DashIndexRoute
+  DashAdminBlogRoute: typeof DashAdminBlogRoute
   DashParkSlugRoute: typeof DashParkSlugRoute
 }
 
@@ -530,6 +610,7 @@ const DashRouteChildren: DashRouteChildren = {
   DashAccountRoute: DashAccountRouteWithChildren,
   DashAlertsRoute: DashAlertsRoute,
   DashIndexRoute: DashIndexRoute,
+  DashAdminBlogRoute: DashAdminBlogRoute,
   DashParkSlugRoute: DashParkSlugRoute,
 }
 
@@ -546,7 +627,10 @@ const rootRouteChildren: RootRouteChildren = {
   StaysRoute: StaysRoute,
   TicketsRoute: TicketsRoute,
   UnsubscribeRoute: UnsubscribeRoute,
+  BlogSlugRoute: BlogSlugRoute,
+  BlogRssDotxmlRoute: BlogRssDotxmlRoute,
   StaysAlertsRoute: StaysAlertsRoute,
+  BlogIndexRoute: BlogIndexRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiPushSubscribeRoute: ApiPushSubscribeRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,

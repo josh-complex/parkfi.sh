@@ -3,5 +3,6 @@ User-agent: *
 Allow: /
 Disallow: /api/
 Disallow: /login
+Disallow: /admin
 
 Sitemap: https://parkfi.sh/sitemap.xml
