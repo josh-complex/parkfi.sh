@@ -21,6 +21,12 @@ const config = defineConfig({
     options: { typeAware: true, typeCheck: true },
   },
   resolve: { tsconfigPaths: true },
+  // @resvg/resvg-js ships a native .node binary used only by the server-only OG
+  // image route. Keep it out of Vite's dep optimizer (which can't parse the
+  // binary) and external to the SSR graph; the Nitro build externalizes it too
+  // (see rollupConfig.external below).
+  optimizeDeps: { exclude: ["@resvg/resvg-js"] },
+  ssr: { external: ["@resvg/resvg-js"] },
   plugins: [
     devtools(),
     nitro({
