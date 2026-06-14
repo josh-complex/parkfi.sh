@@ -28,6 +28,7 @@ import Parser from "rss-parser";
 
 import { db } from "#/db/index.ts";
 import { blogPost, newsItem } from "#/db/schema.ts";
+import { parseSocialUrl, socialExists } from "#/server/blog/embeds.ts";
 
 const MODEL = process.env.NEWS_MODEL ?? "gemini-3.5-flash";
 /** Safety cap on drafts per run — a ceiling, not a target (skips yield fewer). */
@@ -65,12 +66,17 @@ SUBSTANCE:
 
 IMAGES (inline, in the body):
 - Include 1–2 relevant images INSIDE the body using Markdown: ![descriptive alt](https://image-url). Right after each image add an italic credit line: *Photo: Source Name* (link the source name if you have its URL).
-- Use Google Search to find real, directly relevant image URLs (a press photo, the ride, the food item, the resort). Prefer official/press sources. Only use an image you actually found — do not fabricate a plausible-looking URL.
+- Use Google Search to find real, directly relevant image URLs (a press photo, the ride, the food item, the resort). Prefer official/press sources. Use ONLY a URL you actually found in a search result — NEVER guess, pattern-match, or fabricate an image path. Every image URL is fetched before publish and silently dropped if it 404s, so a guessed link just vanishes — it doesn't help you.
 - Don't decorate for the sake of it: an image must show the actual thing the post is about.
 
-TRUTH ONLY. Every claim, quote, date, number, and image must trace to a real source. If you can't verify it, leave it out. Never invent attendance figures, prices, or quotes.
+EMBEDS (social posts) — OPTIONAL:
+- Only relevant when you reference a specific viral video or social post (TikTok, YouTube, Instagram, or X). If you do, find its REAL URL via Search and put it on its OWN line — just the bare URL, nothing else. We turn it into a clean embedded player.
+- An embed is never required. If you can't find a real, relevant post, OMIT it entirely — most posts won't have one, and that's fine. Never force one in or invent a URL to satisfy this instruction.
+- Same rule as images: only embed a post you actually found. Every embed is verified to exist before publish and dropped if it doesn't, so a fabricated link is wasted. One well-chosen embed beats a vague "it went viral on TikTok".
 
-FORMAT: original wording (never copy/closely paraphrase the source), Markdown body, ## subheads ok, NO H1. 400–650 words — enough to say something, not padded. Cite EVERY source you used (original + anything from Search) in "extraSources".`;
+TRUTH ONLY. Every claim, quote, date, number, image, and embed must trace to a real source. If you can't verify it, leave it out. Never invent attendance figures, prices, or quotes.
+
+FORMAT: original wording (never copy/closely paraphrase the source), Markdown body, ## subheads ok, NO H1. 550–800 words — room to actually develop the angle, not padded filler. Cite EVERY source you used (original + anything from Search) in "extraSources".`;
 
 /**
  * RSS feeds to pull. Override with NEWS_FEEDS (comma-separated).
@@ -113,6 +119,105 @@ function slugify(s: string): string {
     .trim()
     .replace(/\s+/g, "-")
     .slice(0, 70);
+}
+
+/** Words kept lowercase in titles unless they're the first/last word (or open a clause). */
+const TITLE_SMALL = new Set(
+  "a an and as at but by for from if in into nor of off on onto or over per the to up via vs with yet".split(
+    " ",
+  ),
+);
+
+function titleCaseWord(w: string, force: boolean): string {
+  if (!w) return w;
+  // Preserve tokens that already carry meaningful inner caps — acronyms (EPCOT)
+  // and brand casing (TikTok, McDuck, Disney's) shouldn't be flattened.
+  if (/[A-Z]/.test(w.slice(1))) return w;
+  const lower = w.toLowerCase();
+  if (!force && TITLE_SMALL.has(lower)) return lower;
+  return lower.replace(/[a-z]/, (c) => c.toUpperCase()); // first alpha char
+}
+
+/** Normalize a model title to consistent AP-ish title case. */
+function titleCase(s: string): string {
+  const words = s.trim().split(/\s+/);
+  const last = words.length - 1;
+  return words
+    .map((w, i) =>
+      // Force a capital on the first/last word and the first word after a colon
+      // or sentence-ending punctuation.
+      titleCaseWord(w, i === 0 || i === last || /[:?!.—–]$/.test(words[i - 1] ?? "")),
+    )
+    .join(" ");
+}
+
+/**
+ * Does this URL resolve to a real image? The model sometimes invents
+ * plausible-looking image paths that 404; this is the gate that keeps a broken
+ * <img> out of a published post. HEAD first (cheap), then a ranged GET for
+ * hosts that don't support HEAD. Any failure → treat as not-an-image.
+ */
+async function isLiveImage(url: string): Promise<boolean> {
+  const isImage = (res: Response) =>
+    (res.headers.get("content-type") ?? "").toLowerCase().startsWith("image/");
+  try {
+    const head = await fetch(url, {
+      method: "HEAD",
+      headers: { "User-Agent": UA },
+      signal: AbortSignal.timeout(10_000),
+      redirect: "follow",
+    });
+    if (head.ok && isImage(head)) return true;
+    // 2xx with no/odd content-type, or HEAD unsupported (403/405): confirm via GET.
+  } catch {
+    /* fall through to GET */
+  }
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { "User-Agent": UA, Range: "bytes=0-1023", Accept: "image/*" },
+      signal: AbortSignal.timeout(12_000),
+      redirect: "follow",
+    });
+    return res.ok && isImage(res);
+  } catch {
+    return false;
+  }
+}
+
+/** Matches a Markdown image and an optional italic credit line right after it. */
+const BODY_IMG_RE = /!\[[^\]]*\]\((https?:\/\/[^)\s]+)[^)]*\)([^\S\n]*\n[^\S\n]*\*[^\n]*\*)?/g;
+
+/**
+ * Scrub a draft body of media that won't actually load: dead inline images
+ * (dropped with their credit line) and social embeds that don't verify. Returns
+ * the cleaned Markdown. This runs before insert so a human never has to catch a
+ * broken image or a fabricated TikTok link in review.
+ */
+async function validateBodyMedia(md: string): Promise<string> {
+  // 1) Inline images.
+  const imgUrls = [...new Set([...md.matchAll(BODY_IMG_RE)].map((m) => m[1]))];
+  const live = new Map(
+    await Promise.all(imgUrls.map(async (u) => [u, await isLiveImage(u)] as const)),
+  );
+  const deadImgs = imgUrls.filter((u) => !live.get(u)).length;
+  let out = md.replace(BODY_IMG_RE, (full, url: string) => (live.get(url) ? full : ""));
+
+  // 2) Social embeds (bare post URL on its own line) — verify each exists.
+  const checked = await Promise.all(
+    out.split("\n").map(async (line) => {
+      const embed = parseSocialUrl(line.trim());
+      if (!embed) return line;
+      return (await socialExists(embed, UA)) ? line : null;
+    }),
+  );
+  const deadEmbeds = checked.filter((l) => l === null).length;
+  out = checked.filter((l) => l !== null).join("\n");
+
+  if (deadImgs) console.log(`[park-news]   dropped ${deadImgs} dead inline image(s)`);
+  if (deadEmbeds) console.log(`[park-news]   dropped ${deadEmbeds} unverified embed(s)`);
+  // Collapse the blank gaps left behind.
+  return out.replace(/\n{3,}/g, "\n\n").trim();
 }
 
 interface FeedItem {
@@ -321,9 +426,10 @@ ${coveredList}
 If this item is already substantially covered above, or isn't genuinely
 newsworthy on its own, respond with exactly {"skip": true} and nothing else.
 
-Otherwise research it (per your instructions) and write the post: real voice,
-inline backlinks, a verifiable quote if one exists, and 1–2 relevant inline
-images (Markdown, with an italic credit line under each). When it fits, link a
+Otherwise research it (per your instructions) and write the post (550–800 words):
+real voice, inline backlinks, a verifiable quote if one exists, 1–2 relevant
+inline images (Markdown, with an italic credit line under each), and an embedded
+social post on its own line if you reference a specific one. When it fits, link a
 closely related prior post inline using its /blog/<slug> path. Reference a park
 by its ParkFi slug only from this list (we link it internally): ${slugList || "(none)"}.
 
@@ -332,7 +438,7 @@ Respond with ONLY a JSON object (no code fence), shape:
   "skip": false,
   "title": "compelling, specific, <70 chars",
   "dek": "one-sentence reader summary / meta description, <160 chars",
-  "bodyMd": "the post in Markdown — ## subheads ok, NO H1, inline ![alt](url) images each followed by an italic *Photo: ...* credit, a > blockquote for any real quote",
+  "bodyMd": "the post in Markdown (550–800 words) — ## subheads ok, NO H1, inline ![alt](url) images each followed by an italic *Photo: ...* credit, a > blockquote for any real quote, and a bare social-post URL on its own line to embed one",
   "aiSummary": "dense 1-2 sentence FACTUAL summary for our internal dedup index",
   "tags": ["2-4 short lowercase tags"],
   "parkSlugs": ["relevant slugs from the list, or empty"],
@@ -447,6 +553,11 @@ async function main() {
         continue;
       }
 
+      // Normalize the headline to consistent title case, and scrub the body of
+      // any dead inline images / unverified embeds before it's ever stored.
+      draft.title = titleCase(draft.title);
+      draft.bodyMd = await validateBodyMedia(draft.bodyMd);
+
       const parkSlugs = draft.parkSlugs.filter((s) => validSlugs.has(s));
       const slug = `${slugify(draft.title)}-${sha256(item.url).slice(0, 6)}`;
       // The original feed item leads; researched sources follow (deduped by url).
@@ -457,11 +568,17 @@ async function main() {
       ];
 
       // Hero image: prefer the source article's og:image (deterministic, and we
-      // already credit + link that source), falling back to the model's pick.
+      // already credit + link that source), falling back to the model's pick —
+      // and verify whichever we land on actually loads.
       const og = await fetchOgImage(item.url);
-      const hero: HeroImage | null = og
+      const ogHero: HeroImage | null = og
         ? { url: og.url, alt: og.alt ?? draft.title, credit: item.source, creditUrl: item.url }
-        : draft.heroImage;
+        : null;
+      let hero: HeroImage | null = ogHero ?? draft.heroImage;
+      if (hero && !(await isLiveImage(hero.url))) {
+        hero = hero === ogHero ? draft.heroImage : null;
+        if (hero && !(await isLiveImage(hero.url))) hero = null;
+      }
 
       const [post] = await db
         .insert(blogPost)

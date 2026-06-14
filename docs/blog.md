@@ -84,16 +84,29 @@ internal-only summary) so it SKIPS anything already covered — a quiet day yiel
 zero drafts rather than filler. Drafts are edited in a Markdown editor in
 `/admin/blog` (rich preview + toolbar) before publishing.
 
-**What's in a draft.** The writer prompt aims for human, opinionated analysis —
-not corporate filler — and Search grounding lets it add: a real attributed
-**quote** (blockquote) when one exists, **inline backlinks** (to related
-`/blog/<slug>` posts and authoritative external pages), and **inline images**
-(`![alt](url)` + an italic `*Photo: …*` credit). For the **hero image** the cron
-deterministically pulls the source article's OpenGraph image and credits it back
-to that source (`hero_image_url` + `hero_image_credit`/`_credit_url`/`_alt`);
-that hero doubles as the post's `og:image`. The review screen shows the hero with
-an editable URL — clear it to drop a hallucinated or broken image before
-publishing. Migration: `drizzle/20260614120000_blog_hero_credit_and_richer/`.
+**What's in a draft.** The writer prompt aims for human, opinionated analysis
+(550–800 words) — not corporate filler — and Search grounding lets it add: a real
+attributed **quote** (blockquote) when one exists, **inline backlinks** (to
+related `/blog/<slug>` posts and authoritative external pages), **inline images**
+(`![alt](url)` + an italic `*Photo: …*` credit), and **social embeds** (a bare
+TikTok / YouTube / Instagram / X post URL on its own line). Headlines are
+normalized to consistent title case on insert.
+
+**Media validation (cron, before insert).** Hallucinated media never reaches
+review: every inline image URL is fetched (`isLiveImage`) and dropped with its
+credit line if it 404s / isn't an image; every social URL is verified to exist
+(`socialExists`, via oEmbed where available) and dropped otherwise. The renderer
+([src/server/blog/render.ts](../src/server/blog/render.ts)) turns a surviving
+social URL into a sandboxed iframe via a post-sanitization token, so `<iframe>`
+stays blanket-stripped everywhere else. Shared parser/embed logic lives in
+[src/server/blog/embeds.ts](../src/server/blog/embeds.ts).
+
+For the **hero image** the cron deterministically pulls the source article's
+OpenGraph image (also liveness-checked) and credits it back to that source
+(`hero_image_url` + `hero_image_credit`/`_credit_url`/`_alt`); that hero doubles
+as the post's `og:image`. The review screen shows the hero with an editable URL —
+clear it to drop a bad image before publishing. Migration:
+`drizzle/20260614120000_blog_hero_credit_and_richer/`.
 
 ## Cloudflare: cache /blog
 
