@@ -12,10 +12,15 @@ marked.setOptions({ gfm: true, breaks: false });
 
 export function renderMarkdown(md: string): string {
   const html = marked.parse(md, { async: false });
-  return html
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
-    .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, "")
-    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
-    .replace(/(href|src)\s*=\s*("javascript:[^"]*"|'javascript:[^']*')/gi, '$1="#"');
+  return (
+    html
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
+      .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, "")
+      .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+      .replace(/(href|src)\s*=\s*("javascript:[^"]*"|'javascript:[^']*')/gi, '$1="#"')
+      // Inline images are hotlinked from external sources: lazy-load them and
+      // drop the referrer so hosts that block hotlinking-by-referrer still serve.
+      .replace(/<img\b/gi, '<img loading="lazy" referrerpolicy="no-referrer"')
+  );
 }

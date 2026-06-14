@@ -72,6 +72,9 @@ export const blogRouter = {
       parkSlugs: post.parkSlugs,
       sourceUrls: (post.sourceUrls as Array<SourceUrl>) ?? [],
       heroImageUrl: post.heroImageUrl,
+      heroImageAlt: post.heroImageAlt,
+      heroImageCredit: post.heroImageCredit,
+      heroImageCreditUrl: post.heroImageCreditUrl,
       publishedAt: post.publishedAt,
     };
   }),
@@ -114,10 +117,23 @@ export const blogRouter = {
         dek: z.string().min(1).optional(),
         bodyMd: z.string().min(1).optional(),
         tags: z.array(z.string()).optional(),
+        // Empty string clears the hero (e.g. a hallucinated / broken image).
+        heroImageUrl: z.string().optional(),
       }),
     )
     .mutation(async ({ input }) => {
-      const { id, ...patch } = input;
+      const { id, heroImageUrl, ...rest } = input;
+      const patch: Record<string, unknown> = { ...rest };
+      if (heroImageUrl !== undefined) {
+        const url = heroImageUrl.trim();
+        // Clearing the image also clears its now-orphaned credit/alt.
+        patch.heroImageUrl = url || null;
+        if (!url) {
+          patch.heroImageAlt = null;
+          patch.heroImageCredit = null;
+          patch.heroImageCreditUrl = null;
+        }
+      }
       await db.update(blogPost).set(patch).where(eq(blogPost.id, id));
       return { ok: true };
     }),

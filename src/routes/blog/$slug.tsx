@@ -84,12 +84,32 @@ function BlogPost() {
       </header>
 
       {post.heroImageUrl && (
-        <img
-          src={post.heroImageUrl}
-          alt=""
-          className="mb-8 w-full rounded-xl border"
-          loading="lazy"
-        />
+        <figure className="mb-8">
+          <img
+            src={post.heroImageUrl}
+            alt={post.heroImageAlt ?? post.title}
+            className="w-full rounded-xl border"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+          />
+          {post.heroImageCredit && (
+            <figcaption className="mt-2 text-xs text-muted-foreground">
+              Photo:{" "}
+              {post.heroImageCreditUrl ? (
+                <a
+                  href={post.heroImageCreditUrl}
+                  target="_blank"
+                  rel="nofollow noopener noreferrer"
+                  className="underline underline-offset-2"
+                >
+                  {post.heroImageCredit}
+                </a>
+              ) : (
+                post.heroImageCredit
+              )}
+            </figcaption>
+          )}
+        </figure>
       )}
 
       {/* Body is server-rendered + sanitized markdown (see server/blog/render.ts). */}

@@ -10,7 +10,7 @@ through a human approval gate before they're ever published.
 cron-park-news (hourly/bihourly, Railway)
   → pull RSS (WDWMagic, Disney Parks Blog, Orlando Informer)
   → dedupe vs news_item
-  → Haiku writes ORIGINAL analysis per salient item (capped per run)
+  → Gemini writes ORIGINAL analysis per salient item (capped per run)
   → INSERT blog_post status='draft'
 /admin/blog (you, logged in)   → review → Publish  (or Archive)
   → status='published', publishedAt=now, edge purge of /blog + the post
@@ -59,25 +59,41 @@ NEWS_MAX_AGE_DAYS=4             # optional, ignore items older than this
 NEWS_FEEDS=<csv of RSS urls>    # optional, overrides the ~10 default feeds
 NEWS_USER_AGENT=<ua string>    # optional, override the browser UA
 NEWS_WEB_SEARCH=1              # optional, set 0 to disable Google Search grounding
+NEWS_SERVICE_TIER=flex        # "flex" (cheap, PAID TIER ONLY) or "standard" (free tier)
 CLOUDFLARE_ZONE_ID / CLOUDFLARE_API_TOKEN   # optional: lets publish purge the edge
 ```
 
 The cron uses **Gemini (`@google/genai`)** with **Google Search grounding** for
 the light extra-research step — get a key from Google AI Studio.
 
-**Feeds.** Defaults (set in the cron): Disney Parks Blog
-`https://disneyparks.disney.go.com/blog/feed/` and Orlando Informer
-`https://orlandoinformer.com/category/blog/feed/` are confirmed; WDWMagic uses
-`https://www.wdwmagic.com/feed` (best-effort — its site bot-blocks discovery).
-The cron sends a browser User-Agent (these sites 403 default agents) and logs
-each feed failure, so a wrong/changed URL self-reports on the first run — swap it
-via `NEWS_FEEDS` if needed.
+> **Flex tier needs billing.** `serviceTier: flex` is the cheap tier but is
+> **paid-tier only** — a free-tier key returns `429 RESOURCE_EXHAUSTED`. Either
+> enable billing on the Google project (cost is pennies/month at this volume), or
+> set `NEWS_SERVICE_TIER=standard` to stay on the free tier (tighter rate limits).
+> The cron stops cleanly on a 429 and retries the items next run.
+
+**Feeds.** ~9 confirmed `/feed/` endpoints (Disney Parks Blog, WDW News Today,
+Blog Mickey, Inside the Magic, Attractions Magazine, AllEars, Orlando Informer,
+Disney Tourist Blog, Disney Food Blog). The cron sends a browser User-Agent
+(some sites 403 default agents) and logs each feed failure, so a changed URL
+self-reports — swap via `NEWS_FEEDS` if needed.
 
 **Cadence & no-repeat.** The cron only considers items from the last
 `NEWS_MAX_AGE_DAYS`, and feeds the model each recent post's `ai_summary` (a dense
 internal-only summary) so it SKIPS anything already covered — a quiet day yields
 zero drafts rather than filler. Drafts are edited in a Markdown editor in
 `/admin/blog` (rich preview + toolbar) before publishing.
+
+**What's in a draft.** The writer prompt aims for human, opinionated analysis —
+not corporate filler — and Search grounding lets it add: a real attributed
+**quote** (blockquote) when one exists, **inline backlinks** (to related
+`/blog/<slug>` posts and authoritative external pages), and **inline images**
+(`![alt](url)` + an italic `*Photo: …*` credit). For the **hero image** the cron
+deterministically pulls the source article's OpenGraph image and credits it back
+to that source (`hero_image_url` + `hero_image_credit`/`_credit_url`/`_alt`);
+that hero doubles as the post's `og:image`. The review screen shows the hero with
+an editable URL — clear it to drop a hallucinated or broken image before
+publishing. Migration: `drizzle/20260614120000_blog_hero_credit_and_richer/`.
 
 ## Cloudflare: cache /blog
 

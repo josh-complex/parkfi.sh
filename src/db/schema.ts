@@ -1217,6 +1217,11 @@ export const blogPost = pgTable(
       .notNull()
       .default(sql`'[]'::jsonb`),
     heroImageUrl: text("hero_image_url"),
+    // Alt text + visible photo credit for the hero image (the cron pulls the
+    // source article's OpenGraph image and attributes it back to that source).
+    heroImageAlt: text("hero_image_alt"),
+    heroImageCredit: text("hero_image_credit"),
+    heroImageCreditUrl: text("hero_image_credit_url"),
     // LLM model that drafted it, for auditing.
     model: text("model"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

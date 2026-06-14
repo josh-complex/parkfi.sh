@@ -2,8 +2,8 @@
  * Park-news → LLM draft pipeline (Railway cron, e.g. hourly or "0 *&#47;2 * * *").
  *
  * Pulls Orlando theme-park RSS feeds, dedupes against `news_item`, and asks a
- * cheap model (Haiku) to write ORIGINAL analysis for genuinely new items — not a
- * rewrite of the source. Each post is inserted as a `blog_post` DRAFT; a human
+ * cheap model (Gemini Flash) to write ORIGINAL analysis for genuinely new items —
+ * not a rewrite of the source. Each post is inserted as a `blog_post` DRAFT; a human
  * approves it in /admin/blog before it ever publishes. That review gate is
  * deliberate: Google penalizes unedited bulk AI content, so nothing reaches the
  * index without a person in the loop.
@@ -13,7 +13,7 @@
  * day produces zero drafts rather than filler. Only recent items are considered.
  *
  * Guardrails: browser User-Agent (these sites 403 default agents), recency
- * window, per-run cap, records every seen item, no-ops without ANTHROPIC_API_KEY.
+ * window, per-run cap, records every seen item, no-ops without GEMINI_API_KEY.
  *
  * Run:  bun run cron:park-news
  */
@@ -42,15 +42,35 @@ const UA =
 /** Give the model Google Search grounding so it can verify + add context. */
 const WEB_SEARCH = (process.env.NEWS_WEB_SEARCH ?? "1") !== "0";
 
-const SYSTEM = `You are the editorial writer for ParkFi, a live Orlando theme-park wait-times and trip-planning site. You turn ONE incoming news item into a short, original analysis post.
+/**
+ * Service tier. Flex is the cheap tier for background work — but it's PAID-TIER
+ * ONLY (free-tier keys 429 if you request it). Set NEWS_SERVICE_TIER=standard
+ * (or anything but "flex") on a free-tier key. Default flex.
+ */
+const SERVICE_TIER =
+  (process.env.NEWS_SERVICE_TIER ?? "flex").toLowerCase() === "flex" ? ServiceTier.FLEX : undefined;
 
-How to work:
-- Add value the source didn't. Do LIGHT extra research with Google Search to add verifiable context the feed snippet lacked — official confirmations, dates, prior history, related projects, pricing.
-- TRUTH ONLY. Every claim must be verifiable from a real source. If you cannot verify something, leave it out. Never invent quotes, dates, numbers, or attendance figures.
-- Original wording — never copy or closely paraphrase the source.
-- Tie it to what ParkFi readers care about: crowds, wait times, Lightning Lane, dining, trip timing — only where it's honestly relevant.
-- Cite EVERY source you actually used (the original item plus anything you found via search) in "extraSources".
-- Tight: 250–450 words, Markdown body, no H1, no images.`;
+const SYSTEM = `You are a staff writer for ParkFi, a live Orlando theme-park wait-times and trip-planning site. You turn ONE incoming news item into an original, genuinely useful analysis post. Write like a sharp human who actually goes to these parks — not a press release, not a content farm.
+
+VOICE — this is the part that matters most:
+- Have a point of view. Lead with what's actually interesting or what readers should DO about it, not a throat-clearing "Just in time for…" intro. Cut corporate filler ("exciting", "magical experience", "perfect for the whole family", "be sure to").
+- Be concrete and specific over generic. Real wait-time numbers, real dates, real prices, the actual catch — not vague enthusiasm.
+- Vary sentence length. A short punchy line is fine. Contractions are fine. A little dry wit is fine. Sounding like a brochure is not.
+
+SUBSTANCE:
+- Add value the source didn't. Use Google Search to add verifiable context the feed snippet lacked — official confirmations, dates, prior history, related projects, pricing — and to find a primary source.
+- QUOTES: if Search surfaces a REAL, verifiable direct quote (a Disney/Universal exec, an Imagineer, an official press release), include ONE as a Markdown blockquote with attribution: "> ...quote...\\n>\\n> — Name, title". Never invent or paraphrase a quote into quotation marks. No real quote found = no quote. Don't force it.
+- BACKLINKS: weave 1–2 contextual links INLINE in the prose (not just a list at the end) — to a closely related prior ParkFi post via its /blog/<slug> path when one fits, and to an authoritative external page (official park site, the primary source) where it helps the reader.
+- Tie it to what ParkFi readers care about: crowds, wait times, Lightning Lane, dining, trip timing — only where it's honestly relevant. Skip the tie-in if it's a stretch.
+
+IMAGES (inline, in the body):
+- Include 1–2 relevant images INSIDE the body using Markdown: ![descriptive alt](https://image-url). Right after each image add an italic credit line: *Photo: Source Name* (link the source name if you have its URL).
+- Use Google Search to find real, directly relevant image URLs (a press photo, the ride, the food item, the resort). Prefer official/press sources. Only use an image you actually found — do not fabricate a plausible-looking URL.
+- Don't decorate for the sake of it: an image must show the actual thing the post is about.
+
+TRUTH ONLY. Every claim, quote, date, number, and image must trace to a real source. If you can't verify it, leave it out. Never invent attendance figures, prices, or quotes.
+
+FORMAT: original wording (never copy/closely paraphrase the source), Markdown body, ## subheads ok, NO H1. 400–650 words — enough to say something, not padded. Cite EVERY source you used (original + anything from Search) in "extraSources".`;
 
 /**
  * RSS feeds to pull. Override with NEWS_FEEDS (comma-separated).
@@ -67,7 +87,6 @@ const DEFAULT_FEEDS: Array<{ source: string; url: string }> = [
   { source: "Inside the Magic", url: "https://insidethemagic.net/feed/" },
   { source: "Attractions Magazine", url: "https://attractionsmagazine.com/feed/" },
   { source: "AllEars", url: "https://allears.net/feed/" },
-  { source: "WDWMagic", url: "https://www.wdwmagic.com/feed" }, // best-effort path
   // Universal Orlando focus
   { source: "Orlando Informer", url: "https://orlandoinformer.com/category/blog/feed/" },
   // Planning / food (trip-impact angles)
@@ -102,6 +121,51 @@ interface FeedItem {
   url: string;
   summary: string;
   publishedAt: Date | null;
+}
+
+interface OgImage {
+  url: string;
+  alt: string | null;
+}
+
+function metaContent(html: string, ...keys: string[]): string | null {
+  for (const key of keys) {
+    // property="og:image" content="..."  OR  content="..." property="og:image"
+    const re = new RegExp(
+      `<meta[^>]+(?:property|name)=["']${key.replace(/[:]/g, "\\$&")}["'][^>]*>`,
+      "i",
+    );
+    const tag = re.exec(html)?.[0];
+    const content = tag && /content=["']([^"']+)["']/i.exec(tag)?.[1];
+    if (content) return content.trim();
+  }
+  return null;
+}
+
+/**
+ * Pull the source article's OpenGraph image. News sites publish og:image
+ * expecting it to be shown when their article is linked/shared — which is
+ * exactly what we do (we credit + link them as a source), so it's the most
+ * defensible hero. Best-effort: a failure just leaves the post image-less.
+ */
+async function fetchOgImage(pageUrl: string): Promise<OgImage | null> {
+  try {
+    const res = await fetch(pageUrl, {
+      headers: { "User-Agent": UA, Accept: "text/html" },
+      signal: AbortSignal.timeout(12_000),
+      redirect: "follow",
+    });
+    if (!res.ok) return null;
+    // Only need the <head>; cap the read so a huge page doesn't stall the run.
+    const html = (await res.text()).slice(0, 200_000);
+    const raw = metaContent(html, "og:image:secure_url", "og:image", "twitter:image");
+    if (!raw) return null;
+    const url = new URL(raw, pageUrl).toString(); // resolve protocol-relative / relative
+    if (!/^https?:\/\//i.test(url)) return null;
+    return { url, alt: metaContent(html, "og:image:alt", "twitter:image:alt") };
+  } catch {
+    return null;
+  }
 }
 
 /** Record an item as considered so it isn't reprocessed (idempotent). */
@@ -189,6 +253,13 @@ interface Source {
   url: string;
 }
 
+interface HeroImage {
+  url: string;
+  alt?: string;
+  credit?: string;
+  creditUrl?: string;
+}
+
 interface DraftJson {
   skip?: boolean;
   title: string;
@@ -198,6 +269,21 @@ interface DraftJson {
   tags: string[];
   parkSlugs: string[];
   extraSources: Source[];
+  heroImage: HeroImage | null;
+}
+
+/** A model-suggested hero is only a fallback; the source og:image is preferred. */
+function cleanHero(v: unknown): HeroImage | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  if (typeof o.url !== "string" || !/^https?:\/\//.test(o.url)) return null;
+  return {
+    url: o.url,
+    alt: typeof o.alt === "string" ? o.alt : undefined,
+    credit: typeof o.credit === "string" ? o.credit : undefined,
+    creditUrl:
+      typeof o.creditUrl === "string" && /^https?:\/\//.test(o.creditUrl) ? o.creditUrl : undefined,
+  };
 }
 
 /** Keep only well-formed {title,url} source objects (cap to avoid runaway). */
@@ -235,30 +321,59 @@ ${coveredList}
 If this item is already substantially covered above, or isn't genuinely
 newsworthy on its own, respond with exactly {"skip": true} and nothing else.
 
-Otherwise research it lightly (per your instructions) and write the post. When
-it adds value, link to a closely related prior post inline using its /blog/<slug>
-path. Reference a park by its ParkFi slug only from this list (we link it
-internally): ${slugList || "(none)"}.
+Otherwise research it (per your instructions) and write the post: real voice,
+inline backlinks, a verifiable quote if one exists, and 1–2 relevant inline
+images (Markdown, with an italic credit line under each). When it fits, link a
+closely related prior post inline using its /blog/<slug> path. Reference a park
+by its ParkFi slug only from this list (we link it internally): ${slugList || "(none)"}.
 
 Respond with ONLY a JSON object (no code fence), shape:
 {
   "skip": false,
   "title": "compelling, specific, <70 chars",
   "dek": "one-sentence reader summary / meta description, <160 chars",
-  "bodyMd": "the post in Markdown (## subheads ok, no H1, no images)",
+  "bodyMd": "the post in Markdown — ## subheads ok, NO H1, inline ![alt](url) images each followed by an italic *Photo: ...* credit, a > blockquote for any real quote",
   "aiSummary": "dense 1-2 sentence FACTUAL summary for our internal dedup index",
   "tags": ["2-4 short lowercase tags"],
   "parkSlugs": ["relevant slugs from the list, or empty"],
+  "heroImage": {"url": "https://...", "alt": "...", "credit": "Source Name", "creditUrl": "https://..."},  // a strong lead image; null if none found
   "extraSources": [{"title": "...", "url": "https://..."}]  // every source you used beyond the original
 }`;
 }
 
+/**
+ * Extract the JSON object from a model response. Grounded Gemini sometimes wraps
+ * it in a ```json fence or adds a stray trailing line, so we strip fences and
+ * scan for the first BALANCED top-level object (a naive last-"}" breaks when the
+ * body contains braces) — far more robust than indexOf/lastIndexOf.
+ */
+function extractJsonObject(text: string): string | null {
+  const cleaned = text.replace(/```(?:json)?/gi, "").trim();
+  const start = cleaned.indexOf("{");
+  if (start < 0) return null;
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = start; i < cleaned.length; i++) {
+    const ch = cleaned[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}" && --depth === 0) return cleaned.slice(start, i + 1);
+  }
+  return null; // unbalanced (e.g. truncated by maxOutputTokens)
+}
+
 function parseDraft(text: string): DraftJson | null {
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) return null;
+  const json = extractJsonObject(text);
+  if (!json) return null;
   try {
-    const obj = JSON.parse(text.slice(start, end + 1)) as Partial<DraftJson>;
+    const obj = JSON.parse(json) as Partial<DraftJson>;
     if (obj.skip === true) return { skip: true } as DraftJson;
     if (!obj.title || !obj.dek || !obj.bodyMd) return null;
     return {
@@ -269,6 +384,7 @@ function parseDraft(text: string): DraftJson | null {
       tags: Array.isArray(obj.tags) ? obj.tags.slice(0, 4) : [],
       parkSlugs: Array.isArray(obj.parkSlugs) ? obj.parkSlugs : [],
       extraSources: cleanSources(obj.extraSources),
+      heroImage: cleanHero(obj.heroImage),
     };
   } catch {
     return null;
@@ -309,14 +425,19 @@ async function main() {
         config: {
           systemInstruction: SYSTEM,
           tools,
-          maxOutputTokens: 2500,
-          // Background cron — latency-insensitive, so use the cheaper Flex tier.
-          serviceTier: ServiceTier.FLEX,
+          // Richer posts + grounding/thinking share this budget; too low and the
+          // JSON gets truncated mid-body → unparseable. Keep generous headroom.
+          maxOutputTokens: 8000,
+          // Background cron — latency-insensitive, so prefer the cheap Flex tier
+          // (paid-tier only; configurable via NEWS_SERVICE_TIER).
+          serviceTier: SERVICE_TIER,
         },
       });
       const draft = parseDraft(res.text ?? "");
       if (!draft) {
-        console.error(`[park-news] unparseable draft for: ${item.title}`);
+        console.error(
+          `[park-news] unparseable draft for: ${item.title} — raw head: ${(res.text ?? "(empty)").slice(0, 200)}`,
+        );
         await recordSeen(item); // don't reconsider a persistently unparseable item
         continue;
       }
@@ -335,6 +456,13 @@ async function main() {
         ...draft.extraSources.filter((s) => !seenUrls.has(s.url) && seenUrls.add(s.url)),
       ];
 
+      // Hero image: prefer the source article's og:image (deterministic, and we
+      // already credit + link that source), falling back to the model's pick.
+      const og = await fetchOgImage(item.url);
+      const hero: HeroImage | null = og
+        ? { url: og.url, alt: og.alt ?? draft.title, credit: item.source, creditUrl: item.url }
+        : draft.heroImage;
+
       const [post] = await db
         .insert(blogPost)
         .values({
@@ -347,6 +475,10 @@ async function main() {
           tags: draft.tags,
           parkSlugs,
           sourceUrls,
+          heroImageUrl: hero?.url ?? null,
+          heroImageAlt: hero?.alt ?? null,
+          heroImageCredit: hero?.credit ?? null,
+          heroImageCreditUrl: hero?.creditUrl ?? null,
           model: MODEL,
         })
         .returning({ id: blogPost.id });
@@ -360,6 +492,15 @@ async function main() {
     } catch (err) {
       // Leave the item unrecorded so a transient API/network failure retries next run.
       console.error(`[park-news] failed on: ${item.title}`, err);
+      // Quota exhausted: no point hammering the rest of the batch — stop and let
+      // the next scheduled run pick the items back up.
+      if ((err as { status?: number })?.status === 429) {
+        console.error(
+          "[park-news] quota exhausted (429) — stopping. If using Flex, enable billing; " +
+            "otherwise set NEWS_SERVICE_TIER=standard and/or lower NEWS_MAX_DRAFTS.",
+        );
+        break;
+      }
     }
   }
 

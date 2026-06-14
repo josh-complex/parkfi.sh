@@ -33,6 +33,7 @@ function DraftEditor({ id, onClose }: { id: number; onClose: () => void }) {
   const [title, setTitle] = React.useState("");
   const [dek, setDek] = React.useState("");
   const [body, setBody] = React.useState("");
+  const [heroImageUrl, setHeroImageUrl] = React.useState("");
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => setMounted(true), []);
   React.useEffect(() => {
@@ -40,6 +41,7 @@ function DraftEditor({ id, onClose }: { id: number; onClose: () => void }) {
       setTitle(data.title);
       setDek(data.dek);
       setBody(data.bodyMd);
+      setHeroImageUrl(data.heroImageUrl ?? "");
     }
   }, [data]);
 
@@ -64,6 +66,31 @@ function DraftEditor({ id, onClose }: { id: number; onClose: () => void }) {
         onChange={(e) => setDek(e.target.value)}
         placeholder="Dek / meta description"
       />
+      <div className="flex flex-col gap-2">
+        {heroImageUrl && (
+          <img
+            src={heroImageUrl}
+            alt=""
+            referrerPolicy="no-referrer"
+            className="max-h-48 w-full rounded-lg border object-cover"
+          />
+        )}
+        <div className="flex items-center gap-2">
+          <Input
+            value={heroImageUrl}
+            onChange={(e) => setHeroImageUrl(e.target.value)}
+            placeholder="Hero image URL (clear to remove)"
+          />
+          {heroImageUrl && (
+            <Button size="sm" variant="ghost" onClick={() => setHeroImageUrl("")}>
+              Clear
+            </Button>
+          )}
+        </div>
+        {data?.heroImageCredit && (
+          <p className="text-xs text-muted-foreground">Credit: {data.heroImageCredit}</p>
+        )}
+      </div>
       {mounted ? (
         <React.Suspense fallback={<Skeleton className="h-[440px] w-full" />}>
           <MarkdownEditor value={body} onChange={setBody} />
@@ -75,7 +102,7 @@ function DraftEditor({ id, onClose }: { id: number; onClose: () => void }) {
         <Button
           size="sm"
           disabled={save.isPending}
-          onClick={() => save.mutate({ id, title, dek, bodyMd: body })}
+          onClick={() => save.mutate({ id, title, dek, bodyMd: body, heroImageUrl })}
         >
           Save
         </Button>
