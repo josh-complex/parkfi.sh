@@ -22,7 +22,7 @@ loadEnv({ path: [".env.local", ".env"] });
 
 import { createHash } from "node:crypto";
 
-import { GoogleGenAI, ServiceTier } from "@google/genai";
+import { GoogleGenAI, ServiceTier, ThinkingLevel } from "@google/genai";
 import { inArray, sql } from "drizzle-orm";
 import Parser from "rss-parser";
 
@@ -52,14 +52,24 @@ const SERVICE_TIER =
   (process.env.NEWS_SERVICE_TIER ?? "flex").toLowerCase() === "flex" ? ServiceTier.FLEX : undefined;
 
 /**
- * Output ceiling AND thinking budget. Gemini 3 is a thinking model and thought
- * tokens count toward maxOutputTokens — so with AUTOMATIC thinking (-1) a long,
- * complex prompt can burn the entire budget on thoughts and return an EMPTY
- * answer. We cap thinking and give the answer comfortable headroom on top.
- * Override either via env if a future model needs more/less room.
+ * Output ceiling + thinking level. Gemini 3 is a thinking model and thought
+ * tokens count toward maxOutputTokens — so deep thinking on a long, complex
+ * prompt can burn the whole budget on thoughts and return an EMPTY answer (the
+ * numeric `thinkingBudget` knob is a no-op on Gemini 3; it uses `thinkingLevel`).
+ * LOW keeps thinking light so the answer always has room; raise via env if a
+ * future model needs more. Set NEWS_THINKING_LEVEL=minimal|low|medium|high.
  */
 const MAX_OUTPUT_TOKENS = Number(process.env.NEWS_MAX_OUTPUT_TOKENS ?? 12_000);
-const THINKING_BUDGET = Number(process.env.NEWS_THINKING_BUDGET ?? 4096);
+const THINKING_LEVELS: Record<string, ThinkingLevel> = {
+  minimal: ThinkingLevel.MINIMAL,
+  low: ThinkingLevel.LOW,
+  medium: ThinkingLevel.MEDIUM,
+  high: ThinkingLevel.HIGH,
+};
+const THINKING_LEVEL =
+  THINKING_LEVELS[(process.env.NEWS_THINKING_LEVEL ?? "low").toLowerCase()] ?? ThinkingLevel.LOW;
+/** Grounded research is slow; give the request real headroom but a hard ceiling. */
+const REQUEST_TIMEOUT_MS = Number(process.env.NEWS_REQUEST_TIMEOUT_MS ?? 180_000);
 
 const SYSTEM = `You are a staff writer for ParkFi, a live Orlando theme-park wait-times and trip-planning site. You turn ONE incoming news item into an original, genuinely useful analysis post. Write like a sharp human who actually goes to these parks — not a press release, not a content farm.
 
@@ -543,10 +553,12 @@ async function main() {
         config: {
           systemInstruction: SYSTEM,
           tools,
-          // Bound thinking so it can't eat the whole budget (→ empty answer), and
-          // leave the answer comfortable headroom on top.
-          thinkingConfig: { thinkingBudget: THINKING_BUDGET },
+          // Keep thinking light so it can't eat the whole budget (→ empty answer),
+          // and leave the answer comfortable headroom on top.
+          thinkingConfig: { thinkingLevel: THINKING_LEVEL },
           maxOutputTokens: MAX_OUTPUT_TOKENS,
+          // Don't let a single grounded call hang the whole run.
+          httpOptions: { timeout: REQUEST_TIMEOUT_MS },
           // Background cron — latency-insensitive, so prefer the cheap Flex tier
           // (paid-tier only; configurable via NEWS_SERVICE_TIER).
           serviceTier: SERVICE_TIER,
@@ -554,13 +566,16 @@ async function main() {
       });
       const draft = parseDraft(res.text ?? "");
       if (!draft) {
-        // Surface WHY: an empty body with finishReason=MAX_TOKENS means thinking
-        // ate the budget (raise NEWS_MAX_OUTPUT_TOKENS / lower NEWS_THINKING_BUDGET);
-        // SAFETY/RECITATION means the prompt was blocked.
+        // Surface WHY: an empty body with finish=MAX_TOKENS means thinking ate the
+        // budget (lower NEWS_THINKING_LEVEL / raise NEWS_MAX_OUTPUT_TOKENS); a
+        // block= reason means the prompt/answer was filtered.
         const u = res.usageMetadata;
+        const cand = res.candidates?.[0];
         console.error(
           `[park-news] unparseable draft for: ${item.title} — ` +
-            `finish=${res.candidates?.[0]?.finishReason ?? "?"} ` +
+            `finish=${cand?.finishReason ?? "?"} ` +
+            `block=${res.promptFeedback?.blockReason ?? "none"} ` +
+            `parts=${cand?.content?.parts?.length ?? 0} ` +
             `tokens(thought=${u?.thoughtsTokenCount ?? "?"}, answer=${u?.candidatesTokenCount ?? "?"}, total=${u?.totalTokenCount ?? "?"}) ` +
             `raw head: ${(res.text ?? "(empty)").slice(0, 200)}`,
         );
@@ -627,8 +642,13 @@ async function main() {
         covered.unshift({ slug, title: draft.title, aiSummary: draft.aiSummary });
       }
     } catch (err) {
-      // Leave the item unrecorded so a transient API/network failure retries next run.
-      console.error(`[park-news] failed on: ${item.title}`, err);
+      // Leave the item unrecorded so a transient API/network failure (e.g. a
+      // grounded-request TimeoutError) retries next run. Log name+message only —
+      // the full DOMException/Error object is noise.
+      const e = err as { name?: string; message?: string };
+      console.error(
+        `[park-news] failed on: ${item.title} — ${e?.name ?? "Error"}: ${e?.message ?? err}`,
+      );
       // Quota exhausted: no point hammering the rest of the batch — stop and let
       // the next scheduled run pick the items back up.
       if ((err as { status?: number })?.status === 429) {
