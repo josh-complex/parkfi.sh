@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { PanelLeftIcon } from "lucide-react";
 
 import { NotificationCenter } from "#/components/notifications/notification-center.tsx";
+import { OmniSearch } from "#/components/omni-search.tsx";
 import { ThemeToggle } from "#/components/theme-toggle.tsx";
 import { MenuIcon, type MenuIconHandle } from "#/components/ui/anim-icons/menu.tsx";
 import { useSidebar } from "#/components/ui/sidebar.tsx";
@@ -59,65 +60,88 @@ export function SiteHeader({
   const displayTitle = isMobile && mobileTitle ? mobileTitle : title;
 
   return (
-    <header
-      className={
-        flyoutOpen
-          ? // Drop `sticky`/`z` so the bar is NOT a stacking context: that keeps
-            // the title + left controls below the z-50 flyout instead of being
-            // dragged above it. The trigger is lifted on its own (see below).
-            "pointer-events-none relative shrink-0 border-b border-transparent bg-transparent text-white"
-          : // Sticky on mobile only; on desktop the bar scrolls away with the page.
-            "sticky top-0 z-30 shrink-0 border-b border-white/10 bg-sidebar/90 text-sidebar-foreground backdrop-blur-md transition-[height] ease-linear md:static md:border-border md:bg-transparent md:text-foreground md:backdrop-blur-none"
-      }
-      style={{ paddingTop: "env(safe-area-inset-top)" }}
-    >
-      <div className="relative flex h-(--header-height) w-full items-center gap-2 px-4 lg:px-6">
-        {/* Desktop: the sidebar toggle sits on the left, ahead of the title. */}
-        {!isMobile && <MenuTrigger />}
+    <>
+      <header
+        className={
+          flyoutOpen
+            ? // Drop `sticky`/`z` so the bar is NOT a stacking context: that keeps
+              // the title + left controls below the z-50 flyout instead of being
+              // dragged above it. The trigger is lifted on its own (see below).
+              "pointer-events-none relative shrink-0 border-b border-transparent bg-transparent text-white"
+            : // Sticky on mobile only; on desktop the bar scrolls away with the page.
+              "sticky top-0 z-30 shrink-0 border-b border-white/10 bg-sidebar/90 text-sidebar-foreground backdrop-blur-md transition-[height] ease-linear md:static md:border-border md:bg-transparent md:text-foreground md:backdrop-blur-none"
+        }
+        style={{ paddingTop: "env(safe-area-inset-top)" }}
+      >
+        <div className="relative flex h-(--header-height) w-full items-center gap-2 px-4 lg:px-6">
+          {/* Desktop: the sidebar toggle sits on the left, ahead of the title. */}
+          {!isMobile && <MenuTrigger />}
 
-        {/* Mobile: theme + notifications are pinned to the left. */}
-        {isMobile && (
-          <div className="flex items-center gap-1">
-            <ThemeToggle />
-            <NotificationCenter />
-          </div>
-        )}
-
-        <h1
-          className={
-            isMobile
-              ? "absolute left-1/2 max-w-[55%] -translate-x-1/2 truncate text-center text-base font-semibold tracking-tight"
-              : "truncate text-base font-semibold tracking-tight"
-          }
-        >
-          {displayTitle}
-        </h1>
-
-        <div className="ml-auto flex items-center gap-1">
-          {/* Desktop: the notification bell is always reachable from the top bar;
-              the theme toggle only appears here when collapsed (otherwise it
-              lives in the sidebar footer). */}
-          {!isMobile && (
-            <>
-              {showHeaderBell && <NotificationCenter />}
-              {showActions && <ThemeToggle />}
-            </>
+          {/* Mobile: theme + notifications are pinned to the left. */}
+          {isMobile && (
+            <div className="flex items-center gap-1">
+              <ThemeToggle />
+              <NotificationCenter />
+            </div>
           )}
-          {/* Mobile: the trigger (hamburger ⇄ X) lives on the right. While the
-              flyout is open it's pinned in a `fixed`, z-[60] wrapper so the X
-              floats above the z-50 sheet/backdrop — without lifting the rest of
-              the bar with it. */}
-          {isMobile && !flyoutOpen && <MenuTrigger />}
-        </div>
-        {isMobile && flyoutOpen && (
-          <div
-            className="pointer-events-none fixed top-0 right-0 z-[60] flex h-(--header-height) items-center px-4 text-white lg:px-6"
-            style={{ paddingTop: "env(safe-area-inset-top)" }}
+
+          <h1
+            className={
+              isMobile
+                ? "absolute left-1/2 max-w-[55%] -translate-x-1/2 truncate text-center text-base font-semibold tracking-tight"
+                : "truncate text-base font-semibold tracking-tight"
+            }
           >
-            <MenuTrigger />
+            {displayTitle}
+          </h1>
+
+          <div className="ml-auto flex items-center gap-1">
+            {/* Desktop: the notification bell is always reachable from the top bar;
+                the theme toggle only appears here when collapsed (otherwise it
+                lives in the sidebar footer). */}
+            {!isMobile && (
+              <>
+                {showHeaderBell && <NotificationCenter />}
+                {showActions && <ThemeToggle />}
+              </>
+            )}
+            {/* Mobile: the trigger (hamburger ⇄ X) lives on the right. While the
+                flyout is open it's pinned in a `fixed`, z-[60] wrapper so the X
+                floats above the z-50 sheet/backdrop — without lifting the rest of
+                the bar with it. */}
+            {isMobile && !flyoutOpen && <MenuTrigger />}
           </div>
-        )}
+          {isMobile && flyoutOpen && (
+            <div
+              className="pointer-events-none fixed top-0 right-0 z-[60] flex h-(--header-height) items-center px-4 text-white lg:px-6"
+              style={{ paddingTop: "env(safe-area-inset-top)" }}
+            >
+              <MenuTrigger />
+            </div>
+          )}
+        </div>
+      </header>
+
+      {/* Search + Buy Me a Coffee Bar - positioned below the main header */}
+      <div className="sticky top-[var(--header-height)] z-20 border-b border-white/10 bg-sidebar/90 px-4 py-3 backdrop-blur-md md:static md:border-border md:bg-transparent md:px-6 md:py-4 md:backdrop-blur-none">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex-1">
+            <OmniSearch />
+          </div>
+          <a
+            href="https://www.buymeacoffee.com/parkfish"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="shrink-0 md:ml-4"
+          >
+            <img
+              src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=&slug=parkfish&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff"
+              alt="Buy me a coffee"
+              className="h-auto w-full max-w-xs"
+            />
+          </a>
+        </div>
       </div>
-    </header>
+    </>
   );
 }

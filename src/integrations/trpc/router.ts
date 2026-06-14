@@ -6,6 +6,7 @@ import { forecastRouter } from "./routers/forecast.ts";
 import { notificationsRouter } from "./routers/notifications.ts";
 import { parksRouter } from "./routers/parks.ts";
 import { rideAlertsRouter } from "./routers/rideAlerts.ts";
+import { searchRouter } from "./routers/search.ts";
 import { stayAlertsRouter } from "./routers/stayAlerts.ts";
 import { staysRouter } from "./routers/stays.ts";
 import { ticketsRouter } from "./routers/tickets.ts";
@@ -23,5 +24,6 @@ export const trpcRouter = createTRPCRouter({
   diningAlerts: diningAlertsRouter,
   uploads: uploadsRouter,
   blog: blogRouter,
+  search: searchRouter,
 });
 export type TRPCRouter = typeof trpcRouter;
