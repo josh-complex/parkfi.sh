@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 
+import { AppInset } from "#/components/app-inset.tsx";
 import { AppSidebar } from "#/components/app-sidebar.tsx";
 import { SiteHeader } from "#/components/site-header.tsx";
 import { PricingCalendar } from "#/components/ticket-pricing/pricing-calendar.tsx";
-import { SidebarInset, SidebarProvider } from "#/components/ui/sidebar.tsx";
+import { SidebarProvider } from "#/components/ui/sidebar.tsx";
 import { seo } from "#/lib/seo.ts";
 
 export const Route = createFileRoute("/tickets")({
@@ -30,14 +31,14 @@ function TicketsPage() {
       }
     >
       <AppSidebar variant="inset" />
-      <SidebarInset>
+      <AppInset>
         <SiteHeader title="Ticket Pricing" />
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
             <PricingCalendar />
           </div>
         </div>
-      </SidebarInset>
+      </AppInset>
     </SidebarProvider>
   );
 }

@@ -72,10 +72,10 @@ export function OverviewPanel() {
       style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1.5rem)" }}
     >
       <div className="flex flex-col gap-1">
-        <h2 className="text-xl font-semibold tracking-tight text-white md:text-foreground">
+        <h2 className="text-xl font-semibold tracking-tight text-foreground">
           Orlando Theme Parks
         </h2>
-        <p className="text-sm text-blue-100/90 md:text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Live across {global.parkCount} parks at Walt Disney World &amp; Universal Orlando. Pick a
           park on the map to dive in.
         </p>

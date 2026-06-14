@@ -565,7 +565,13 @@ export const diningMenuItem = pgTable(
     priceType: text("price_type"),
     currency: text("currency"),
   },
-  (t) => [index("dining_menu_item_facility_idx").on(t.facilityId, t.observedAt)],
+  (t) => [
+    index("dining_menu_item_facility_idx").on(t.facilityId, t.observedAt),
+    // Trigram index powering omni-search menu-item lookup (search.menuItems).
+    // Created out-of-band in drizzle/20260614130000_menu_item_trgm — mirrored
+    // here for documentation; we hand-write migrations (no drizzle-kit generate).
+    index("dining_menu_item_title_trgm").using("gin", sql`lower(${t.title}) gin_trgm_ops`),
+  ],
 );
 
 /**

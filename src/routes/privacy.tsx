@@ -2,9 +2,10 @@ import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { ScrollTextIcon } from "lucide-react";
 
+import { AppInset } from "#/components/app-inset.tsx";
 import { AppSidebar } from "#/components/app-sidebar.tsx";
 import { SiteHeader } from "#/components/site-header.tsx";
-import { SidebarInset, SidebarProvider } from "#/components/ui/sidebar.tsx";
+import { SidebarProvider } from "#/components/ui/sidebar.tsx";
 import { seo } from "#/lib/seo.ts";
 
 export const Route = createFileRoute("/privacy")({
@@ -29,7 +30,7 @@ function PrivacyPage() {
       }
     >
       <AppSidebar variant="inset" />
-      <SidebarInset>
+      <AppInset>
         <SiteHeader title="Privacy & Terms" />
         <div className="flex flex-1 flex-col p-6 max-w-3xl mx-auto w-full gap-8">
           <div className="flex items-center gap-3">
@@ -326,7 +327,7 @@ function PrivacyPage() {
             .
           </p>
         </div>
-      </SidebarInset>
+      </AppInset>
     </SidebarProvider>
   );
 }

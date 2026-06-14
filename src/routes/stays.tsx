@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 
+import { AppInset } from "#/components/app-inset.tsx";
 import { AppSidebar } from "#/components/app-sidebar.tsx";
 import { SiteHeader } from "#/components/site-header.tsx";
 import { StaysBoard } from "#/components/stays/stays-board.tsx";
-import { SidebarInset, SidebarProvider } from "#/components/ui/sidebar.tsx";
+import { SidebarProvider } from "#/components/ui/sidebar.tsx";
 import { seo } from "#/lib/seo.ts";
 
 interface StaysSearch {
@@ -39,14 +40,14 @@ function StaysPage() {
       }
     >
       <AppSidebar variant="inset" />
-      <SidebarInset>
+      <AppInset>
         <SiteHeader title="Stays" />
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
             <StaysBoard areaKey={area ?? null} />
           </div>
         </div>
-      </SidebarInset>
+      </AppInset>
     </SidebarProvider>
   );
 }

@@ -13,6 +13,18 @@ interface SourceUrl {
   url: string;
 }
 
+/** URL-safe slug from a title (mirrors the park-news cron's slugify). */
+function slugify(s: string): string {
+  return (
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .trim()
+      .replace(/\s+/g, "-")
+      .slice(0, 70) || "untitled"
+  );
+}
+
 /** Card-level fields for list views (no body). */
 const listColumns = {
   slug: blogPost.slug,
@@ -268,9 +280,91 @@ export const blogRouter = {
           patch.heroImageCreditUrl = null;
         }
       }
-      await db.update(blogPost).set(patch).where(eq(blogPost.id, id));
+      const [row] = await db
+        .update(blogPost)
+        .set(patch)
+        .where(eq(blogPost.id, id))
+        .returning({ slug: blogPost.slug, status: blogPost.status });
+      // Edits to a live post must bust the edge cache so readers see them.
+      if (row?.status === "published") {
+        void purgeEdge(["/blog", `/blog/${row.slug}`, "/blog/rss.xml"]);
+      }
       return { ok: true };
     }),
+
+  /** Create a blank draft to author from scratch; returns its id for editing. */
+  create: adminProcedure
+    .input(
+      z.object({
+        title: z.string().min(1).default("Untitled post"),
+        dek: z.string().min(1).default("Draft"),
+        bodyMd: z.string().min(1).default("# Untitled\n\nStart writing…\n"),
+        tags: z.array(z.string()).default([]),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const base = slugify(input.title);
+      // Walk -2, -3… until we land on a free slug (unique index is the backstop).
+      for (let i = 0; i < 50; i++) {
+        const slug = i === 0 ? base : `${base}-${i + 1}`;
+        const [row] = await db
+          .insert(blogPost)
+          .values({
+            slug,
+            title: input.title,
+            dek: input.dek,
+            bodyMd: input.bodyMd,
+            tags: input.tags,
+            status: "draft",
+          })
+          .onConflictDoNothing({ target: blogPost.slug })
+          .returning({ id: blogPost.id });
+        if (row) return { ok: true, id: row.id };
+      }
+      throw new TRPCError({ code: "CONFLICT", message: "Could not allocate a unique slug" });
+    }),
+
+  /** All published posts, newest first — the admin management table. */
+  published: adminProcedure.query(async () => {
+    return db
+      .select({
+        id: blogPost.id,
+        slug: blogPost.slug,
+        title: blogPost.title,
+        dek: blogPost.dek,
+        tags: blogPost.tags,
+        heroImageUrl: blogPost.heroImageUrl,
+        publishedAt: blogPost.publishedAt,
+      })
+      .from(blogPost)
+      .where(eq(blogPost.status, "published"))
+      .orderBy(desc(blogPost.publishedAt));
+  }),
+
+  /** Pull a live post back to draft (and out of the public feed). */
+  unpublish: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+    const [row] = await db
+      .update(blogPost)
+      .set({ status: "draft", publishedAt: null })
+      .where(eq(blogPost.id, input.id))
+      .returning({ slug: blogPost.slug });
+    if (!row) throw new TRPCError({ code: "NOT_FOUND" });
+    void purgeEdge(["/blog", `/blog/${row.slug}`, "/blog/rss.xml", "/sitemap.xml"]);
+    return { ok: true };
+  }),
+
+  /** Permanently delete a post. Purges the edge so it 404s immediately. */
+  remove: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+    const [row] = await db
+      .delete(blogPost)
+      .where(eq(blogPost.id, input.id))
+      .returning({ slug: blogPost.slug, status: blogPost.status });
+    if (!row) throw new TRPCError({ code: "NOT_FOUND" });
+    if (row.status === "published") {
+      void purgeEdge(["/blog", `/blog/${row.slug}`, "/blog/rss.xml", "/sitemap.xml"]);
+    }
+    return { ok: true };
+  }),
 
   /** Approve → publish. Stamps publishedAt and purges the edge so it appears now. */
   approve: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {

@@ -1,11 +1,12 @@
 import { Outlet, createFileRoute, useParams, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
+import { AppInset } from "#/components/app-inset.tsx";
 import { AppSidebar } from "#/components/app-sidebar.tsx";
 import { SelectionProvider } from "#/components/park-dashboard/selection-context.tsx";
 import { MapStageProvider } from "#/components/park-map/map-stage.tsx";
 import { SiteHeader } from "#/components/site-header.tsx";
-import { SidebarInset, SidebarProvider } from "#/components/ui/sidebar.tsx";
+import { SidebarProvider } from "#/components/ui/sidebar.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
 /** "magic-kingdom" -> "Magic Kingdom" for a readable title while the park loads. */
@@ -42,7 +43,7 @@ function DashLayout() {
       }
     >
       <AppSidebar variant="inset" />
-      <SidebarInset className="max-md:bg-sidebar">
+      <AppInset>
         <SiteHeader title={title} mobileTitle={parkName ?? undefined} />
         {/* One ParkMap lives in the stage and is lent to whichever route mounts
             a <MapSlot>. It never remounts, so moving between the overview hero
@@ -52,7 +53,7 @@ function DashLayout() {
             <Outlet />
           </MapStageProvider>
         </SelectionProvider>
-      </SidebarInset>
+      </AppInset>
     </SidebarProvider>
   );
 }
