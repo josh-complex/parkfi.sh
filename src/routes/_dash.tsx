@@ -57,4 +57,11 @@ function DashLayout() {
   );
 }
 
-export const Route = createFileRoute("/_dash")({ component: DashLayout });
+export const Route = createFileRoute("/_dash")({
+  component: DashLayout,
+  // Prefetch the park list on the server so the dehydrated cache hydrates the
+  // sidebar/header instantly and crawlers see real park names — not a spinner.
+  loader: async ({ context }) => {
+    await context.queryClient.ensureQueryData(context.trpc.parks.list.queryOptions());
+  },
+});

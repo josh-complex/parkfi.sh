@@ -13,9 +13,9 @@ const config = defineConfig({
   staged: {
     "*": "vp check --fix",
   },
-  fmt: { ignorePatterns: ["src/routeTree.gen.ts"] },
+  fmt: { ignorePatterns: ["src/routeTree.gen.ts", "src/server/og/geist-font.ts"] },
   lint: {
-    ignorePatterns: ["src/routeTree.gen.ts", ".storybook/**"],
+    ignorePatterns: ["src/routeTree.gen.ts", "src/server/og/geist-font.ts", ".storybook/**"],
     jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],
     rules: { "vite-plus/prefer-vite-plus-imports": "error" },
     options: { typeAware: true, typeCheck: true },
@@ -25,7 +25,7 @@ const config = defineConfig({
     devtools(),
     nitro({
       rollupConfig: {
-        external: [/^@sentry\//, /^ioredis/, /^bullmq/, /^web-push/, /^@node-rs\//],
+        external: [/^@sentry\//, /^ioredis/, /^bullmq/, /^web-push/, /^@node-rs\//, /^@resvg\//],
       },
     }),
     tailwindcss(),

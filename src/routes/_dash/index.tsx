@@ -7,6 +7,11 @@ import { seo } from "#/lib/seo.ts";
 
 export const Route = createFileRoute("/_dash/")({
   component: Overview,
+  // SSR-prefetch the cross-park overview so the landing page ships real stats
+  // (busiest park, waits, per-resort park links) in its HTML for crawlers.
+  loader: async ({ context }) => {
+    await context.queryClient.ensureQueryData(context.trpc.parks.overview.queryOptions());
+  },
   head: () =>
     seo({
       title: "Live Park Map — Theme Park Wait Times | ParkFi",

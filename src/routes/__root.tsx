@@ -15,7 +15,8 @@ import type { TRPCRouter } from "#/integrations/trpc/router";
 import type { TRPCOptionsProxy } from "@trpc/tanstack-react-query";
 import { TooltipProvider } from "#/components/ui/tooltip";
 import { PWARegister } from "#/components/pwa-register";
-import { seo } from "#/lib/seo.ts";
+import { JsonLd } from "#/components/seo/json-ld.tsx";
+import { seo, websiteJsonLd } from "#/lib/seo.ts";
 
 interface MyRouterContext {
   queryClient: QueryClient;
@@ -67,6 +68,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body>
+        <JsonLd data={websiteJsonLd()} />
         <PostHogProvider>
           <ThemeProvider
             attribute="class"

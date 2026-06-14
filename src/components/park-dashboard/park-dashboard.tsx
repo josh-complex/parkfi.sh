@@ -8,11 +8,19 @@ import { useTRPC } from "#/integrations/trpc/react.ts";
 import { MapSlot } from "#/components/park-map/map-stage.tsx";
 import { NotificationPrompt } from "#/components/notifications/notification-prompt.tsx";
 
+import { Skeleton } from "#/components/ui/skeleton.tsx";
+
 import { ParkBoardTable } from "./park-board-table.tsx";
 import { ParkStatCards } from "./park-stat-cards.tsx";
-import { ParkWaitChart } from "./park-wait-chart.tsx";
 import { useSelection } from "./selection-context.tsx";
 import type { BoardItem } from "./types.ts";
+
+// recharts + d3 are heavy and the chart isn't crawler content (the same numbers
+// live in the SSR'd board table), so split it out of the critical park-page
+// chunk and stream it in after first paint.
+const ParkWaitChart = React.lazy(() =>
+  import("./park-wait-chart.tsx").then((m) => ({ default: m.ParkWaitChart })),
+);
 
 /** Default attraction to chart: the operating ride with the longest standby line. */
 function pickDefault(board: Array<BoardItem>): BoardItem | null {
@@ -92,12 +100,18 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
             slot — the live map morphs in from the overview hero. */}
         <div className="grid items-stretch gap-4 lg:grid-cols-2">
           <MapSlot className="relative isolate h-[320px] overflow-hidden rounded-2xl border shadow-md lg:h-auto lg:min-h-[460px]" />
-          <ParkWaitChart
-            parkSlug={activeSlug ?? null}
-            focusedId={selected?.id ?? null}
-            operatorSlug={operatorSlug}
-            className="shadow-md"
-          />
+          <React.Suspense
+            fallback={
+              <Skeleton className="h-[320px] w-full rounded-2xl shadow-md lg:h-auto lg:min-h-[460px]" />
+            }
+          >
+            <ParkWaitChart
+              parkSlug={activeSlug ?? null}
+              focusedId={selected?.id ?? null}
+              operatorSlug={operatorSlug}
+              className="shadow-md"
+            />
+          </React.Suspense>
         </div>
         <ParkStatCards
           board={board}

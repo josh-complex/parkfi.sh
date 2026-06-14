@@ -32,6 +32,7 @@ import { Route as DashAccountSecurityRouteImport } from './routes/_dash/account/
 import { Route as DashAccountProfileRouteImport } from './routes/_dash/account/profile'
 import { Route as DashAccountConnectionsRouteImport } from './routes/_dash/account/connections'
 import { Route as DashAccountAlertsRouteImport } from './routes/_dash/account/alerts'
+import { Route as OgParkSlugCardDotpngRouteImport } from './routes/og.park.$slug.card[.]png'
 
 const UnsubscribeRoute = UnsubscribeRouteImport.update({
   id: '/unsubscribe',
@@ -147,6 +148,11 @@ const DashAccountAlertsRoute = DashAccountAlertsRouteImport.update({
   path: '/alerts',
   getParentRoute: () => DashAccountRoute,
 } as any)
+const OgParkSlugCardDotpngRoute = OgParkSlugCardDotpngRouteImport.update({
+  id: '/og/park/$slug/card.png',
+  path: '/og/park/$slug/card.png',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof DashIndexRoute
@@ -171,6 +177,7 @@ export interface FileRoutesByFullPath {
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/account/': typeof DashAccountIndexRoute
+  '/og/park/$slug/card.png': typeof OgParkSlugCardDotpngRoute
 }
 export interface FileRoutesByTo {
   '/dining': typeof DiningRoute
@@ -194,6 +201,7 @@ export interface FileRoutesByTo {
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/account': typeof DashAccountIndexRoute
+  '/og/park/$slug/card.png': typeof OgParkSlugCardDotpngRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -220,6 +228,7 @@ export interface FileRoutesById {
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/_dash/account/': typeof DashAccountIndexRoute
+  '/og/park/$slug/card.png': typeof OgParkSlugCardDotpngRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -246,6 +255,7 @@ export interface FileRouteTypes {
     | '/api/push/subscribe'
     | '/api/trpc/$'
     | '/account/'
+    | '/og/park/$slug/card.png'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/dining'
@@ -269,6 +279,7 @@ export interface FileRouteTypes {
     | '/api/push/subscribe'
     | '/api/trpc/$'
     | '/account'
+    | '/og/park/$slug/card.png'
   id:
     | '__root__'
     | '/_dash'
@@ -294,6 +305,7 @@ export interface FileRouteTypes {
     | '/api/push/subscribe'
     | '/api/trpc/$'
     | '/_dash/account/'
+    | '/og/park/$slug/card.png'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -311,6 +323,7 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiPushSubscribeRoute: typeof ApiPushSubscribeRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
+  OgParkSlugCardDotpngRoute: typeof OgParkSlugCardDotpngRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -476,6 +489,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashAccountAlertsRouteImport
       parentRoute: typeof DashAccountRoute
     }
+    '/og/park/$slug/card.png': {
+      id: '/og/park/$slug/card.png'
+      path: '/og/park/$slug/card.png'
+      fullPath: '/og/park/$slug/card.png'
+      preLoaderRoute: typeof OgParkSlugCardDotpngRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -530,6 +550,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiPushSubscribeRoute: ApiPushSubscribeRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,
+  OgParkSlugCardDotpngRoute: OgParkSlugCardDotpngRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

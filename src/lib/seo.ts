@@ -24,6 +24,9 @@ export interface SeoOptions {
   keywords?: string;
   /** Absolute or root-relative share image. Defaults to the app logo. */
   image?: string;
+  /** Pixel dimensions of {@link image}; lets crawlers render the card sooner. */
+  imageWidth?: string | number;
+  imageHeight?: string | number;
   /** Root-relative path of this page (e.g. "/dining"). Drives canonical + og:url. */
   path?: string;
   /** Keep this page out of search indexes (auth/settings pages). */
@@ -34,6 +37,9 @@ export function seo(opts: SeoOptions) {
   const { title, description, keywords, image = DEFAULT_IMAGE, path, noindex } = opts;
   const url = path ? `${SITE_URL}${path}` : SITE_URL;
   const absImage = image.startsWith("http") ? image : `${SITE_URL}${image}`;
+  const imageWidth = opts.imageWidth ?? (image === DEFAULT_IMAGE ? DEFAULT_IMAGE_WIDTH : undefined);
+  const imageHeight =
+    opts.imageHeight ?? (image === DEFAULT_IMAGE ? DEFAULT_IMAGE_HEIGHT : undefined);
 
   const meta: Array<Record<string, string>> = [
     { title },
@@ -54,10 +60,10 @@ export function seo(opts: SeoOptions) {
       { name: "twitter:description", content: description },
     );
   }
-  if (image === DEFAULT_IMAGE) {
+  if (imageWidth != null && imageHeight != null) {
     meta.push(
-      { property: "og:image:width", content: DEFAULT_IMAGE_WIDTH },
-      { property: "og:image:height", content: DEFAULT_IMAGE_HEIGHT },
+      { property: "og:image:width", content: String(imageWidth) },
+      { property: "og:image:height", content: String(imageHeight) },
     );
   }
   if (keywords) meta.push({ name: "keywords", content: keywords });
@@ -66,4 +72,71 @@ export function seo(opts: SeoOptions) {
   const links = path ? [{ rel: "canonical", href: url }] : [];
 
   return { meta, links };
+}
+
+/**
+ * Sitewide WebSite + Organization graph. Rendered once in the root document so
+ * every page carries brand identity and enables the SERP sitelinks search box.
+ */
+export function websiteJsonLd(): Record<string, unknown> {
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": `${SITE_URL}/#org`,
+        name: SITE_NAME,
+        url: SITE_URL,
+        logo: DEFAULT_IMAGE,
+      },
+      {
+        "@type": "WebSite",
+        "@id": `${SITE_URL}/#website`,
+        name: SITE_NAME,
+        url: SITE_URL,
+        publisher: { "@id": `${SITE_URL}/#org` },
+      },
+    ],
+  };
+}
+
+/** Breadcrumb trail (Home › … › current) for breadcrumb rich snippets. */
+export function breadcrumbJsonLd(
+  trail: Array<{ name: string; path: string }>,
+): Record<string, unknown> {
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: trail.map((c, i) => ({
+      "@type": "ListItem",
+      position: i + 1,
+      name: c.name,
+      item: `${SITE_URL}${c.path}`,
+    })),
+  };
+}
+
+/** AmusementPark entity for a park page, with geo + canonical URL. */
+export function amusementParkJsonLd(opts: {
+  name: string;
+  slug: string;
+  description?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+}): Record<string, unknown> {
+  const node: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "AmusementPark",
+    name: opts.name,
+    url: `${SITE_URL}/park/${opts.slug}`,
+  };
+  if (opts.description) node.description = opts.description;
+  if (opts.latitude != null && opts.longitude != null) {
+    node.geo = {
+      "@type": "GeoCoordinates",
+      latitude: opts.latitude,
+      longitude: opts.longitude,
+    };
+  }
+  return node;
 }
