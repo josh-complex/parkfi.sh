@@ -1,0 +1,24 @@
+[project]
+name = "parkfi-pin-embed"
+version = "0.1.0"
+description = "Self-hosted CLIP embedding service for parkfi.sh pin identification. HTTP /embed is the only contract with the app."
+requires-python = ">=3.11"
+dependencies = [
+  "open_clip_torch>=2.24",
+  "torch>=2.2",
+  "fastapi>=0.110",
+  "uvicorn>=0.29",
+  "pillow>=10.2",
+  "httpx>=0.27",
+  "pydantic>=2.6",
+]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.5"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

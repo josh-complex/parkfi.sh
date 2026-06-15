@@ -1,0 +1,11 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "provider": "python",
+  "packages": {
+    "python": "3.11"
+  },
+  "deploy": {
+    "aptPackages": ["libgomp1", "libgl1", "libglib2.0-0"],
+    "startCommand": "python main.py"
+  }
+}

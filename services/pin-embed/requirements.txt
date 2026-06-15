@@ -1,0 +1,10 @@
+# Railpack's Python provider installs from this file (pip). Keep in sync with
+# pyproject.toml. Torch CPU wheels are large but fine on Railway; pin a GPU image
+# only when scan volume justifies it (see docs/plans/pin-traders.md).
+open_clip_torch>=2.24
+torch>=2.2
+fastapi>=0.110
+uvicorn>=0.29
+pillow>=10.2
+httpx>=0.27
+pydantic>=2.6

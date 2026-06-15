@@ -15,6 +15,7 @@ import { Route as StaysRouteImport } from './routes/stays'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PredictionsRouteImport } from './routes/predictions'
+import { Route as PinsRouteImport } from './routes/pins'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DisclaimersRouteImport } from './routes/disclaimers'
 import { Route as DiningRouteImport } from './routes/dining'
@@ -23,6 +24,10 @@ import { Route as BlogIndexRouteImport } from './routes/blog/index'
 import { Route as DashIndexRouteImport } from './routes/_dash/index'
 import { Route as StaysAlertsRouteImport } from './routes/stays_.alerts'
 import { Route as ResortSlugRouteImport } from './routes/resort.$slug'
+import { Route as PinsTradesRouteImport } from './routes/pins_.trades'
+import { Route as PinsScanRouteImport } from './routes/pins_.scan'
+import { Route as PinsCollectionRouteImport } from './routes/pins_.collection'
+import { Route as PinsPinIdRouteImport } from './routes/pins_.$pinId'
 import { Route as DiningFacilityIdRouteImport } from './routes/dining_.$facilityId'
 import { Route as BlogRssDotxmlRouteImport } from './routes/blog/rss[.]xml'
 import { Route as BlogSlugRouteImport } from './routes/blog/$slug'
@@ -74,6 +79,11 @@ const PredictionsRoute = PredictionsRouteImport.update({
   path: '/predictions',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PinsRoute = PinsRouteImport.update({
+  id: '/pins',
+  path: '/pins',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -111,6 +121,26 @@ const StaysAlertsRoute = StaysAlertsRouteImport.update({
 const ResortSlugRoute = ResortSlugRouteImport.update({
   id: '/resort/$slug',
   path: '/resort/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PinsTradesRoute = PinsTradesRouteImport.update({
+  id: '/pins_/trades',
+  path: '/pins/trades',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PinsScanRoute = PinsScanRouteImport.update({
+  id: '/pins_/scan',
+  path: '/pins/scan',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PinsCollectionRoute = PinsCollectionRouteImport.update({
+  id: '/pins_/collection',
+  path: '/pins/collection',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PinsPinIdRoute = PinsPinIdRouteImport.update({
+  id: '/pins_/$pinId',
+  path: '/pins/$pinId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DiningFacilityIdRoute = DiningFacilityIdRouteImport.update({
@@ -222,6 +252,7 @@ export interface FileRoutesByFullPath {
   '/dining': typeof DiningRoute
   '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
+  '/pins': typeof PinsRoute
   '/predictions': typeof PredictionsRoute
   '/privacy': typeof PrivacyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -233,6 +264,10 @@ export interface FileRoutesByFullPath {
   '/blog/$slug': typeof BlogSlugRoute
   '/blog/rss.xml': typeof BlogRssDotxmlRoute
   '/dining/$facilityId': typeof DiningFacilityIdRoute
+  '/pins/$pinId': typeof PinsPinIdRoute
+  '/pins/collection': typeof PinsCollectionRoute
+  '/pins/scan': typeof PinsScanRoute
+  '/pins/trades': typeof PinsTradesRoute
   '/resort/$slug': typeof ResortSlugRoute
   '/stays/alerts': typeof StaysAlertsRoute
   '/blog/': typeof BlogIndexRoute
@@ -256,6 +291,7 @@ export interface FileRoutesByTo {
   '/dining': typeof DiningRoute
   '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
+  '/pins': typeof PinsRoute
   '/predictions': typeof PredictionsRoute
   '/privacy': typeof PrivacyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -266,6 +302,10 @@ export interface FileRoutesByTo {
   '/blog/$slug': typeof BlogSlugRoute
   '/blog/rss.xml': typeof BlogRssDotxmlRoute
   '/dining/$facilityId': typeof DiningFacilityIdRoute
+  '/pins/$pinId': typeof PinsPinIdRoute
+  '/pins/collection': typeof PinsCollectionRoute
+  '/pins/scan': typeof PinsScanRoute
+  '/pins/trades': typeof PinsTradesRoute
   '/resort/$slug': typeof ResortSlugRoute
   '/stays/alerts': typeof StaysAlertsRoute
   '/': typeof DashIndexRoute
@@ -292,6 +332,7 @@ export interface FileRoutesById {
   '/dining': typeof DiningRoute
   '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
+  '/pins': typeof PinsRoute
   '/predictions': typeof PredictionsRoute
   '/privacy': typeof PrivacyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -303,6 +344,10 @@ export interface FileRoutesById {
   '/blog/$slug': typeof BlogSlugRoute
   '/blog/rss.xml': typeof BlogRssDotxmlRoute
   '/dining_/$facilityId': typeof DiningFacilityIdRoute
+  '/pins_/$pinId': typeof PinsPinIdRoute
+  '/pins_/collection': typeof PinsCollectionRoute
+  '/pins_/scan': typeof PinsScanRoute
+  '/pins_/trades': typeof PinsTradesRoute
   '/resort/$slug': typeof ResortSlugRoute
   '/stays_/alerts': typeof StaysAlertsRoute
   '/_dash/': typeof DashIndexRoute
@@ -330,6 +375,7 @@ export interface FileRouteTypes {
     | '/dining'
     | '/disclaimers'
     | '/login'
+    | '/pins'
     | '/predictions'
     | '/privacy'
     | '/sitemap.xml'
@@ -341,6 +387,10 @@ export interface FileRouteTypes {
     | '/blog/$slug'
     | '/blog/rss.xml'
     | '/dining/$facilityId'
+    | '/pins/$pinId'
+    | '/pins/collection'
+    | '/pins/scan'
+    | '/pins/trades'
     | '/resort/$slug'
     | '/stays/alerts'
     | '/blog/'
@@ -364,6 +414,7 @@ export interface FileRouteTypes {
     | '/dining'
     | '/disclaimers'
     | '/login'
+    | '/pins'
     | '/predictions'
     | '/privacy'
     | '/sitemap.xml'
@@ -374,6 +425,10 @@ export interface FileRouteTypes {
     | '/blog/$slug'
     | '/blog/rss.xml'
     | '/dining/$facilityId'
+    | '/pins/$pinId'
+    | '/pins/collection'
+    | '/pins/scan'
+    | '/pins/trades'
     | '/resort/$slug'
     | '/stays/alerts'
     | '/'
@@ -399,6 +454,7 @@ export interface FileRouteTypes {
     | '/dining'
     | '/disclaimers'
     | '/login'
+    | '/pins'
     | '/predictions'
     | '/privacy'
     | '/sitemap.xml'
@@ -410,6 +466,10 @@ export interface FileRouteTypes {
     | '/blog/$slug'
     | '/blog/rss.xml'
     | '/dining_/$facilityId'
+    | '/pins_/$pinId'
+    | '/pins_/collection'
+    | '/pins_/scan'
+    | '/pins_/trades'
     | '/resort/$slug'
     | '/stays_/alerts'
     | '/_dash/'
@@ -436,6 +496,7 @@ export interface RootRouteChildren {
   DiningRoute: typeof DiningRoute
   DisclaimersRoute: typeof DisclaimersRoute
   LoginRoute: typeof LoginRoute
+  PinsRoute: typeof PinsRoute
   PredictionsRoute: typeof PredictionsRoute
   PrivacyRoute: typeof PrivacyRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
@@ -445,6 +506,10 @@ export interface RootRouteChildren {
   BlogSlugRoute: typeof BlogSlugRoute
   BlogRssDotxmlRoute: typeof BlogRssDotxmlRoute
   DiningFacilityIdRoute: typeof DiningFacilityIdRoute
+  PinsPinIdRoute: typeof PinsPinIdRoute
+  PinsCollectionRoute: typeof PinsCollectionRoute
+  PinsScanRoute: typeof PinsScanRoute
+  PinsTradesRoute: typeof PinsTradesRoute
   ResortSlugRoute: typeof ResortSlugRoute
   StaysAlertsRoute: typeof StaysAlertsRoute
   BlogIndexRoute: typeof BlogIndexRoute
@@ -501,6 +566,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PredictionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/pins': {
+      id: '/pins'
+      path: '/pins'
+      fullPath: '/pins'
+      preLoaderRoute: typeof PinsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -555,6 +627,34 @@ declare module '@tanstack/react-router' {
       path: '/resort/$slug'
       fullPath: '/resort/$slug'
       preLoaderRoute: typeof ResortSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pins_/trades': {
+      id: '/pins_/trades'
+      path: '/pins/trades'
+      fullPath: '/pins/trades'
+      preLoaderRoute: typeof PinsTradesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pins_/scan': {
+      id: '/pins_/scan'
+      path: '/pins/scan'
+      fullPath: '/pins/scan'
+      preLoaderRoute: typeof PinsScanRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pins_/collection': {
+      id: '/pins_/collection'
+      path: '/pins/collection'
+      fullPath: '/pins/collection'
+      preLoaderRoute: typeof PinsCollectionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pins_/$pinId': {
+      id: '/pins_/$pinId'
+      path: '/pins/$pinId'
+      fullPath: '/pins/$pinId'
+      preLoaderRoute: typeof PinsPinIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dining_/$facilityId': {
@@ -745,6 +845,7 @@ const rootRouteChildren: RootRouteChildren = {
   DiningRoute: DiningRoute,
   DisclaimersRoute: DisclaimersRoute,
   LoginRoute: LoginRoute,
+  PinsRoute: PinsRoute,
   PredictionsRoute: PredictionsRoute,
   PrivacyRoute: PrivacyRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
@@ -754,6 +855,10 @@ const rootRouteChildren: RootRouteChildren = {
   BlogSlugRoute: BlogSlugRoute,
   BlogRssDotxmlRoute: BlogRssDotxmlRoute,
   DiningFacilityIdRoute: DiningFacilityIdRoute,
+  PinsPinIdRoute: PinsPinIdRoute,
+  PinsCollectionRoute: PinsCollectionRoute,
+  PinsScanRoute: PinsScanRoute,
+  PinsTradesRoute: PinsTradesRoute,
   ResortSlugRoute: ResortSlugRoute,
   StaysAlertsRoute: StaysAlertsRoute,
   BlogIndexRoute: BlogIndexRoute,

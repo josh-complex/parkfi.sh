@@ -18,6 +18,7 @@ import {
   time,
   timestamp,
   uniqueIndex,
+  uuid,
 } from "drizzle-orm/pg-core";
 
 /** Raw Postgres `bytea` — used for serialized model artifacts (F8). */
@@ -26,6 +27,28 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
     return "bytea";
   },
 });
+
+/**
+ * pgvector column (pin-traders). Serializes a JS number[] to the `[1,2,3]`
+ * literal pgvector wants on the wire and parses it back on read. The actual ANN
+ * lookups run as raw SQL (`embedding <=> $1`) in the identify worker; this type
+ * just lets the table live in the drizzle schema object + migrations.
+ */
+const vector = (name: string, dim: number) =>
+  customType<{ data: number[]; driverData: string }>({
+    dataType() {
+      return `vector(${dim})`;
+    },
+    toDriver(value: number[]): string {
+      return `[${value.join(",")}]`;
+    },
+    fromDriver(value: string): number[] {
+      return value
+        .slice(1, -1)
+        .split(",")
+        .map((v) => Number(v));
+    },
+  })(name);
 
 import { user } from "./auth-schema.ts";
 
@@ -1236,5 +1259,196 @@ export const blogPost = pgTable(
   (t) => [
     uniqueIndex("blog_post_slug_uq").on(t.slug),
     index("blog_post_status_published_idx").on(t.status, t.publishedAt),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Pin traders — cold photo identification + trading board.
+//
+// The reference catalog (pin/pin_image/pin_embedding) is the moat; the trading
+// layer (have/want/offer) is the differentiator; pin_scan is the confirmation
+// flywheel. Vector search rides on pgvector in this same DB. Tables are created
+// by drizzle/*_pin_traders/migration.sql (it owns CREATE EXTENSION + the HNSW
+// index, which drizzle's schema DSL can't express); these declarations mirror
+// that SQL so the `db` object + query builder are typed.
+// ---------------------------------------------------------------------------
+
+/** Reference catalog entry — one canonical pin (a PinPics/eBay/Disney record). */
+export const pin = pgTable(
+  "pin",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    series: text("series"),
+    characters: text("characters")
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
+    year: smallint("year"),
+    // 'open' | 'LE' | 'LR' | 'cast' | ...
+    editionType: text("edition_type"),
+    // limited-edition size; null = open edition.
+    leCount: integer("le_count"),
+    park: text("park"),
+    // Estimated value in cents, from eBay sold comps.
+    estValueCents: integer("est_value_cents"),
+    // 'ebay' | 'pinpics' | 'disney' | 'user' | 'community' — tracked for provenance
+    // so a source can be purged wholesale if a license/takedown ever requires it.
+    source: text("source").notNull(),
+    sourceRef: text("source_ref"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("pin_source_ref_uq")
+      .on(t.source, t.sourceRef)
+      .where(sql`source_ref IS NOT NULL`),
+    index("pin_series_idx").on(t.series),
+    index("pin_year_idx").on(t.year),
+  ],
+);
+
+/** A reference image for a pin (canonical front-facing shot stored in R2). */
+export const pinImage = pgTable(
+  "pin_image",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    pinId: uuid("pin_id")
+      .notNull()
+      .references(() => pin.id, { onDelete: "cascade" }),
+    r2Key: text("r2_key").notNull(),
+    isPrimary: boolean("is_primary").notNull().default(false),
+    source: text("source").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("pin_image_pin_idx").on(t.pinId),
+    uniqueIndex("pin_image_primary_uq")
+      .on(t.pinId)
+      .where(sql`is_primary`),
+  ],
+);
+
+/**
+ * CLIP embedding of a reference image. One row per `pin_image`. The HNSW index
+ * (`pin_embedding_hnsw`, cosine) is created in the migration; nearest-neighbour
+ * lookups run as raw `embedding <=> $1` SQL in the identify worker.
+ */
+export const pinEmbedding = pgTable("pin_embedding", {
+  pinImageId: uuid("pin_image_id")
+    .primaryKey()
+    .references(() => pinImage.id, { onDelete: "cascade" }),
+  pinId: uuid("pin_id")
+    .notNull()
+    .references(() => pin.id, { onDelete: "cascade" }),
+  // open_clip ViT-L/14 = 768-dim.
+  embedding: vector("embedding", 768).notNull(),
+  // e.g. 'open_clip:ViT-L-14:v1' — track so a re-embed under a new model is safe.
+  model: text("model").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** A pin a user owns. `for_trade` is the "available to swap" flag the board reads. */
+export const pinHave = pgTable(
+  "pin_have",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    pinId: uuid("pin_id")
+      .notNull()
+      .references(() => pin.id, { onDelete: "cascade" }),
+    quantity: smallint("quantity").notNull().default(1),
+    // 'mint' | 'near_mint' | 'good' | 'worn' (enforced by a CHECK in the migration).
+    condition: text("condition"),
+    forTrade: boolean("for_trade").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("pin_have_user_pin_uq").on(t.userId, t.pinId),
+    index("pin_have_pin_for_trade_idx")
+      .on(t.pinId)
+      .where(sql`for_trade`),
+  ],
+);
+
+/** A pin a user wants. `max_value_cents` is an optional budget ceiling. */
+export const pinWant = pgTable(
+  "pin_want",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    pinId: uuid("pin_id")
+      .notNull()
+      .references(() => pin.id, { onDelete: "cascade" }),
+    maxValueCents: integer("max_value_cents"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("pin_want_user_pin_uq").on(t.userId, t.pinId),
+    index("pin_want_pin_idx").on(t.pinId),
+  ],
+);
+
+/** A pin-for-pin swap offer between two users. No cash — pins only (see plan). */
+export const pinOffer = pgTable(
+  "pin_offer",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fromUserId: text("from_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    toUserId: text("to_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    // [{ pinId, quantity }]
+    offeringPins: jsonb("offering_pins").notNull(),
+    requestingPins: jsonb("requesting_pins").notNull(),
+    message: text("message"),
+    // 'pending' | 'accepted' | 'declined' | 'cancelled' | 'expired' (CHECK in migration).
+    status: text("status").notNull().default("pending"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("pin_offer_to_idx").on(t.toUserId, t.status),
+    index("pin_offer_from_idx").on(t.fromUserId, t.status),
+  ],
+);
+
+/**
+ * The confirmation flywheel. Every scan logs its photo, the candidates returned,
+ * and (once the user confirms) the chosen pin — a labeled (photo, pin) pair that
+ * seeds the eventual CLIP fine-tune. `status` drives the client poll: queued →
+ * processing → ready (candidates populated) | failed.
+ */
+export const pinScan = pgTable(
+  "pin_scan",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+    photoR2Key: text("photo_r2_key").notNull(),
+    // 'queued' | 'processing' | 'ready' | 'failed' (CHECK in migration).
+    status: text("status").notNull().default("queued"),
+    // [{ pinId, score, stage }] returned to the user.
+    candidates: jsonb("candidates")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    chosenPinId: uuid("chosen_pin_id").references(() => pin.id, { onDelete: "set null" }),
+    topConfidence: real("top_confidence"),
+    // 1..4 — which cascade stage produced the pick.
+    stageResolved: smallint("stage_resolved"),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("pin_scan_label_idx")
+      .on(t.chosenPinId)
+      .where(sql`chosen_pin_id IS NOT NULL`),
+    index("pin_scan_user_created_idx").on(t.userId, t.createdAt.desc()),
   ],
 );
