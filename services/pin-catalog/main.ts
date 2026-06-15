@@ -13,8 +13,10 @@
  *
  * Commands:
  *   bun run cron:pin-catalog            # sweep eBay buckets → upsert + enqueue
- *   bun run cron:pin-catalog pinpics    # crawl PinPics (PID range) → same pipeline
- *   bun run cron:pin-catalog backfill   # enqueue embeds for any unembedded image
+ *   bun run cron:pin-catalog pinpics       # crawl PinPics (PID range) → same pipeline
+ *   bun run cron:pin-catalog pinpics-discover     # print real pin-link URLs from the index
+ *   bun run cron:pin-catalog pinpics-probe <pid>  # load one pin, print extracted fields
+ *   bun run cron:pin-catalog backfill      # enqueue embeds for any unembedded image
  *
  * Env: EBAY_CLIENT_ID, EBAY_CLIENT_SECRET (sweep), PINPICS_* (pinpics — see
  *      pinpics.ts), GEMINI_API_KEY (normalize), R2_* (image storage),
@@ -33,7 +35,7 @@ import { pin, pinImage } from "#/db/schema.ts";
 import { getPinEmbedQueue } from "#/server/notifications/queue.ts";
 import { putReferenceImage } from "#/server/pins/storage.ts";
 
-import { crawlPinPics, type RawListing } from "./pinpics.ts";
+import { crawlPinPics, discoverPinPics, probePinPics, type RawListing } from "./pinpics.ts";
 
 const NORMALIZE_MODEL = process.env.PIN_NORMALIZE_MODEL ?? "gemini-3.5-flash";
 const MARKETPLACE = process.env.EBAY_MARKETPLACE_ID ?? "EBAY_US";
@@ -370,16 +372,21 @@ async function pinpics(): Promise<void> {
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   const totals: IngestTotals = { newCount: 0, updated: 0, skipped: 0 };
 
+  // Buffer crawl output and normalize+ingest in batches of 20 so a long crawl
+  // persists progress incrementally rather than only at the end.
   let buffer: RawListing[] = [];
-  for await (const listing of crawlPinPics()) {
+  const flush = async () => {
+    if (buffer.length === 0) return;
+    await ingestListings(ai, buffer, totals);
+    buffer = [];
+    console.log(`[pin-catalog] pinpics running totals: +${totals.newCount} new`);
+  };
+
+  await crawlPinPics(async (listing) => {
     buffer.push(listing);
-    if (buffer.length >= 20) {
-      await ingestListings(ai, buffer, totals);
-      buffer = [];
-      console.log(`[pin-catalog] pinpics running totals: +${totals.newCount} new`);
-    }
-  }
-  if (buffer.length > 0) await ingestListings(ai, buffer, totals);
+    if (buffer.length >= 20) await flush();
+  });
+  await flush();
 
   console.log(
     `[pin-catalog] pinpics complete — ${totals.newCount} new, ${totals.updated} updated, ${totals.skipped} skipped`,
@@ -402,6 +409,8 @@ async function main() {
   const cmd = process.argv[2] ?? "sweep";
   if (cmd === "backfill") await backfill();
   else if (cmd === "pinpics") await pinpics();
+  else if (cmd === "pinpics-discover") await discoverPinPics();
+  else if (cmd === "pinpics-probe") await probePinPics(Number(process.argv[3] ?? 1));
   else await sweep();
 }
 
