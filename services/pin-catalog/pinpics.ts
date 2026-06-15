@@ -11,9 +11,17 @@
  * (`withBrowser`, see src/server/parks/sources/browserless.ts and
  * services/README.md). Run it with `BROWSERLESS_WS_QUERY=stealth&proxy=residential`.
  *
- * We crawl POLITELY: a low request rate and provenance (`source='pinpics'`,
- * `source_ref=<pid>`) on every row so it can be purged wholesale if their stance
- * ever changes.
+ * Politeness / ToS (robots.txt, checked 2026-06):
+ *   - `User-agent: * Allow: /` — general crawling of /pin/ is permitted.
+ *   - `Content-Signal: search=yes` — building a search/identification index and
+ *     returning entries + links is allowed. That's exactly what this seed does.
+ *   - `Content-Signal: ai-train=no` — training/fine-tuning models on their content
+ *     is NOT allowed. So PinPics-sourced images (`source='pinpics'`) must be
+ *     EXCLUDED from any CLIP fine-tune (plan Phase 3); embedding for nearest-
+ *     neighbour SEARCH is inference, not training, and stays within search=yes.
+ *   - We crawl gently: low concurrency, a per-request delay, and we SKIP pins we
+ *     already have (no needless re-fetch on re-runs). Provenance on every row lets
+ *     us purge by source if their stance ever changes.
  *
  * PinPics references pins by a numeric PID (e.g. "Pin 22739"). Env knobs (the
  * detail-page path + range are configurable because the DOM shifts):
@@ -45,11 +53,14 @@ export interface RawListing {
 }
 
 const URL_TEMPLATE = process.env.PINPICS_PIN_URL_TEMPLATE ?? "https://pinpics.com/pin/{id}/";
-const RATE_MS = Number(process.env.PINPICS_RATE_MS ?? 250);
+/** Per-worker delay between page loads. With CONCURRENCY this sets the effective
+ *  rate (2 workers × 750ms ≈ 2-3 req/s) — gentle for a small community site. */
+const RATE_MS = Number(process.env.PINPICS_RATE_MS ?? 750);
 const MAX = Number(process.env.PINPICS_MAX ?? 100);
-/** Concurrent pages. Cloudflare clearance (cf_clearance cookie) is shared across
- *  the browser, so after the warm-up these load without re-challenging. */
-const CONCURRENCY = Number(process.env.PINPICS_CONCURRENCY ?? 5);
+/** Concurrent pages — kept low to be polite. Cloudflare clearance (cf_clearance
+ *  cookie) is shared across the browser, so after the warm-up these load without
+ *  re-challenging. */
+const CONCURRENCY = Number(process.env.PINPICS_CONCURRENCY ?? 2);
 const CRAWL_TIMEOUT_MS = Number(process.env.PINPICS_CRAWL_TIMEOUT_MS ?? 540_000);
 const UA =
   process.env.PINPICS_UA ??
@@ -169,6 +180,7 @@ function parseListing(html: string, pid: number, url: string): RawListing | null
  */
 export async function crawlPinPics(
   onListing: (listing: RawListing) => void | Promise<void>,
+  opts: { isKnown?: (pid: number) => boolean } = {},
 ): Promise<void> {
   const start = Number(process.env.PINPICS_START_ID ?? 1);
   const end = Number(process.env.PINPICS_END_ID ?? start + MAX - 1);
@@ -182,11 +194,18 @@ export async function crawlPinPics(
     let next = start;
     let fetched = 0;
     let challenged = 0;
+    let skipped = 0;
 
     async function worker(): Promise<void> {
       while (fetched < MAX) {
         const pid = next++;
         if (pid > end) return;
+        // Don't re-fetch a pin we already have — politeness + speed on re-runs.
+        // (No rate-limit sleep when we skip, since we never hit the network.)
+        if (opts.isKnown?.(pid)) {
+          skipped++;
+          continue;
+        }
         const url = URL_TEMPLATE.replace("{id}", String(pid));
         try {
           const html = await loadPage(browser, url);
@@ -213,7 +232,9 @@ export async function crawlPinPics(
           "set BROWSERLESS_WS_QUERY=stealth&proxy=residential (see services/README.md).",
       );
     }
-    console.log(`[pinpics] crawl done — ${fetched} pin(s) from PID ${start}..${end}`);
+    console.log(
+      `[pinpics] crawl done — ${fetched} pin(s) from PID ${start}..${end} (${skipped} already known, skipped)`,
+    );
   }, AbortSignal.timeout(CRAWL_TIMEOUT_MS));
 }
 

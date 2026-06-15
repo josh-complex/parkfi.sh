@@ -379,6 +379,13 @@ async function pinpics(): Promise<void> {
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   const totals: IngestTotals = { newCount: 0, updated: 0, skipped: 0 };
 
+  // Pins we already hold from PinPics — skip re-fetching them (politeness + speed
+  // on re-runs). PinPics PIDs are numeric, stored as text in source_ref.
+  const knownRows = await db.execute<{ source_ref: string }>(sql`
+    SELECT source_ref FROM pin WHERE source = 'pinpics' AND source_ref IS NOT NULL
+  `);
+  const known = new Set(knownRows.rows.map((r) => r.source_ref));
+
   // Buffer crawl output and normalize+ingest in batches of 20 so a long crawl
   // persists progress incrementally rather than only at the end.
   let buffer: RawListing[] = [];
@@ -389,10 +396,13 @@ async function pinpics(): Promise<void> {
     console.log(`[pin-catalog] pinpics running totals: +${totals.newCount} new`);
   };
 
-  await crawlPinPics(async (listing) => {
-    buffer.push(listing);
-    if (buffer.length >= 20) await flush();
-  });
+  await crawlPinPics(
+    async (listing) => {
+      buffer.push(listing);
+      if (buffer.length >= 20) await flush();
+    },
+    { isKnown: (pid) => known.has(String(pid)) },
+  );
   await flush();
 
   console.log(
