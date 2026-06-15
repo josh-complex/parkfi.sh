@@ -68,6 +68,61 @@ export const diningRouter = {
   }),
 
   /**
+   * Single-venue header row for the restaurant detail page (`/dining/$facilityId`).
+   * Same column set as `restaurants`, scoped to one facility and not gated on
+   * `priority`/`bookable` so any catalog venue with a URL resolves. Returns null
+   * when the facility is unknown or inactive.
+   */
+  venue: publicProcedure.input(z.object({ facilityId: z.string() })).query(async ({ input }) => {
+    const result = await db.execute<{
+      facility_id: string;
+      name: string;
+      cuisine: string | null;
+      experience_type: string | null;
+      price_range: string | null;
+      park_resort: string | null;
+      image_url: string | null;
+      detail_url: string | null;
+      entity_type: string;
+      character_dining: boolean;
+      fine_dining: boolean;
+      has_menu: boolean;
+      last_checked_at: string | null;
+      location_type: string | null;
+    }>(sql`
+      SELECT r.facility_id, r.name, r.cuisine, r.experience_type, r.price_range, r.park_resort,
+             r.image_url, r.detail_url, r.entity_type,
+             r.character_dining, r.fine_dining,
+             (m.facility_id IS NOT NULL AND m.item_count > 0) AS has_menu,
+             m.last_checked_at,
+             dl.location_type
+      FROM restaurant_dim r
+      LEFT JOIN dining_menu_snapshot m ON m.facility_id = r.facility_id
+      LEFT JOIN dining_location dl ON dl.id = r.park_resort_id
+      WHERE r.facility_id = ${input.facilityId} AND r.active = true
+      LIMIT 1
+    `);
+    const r = result.rows[0];
+    if (!r) return null;
+    return {
+      facilityId: r.facility_id,
+      name: r.name,
+      cuisine: r.cuisine,
+      experienceType: r.experience_type,
+      priceRange: r.price_range,
+      parkResort: r.park_resort,
+      imageUrl: r.image_url,
+      detailUrl: r.detail_url,
+      dinnerShow: r.entity_type === "dinner-show",
+      characterDining: r.character_dining,
+      fineDining: r.fine_dining,
+      hasMenu: r.has_menu,
+      lastCheckedAt: r.last_checked_at,
+      requiresParkTicket: r.location_type === "theme-park" || r.location_type === "water-park",
+    };
+  }),
+
+  /**
    * Curated "Disney Picks" shelves — pure catalog (no availability), spanning the
    * full active bookable Disney set rather than just the priority sweep. Groups
    * venues by the finder taxonomy arrays / attribute flags into a handful of

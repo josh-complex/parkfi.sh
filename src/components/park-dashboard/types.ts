@@ -8,6 +8,8 @@ type Outputs = inferRouterOutputs<TRPCRouter>;
 export type BoardItem = Outputs["parks"]["board"][number];
 /** One park from `parks.list`. */
 export type ParkListItem = Outputs["parks"]["list"][number];
+/** Single attraction detail from `parks.attraction` (non-null). */
+export type RideDetailData = NonNullable<Outputs["parks"]["attraction"]>;
 /** One hourly bucket from `parks.history`. */
 export type HistoryPoint = Outputs["parks"]["history"][number];
 /** Whole-park, per-ride pivoted history from `parks.parkHistory`. */

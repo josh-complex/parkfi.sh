@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { db } from "#/db/index.ts";
 import { UOR_PARKS, WDW_PARKS } from "#/lib/parks.ts";
+import { RESORT_CATALOG } from "#/server/stays/resort-catalog.generated.ts";
 import { publicProcedure } from "../init.ts";
 
 import type { TRPCRouterRecord } from "@trpc/server";
@@ -35,13 +36,14 @@ export const searchRouter = {
       db.execute<{
         id: string;
         name: string;
+        slug: string;
         park_slug: string;
         park_name: string;
         category: string | null;
         land: string | null;
         image_thumb_url: string | null;
       }>(sql`
-        SELECT a.id, a.name, p.slug AS park_slug, p.name AS park_name,
+        SELECT a.id, a.name, a.slug, p.slug AS park_slug, p.name AS park_name,
                a.category, m.land, m.image_thumb_url
         FROM attractions a
         JOIN parks p ON p.id = a.park_id
@@ -121,6 +123,8 @@ export const searchRouter = {
         type: "attraction" as const,
         id: a.id,
         name: a.name,
+        // Per-park slug — pairs with `parkSlug` for the nested ride detail URL.
+        slug: a.slug,
         parkName: a.park_name,
         parkSlug: a.park_slug,
         category: a.category,
@@ -143,6 +147,18 @@ export const searchRouter = {
         slug: b.slug,
         dek: b.dek,
         imageUrl: b.hero_image_url,
+      })),
+      // Resort hotels are a static catalog (the `/stays` browse set), so they
+      // ship straight from `RESORT_CATALOG` rather than a DB query — they land
+      // on `/resort/$slug`.
+      resorts: RESORT_CATALOG.map((r) => ({
+        type: "resort" as const,
+        id: r.id,
+        name: r.name,
+        slug: r.slug,
+        tier: r.tier,
+        area: r.area,
+        imageUrl: r.image,
       })),
     };
   }),

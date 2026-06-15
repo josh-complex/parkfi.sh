@@ -237,6 +237,174 @@ export const parksRouter = {
   }),
 
   /**
+   * Single attraction detail (`/park/$slug/ride/$rideSlug`). Same per-ride shape
+   * as a `board` row — latest carried status + latest STANDBY/LL/return-time
+   * `queue_obs` within 24h + queue-type capability + 24-48h historical baseline —
+   * scoped to one ride, plus the park context the page header needs. Slugs are
+   * unique only within a park, so both keys are required. Returns null when the
+   * (park, ride) pair is unknown.
+   */
+  attraction: publicProcedure
+    .input(z.object({ parkSlug: z.string(), rideSlug: z.string() }))
+    .query(async ({ input }) => {
+      const result = await db.execute<{
+        id: string;
+        name: string;
+        slug: string;
+        entity_type: string;
+        park_id: string;
+        park_slug: string;
+        park_name: string;
+        park_timezone: string;
+        operator_slug: string | null;
+        resort_name: string | null;
+        status: number | null;
+        standby_wait: number | null;
+        ll_state: number | null;
+        ll_price_cents: number | null;
+        ll_currency: string | null;
+        ll_return_start: string | null;
+        ll_return_end: string | null;
+        return_state: number | null;
+        return_start: string | null;
+        return_end: string | null;
+        observed_at: string | null;
+        support_types: Array<number> | null;
+        hist_standby_wait: number | null;
+        latitude: number | null;
+        longitude: number | null;
+        category: string | null;
+        meta_image_thumb_url: string | null;
+        meta_image_hero_url: string | null;
+        meta_image_alt: string | null;
+        meta_detail_url: string | null;
+        meta_land: string | null;
+        meta_height_requirement: string | null;
+        meta_tags: Array<string> | null;
+      }>(sql`
+        WITH park AS (SELECT id FROM parks WHERE slug = ${input.parkSlug}),
+        ride AS (
+          SELECT id FROM attractions
+          WHERE park_id = (SELECT id FROM park) AND slug = ${input.rideSlug} AND active = true
+          LIMIT 1
+        ),
+        latest_status AS (
+          SELECT DISTINCT ON (s.attraction_id) s.attraction_id, s.status
+          FROM attraction_status_obs s
+          WHERE s.attraction_id = (SELECT id FROM ride)
+          ORDER BY s.attraction_id, s.observed_at DESC
+        ),
+        latest_q AS (
+          SELECT DISTINCT ON (q.queue_type)
+                 q.queue_type, q.wait_min, q.state,
+                 q.price_cents, q.currency, q.return_start, q.return_end,
+                 q.observed_at
+          FROM queue_obs q
+          WHERE q.attraction_id = (SELECT id FROM ride)
+            AND q.observed_at >= now() - INTERVAL '24 hours'
+          ORDER BY q.queue_type, q.observed_at DESC
+        ),
+        caps AS (
+          SELECT array_agg(DISTINCT s.queue_type) AS qtypes
+          FROM attraction_queue_support s
+          WHERE s.attraction_id = (SELECT id FROM ride)
+        ),
+        hist AS (
+          SELECT avg(q.wait_min)::int AS hist_standby_wait
+          FROM queue_obs q
+          WHERE q.attraction_id = (SELECT id FROM ride)
+            AND q.queue_type = 1
+            AND q.observed_at >= now() - INTERVAL '48 hours'
+            AND q.observed_at < now() - INTERVAL '24 hours'
+        )
+        SELECT a.id, a.name, a.slug, a.entity_type,
+               p.id AS park_id, p.slug AS park_slug, p.name AS park_name,
+               p.timezone AS park_timezone,
+               o.slug AS operator_slug, r.name AS resort_name,
+               ls.status,
+               sb.wait_min AS standby_wait,
+               sb.observed_at,
+               prt.state AS ll_state, prt.price_cents AS ll_price_cents,
+               prt.currency AS ll_currency,
+               prt.return_start AS ll_return_start, prt.return_end AS ll_return_end,
+               rt.state AS return_state,
+               rt.return_start AS return_start, rt.return_end AS return_end,
+               caps.qtypes AS support_types,
+               hist.hist_standby_wait,
+               a.latitude, a.longitude, a.category,
+               m.image_thumb_url AS meta_image_thumb_url,
+               m.image_hero_url AS meta_image_hero_url,
+               m.image_alt AS meta_image_alt,
+               m.detail_url AS meta_detail_url,
+               m.land AS meta_land,
+               m.height_requirement AS meta_height_requirement,
+               m.tags AS meta_tags
+        FROM attractions a
+        JOIN parks p ON p.id = a.park_id
+        LEFT JOIN operators o ON o.id = p.operator_id
+        LEFT JOIN resorts r ON r.id = p.resort_id
+        LEFT JOIN latest_status ls ON ls.attraction_id = a.id
+        LEFT JOIN latest_q sb ON sb.queue_type = 1
+        LEFT JOIN latest_q prt ON prt.queue_type = 4
+        LEFT JOIN latest_q rt ON rt.queue_type = 3
+        LEFT JOIN caps ON true
+        LEFT JOIN hist ON true
+        LEFT JOIN attraction_meta m ON m.attraction_id = a.id
+        WHERE a.id = (SELECT id FROM ride)
+      `);
+      const r = result.rows[0];
+      if (!r) return null;
+      return {
+        id: Number(r.id),
+        name: r.name,
+        slug: r.slug,
+        entityType: r.entity_type,
+        park: {
+          id: Number(r.park_id),
+          slug: r.park_slug,
+          name: r.park_name,
+          timezone: r.park_timezone,
+          operatorSlug: r.operator_slug,
+          resortName: r.resort_name,
+        },
+        status: code(STATUS_CODE, r.status),
+        standbyWait: r.standby_wait,
+        observedAt: r.observed_at,
+        lightningLane: {
+          state: code(QUEUE_STATE_CODE, r.ll_state),
+          priceCents: r.ll_price_cents,
+          currency: r.ll_currency?.trim() ?? null,
+          returnStart: r.ll_return_start,
+          returnEnd: r.ll_return_end,
+        },
+        returnTimeState: code(QUEUE_STATE_CODE, r.return_state),
+        returnTimeWindow: { start: r.return_start ?? null, end: r.return_end ?? null },
+        supportsQueueTypes: (r.support_types ?? []).map(Number),
+        histStandbyWait: r.hist_standby_wait,
+        latitude: r.latitude,
+        longitude: r.longitude,
+        category: r.category,
+        meta:
+          r.meta_image_thumb_url != null ||
+          r.meta_image_hero_url != null ||
+          r.meta_detail_url != null ||
+          r.meta_land != null ||
+          r.meta_height_requirement != null ||
+          (r.meta_tags != null && r.meta_tags.length > 0)
+            ? {
+                imageThumbUrl: r.meta_image_thumb_url,
+                imageHeroUrl: r.meta_image_hero_url,
+                imageAlt: r.meta_image_alt,
+                detailUrl: r.meta_detail_url,
+                land: r.meta_land,
+                heightRequirement: r.meta_height_requirement,
+                tags: r.meta_tags ?? [],
+              }
+            : null,
+      };
+    }),
+
+  /**
    * Cross-park overview for the map dashboard: per-park live stats (avg standby
    * wait, operating count, longest ride) for the markers, rolled up into a global
    * headline and a per-resort (Disney vs Universal) split. Reuses the

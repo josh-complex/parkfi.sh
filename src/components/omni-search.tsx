@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "motion/react";
 import { createPortal } from "react-dom";
 import {
+  BedDoubleIcon,
   CornerDownLeftIcon,
   FerrisWheelIcon,
   MapPinIcon,
@@ -13,6 +14,7 @@ import {
   UtensilsIcon,
 } from "lucide-react";
 
+import { slugifyMenuItem } from "#/components/dining/menu-content.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { buttonVariants } from "#/components/ui/button.tsx";
 import { cn } from "#/lib/utils.ts";
@@ -30,7 +32,7 @@ const SPRING = { type: "spring" as const, stiffness: 420, damping: 34, mass: 0.9
 const SURFACE =
   "bg-background border-3d btn-3d-outline shadow-[0_4px_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)] dark:bg-popover dark:border-border dark:ring-1 dark:ring-foreground/10";
 
-const GROUP_ORDER = ["Parks", "Attractions", "Dining", "Menu", "Blog"] as const;
+const GROUP_ORDER = ["Parks", "Attractions", "Dining", "Menu", "Resorts", "Blog"] as const;
 type Group = (typeof GROUP_ORDER)[number];
 
 const LIMITS: Record<Group, number> = {
@@ -38,6 +40,7 @@ const LIMITS: Record<Group, number> = {
   Attractions: 6,
   Dining: 6,
   Menu: 8,
+  Resorts: 6,
   Blog: 4,
 };
 
@@ -48,6 +51,7 @@ const GROUP_ICON: Record<Group, ReactNode> = {
   Attractions: <FerrisWheelIcon />,
   Dining: <UtensilsIcon />,
   Menu: <UtensilsIcon />,
+  Resorts: <BedDoubleIcon />,
   Blog: <NewspaperIcon />,
 };
 
@@ -182,7 +186,12 @@ export function OmniSearch() {
           title: a.name,
           subtitle: [a.parkName, a.land].filter(Boolean).join(" · "),
           image: a.imageUrl,
-          onSelect: go(() => navigate({ to: "/park/$slug", params: { slug: a.parkSlug } })),
+          onSelect: go(() =>
+            navigate({
+              to: "/park/$slug/ride/$rideSlug",
+              params: { slug: a.parkSlug, rideSlug: a.slug },
+            }),
+          ),
         })),
       ...data.dining
         .filter((d) => m(d.name) || m(d.cuisine))
@@ -193,7 +202,7 @@ export function OmniSearch() {
           title: d.name,
           subtitle: [d.cuisine, d.parkName, d.priceRange].filter(Boolean).join(" · "),
           image: d.imageUrl,
-          onSelect: go(() => navigate({ to: "/dining" })),
+          onSelect: go(() => navigate({ to: "/dining/$facilityId", params: { facilityId: d.id } })),
         })),
       ...(menuQ.data ?? []).map<Item>((mi) => ({
         key: `menu-${mi.facilityId}-${mi.title}`,
@@ -201,8 +210,26 @@ export function OmniSearch() {
         title: mi.title,
         subtitle: [mi.restaurantName, mi.parkResort].filter(Boolean).join(" · "),
         price: mi.price == null ? null : formatPrice(mi.price, mi.currency),
-        onSelect: go(() => navigate({ to: "/dining" })),
+        // Deep link to the venue page, scrolled to (and highlighting) the item.
+        onSelect: go(() =>
+          navigate({
+            to: "/dining/$facilityId",
+            params: { facilityId: mi.facilityId },
+            hash: `menu-${slugifyMenuItem(mi.title)}`,
+          }),
+        ),
       })),
+      ...data.resorts
+        .filter((r) => m(r.name) || m(r.area))
+        .slice(0, LIMITS.Resorts)
+        .map<Item>((r) => ({
+          key: `resort-${r.id}`,
+          group: "Resorts",
+          title: r.name,
+          subtitle: r.area,
+          image: r.imageUrl,
+          onSelect: go(() => navigate({ to: "/resort/$slug", params: { slug: r.slug } })),
+        })),
       ...data.blogPosts
         .filter((b) => m(b.title) || m(b.dek))
         .slice(0, LIMITS.Blog)

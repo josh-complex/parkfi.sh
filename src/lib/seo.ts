@@ -141,6 +141,75 @@ export function amusementParkJsonLd(opts: {
   return node;
 }
 
+/** Restaurant entity for a dining venue detail page. */
+export function restaurantJsonLd(opts: {
+  facilityId: string;
+  name: string;
+  description?: string;
+  cuisine?: string | null;
+  priceRange?: string | null;
+  image?: string | null;
+}): Record<string, unknown> {
+  const node: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "Restaurant",
+    name: opts.name,
+    url: `${SITE_URL}/dining/${opts.facilityId}`,
+  };
+  if (opts.description) node.description = opts.description;
+  if (opts.cuisine) node.servesCuisine = opts.cuisine;
+  if (opts.priceRange) node.priceRange = opts.priceRange;
+  if (opts.image)
+    node.image = opts.image.startsWith("http") ? opts.image : `${SITE_URL}${opts.image}`;
+  return node;
+}
+
+/** TouristAttraction entity for a ride/attraction detail page. */
+export function attractionJsonLd(opts: {
+  parkSlug: string;
+  rideSlug: string;
+  name: string;
+  description?: string;
+  parkName?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  image?: string | null;
+}): Record<string, unknown> {
+  const node: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "TouristAttraction",
+    name: opts.name,
+    url: `${SITE_URL}/park/${opts.parkSlug}/ride/${opts.rideSlug}`,
+  };
+  if (opts.description) node.description = opts.description;
+  if (opts.parkName) node.containedInPlace = { "@type": "AmusementPark", name: opts.parkName };
+  if (opts.latitude != null && opts.longitude != null) {
+    node.geo = { "@type": "GeoCoordinates", latitude: opts.latitude, longitude: opts.longitude };
+  }
+  if (opts.image)
+    node.image = opts.image.startsWith("http") ? opts.image : `${SITE_URL}${opts.image}`;
+  return node;
+}
+
+/** Resort (LodgingBusiness) entity for a resort hotel detail page. */
+export function resortJsonLd(opts: {
+  slug: string;
+  name: string;
+  description?: string;
+  image?: string | null;
+}): Record<string, unknown> {
+  const node: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "Resort",
+    name: opts.name,
+    url: `${SITE_URL}/resort/${opts.slug}`,
+  };
+  if (opts.description) node.description = opts.description;
+  if (opts.image)
+    node.image = opts.image.startsWith("http") ? opts.image : `${SITE_URL}${opts.image}`;
+  return node;
+}
+
 /** Blog (CollectionPage) entity for the /blog index. */
 export function blogJsonLd(): Record<string, unknown> {
   return {

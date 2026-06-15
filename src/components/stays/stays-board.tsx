@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { differenceInCalendarDays, format } from "date-fns";
 import { type DateRange } from "react-day-picker";
@@ -71,7 +71,14 @@ import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
 import { cn } from "#/lib/utils.ts";
-import type { ResortCatalogEntry, ResortTier } from "#/server/stays/resort-catalog.generated.ts";
+import {
+  RESORT_CATALOG,
+  type ResortCatalogEntry,
+  type ResortTier,
+} from "#/server/stays/resort-catalog.generated.ts";
+
+/** Resort facility id → catalog slug, for linking availability rows to detail pages. */
+const SLUG_BY_ID = new Map(RESORT_CATALOG.map((r) => [r.id, r.slug]));
 
 const ISO = "yyyy-MM-dd";
 
@@ -98,6 +105,7 @@ function ResortCard({
   area,
   image,
   detailUrl,
+  slug,
   tier,
   pricePerNight,
   available,
@@ -109,6 +117,8 @@ function ResortCard({
   area: string | null;
   image: string | null;
   detailUrl: string;
+  /** Catalog slug — when set, the tile links to the in-app `/resort/$slug` page. */
+  slug?: string | null;
   tier: ResortTier;
   pricePerNight?: number | null;
   available?: boolean;
@@ -117,16 +127,12 @@ function ResortCard({
   alertSlot?: React.ReactNode;
 }) {
   const hasResult = pricePerNight !== undefined;
-  const card = (
-    <a
-      href={detailUrl}
-      target="_blank"
-      rel="noreferrer"
-      className={cn(
-        "group flex flex-col gap-2 outline-none",
-        hasResult && available === false && "opacity-60",
-      )}
-    >
+  const className = cn(
+    "group flex flex-col gap-2 outline-none",
+    hasResult && available === false && "opacity-60",
+  );
+  const inner = (
+    <>
       <div className="bg-muted relative aspect-[4/3] w-full overflow-hidden rounded-2xl">
         {image ? (
           <img
@@ -165,6 +171,15 @@ function ResortCard({
           </span>
         )}
       </div>
+    </>
+  );
+  const card = slug ? (
+    <Link to="/resort/$slug" params={{ slug }} className={className}>
+      {inner}
+    </Link>
+  ) : (
+    <a href={detailUrl} target="_blank" rel="noreferrer" className={className}>
+      {inner}
     </a>
   );
   if (!alertSlot) return card;
@@ -921,6 +936,7 @@ function BrowseView({
                     area={r.area}
                     image={r.image}
                     detailUrl={r.detailUrl}
+                    slug={r.slug}
                     tier={r.tier}
                   />
                 </CarouselItem>
@@ -1153,6 +1169,7 @@ function ResultsView({
               area={o.area}
               image={o.image}
               detailUrl={o.detailUrl}
+              slug={SLUG_BY_ID.get(o.id) ?? null}
               tier={o.tier}
               pricePerNight={o.pricePerNight}
               available={o.available}

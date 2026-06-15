@@ -1,5 +1,7 @@
 "use client";
 
+import { Link } from "@tanstack/react-router";
+
 import { DiningAlertButton } from "#/components/dining/dining-alert-button.tsx";
 import { DiningMenuDrawer } from "#/components/dining/dining-menu-drawer.tsx";
 import {
@@ -163,18 +165,13 @@ export function RestaurantCard({
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <CardTitle className="line-clamp-1 text-base sm:text-lg">
-              {restaurant.detailUrl ? (
-                <a
-                  href={restaurant.detailUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="hover:underline"
-                >
-                  {restaurant.name}
-                </a>
-              ) : (
-                restaurant.name
-              )}
+              <Link
+                to="/dining/$facilityId"
+                params={{ facilityId: restaurant.facilityId }}
+                className="hover:underline"
+              >
+                {restaurant.name}
+              </Link>
             </CardTitle>
             <CardDescription className="mt-0.5 line-clamp-1">{subtitle}</CardDescription>
           </div>

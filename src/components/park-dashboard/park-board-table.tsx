@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   flexRender,
@@ -428,17 +429,33 @@ export function ParkBoardTable({
         id: "chevron",
         header: () => null,
         enableSorting: false,
-        cell: ({ row }) => (
-          <ChevronRightIcon
-            className={cn(
-              "size-4",
-              row.original.id === selectedId ? "text-foreground" : "text-muted-foreground",
-            )}
-          />
-        ),
+        cell: ({ row }) =>
+          parkSlug ? (
+            <Link
+              to="/park/$slug/ride/$rideSlug"
+              params={{ slug: parkSlug, rideSlug: row.original.slug }}
+              onClick={(e) => e.stopPropagation()}
+              aria-label={`Open ${row.original.name} details`}
+              className="inline-flex"
+            >
+              <ChevronRightIcon
+                className={cn(
+                  "size-4 transition-colors hover:text-foreground",
+                  row.original.id === selectedId ? "text-foreground" : "text-muted-foreground",
+                )}
+              />
+            </Link>
+          ) : (
+            <ChevronRightIcon
+              className={cn(
+                "size-4",
+                row.original.id === selectedId ? "text-foreground" : "text-muted-foreground",
+              )}
+            />
+          ),
       },
     ],
-    [sparkByRide, operatorSlug, alertByAttraction, loggedIn, selectedId],
+    [sparkByRide, operatorSlug, alertByAttraction, loggedIn, selectedId, parkSlug],
   );
 
   const table = useReactTable({
@@ -507,6 +524,7 @@ export function ParkBoardTable({
           rows={sortedRows.map((r) => r.original)}
           selectedId={selectedId}
           onSelect={onSelect}
+          parkSlug={parkSlug}
           operatorSlug={operatorSlug}
           sparkByRide={sparkByRide}
           alertByAttraction={alertByAttraction}
@@ -602,6 +620,7 @@ function MobileCardList({
   rows,
   selectedId,
   onSelect,
+  parkSlug,
   operatorSlug,
   sparkByRide,
   alertByAttraction,
@@ -610,6 +629,7 @@ function MobileCardList({
   rows: Array<BoardItem>;
   selectedId: number | null;
   onSelect: (item: BoardItem) => void;
+  parkSlug: string | null;
   operatorSlug: string | null | undefined;
   sparkByRide: Map<number, Array<number | null>>;
   alertByAttraction: Map<number, RideAlertEntry>;
@@ -658,6 +678,17 @@ function MobileCardList({
               <PaidLineCell item={item} operatorSlug={operatorSlug} />
               <ReturnWindowCell item={item} operatorSlug={operatorSlug} />
             </div>
+            {parkSlug && (
+              <Link
+                to="/park/$slug/ride/$rideSlug"
+                params={{ slug: parkSlug, rideSlug: item.slug }}
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex items-center gap-1 self-start text-xs font-medium text-primary"
+              >
+                View details
+                <ChevronRightIcon className="size-3.5" />
+              </Link>
+            )}
           </button>
         );
       })}

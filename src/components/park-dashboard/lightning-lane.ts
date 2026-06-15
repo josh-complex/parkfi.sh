@@ -28,6 +28,16 @@ export interface PaidLineInfo {
   returnEnd: string | null;
 }
 
+/**
+ * Structural subset of a board/attraction row the paid-line logic reads. Both
+ * `parks.board` rows and the single `parks.attraction` row satisfy it, so the
+ * ride detail page and the board share this helper.
+ */
+export type PaidLineSource = Pick<
+  BoardItem,
+  "supportsQueueTypes" | "returnTimeState" | "returnTimeWindow" | "lightningLane"
+>;
+
 const EMPTY: PaidLineInfo = {
   has: false,
   product: null,
@@ -49,7 +59,7 @@ export function paidLineProduct(operatorSlug: string | null | undefined): string
 }
 
 export function paidLineInfo(
-  item: BoardItem,
+  item: PaidLineSource,
   operatorSlug: string | null | undefined,
 ): PaidLineInfo {
   const supports = item.supportsQueueTypes;
