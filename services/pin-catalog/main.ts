@@ -324,6 +324,13 @@ async function sweep(): Promise<void> {
     console.warn("[pin-catalog] GEMINI_API_KEY unset — cannot normalize; aborting");
     return;
   }
+  if (!process.env.EBAY_CLIENT_ID || !process.env.EBAY_CLIENT_SECRET) {
+    console.warn(
+      "[pin-catalog] EBAY_CLIENT_ID / EBAY_CLIENT_SECRET unset — skipping eBay sweep " +
+        "(set them, or use `pinpics` to seed from PinPics instead)",
+    );
+    return;
+  }
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
   const totals: IngestTotals = { newCount: 0, updated: 0, skipped: 0 };
