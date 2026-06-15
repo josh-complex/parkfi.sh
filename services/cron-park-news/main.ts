@@ -76,6 +76,7 @@ const SYSTEM = `You are a staff writer for ParkFi, a live Orlando theme-park wai
 VOICE — this is the part that matters most:
 - Have a point of view, and lead with what's genuinely interesting or what readers should DO about it — not a throat-clearing "Just in time for…" intro. Cut corporate filler ("exciting", "magical experience", "perfect for the whole family", "be sure to").
 - TONE: warm and upbeat, but grounded — like a friend who loves these parks and is genuinely glad to share what's new. These are vacations; default to the reader's excitement. Be honest about real downsides (a closure, a price, a catch) when they exist, but DON'T manufacture a problem, a "gotcha", or a cynical angle just to sound sharp. Most news is good or neutral news — write it that way. Skip snark, doom, and clickbait-negative framing ("dying", "ghost town", "the catch", "the sad reality"); a headline shouldn't reach for a downside the story doesn't actually have.
+- HEADLINES: make the title genuinely inviting — lead with the exciting thing (the new ride, the return, the perk, the cool detail fans will love), not a hedge, a question, or a warning. Optimistic and specific beats neutral-and-safe; our instinct is to undersell and over-qualify, so deliberately lean into the real enthusiasm the news earns. Still no clickbait, no fake stakes, no manufactured drama — the excitement has to be backed by the actual story.
 - Be concrete and specific over generic. Real wait-time numbers, real dates, real prices — enthusiasm earns its keep when it's backed by specifics, not vague hype.
 - Don't break the magic. When it fits naturally, treat the characters as themselves — real personalities who live in the parks — rather than as "IP", "the franchise", or "the Mickey Mouse character". And when an ending turns speculative or forward-looking, let it carry a small note of wonder, the quiet sense that something delightful might be waiting. Keep this a light touch — a seasoning, never a costume — and never at the expense of the real, specific information above.
 - Vary sentence length. A short punchy line is fine. Contractions are fine. A light, friendly touch beats both brochure-speak and forced cynicism.
@@ -83,18 +84,18 @@ VOICE — this is the part that matters most:
 SUBSTANCE:
 - Add value the source didn't. Use Google Search to add verifiable context the feed snippet lacked — official confirmations, dates, prior history, related projects, pricing — and to find a primary source.
 - QUOTES: if Search surfaces a REAL, verifiable direct quote (a Disney/Universal exec, an Imagineer, an official press release), include ONE as a Markdown blockquote with attribution: "> ...quote...\\n>\\n> — Name, title". Never invent or paraphrase a quote into quotation marks. No real quote found = no quote. Don't force it.
-- BACKLINKS: weave 1–2 contextual links INLINE in the prose (not just a list at the end) — to a closely related prior ParkFi post via its /blog/<slug> path when one fits, and to an authoritative external page (official park site, the primary source) where it helps the reader.
+- BACKLINKS: weave 1–2 contextual links INLINE in the prose (not just a list at the end) — to a closely related prior ParkFi post via its /blog/<slug> path when one fits, and to an authoritative external page (official park site, the primary source) where it helps the reader. Every external link AND every source you cite is fetched before publish: a confirmed-dead one (404) is unwrapped to plain text or dropped from the source list, so a guessed or half-remembered URL just disappears. Link only to a page whose exact URL you actually saw in a search result — never reconstruct a likely-looking article path.
 - Tie it to what ParkFi readers care about: crowds, wait times, Lightning Lane, dining, trip timing — only where it's honestly relevant. Skip the tie-in if it's a stretch.
 
-IMAGES (inline, in the body):
-- Include 1–2 relevant images INSIDE the body using Markdown: ![descriptive alt](https://image-url). Right after each image add an italic credit line: *Photo: Source Name* (link the source name if you have its URL).
+IMAGES (inline, in the body) — a rich post is a media-rich post:
+- Include 2–3 relevant images INSIDE the body using Markdown: ![descriptive alt](https://image-url), spread through the post (next to the section each one illustrates), not stacked at the top. Right after each image add an italic credit line: *Photo: Source Name* (link the source name if you have its URL).
 - Use Google Search to find real, directly relevant image URLs (a press photo, the ride, the food item, the resort). Prefer official/press sources. Use ONLY a URL you actually found in a search result — NEVER guess, pattern-match, or fabricate an image path. Every image URL is fetched before publish and silently dropped if it 404s, so a guessed link just vanishes — it doesn't help you.
 - Don't decorate for the sake of it: an image must show the actual thing the post is about.
 
-EMBEDS (social posts) — OPTIONAL:
-- Only relevant when you reference a specific viral video or social post (TikTok, YouTube, Instagram, or X). If you do, find its REAL URL via Search and put it on its OWN line — just the bare URL, nothing else. We turn it into a clean embedded player.
-- An embed is never required. If you can't find a real, relevant post, OMIT it entirely — most posts won't have one, and that's fine. Never force one in or invent a URL to satisfy this instruction.
-- Same rule as images: only embed a post you actually found. Every embed is verified to exist before publish and dropped if it doesn't, so a fabricated link is wasted. One well-chosen embed beats a vague "it went viral on TikTok".
+EMBEDS (social posts) — STRONGLY PREFERRED when one exists:
+- A real embedded post (TikTok, YouTube, Instagram, or X) is one of the biggest things that makes a post feel rich and credible, so actively go looking for one. When the story is visual or shareable — a new ride, a food item, a show, a reveal, a viral moment, an official announcement — search the OFFICIAL account (the park, Universal, Disney, the resort) and relevant creators for the actual post, and embed it by putting its REAL URL on its OWN line (just the bare URL, nothing else). We turn it into a clean embedded player. Prefer the official announcement post when there is one.
+- Truth gate still applies: embed ONLY a post you actually found in a search result — never invent or guess a URL. Every embed is verified to exist before publish and dropped if it doesn't, so a fabricated link is wasted effort, not a shortcut.
+- If — after genuinely looking — no real, relevant post exists, omit it; a forced or vague embed is worse than none. But "prefer one" means search first and default to including a real one, not skip it.
 
 TRUTH ONLY. Every claim, quote, date, number, image, and embed must trace to a real source. If you can't verify it, leave it out. Never invent attendance figures, prices, or quotes.
 
@@ -207,8 +208,57 @@ async function isLiveImage(url: string): Promise<boolean> {
   }
 }
 
+/**
+ * Is this NON-image link confirmed dead? Source citations and inline prose links
+ * are the other thing the model fabricates — a plausible-looking article URL that
+ * 404s, or an invented host. This is the gate that keeps a broken "Sources" link
+ * (or a dead inline backlink) out of a published post.
+ *
+ * We only report DEAD on an unambiguous signal — an HTTP 404/410, or a DNS/
+ * connection failure (a host that doesn't resolve = fabricated). A 403/429/5xx,
+ * or a timeout, is treated as alive-but-unverifiable and KEPT: many of these
+ * sites bot-block or rate-limit even our browser UA, and dropping a real source
+ * on a false positive is worse than keeping an occasional slow link. HEAD first
+ * (cheap), then a GET recheck for hosts that reject HEAD (often a 405) before we
+ * pass final judgment.
+ */
+async function isDeadLink(url: string): Promise<boolean> {
+  const probe = async (method: "HEAD" | "GET"): Promise<"live" | "dead" | "unknown"> => {
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { "User-Agent": UA, Accept: "text/html,*/*" },
+        signal: AbortSignal.timeout(10_000),
+        redirect: "follow",
+      });
+      if (res.ok) return "live";
+      if (res.status === 404 || res.status === 410) return "dead";
+      return "unknown"; // 403/429/5xx → likely bot-blocked, not fabricated
+    } catch (err) {
+      // A real-but-slow site aborts with TimeoutError — give it the benefit of
+      // the doubt. Anything else (DNS/connection failure) is a dead host.
+      return (err as Error)?.name === "TimeoutError" ? "unknown" : "dead";
+    }
+  };
+  const head = await probe("HEAD");
+  if (head !== "unknown") return head === "dead";
+  // HEAD inconclusive — recheck with a real GET before judging it dead.
+  return (await probe("GET")) === "dead";
+}
+
+/** Drop any researched source whose URL is confirmed dead (404/410/bad host). */
+async function liveSources(sources: Source[]): Promise<Source[]> {
+  const dead = await Promise.all(sources.map((s) => isDeadLink(s.url)));
+  const kept = sources.filter((_, i) => !dead[i]);
+  const dropped = sources.length - kept.length;
+  if (dropped) console.log(`[park-news]   dropped ${dropped} dead source link(s)`);
+  return kept;
+}
+
 /** Matches a Markdown image and an optional italic credit line right after it. */
 const BODY_IMG_RE = /!\[[^\]]*\]\((https?:\/\/[^)\s]+)[^)]*\)([^\S\n]*\n[^\S\n]*\*[^\n]*\*)?/g;
+/** Matches an inline Markdown link `[text](http…)` — NOT an image (no leading `!`). */
+const BODY_LINK_RE = /(?<!!)\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g;
 
 /**
  * Scrub a draft body of media that won't actually load: dead inline images
@@ -236,8 +286,20 @@ async function validateBodyMedia(md: string): Promise<string> {
   const deadEmbeds = checked.filter((l) => l === null).length;
   out = checked.filter((l) => l !== null).join("\n");
 
+  // 3) Inline prose links — unwrap any confirmed-dead external link to plain
+  // text (keep the words, lose the broken href) so the sentence still reads.
+  const linkUrls = [...new Set([...out.matchAll(BODY_LINK_RE)].map((m) => m[2]))];
+  const deadLink = new Map(
+    await Promise.all(linkUrls.map(async (u) => [u, await isDeadLink(u)] as const)),
+  );
+  const deadLinks = linkUrls.filter((u) => deadLink.get(u)).length;
+  out = out.replace(BODY_LINK_RE, (full, text: string, url: string) =>
+    deadLink.get(url) ? text : full,
+  );
+
   if (deadImgs) console.log(`[park-news]   dropped ${deadImgs} dead inline image(s)`);
   if (deadEmbeds) console.log(`[park-news]   dropped ${deadEmbeds} unverified embed(s)`);
+  if (deadLinks) console.log(`[park-news]   unwrapped ${deadLinks} dead inline link(s)`);
   // Collapse the blank gaps left behind.
   return out.replace(/\n{3,}/g, "\n\n").trim();
 }
@@ -449,18 +511,21 @@ If this item is already substantially covered above, or isn't genuinely
 newsworthy on its own, respond with exactly {"skip": true} and nothing else.
 
 Otherwise research it (per your instructions) and write the post (550–800 words):
-real voice, inline backlinks, a verifiable quote if one exists, 1–2 relevant
-inline images (Markdown, with an italic credit line under each), and an embedded
-social post on its own line if you reference a specific one. When it fits, link a
+real voice, an optimistic headline that leads with the exciting thing, inline
+backlinks (only to URLs you actually found — dead ones get dropped), a verifiable
+quote if one exists, 2–3 relevant inline images spread through the body (Markdown,
+with an italic credit line under each), and — search for this, it makes the post
+much richer — a real embedded social post (official park account or a creator) on
+its own line whenever one exists. When it fits, link a
 closely related prior post inline using its /blog/<slug> path. Reference a park
 by its ParkFi slug only from this list (we link it internally): ${slugList || "(none)"}.
 
 Respond with ONLY a JSON object (no code fence), shape:
 {
   "skip": false,
-  "title": "compelling, specific, <70 chars",
+  "title": "compelling, specific, OPTIMISTIC, <70 chars — lead with the exciting thing, not a hedge, question, or warning",
   "dek": "one-sentence reader summary / meta description, <160 chars",
-  "bodyMd": "the post in Markdown (550–800 words) — ## subheads ok, NO H1, inline ![alt](url) images each followed by an italic *Photo: ...* credit, a > blockquote for any real quote, and a bare social-post URL on its own line to embed one",
+  "bodyMd": "the post in Markdown (550–800 words) — ## subheads ok, NO H1, 2-3 inline ![alt](url) images spread through the body each followed by an italic *Photo: ...* credit, a > blockquote for any real quote, and (strongly preferred when a real one exists) an embedded social post as a bare URL on its own line",
   "aiSummary": "dense 1-2 sentence FACTUAL summary for our internal dedup index",
   "tags": ["2-4 short lowercase tags"],
   "parkSlugs": ["relevant slugs from the list, or empty"],
@@ -595,11 +660,16 @@ async function main() {
 
       const parkSlugs = draft.parkSlugs.filter((s) => validSlugs.has(s));
       const slug = `${slugify(draft.title)}-${sha256(item.url).slice(0, 6)}`;
-      // The original feed item leads; researched sources follow (deduped by url).
+      // The original feed item leads (it came from the feed — always real, never
+      // checked); researched sources follow, deduped by url and liveness-checked
+      // so a fabricated or 404'd citation never reaches the review queue.
       const seenUrls = new Set([item.url]);
+      const liveExtra = await liveSources(
+        draft.extraSources.filter((s) => !seenUrls.has(s.url) && seenUrls.add(s.url)),
+      );
       const sourceUrls: Source[] = [
         { title: `${item.source}: ${item.title}`, url: item.url },
-        ...draft.extraSources.filter((s) => !seenUrls.has(s.url) && seenUrls.add(s.url)),
+        ...liveExtra,
       ];
 
       // Hero image: prefer the source article's og:image (deterministic, and we

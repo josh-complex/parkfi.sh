@@ -106,10 +106,17 @@ related `/blog/<slug>` posts and authoritative external pages), **inline images*
 TikTok / YouTube / Instagram / X post URL on its own line). Headlines are
 normalized to consistent title case on insert.
 
-**Media validation (cron, before insert).** Hallucinated media never reaches
-review: every inline image URL is fetched (`isLiveImage`) and dropped with its
-credit line if it 404s / isn't an image; every social URL is verified to exist
-(`socialExists`, via oEmbed where available) and dropped otherwise. The renderer
+**Media & link validation (cron, before insert).** Hallucinated media and dead
+links never reach review: every inline image URL is fetched (`isLiveImage`) and
+dropped with its credit line if it 404s / isn't an image; every social URL is
+verified to exist (`socialExists`, via oEmbed where available) and dropped
+otherwise; and every cited source plus every external inline link is liveness-
+checked (`isDeadLink`: HEAD then a GET recheck) — a confirmed-dead source (404/
+410/bad host) is dropped from the list and a dead inline link is unwrapped to
+plain text. The check is deliberately conservative: only an unambiguous 404/410
+or a non-resolving host counts as dead, so a bot-blocked (403/429) or slow
+source is kept rather than false-dropped. The original feed URL is always kept
+(it came from the feed). The renderer
 ([src/server/blog/render.ts](../src/server/blog/render.ts)) turns a surviving
 social URL into a sandboxed iframe via a post-sanitization token, so `<iframe>`
 stays blanket-stripped everywhere else. Shared parser/embed logic lives in
