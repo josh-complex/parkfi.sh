@@ -79,7 +79,7 @@ export function NavUser() {
             render={
               <Button
                 variant="outline"
-                className="h-auto flex-1 justify-start gap-2 rounded-xl border-white/15 bg-transparent px-3 py-2 text-white hover:bg-white! hover:text-foreground! aria-expanded:bg-white/15! btn-3d-invert border-3d"
+                className="h-auto flex-1 justify-start gap-2 rounded-xl border-white/15 bg-transparent px-3 py-2 text-white hover:bg-white! hover:text-foreground! aria-expanded:bg-white/15! aria-expanded:text-white! aria-expanded:hover:bg-white/15! aria-expanded:hover:text-white! btn-3d-invert border-3d"
               />
             }
           >

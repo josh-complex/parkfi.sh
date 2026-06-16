@@ -91,8 +91,11 @@ export function usePushNotifications() {
 
   const subscribe = useCallback(async (): Promise<boolean> => {
     if (!supported) return false;
-    const reg = await navigator.serviceWorker.ready;
 
+    // Request permission FIRST, synchronously within the click handler. Safari
+    // (iOS in particular) discards the permission prompt if anything is awaited
+    // before the request, since the user-gesture activation is already spent —
+    // so awaiting serviceWorker.ready beforehand silently no-ops the prompt.
     const result = await Notification.requestPermission();
     setPermission(result);
     if (result !== "granted") {
@@ -100,6 +103,7 @@ export function usePushNotifications() {
       return false;
     }
 
+    const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY!).buffer as ArrayBuffer,
