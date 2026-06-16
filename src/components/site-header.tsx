@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { PanelLeftIcon } from "lucide-react";
 
 import { NotificationCenter } from "#/components/notifications/notification-center.tsx";
@@ -6,13 +7,14 @@ import { OmniSearch } from "#/components/omni-search.tsx";
 import { ThemeToggle } from "#/components/theme-toggle.tsx";
 import { MenuIcon, type MenuIconHandle } from "#/components/ui/anim-icons/menu.tsx";
 import { useSidebar } from "#/components/ui/sidebar.tsx";
+import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
 
 /**
  * Desktop shows the static sidebar-panel icon; mobile shows the hamburger ⇄ X
  * that morphs with the offcanvas flyout's open state.
  */
-function MenuTrigger() {
+function MenuTrigger({ showDot = false }: { showDot?: boolean }) {
   const { toggleSidebar, openMobile, isMobile } = useSidebar();
   const iconRef = useRef<MenuIconHandle>(null);
 
@@ -27,9 +29,14 @@ function MenuTrigger() {
       type="button"
       onClick={toggleSidebar}
       aria-label="Toggle navigation"
-      className="pointer-events-auto -mr-1.5 inline-flex size-9 items-center justify-center rounded-full text-current transition-transform hover:bg-foreground/10 active:scale-90"
+      className="pointer-events-auto relative -mr-1.5 inline-flex size-9 items-center justify-center rounded-full text-current transition-transform hover:bg-foreground/10 active:scale-90"
     >
       {isMobile ? <MenuIcon ref={iconRef} size={22} /> : <PanelLeftIcon className="size-[18px]" />}
+      {/* Unread-alerts dot: the bell now lives inside the menu, so surface its
+          state on the trigger. Hidden while the flyout (the X) is open. */}
+      {showDot && !openMobile && (
+        <span className="bg-primary absolute top-1.5 right-1.5 size-2 rounded-full ring-2 ring-white" />
+      )}
       <span className="sr-only">Toggle navigation</span>
     </button>
   );
@@ -47,6 +54,15 @@ export function SiteHeader({
   const { isMobile, state, openMobile } = useSidebar();
   const { data: session } = authClient.useSession();
   const loggedIn = !!session?.user;
+  // The notification bell moves into the mobile menu, so surface unread alerts as
+  // a dot on the menu trigger. Shares the NotificationCenter query (same key), so
+  // this adds no extra request.
+  const trpc = useTRPC();
+  const alertsQ = useQuery({
+    ...trpc.rideAlerts.list.queryOptions(),
+    enabled: loggedIn && isMobile,
+  });
+  const hasAlerts = (alertsQ.data?.parks ?? []).reduce((n, p) => n + p.alerts.length, 0) > 0;
   // On mobile the sidebar is hidden offcanvas, so the header is the only place
   // to reach these; on desktop they live in the sidebar footer unless collapsed.
   const showActions = isMobile || state !== "expanded";
@@ -75,46 +91,48 @@ export function SiteHeader({
         }
         style={{ paddingTop: "env(safe-area-inset-top)" }}
       >
-        <div className="px-4 py-2 lg:px-6">
-          {/* Main header row with title and controls */}
+        <div className="relative px-4 py-2 lg:px-6">
+          {/* Mobile: a diagonal brand-blue sheen behind the search — a lighter
+              tint in the top-left, the base blue through the middle, deepening
+              toward the bottom-right, with a soft highlight by the search. */}
+          {isMobile && !flyoutOpen && (
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0"
+              style={{
+                background:
+                  "radial-gradient(110% 140% at 12% -10%, color-mix(in oklab, var(--sidebar) 64%, white) 0%, transparent 55%), linear-gradient(108deg, color-mix(in oklab, var(--sidebar) 80%, white) 0%, var(--sidebar) 45%, color-mix(in oklab, var(--sidebar) 84%, black) 100%)",
+              }}
+            />
+          )}
+          {/* Main header row */}
           <div className="relative flex w-full items-center gap-2">
-            {/* Desktop: the sidebar toggle sits on the left, ahead of the title. */}
-            {!isMobile && <MenuTrigger />}
-
-            {/* Mobile: theme + notifications are pinned to the left. */}
-            {isMobile && (
-              <div className="flex items-center gap-1">
-                <ThemeToggle />
-                <NotificationCenter />
-              </div>
-            )}
-
-            <h1
-              className={
-                isMobile
-                  ? "absolute left-1/2 max-w-[55%] -translate-x-1/2 truncate text-center text-base font-semibold tracking-tight"
-                  : "truncate text-base font-semibold tracking-tight"
-              }
-            >
-              {displayTitle}
-            </h1>
-
-            <div className="ml-auto flex items-center gap-1">
-              {/* Desktop: the notification bell is always reachable from the top bar;
-                  the theme toggle only appears here when collapsed (otherwise it
-                  lives in the sidebar footer). */}
-              {!isMobile && (
+            {isMobile ? (
+              // Mobile: the search bar IS the header; the menu sits to its right.
+              // The page title is dropped here — the search takes its place.
+              !flyoutOpen && (
                 <>
+                  <div className="min-w-0 flex-1">
+                    <OmniSearch />
+                  </div>
+                  {/* The trigger (hamburger ⇄ X) lives on the right; while the
+                      flyout is open it's pinned in the fixed wrapper below. */}
+                  <MenuTrigger showDot={hasAlerts} />
+                </>
+              )
+            ) : (
+              <>
+                {/* Desktop: sidebar toggle, then title, then bell/theme on the
+                    right (the bell only here when not in the expanded footer; the
+                    theme toggle only when the panel is collapsed). */}
+                <MenuTrigger />
+                <h1 className="truncate text-base font-semibold tracking-tight">{displayTitle}</h1>
+                <div className="ml-auto flex items-center gap-1">
                   {showHeaderBell && <NotificationCenter />}
                   {showActions && <ThemeToggle />}
-                </>
-              )}
-              {/* Mobile: the trigger (hamburger ⇄ X) lives on the right. While the
-                  flyout is open it's pinned in a `fixed`, z-[60] wrapper so the X
-                  floats above the z-50 sheet/backdrop — without lifting the rest of
-                  the bar with it. */}
-              {isMobile && !flyoutOpen && <MenuTrigger />}
-            </div>
+                </div>
+              </>
+            )}
             {isMobile && flyoutOpen && (
               <div
                 className="pointer-events-none fixed top-0 right-0 z-[60] flex h-(--header-height) items-center px-4 text-white lg:px-6"
@@ -126,16 +144,6 @@ export function SiteHeader({
           </div>
         </div>
       </header>
-
-      {/* Mobile: the omni-search sits just below the header in normal flow — part
-          of the scrollable content, so it scrolls away under the sticky bar
-          rather than staying pinned. On desktop it lives in the blue toolbar
-          gutter instead (see AppInset). */}
-      {isMobile && !flyoutOpen && (
-        <div className="shrink-0 px-4 pt-2 pb-3">
-          <OmniSearch />
-        </div>
-      )}
     </>
   );
 }

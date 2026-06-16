@@ -457,19 +457,21 @@ export function PricingCalendar() {
             )}
           </p>
         </div>
-        <ToggleGroup
-          multiple={false}
-          value={[resort]}
-          onValueChange={(v) => onResortChange((v[0] as Resort) ?? "WDW")}
-          variant="outline"
-          className="*:data-[slot=toggle-group-item]:px-4!"
-        >
-          {RESORTS.map((r) => (
-            <ToggleGroupItem key={r.value} value={r.value}>
-              {r.label}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+        <div className="-mx-1 -my-1 min-w-0 overflow-x-auto overflow-y-clip px-1 py-1">
+          <ToggleGroup
+            multiple={false}
+            value={[resort]}
+            onValueChange={(v) => onResortChange((v[0] as Resort) ?? "WDW")}
+            variant="outline"
+            className="w-max *:data-[slot=toggle-group-item]:px-4!"
+          >
+            {RESORTS.map((r) => (
+              <ToggleGroupItem key={r.value} value={r.value}>
+                {r.label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        </div>
       </div>
 
       {/* Filters row — WDW gets ticket-type + age + park; UOR gets age + park */}
@@ -502,22 +504,25 @@ export function PricingCalendar() {
             <ToggleGroupItem value="CHILD">Child</ToggleGroupItem>
           </ToggleGroup>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <span className="text-muted-foreground text-xs font-medium">Park</span>
-          <ToggleGroup
-            multiple={false}
-            value={[park ?? "ALL"]}
-            onValueChange={(v) => setPark(v[0] === "ALL" ? null : (v[0] ?? null))}
-            variant="outline"
-            size="sm"
-          >
-            <ToggleGroupItem value="ALL">All</ToggleGroupItem>
-            {parks.map((p) => (
-              <ToggleGroupItem key={p.code} value={p.code}>
-                {p.label}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+          <div className="-mx-1 -my-1 min-w-0 overflow-x-auto overflow-y-clip px-1 py-1">
+            <ToggleGroup
+              multiple={false}
+              value={[park ?? "ALL"]}
+              onValueChange={(v) => setPark(v[0] === "ALL" ? null : (v[0] ?? null))}
+              variant="outline"
+              size="sm"
+              className="w-max"
+            >
+              <ToggleGroupItem value="ALL">All</ToggleGroupItem>
+              {parks.map((p) => (
+                <ToggleGroupItem key={p.code} value={p.code}>
+                  {p.label}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </div>
         </div>
       </div>
 

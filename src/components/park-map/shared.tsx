@@ -47,8 +47,9 @@ export const MORPH_MS = 420;
 
 // Square (px) reserved around a full attraction marker for collision avoidance.
 // Two markers whose projected centers fall within this on both axes can't both
-// stay expanded; the lower-priority one collapses to a dot.
-export const DECLUTTER_SIZE = 34;
+// stay expanded; the lower-priority one collapses to a dot. Sized to the resting
+// photo disc (size-9 = 36px) plus a hair of breathing room.
+export const DECLUTTER_SIZE = 40;
 
 // Classes layered onto the selected attraction marker. Applied to the inner
 // element (not the marker root, whose transform the engine owns for positioning).
@@ -180,7 +181,46 @@ export function attractionPopupHtml(a: BoardItem, waitLabel: string): string {
   )}</div><div class="text-[11px] text-neutral-500">${waitLabel}</div>${tags}${detail}${moreInfo}</div>`;
 }
 
-/** One park badge for the overview map. The caller wires the click (navigate). */
+// The expanding "chip" that wraps every marker: a transparent rounded shell that
+// holds just the circular photo at rest, and on hover (the root carries `group`)
+// fades in a card background + slides out the detail panel. One class string so
+// park badges and ride pins animate identically.
+const CHIP_CLASS =
+  "flex items-center rounded-full border border-transparent p-0.5 transition-all duration-200 ease-out group-hover:border-border group-hover:bg-card/95 group-hover:shadow-lg group-hover:backdrop-blur";
+
+/** A circular photo disc (white-bordered, colour-ringed) or, with no photo, the
+ *  fallback icon disc. `badge` is optional overlay HTML (e.g. a ride's wait). */
+function discMarkup(opts: {
+  url: string | null;
+  alt: string;
+  fallbackSvg: string;
+  ring: string;
+  bg: string;
+  size: string;
+  badge?: string;
+}): string {
+  const ring = `--tw-ring-color:${opts.ring}`;
+  const face = opts.url
+    ? `<img src="${escapeHtml(opts.url)}" alt="${escapeHtml(
+        opts.alt,
+      )}" loading="lazy" class="size-full rounded-full border-2 border-white object-cover shadow-md ring-2" style="${ring}" />`
+    : `<span class="flex size-full items-center justify-center rounded-full border-2 border-white text-white shadow-md ring-2" style="background:${opts.bg};${ring}">${opts.fallbackSvg}</span>`;
+  return `<span class="relative block ${opts.size} shrink-0">${face}${opts.badge ?? ""}</span>`;
+}
+
+/** The hover-revealed detail panel: clipped to zero width at rest, expands +
+ *  fades in on `group-hover`. `subtitle` is pre-escaped/markup; `title` is plain. */
+function labelMarkup(title: string, subtitle: string): string {
+  return `<span class="flex max-w-0 flex-col items-start overflow-hidden whitespace-nowrap pl-0 leading-tight opacity-0 transition-all duration-200 ease-out group-hover:max-w-[14rem] group-hover:pl-2 group-hover:pr-1 group-hover:opacity-100"><span class="text-[11px] font-semibold text-card-foreground">${escapeHtml(
+    title,
+  )}</span><span class="text-[10px] text-muted-foreground">${subtitle}</span></span>`;
+}
+
+/**
+ * One park badge for the overview map: just the park photo at rest, expanding on
+ * hover to reveal the name + live "N open · Ym avg" line. The caller wires the
+ * click (navigate) and a hover z-lift so the expanded panel clears its neighbors.
+ */
 export function buildParkBadgeEl(
   p: {
     name: string;
@@ -188,20 +228,27 @@ export function buildParkBadgeEl(
     operatorSlug: string | null;
     operating: number;
     avgWait: number | null;
+    imageUrl?: string | null;
+    imageAlt?: string | null;
   },
   onClick: () => void,
 ): HTMLButtonElement {
   const el = document.createElement("button");
   el.type = "button";
   el.title = p.name;
-  el.className =
-    "flex cursor-pointer items-center gap-1.5 rounded-full border border-border bg-card/95 py-1 pr-2.5 pl-1 shadow-md backdrop-blur transition-transform hover:scale-105";
+  el.className = "group relative block cursor-pointer";
+  const color = operatorColor(p.operatorSlug);
   const wait = p.avgWait != null ? `${p.avgWait}m avg` : "—";
-  el.innerHTML = `<span class="flex size-6 shrink-0 items-center justify-center rounded-full text-white shadow-inner" style="background:${operatorColor(
-    p.operatorSlug,
-  )}">${parkIconSvg(p.slug, p.operatorSlug)}</span><span class="flex flex-col items-start leading-none"><span class="text-[11px] font-semibold text-card-foreground">${escapeHtml(
-    p.name,
-  )}</span><span class="text-[10px] text-muted-foreground">${p.operating} open · ${wait}</span></span>`;
+  const disc = discMarkup({
+    url: p.imageUrl ?? null,
+    alt: p.imageAlt ?? p.name,
+    fallbackSvg: parkIconSvg(p.slug, p.operatorSlug),
+    ring: color,
+    bg: color,
+    size: "size-11",
+  });
+  const subtitle = `${p.operating} open · ${escapeHtml(wait)}`;
+  el.innerHTML = `<div class="${CHIP_CLASS}">${disc}${labelMarkup(p.name, subtitle)}</div>`;
   el.addEventListener("click", onClick);
   return el;
 }
@@ -223,17 +270,26 @@ export function buildAttractionEl(
   const el = document.createElement("button");
   el.type = "button";
   el.title = a.name;
-  el.className = "block cursor-pointer";
+  el.className = "group relative block cursor-pointer";
 
+  // `detail` IS the expanding chip (decluttered in/out and highlighted on
+  // select): the ride photo at rest, expanding on hover to its name + wait line.
   const detail = document.createElement("div");
-  detail.className =
-    "relative flex size-7 items-center justify-center rounded-full border-2 border-white text-white shadow-md transition-transform hover:scale-110";
-  detail.style.background = color;
+  detail.className = CHIP_CLASS;
   const waitBadge =
     operating && a.standbyWait != null
-      ? `<span class="absolute -top-1.5 -right-1.5 min-w-[1rem] rounded-full border border-white bg-neutral-900 px-1 text-center text-[9px] leading-[14px] font-bold text-white shadow">${a.standbyWait}</span>`
+      ? `<span class="absolute -top-1 -right-1 min-w-[1rem] rounded-full border border-white bg-neutral-900 px-1 text-center text-[9px] leading-[14px] font-bold text-white shadow">${a.standbyWait}</span>`
       : "";
-  detail.innerHTML = `${categoryIconSvg(a.category)}${waitBadge}`;
+  const disc = discMarkup({
+    url: a.meta?.imageThumbUrl ?? a.meta?.imageHeroUrl ?? null,
+    alt: a.meta?.imageAlt ?? a.name,
+    fallbackSvg: categoryIconSvg(a.category),
+    ring: color,
+    bg: color,
+    size: "size-9",
+    badge: waitBadge,
+  });
+  detail.innerHTML = `${disc}${labelMarkup(a.name, escapeHtml(waitLabelFor(a)))}`;
   if (selected) detail.classList.add(...SELECTED_CLASSES);
 
   const dot = document.createElement("div");

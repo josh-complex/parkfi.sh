@@ -34,6 +34,7 @@ import {
   categoryFromEntityType,
   categoryFromUniversalPlace,
   disneyHeroUrl,
+  disneyParkHero,
   normalizeUniversalName,
   parseDisneyFacets,
   Source,
@@ -251,6 +252,17 @@ async function updateParkGeo(
   await db.execute(sql`UPDATE parks SET ${sql.join(sets, sql`, `)} WHERE id = ${parkId}`);
 }
 
+/** Write a park's hero photo + alt (from the operator's own enrichment feed). */
+async function updateParkImage(
+  parkId: number,
+  image: { url: string; alt: string | null } | null,
+): Promise<void> {
+  if (!image) return;
+  await db.execute(
+    sql`UPDATE parks SET image_url = ${image.url}, image_alt = ${image.alt} WHERE id = ${parkId}`,
+  );
+}
+
 // --- per-park steps -------------------------------------------------------
 
 /**
@@ -320,6 +332,9 @@ async function enrichDisneyPark(
     AbortSignal.timeout(config.fetchTimeoutMs),
   );
   const loc = detail.mapData?.location;
+
+  // Park-level hero photo from the finder's hero carousel (previously discarded).
+  await updateParkImage(park.id, disneyParkHero(detail.heroData?.mediaEngine?.data));
 
   const overrides: Array<{ id: number; category: MapCategory }> = [];
   const metaRows: Array<typeof attractionMeta.$inferInsert> = [];
@@ -391,6 +406,8 @@ async function resolveParkAttractions(parkId: number): Promise<Array<ParkAttract
 interface PlaceIndex {
   byVenueName: Map<string, Map<string, UniversalPlace>>;
   landById: Map<string, string>;
+  // venue_id -> the `Park`-type place (carries the park's own hero photo + logo).
+  parkByVenue: Map<string, UniversalPlace>;
 }
 
 /** Enrichment richness — prefer the place carrying the most card metadata. */
@@ -406,9 +423,15 @@ function placeRichness(place: UniversalPlace): number {
 function buildPlaceIndex(places: UniversalPlaces): PlaceIndex {
   const byVenueName = new Map<string, Map<string, UniversalPlace>>();
   const landById = new Map<string, string>();
+  const parkByVenue = new Map<string, UniversalPlace>();
   for (const { place } of places.results) {
     if (place.place_type?.type === "Land" && place.name) {
       landById.set(place.place_id, place.name);
+    }
+    // The Park-type place carries the park's own hero photo + logo; key it by
+    // venue_id (== place_id for parks, e.g. `uor.usf`) for the enrichment step.
+    if (place.place_type?.type === "Park" && place.venue_id) {
+      parkByVenue.set(place.venue_id, place);
     }
     // Lands/parks are containers, not POIs we enrich onto an attraction.
     if (place.place_type?.type === "Land" || place.place_type?.type === "Park") continue;
@@ -420,7 +443,7 @@ function buildPlaceIndex(places: UniversalPlaces): PlaceIndex {
     const existing = names.get(key);
     if (!existing || placeRichness(place) > placeRichness(existing)) names.set(key, place);
   }
-  return { byVenueName, landById };
+  return { byVenueName, landById, parkByVenue };
 }
 
 /**
@@ -436,6 +459,13 @@ async function enrichUniversalPark(park: ParkRow, index: PlaceIndex): Promise<vo
   if (!names) {
     console.warn(`[geo] ${park.slug}: no Universal venue mapping — skipping places enrichment`);
     return;
+  }
+
+  // Park-level hero photo from the Park-type place (its `heroImage`).
+  const parkPlace = venue ? index.parkByVenue.get(venue) : undefined;
+  if (parkPlace) {
+    const img = universalPlaceImages(parkPlace.images, parkPlace.name);
+    if (img.hero) await updateParkImage(park.id, { url: img.hero, alt: img.alt });
   }
 
   const attractions = await resolveParkAttractions(park.id);

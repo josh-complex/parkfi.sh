@@ -13,7 +13,6 @@ import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { ParkBoardTable } from "./park-board-table.tsx";
 import { ParkStatCards } from "./park-stat-cards.tsx";
 import { useSelection } from "./selection-context.tsx";
-import type { BoardItem } from "./types.ts";
 
 // recharts + d3 are heavy and the chart isn't crawler content (the same numbers
 // live in the SSR'd board table), so split it out of the critical park-page
@@ -21,15 +20,6 @@ import type { BoardItem } from "./types.ts";
 const ParkWaitChart = React.lazy(() =>
   import("./park-wait-chart.tsx").then((m) => ({ default: m.ParkWaitChart })),
 );
-
-/** Default attraction to chart: the operating ride with the longest standby line. */
-function pickDefault(board: Array<BoardItem>): BoardItem | null {
-  const rides = board.filter((b) => b.entityType === "ATTRACTION");
-  const withWait = rides
-    .filter((b) => typeof b.standbyWait === "number")
-    .sort((a, b) => (b.standbyWait ?? 0) - (a.standbyWait ?? 0));
-  return withWait[0] ?? rides[0] ?? null;
-}
 
 export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
   const trpc = useTRPC();
@@ -49,15 +39,13 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
   // selection survives navigation.
   const { selected, setSelected } = useSelection();
 
-  // When a park's board loads (or the park changes), default the charted ride
-  // if the current selection isn't present in this board.
+  // Nothing is selected by default — the chart shows the busiest few series and
+  // the park average on its own. We only clear a stale selection when the park
+  // changes and the previously-picked ride isn't on this board.
   React.useEffect(() => {
-    if (!board) return;
-    const stillHere = selected && board.some((b) => b.id === selected.id);
-    if (!stillHere) {
-      const def = pickDefault(board);
-      setSelected(def ? { id: def.id, name: def.name } : null);
-    }
+    if (!board || !selected) return;
+    const stillHere = board.some((b) => b.id === selected.id);
+    if (!stillHere) setSelected(null);
   }, [board, selected, setSelected]);
 
   const operatorSlug = parks?.find((p) => p.slug === activeSlug)?.operatorSlug;
@@ -98,7 +86,11 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
         {/* Map and wait chart share a row at equal width; the board table spans
             the full column underneath them. The map cell is a shared-layout
             slot — the live map morphs in from the overview hero. */}
-        <div className="grid items-stretch gap-4 lg:grid-cols-2">
+        {/* `[&>*]:min-w-0` makes the two tracks `minmax(0,1fr)` instead of
+            `minmax(auto,1fr)`: without it the chart card's intrinsic min-content
+            (recharts container + the header toolbar) blows the column past 1fr
+            and overflows the content card at lg+. */}
+        <div className="grid items-stretch gap-4 lg:grid-cols-2 lg:[&>*]:min-w-0">
           <MapSlot className="relative isolate h-[320px] overflow-hidden rounded-2xl border shadow-md lg:h-auto lg:min-h-[460px]" />
           <React.Suspense
             fallback={

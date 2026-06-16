@@ -4,6 +4,7 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
+import { XIcon } from "lucide-react";
 
 import {
   Card,
@@ -13,6 +14,8 @@ import {
   CardHeader,
   CardTitle,
 } from "#/components/ui/card.tsx";
+import { Button } from "#/components/ui/button.tsx";
+import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "#/components/ui/drawer.tsx";
 import {
   ChartContainer,
   ChartTooltip,
@@ -54,6 +57,82 @@ const DEFAULT_SERIES = 3;
 // Reserved series key for the whole-park average line.
 const AVG_KEY = "__avg";
 
+/**
+ * The ride-series toggle list. Rendered inline beside the chart at `@[640px]/card`
+ * and up; on narrower cards it moves into a Sheet behind a "Rides (n)" button so
+ * the plot keeps full width. Both surfaces share this list.
+ */
+function RideLegend({
+  rides,
+  enabled,
+  colorOf,
+  toggle,
+  toggleAll,
+  allEnabled,
+  onClose,
+}: {
+  rides: Array<{ id: number; name: string }>;
+  enabled: Set<number>;
+  colorOf: (id: number) => string;
+  toggle: (id: number) => void;
+  toggleAll: () => void;
+  allEnabled: boolean;
+  /** When provided (the drawer), renders a close control in the header. */
+  onClose?: () => void;
+}) {
+  return (
+    <>
+      <div className="text-muted-foreground sticky top-0 z-10 flex items-center justify-between gap-2 bg-card/95 px-3 py-2 text-xs font-medium supports-backdrop-filter:backdrop-blur">
+        <span>Rides ({rides.length})</span>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={toggleAll}
+            aria-pressed={allEnabled}
+            className="text-primary rounded px-1 py-0.5 font-medium transition-colors hover:underline"
+          >
+            {allEnabled ? "Clear all" : "Select all"}
+          </button>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="inline-flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <XIcon className="size-4" />
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="flex flex-col gap-0.5 p-1">
+        {rides.map((r) => {
+          const on = enabled.has(r.id);
+          return (
+            <button
+              key={r.id}
+              type="button"
+              onClick={() => toggle(r.id)}
+              aria-pressed={on}
+              title={r.name}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted/50",
+                on ? "text-foreground" : "text-muted-foreground",
+              )}
+            >
+              <span
+                className="size-2.5 shrink-0 rounded-[3px]"
+                style={{ backgroundColor: colorOf(r.id), opacity: on ? 1 : 0.35 }}
+              />
+              <span className="truncate">{r.name}</span>
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 export function ParkWaitChart({
   parkSlug,
   operatorSlug,
@@ -69,6 +148,7 @@ export function ParkWaitChart({
   const queueOptions = React.useMemo(() => getQueueOptions(operatorSlug), [operatorSlug]);
   const [queueType, setQueueType] = React.useState("1");
   const [range, setRange] = React.useState("24h");
+  const [ridesOpen, setRidesOpen] = React.useState(false);
 
   React.useEffect(() => {
     const exists = queueOptions.some((q) => q.value === queueType);
@@ -210,7 +290,7 @@ export function ParkWaitChart({
   const valueFormatter = (v: number) => (mode === "price" ? `$${v.toFixed(2)}` : `${v} min`);
 
   const metricNoun = mode === "price" ? "price" : "standby wait";
-  const description = `Whole-park average ${metricNoun} — toggle rides at right`;
+  const description = `Whole-park average ${metricNoun}`;
 
   const enabledRides = rides.filter((r) => enabled.has(r.id));
   const hasData = chartData.length > 0 && rides.length > 0;
@@ -278,8 +358,12 @@ export function ParkWaitChart({
   return (
     <Card className={cn("@container/card flex flex-col", className)}>
       <CardHeader>
-        <CardTitle>{parkSlug ? "Park wait history" : "Wait History"}</CardTitle>
-        <CardDescription>{description}</CardDescription>
+        <div className="min-w-0">
+          <CardTitle className="truncate">
+            {parkSlug ? "Park wait history" : "Wait History"}
+          </CardTitle>
+          <CardDescription className="truncate">{description}</CardDescription>
+        </div>
         <CardAction className="flex flex-wrap justify-end gap-2">
           <Select
             value={queueType}
@@ -308,6 +392,44 @@ export function ParkWaitChart({
             <ToggleGroupItem value="7d">7d</ToggleGroupItem>
             <ToggleGroupItem value="30d">30d</ToggleGroupItem>
           </ToggleGroup>
+          {/* Narrow cards: the legend collapses into a bottom drawer behind this
+              button (the inline list is hidden below 640px) so the chart keeps
+              full width. */}
+          {rides.length > 0 && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                className="@[640px]/card:hidden"
+                onClick={() => setRidesOpen(true)}
+              >
+                Rides ({rides.length})
+              </Button>
+              <Drawer open={ridesOpen} onOpenChange={setRidesOpen}>
+                <DrawerContent className="max-h-[85vh] px-2">
+                  <DrawerTitle className="sr-only">Ride series</DrawerTitle>
+                  <DrawerDescription className="sr-only">
+                    Toggle which ride series appear on the chart.
+                  </DrawerDescription>
+                  <div
+                    className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+0.5rem)]"
+                    role="group"
+                    aria-label="Toggle ride series"
+                  >
+                    <RideLegend
+                      rides={rides}
+                      enabled={enabled}
+                      colorOf={colorOf}
+                      toggle={toggle}
+                      toggleAll={toggleAll}
+                      allEnabled={allEnabled}
+                      onClose={() => setRidesOpen(false)}
+                    />
+                  </div>
+                </DrawerContent>
+              </Drawer>
+            </>
+          )}
         </CardAction>
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col px-2 pt-4 sm:px-6 sm:pt-6">
@@ -330,9 +452,9 @@ export function ParkWaitChart({
             }
           />
         ) : (
-          <div className="flex min-h-0 gap-3">
+          <div className="flex min-h-0 min-w-0 gap-3">
             <ChartContainer config={chartConfig} className="aspect-auto h-[340px] min-w-0 flex-1">
-              <LineChart data={chartData} margin={{ left: 4, right: 8, top: 8 }}>
+              <LineChart data={chartData} margin={{ left: 0, right: 0, top: 8 }}>
                 <CartesianGrid vertical={false} />
                 <XAxis
                   dataKey="bucket"
@@ -343,11 +465,16 @@ export function ParkWaitChart({
                   tickFormatter={formatTick}
                 />
                 <YAxis
+                  // Axis on the right, with `mirror` drawing the tick labels inside
+                  // the plot area so the series still uses the full card width
+                  // instead of ceding a gutter to the labels.
+                  orientation="right"
+                  mirror
                   tickLine={false}
                   axisLine={false}
-                  width={26}
+                  width={24}
                   tickMargin={2}
-                  tick={{ textAnchor: "end" }}
+                  tick={{ fontSize: 11 }}
                   tickFormatter={(v) => (mode === "price" ? `$${v}` : `${v}`)}
                 />
                 <ChartTooltip
@@ -391,52 +518,21 @@ export function ParkWaitChart({
               </LineChart>
             </ChartContainer>
 
-            {/* Scrollable ride legend — toggle individual ride series on/off. */}
+            {/* Inline ride legend — only from 640px up; below that it lives in the
+                Sheet behind the "Rides" button so the chart keeps full width. */}
             <div
-              className="flex max-h-[340px] w-44 shrink-0 flex-col overflow-y-auto rounded-lg border bg-muted/20"
+              className="hidden max-h-[340px] w-44 shrink-0 flex-col overflow-y-auto rounded-lg border bg-muted/20 @[640px]/card:flex"
               role="group"
               aria-label="Toggle ride series"
             >
-              <div className="text-muted-foreground sticky top-0 z-10 flex items-center justify-between gap-2 bg-card/95 px-3 py-2 text-xs font-medium supports-backdrop-filter:backdrop-blur">
-                <span>Rides ({rides.length})</span>
-                <button
-                  type="button"
-                  onClick={toggleAll}
-                  aria-pressed={allEnabled}
-                  className="text-primary rounded px-1 py-0.5 font-medium transition-colors hover:underline"
-                >
-                  {allEnabled ? "Clear all" : "Select all"}
-                </button>
-              </div>
-              <div className="flex flex-col gap-0.5 p-1">
-                {rides.map((r) => {
-                  const on = enabled.has(r.id);
-                  const isFocused = r.id === focusedId;
-                  return (
-                    <button
-                      key={r.id}
-                      type="button"
-                      onClick={() => toggle(r.id)}
-                      aria-pressed={on}
-                      title={r.name}
-                      className={cn(
-                        "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors",
-                        on ? "text-foreground" : "text-muted-foreground hover:bg-muted/50",
-                        isFocused && "bg-muted ring-2 ring-ring/50",
-                      )}
-                    >
-                      <span
-                        className="size-2.5 shrink-0 rounded-[3px]"
-                        style={{
-                          backgroundColor: on ? colorOf(r.id) : "transparent",
-                          boxShadow: on ? undefined : `inset 0 0 0 1.5px ${colorOf(r.id)}`,
-                        }}
-                      />
-                      <span className="truncate">{r.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
+              <RideLegend
+                rides={rides}
+                enabled={enabled}
+                colorOf={colorOf}
+                toggle={toggle}
+                toggleAll={toggleAll}
+                allEnabled={allEnabled}
+              />
             </div>
           </div>
         )}

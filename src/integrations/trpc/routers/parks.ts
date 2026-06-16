@@ -24,6 +24,16 @@ const QUEUE_STATE_CODE: Record<number, string> = {
 const code = (map: Record<number, string>, v: number | null) =>
   v == null ? null : (map[v] ?? null);
 
+/**
+ * How recent an attraction-status observation must be to count toward a park's
+ * "operating" tally on the overview map. Without this bound a ride last seen
+ * OPERATING long ago (e.g. before an overnight closure stopped polling) keeps
+ * counting as open. Mirrors the 24h bound on `latest_standby`, but tighter so
+ * overnight-closed parks fall toward 0 operating. Tune against live data: too
+ * tight blanks parks that genuinely poll slowly.
+ */
+const STATUS_STALE_HOURS = 6;
+
 export const parksRouter = {
   /** All active parks with operator/resort context. */
   list: publicProcedure.query(async () => {
@@ -417,6 +427,8 @@ export const parksRouter = {
       name: string;
       latitude: number | null;
       longitude: number | null;
+      image_url: string | null;
+      image_alt: string | null;
       operator_slug: string | null;
       operator_name: string | null;
       resort_name: string | null;
@@ -426,6 +438,9 @@ export const parksRouter = {
       avg_wait: number | null;
       longest_name: string | null;
       longest_wait: number | null;
+      is_open: boolean | null;
+      has_schedule: boolean;
+      opens_at: string | null;
     }>(sql`
       WITH latest_standby AS (
         SELECT DISTINCT ON (q.attraction_id) q.attraction_id, q.wait_min
@@ -436,6 +451,7 @@ export const parksRouter = {
       latest_status AS (
         SELECT DISTINCT ON (s.attraction_id) s.attraction_id, s.status
         FROM attraction_status_obs s
+        WHERE s.observed_at >= now() - (${STATUS_STALE_HOURS} * INTERVAL '1 hour')
         ORDER BY s.attraction_id, s.observed_at DESC
       ),
       ride AS (
@@ -460,19 +476,42 @@ export const parksRouter = {
         FROM ride
         WHERE status = 1 AND wait_min IS NOT NULL
         ORDER BY park_id, wait_min DESC
+      ),
+      -- Latest daily snapshot's view of each park's operating windows, reusing the
+      -- DISTINCT ON … snapshot_date DESC shape from parkHistory.
+      sched AS (
+        SELECT DISTINCT ON (park_id, service_date, opening_time)
+               park_id, opening_time, closing_time
+        FROM park_schedule
+        WHERE type = 'OPERATING' AND closing_time IS NOT NULL
+        ORDER BY park_id, service_date, opening_time, snapshot_date DESC
+      ),
+      -- Per-park current open/closed state from the operating calendar. Parks
+      -- with no schedule rows get is_open = NULL / has_schedule = false so the UI
+      -- can degrade to "hours unavailable" rather than claiming live operation.
+      park_open AS (
+        SELECT p.id AS park_id,
+               bool_or(s.opening_time <= now() AND now() < s.closing_time) AS is_open,
+               min(s.opening_time) FILTER (WHERE s.opening_time > now()) AS opens_at,
+               count(s.opening_time) > 0 AS has_schedule
+        FROM parks p
+        LEFT JOIN sched s ON s.park_id = p.id
+        GROUP BY p.id
       )
-      SELECT p.id, p.slug, p.name, p.latitude, p.longitude,
+      SELECT p.id, p.slug, p.name, p.latitude, p.longitude, p.image_url, p.image_alt,
              o.slug AS operator_slug, o.name AS operator_name, r.name AS resort_name,
              coalesce(pa.total_rides, 0) AS total_rides,
              coalesce(pa.operating, 0) AS operating,
              coalesce(pa.wait_samples, 0) AS wait_samples,
              pa.avg_wait,
-             l.longest_name, l.longest_wait
+             l.longest_name, l.longest_wait,
+             po.is_open, coalesce(po.has_schedule, false) AS has_schedule, po.opens_at
       FROM parks p
       LEFT JOIN operators o ON o.id = p.operator_id
       LEFT JOIN resorts r ON r.id = p.resort_id
       LEFT JOIN park_agg pa ON pa.park_id = p.id
       LEFT JOIN longest l ON l.park_id = p.id
+      LEFT JOIN park_open po ON po.park_id = p.id
       WHERE p.active = true
       ORDER BY r.name, p.name
     `);
@@ -483,6 +522,8 @@ export const parksRouter = {
       name: p.name,
       latitude: p.latitude,
       longitude: p.longitude,
+      imageUrl: p.image_url,
+      imageAlt: p.image_alt,
       operatorSlug: p.operator_slug,
       operatorName: p.operator_name,
       resortName: p.resort_name,
@@ -494,6 +535,10 @@ export const parksRouter = {
         p.longest_name != null && p.longest_wait != null
           ? { name: p.longest_name, wait: p.longest_wait }
           : null,
+      // null = no schedule data (UI shows "hours unavailable"); otherwise a
+      // confident open/closed derived from the operating calendar.
+      isOpen: p.has_schedule ? Boolean(p.is_open) : null,
+      opensAt: p.opens_at,
     }));
 
     // Operating-sample-weighted mean = exact overall avg over rides with a wait.

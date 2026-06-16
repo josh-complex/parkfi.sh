@@ -39,6 +39,37 @@ const NAV: Array<{ title: string; to: string; icon: React.ReactNode }> = [
   { title: "Forecast", to: "/predictions", icon: <TrendingUpIcon /> },
 ];
 
+/**
+ * Fade the top/bottom edges of a scroll container so it reads as scrollable —
+ * the sidebar hides its scrollbar (`no-scrollbar`), so without this the cut-off
+ * nav list looks complete rather than continuing. Each edge only fades once
+ * there's actually content past it.
+ */
+function useScrollFade<T extends HTMLElement>() {
+  const ref = React.useRef<T>(null);
+  const [edges, setEdges] = React.useState({ top: false, bottom: false });
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => {
+      const top = el.scrollTop > 4;
+      const bottom = el.scrollTop + el.clientHeight < el.scrollHeight - 4;
+      setEdges((e) => (e.top === top && e.bottom === bottom ? e : { top, bottom }));
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", update);
+      ro.disconnect();
+    };
+  }, []);
+  const mask = `linear-gradient(to bottom, ${edges.top ? "transparent" : "#000"} 0, #000 24px, #000 calc(100% - 24px), ${edges.bottom ? "transparent" : "#000"} 100%)`;
+  const style: React.CSSProperties = { maskImage: mask, WebkitMaskImage: mask };
+  return { ref, style };
+}
+
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const params = useParams({ strict: false }) as { slug?: string };
@@ -79,6 +110,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   const effectiveSlug = activeParkSlug;
 
+  const { ref: contentRef, style: contentFade } = useScrollFade<HTMLDivElement>();
+
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
@@ -95,7 +128,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
-      <SidebarContent>
+      <SidebarContent ref={contentRef} style={contentFade}>
         <SidebarGroup>
           <SidebarGroupContent className="flex flex-col gap-2">
             <SidebarMenu>
@@ -182,8 +215,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           </>
         )}
       </SidebarContent>
+      <SidebarSeparator className="mx-0" />
       <SidebarFooter>
-        <div className="flex gap-1">
+        <div className="flex flex-wrap gap-1">
           <Button variant="ghost" size="sm" onClick={closeOnMobile} render={<Link to="/privacy" />}>
             <ShieldAlertIcon />
             Terms & Privacy

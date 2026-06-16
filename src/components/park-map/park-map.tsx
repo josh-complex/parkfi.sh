@@ -57,6 +57,18 @@ function basemapStyle(dark: boolean): maplibregl.StyleSpecification {
   };
 }
 
+/** Lift a marker above its neighbors while hovered, so its expanded hover panel
+ *  isn't occluded by adjacent markers. MapLibre markers are positioned siblings
+ *  with auto z-index, so an explicit z-index on the element wins. */
+function raiseOnHover(el: HTMLElement): void {
+  el.addEventListener("mouseenter", () => {
+    el.style.zIndex = "1000";
+  });
+  el.addEventListener("mouseleave", () => {
+    el.style.zIndex = "";
+  });
+}
+
 type ParkBounds = { latMin: number; latMax: number; lngMin: number; lngMax: number };
 
 /** Generous box around the park used to cap how far the user can zoom/pan out. */
@@ -242,6 +254,7 @@ export function ParkMap({
         const el = buildParkBadgeEl(p, () => {
           void navigate({ to: "/park/$slug", params: { slug: p.slug } });
         });
+        raiseOnHover(el);
         const marker = new maplibregl.Marker({ element: el })
           .setLngLat([p.longitude, p.latitude])
           .addTo(map);
@@ -255,6 +268,7 @@ export function ParkMap({
       if (a.entityType !== "ATTRACTION") continue;
       const lngLat: [number, number] = [a.longitude, a.latitude];
       const { el, detail, dot } = buildAttractionEl(a, a.id === selectedIdRef.current);
+      raiseOnHover(el);
       const waitLabel = waitLabelFor(a);
       el.addEventListener("click", (e) => {
         e.stopPropagation();

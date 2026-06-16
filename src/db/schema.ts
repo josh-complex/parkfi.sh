@@ -146,6 +146,11 @@ export const parks = pgTable("parks", {
   lngMin: doublePrecision("lng_min"),
   lngMax: doublePrecision("lng_max"),
   mapZoom: integer("map_zoom"),
+  // Park-level hero photo + alt, enriched monthly by services/geo from the
+  // operator's own feed (Disney finder `heroData`; Universal places `Park`
+  // entry `heroImage`). Nullable — absent until the geo cron runs.
+  imageUrl: text("image_url"),
+  imageAlt: text("image_alt"),
 });
 
 export const attractions = pgTable(

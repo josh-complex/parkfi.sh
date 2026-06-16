@@ -17,6 +17,8 @@ import {
 import { slugifyMenuItem } from "#/components/dining/menu-content.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { buttonVariants } from "#/components/ui/button.tsx";
+import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "#/components/ui/drawer.tsx";
+import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { cn } from "#/lib/utils.ts";
 
 import type { ReactNode } from "react";
@@ -85,6 +87,7 @@ export function OmniSearch() {
   const [active, setActive] = React.useState(0);
   const navigate = useNavigate();
   const trpc = useTRPC();
+  const isMobile = useIsMobile();
   const listRef = React.useRef<HTMLDivElement>(null);
 
   // The palette renders through a portal into `document.body`, which doesn't
@@ -304,7 +307,32 @@ export function OmniSearch() {
         </kbd>
       </motion.button>
 
-      {mounted &&
+      {/* Mobile: a bottom drawer — easier to reach, full-width, denser type.
+          Desktop: the morphing centered palette. */}
+      {isMobile ? (
+        <Drawer open={open} onOpenChange={(o) => (o ? setOpen(true) : close())}>
+          <DrawerContent className="h-[85vh]">
+            <DrawerTitle className="sr-only">Search</DrawerTitle>
+            <DrawerDescription className="sr-only">
+              Search across parks, attractions, dining, and posts
+            </DrawerDescription>
+            <div className="flex min-h-0 flex-1 flex-col">
+              <SearchBody
+                compact
+                query={query}
+                setQuery={setQuery}
+                setActive={setActive}
+                onKeyDown={onKeyDown}
+                listRef={listRef}
+                showLoading={showLoading}
+                items={items}
+                active={active}
+              />
+            </div>
+          </DrawerContent>
+        </Drawer>
+      ) : (
+        mounted &&
         createPortal(
           <AnimatePresence>
             {open && (
@@ -339,74 +367,130 @@ export function OmniSearch() {
                     animate={{ opacity: 1, transition: { delay: 0.14, duration: 0.12 } }}
                     exit={{ opacity: 0, transition: { duration: 0.05 } }}
                   >
-                    <div className="flex shrink-0 items-center gap-2 border-b px-4 py-3.5">
-                      <SearchIcon className="size-5 shrink-0 text-muted-foreground" />
-                      <input
-                        autoFocus
-                        value={query}
-                        onChange={(e) => {
-                          setQuery(e.target.value);
-                          setActive(0);
-                        }}
-                        onKeyDown={onKeyDown}
-                        placeholder="Search parks, attractions, dining, blog posts…"
-                        className="w-full bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground md:text-sm"
-                      />
-                    </div>
-
-                    <div
-                      ref={listRef}
-                      className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2"
-                    >
-                      {showLoading ? (
-                        <div className="px-3 py-12 text-center text-sm text-muted-foreground">
-                          Loading…
-                        </div>
-                      ) : items.length === 0 ? (
-                        <div className="px-3 py-12 text-center text-sm text-muted-foreground">
-                          {query ? (
-                            <>
-                              No matches for{" "}
-                              <span className="font-medium text-foreground">“{query.trim()}”</span>
-                            </>
-                          ) : (
-                            "Type to search across parks, attractions, dining, and posts"
-                          )}
-                        </div>
-                      ) : (
-                        items.map((item, i) => {
-                          const newGroup = i === 0 || items[i - 1].group !== item.group;
-                          return (
-                            <React.Fragment key={item.key}>
-                              {newGroup && (
-                                <div className="px-2 pt-3 pb-1 text-[11px] font-semibold tracking-widest text-muted-foreground uppercase first:pt-1">
-                                  {item.group}
-                                </div>
-                              )}
-                              <ResultRow
-                                item={item}
-                                active={i === active}
-                                onMouseMove={() => setActive(i)}
-                                idx={i}
-                              />
-                            </React.Fragment>
-                          );
-                        })
-                      )}
-                    </div>
-
-                    <div className="hidden shrink-0 items-center gap-3 border-t px-4 py-2 text-[11px] text-muted-foreground sm:flex">
-                      <Hint keys={["↑", "↓"]}>navigate</Hint>
-                      <Hint keys={["↵"]}>open</Hint>
-                      <Hint keys={["esc"]}>close</Hint>
-                    </div>
+                    <SearchBody
+                      query={query}
+                      setQuery={setQuery}
+                      setActive={setActive}
+                      onKeyDown={onKeyDown}
+                      listRef={listRef}
+                      showLoading={showLoading}
+                      items={items}
+                      active={active}
+                    />
                   </motion.div>
                 </motion.div>
               </div>
             )}
           </AnimatePresence>,
           document.body,
+        )
+      )}
+    </>
+  );
+}
+
+/** Shared search input + grouped results list. `compact` tightens type and
+ *  spacing for the mobile drawer. */
+function SearchBody({
+  compact = false,
+  query,
+  setQuery,
+  setActive,
+  onKeyDown,
+  listRef,
+  showLoading,
+  items,
+  active,
+}: {
+  compact?: boolean;
+  query: string;
+  setQuery: (v: string) => void;
+  setActive: (n: number) => void;
+  onKeyDown: (e: React.KeyboardEvent) => void;
+  listRef: React.RefObject<HTMLDivElement | null>;
+  showLoading: boolean;
+  items: Item[];
+  active: number;
+}) {
+  return (
+    <>
+      <div
+        className={cn(
+          "flex shrink-0 items-center gap-2 border-b",
+          compact ? "px-3 py-2.5" : "px-4 py-3.5",
         )}
+      >
+        <SearchIcon
+          className={cn("shrink-0 text-muted-foreground", compact ? "size-4" : "size-5")}
+        />
+        <input
+          autoFocus
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setActive(0);
+          }}
+          onKeyDown={onKeyDown}
+          placeholder="Search parks, attractions, dining, blog posts…"
+          className={cn(
+            "w-full bg-transparent text-foreground outline-none placeholder:text-muted-foreground",
+            compact ? "text-sm" : "text-base md:text-sm",
+          )}
+        />
+      </div>
+
+      <div
+        ref={listRef}
+        className={cn(
+          "min-h-0 flex-1 overflow-y-auto overscroll-contain",
+          compact ? "p-1.5" : "p-2",
+        )}
+      >
+        {showLoading ? (
+          <div className="px-3 py-12 text-center text-sm text-muted-foreground">Loading…</div>
+        ) : items.length === 0 ? (
+          <div className="px-3 py-12 text-center text-sm text-muted-foreground">
+            {query ? (
+              <>
+                No matches for <span className="font-medium text-foreground">“{query.trim()}”</span>
+              </>
+            ) : (
+              "Type to search across parks, attractions, dining, and posts"
+            )}
+          </div>
+        ) : (
+          items.map((item, i) => {
+            const newGroup = i === 0 || items[i - 1].group !== item.group;
+            return (
+              <React.Fragment key={item.key}>
+                {newGroup && (
+                  <div
+                    className={cn(
+                      "font-semibold tracking-widest text-muted-foreground uppercase first:pt-1",
+                      compact ? "px-2 pt-2 pb-0.5 text-[10px]" : "px-2 pt-3 pb-1 text-[11px]",
+                    )}
+                  >
+                    {item.group}
+                  </div>
+                )}
+                <ResultRow
+                  item={item}
+                  active={i === active}
+                  onMouseMove={() => setActive(i)}
+                  idx={i}
+                  compact={compact}
+                />
+              </React.Fragment>
+            );
+          })
+        )}
+      </div>
+
+      <div className="hidden shrink-0 items-center gap-3 border-t px-4 py-2 text-[11px] text-muted-foreground sm:flex">
+        <Hint keys={["↑", "↓"]}>navigate</Hint>
+        <Hint keys={["↵"]}>open</Hint>
+        <Hint keys={["esc"]}>close</Hint>
+      </div>
     </>
   );
 }
@@ -416,11 +500,13 @@ function ResultRow({
   active,
   onMouseMove,
   idx,
+  compact = false,
 }: {
   item: Item;
   active: boolean;
   onMouseMove: () => void;
   idx: number;
+  compact?: boolean;
 }) {
   return (
     <button
@@ -429,11 +515,17 @@ function ResultRow({
       onClick={item.onSelect}
       onMouseMove={onMouseMove}
       className={cn(
-        "flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors",
+        "flex w-full items-center rounded-xl text-left transition-colors",
+        compact ? "gap-2.5 px-2 py-1.5" : "gap-3 px-2 py-2",
         active && "bg-accent/12",
       )}
     >
-      <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted text-muted-foreground [&_svg]:size-5">
+      <span
+        className={cn(
+          "flex shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted text-muted-foreground",
+          compact ? "size-9 [&_svg]:size-4.5" : "size-10 [&_svg]:size-5",
+        )}
+      >
         {item.image ? (
           <img src={item.image} alt="" className="size-full object-cover" loading="lazy" />
         ) : (

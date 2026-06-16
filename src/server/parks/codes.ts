@@ -207,6 +207,38 @@ export function disneyHeroUrl(thumbUrl?: string | null): string | null {
   return thumbUrl.replace(re, "/resize/mwImage/1/800/450/75/");
 }
 
+/**
+ * Pick a park-level hero photo from the Disney finder `heroData` slides. Prefers
+ * the first video slide's `poster` still (the park's general marketing image),
+ * then any image slide's URL. The chosen URL's `/resize/mwImage/1/{w}/{h}/75/`
+ * segment is upsized to a crisp 16:9 hero. Returns null when no slide carries a
+ * usable image. `alt` comes from the slide (image slides carry it), else null.
+ */
+export function disneyParkHero(
+  slides?: Array<{
+    type?: string;
+    poster?: string;
+    desktop?: string;
+    tablet?: string;
+    mobile?: string;
+    alt?: string;
+  }> | null,
+): { url: string; alt: string | null } | null {
+  const urlOf = (s: {
+    poster?: string;
+    desktop?: string;
+    tablet?: string;
+    mobile?: string;
+  }): string | null => s.poster ?? s.desktop ?? s.tablet ?? s.mobile ?? null;
+  const list = slides ?? [];
+  // Video posters first (the destination still), then any image slide.
+  const chosen = list.find((s) => s.type === "video" && urlOf(s)) ?? list.find((s) => urlOf(s));
+  if (!chosen) return null;
+  const url = urlOf(chosen);
+  if (!url) return null;
+  return { url: disneyHeroUrl(url) ?? url, alt: chosen.alt ?? null };
+}
+
 export interface DisneyFacetInfo {
   land: string | null;
   heightRequirement: string | null;

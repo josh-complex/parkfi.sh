@@ -56,6 +56,14 @@ function makeTileLayer(dark: boolean): L.TileLayer {
  * (whose default anchor is the center). The translate lives on the wrapper, not
  * the element, so the element's own hover/selection scaling never fights it.
  */
+/** Lift a marker above its neighbors while hovered, so its expanded hover panel
+ *  isn't occluded by adjacent markers. Leaflet computes each marker's z-index
+ *  from its latitude; a large offset wins while the cursor is over it. */
+function raiseOnHover(el: HTMLElement, marker: L.Marker): void {
+  el.addEventListener("mouseenter", () => marker.setZIndexOffset(1000));
+  el.addEventListener("mouseleave", () => marker.setZIndexOffset(0));
+}
+
 function pointIcon(el: HTMLElement): L.DivIcon {
   const wrap = document.createElement("div");
   wrap.style.transform = "translate(-50%, -50%)";
@@ -234,6 +242,7 @@ export function ParkMapLeaflet({
           void navigate({ to: "/park/$slug", params: { slug: p.slug } });
         });
         const marker = L.marker([p.latitude, p.longitude], { icon: pointIcon(el) }).addTo(map);
+        raiseOnHover(el, marker);
         markersRef.current.push(marker);
       }
       return;
@@ -246,6 +255,7 @@ export function ParkMapLeaflet({
       const { el, detail, dot } = buildAttractionEl(a, a.id === selectedIdRef.current);
       const waitLabel = waitLabelFor(a);
       const marker = L.marker(latLng, { icon: pointIcon(el) }).addTo(map);
+      raiseOnHover(el, marker);
       marker.on("click", () => {
         onSelectRef.current?.({ id: a.id, name: a.name });
         popupRef.current?.remove();

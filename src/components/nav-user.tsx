@@ -21,10 +21,11 @@ export function NavUser() {
   const { data: session, isPending } = authClient.useSession();
   const navigate = useNavigate();
   const { isMobile, state } = useSidebar();
-  // The bell lives in the top bar on mobile and when the panel is collapsed
-  // (the footer slides offcanvas there); when expanded on desktop it sits beside
-  // the user button instead.
-  const showBell = !isMobile && state === "expanded";
+  // The bell sits beside the user button in the footer whenever the footer is
+  // visible: on mobile it lives in the offcanvas menu (the header no longer
+  // carries it), and on desktop when the panel is expanded. Only the collapsed
+  // desktop panel cedes it to the top bar.
+  const showBell = isMobile || state === "expanded";
 
   const handleSignOut = async () => {
     await authClient.signOut();
@@ -43,11 +44,19 @@ export function NavUser() {
 
   if (!session?.user) {
     return (
-      <div className="px-2">
+      <div className="flex items-center justify-between gap-1 px-2">
         <Button variant="ghost" size="sm" render={<Link to="/login" />}>
           <LogInIcon />
           Sign in
         </Button>
+        {/* Mobile: theme + notifications moved out of the header into the menu, so
+            keep them reachable even when signed out. */}
+        {isMobile && (
+          <div className="flex items-center gap-1">
+            <NotificationCenter />
+            <SidebarThemeToggle />
+          </div>
+        )}
       </div>
     );
   }

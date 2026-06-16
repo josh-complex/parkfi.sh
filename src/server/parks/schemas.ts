@@ -138,6 +138,22 @@ const DisneyParkMarker = z.object({
     .optional(),
 });
 
+// One hero slide. Videos carry a `poster` still; image slides carry a
+// `desktop`/`tablet`/`mobile` URL. Both are park-level marketing imagery and
+// share the `/resize/mwImage/1/{w}/{h}/…` CDN segment (resizable). `partial` +
+// `passthrough` so unknown slide shapes don't fail the parse.
+const DisneyHeroSlide = z
+  .object({
+    type: z.string().optional(),
+    poster: z.string().optional(),
+    desktop: z.string().optional(),
+    tablet: z.string().optional(),
+    mobile: z.string().optional(),
+    alt: z.string().optional(),
+  })
+  .partial()
+  .passthrough();
+
 export const DisneyParkDetailSchema = z.object({
   mapData: z
     .object({
@@ -145,6 +161,17 @@ export const DisneyParkDetailSchema = z.object({
         .object({
           markers: z.array(DisneyParkMarker).default([]),
         })
+        .partial()
+        .optional(),
+    })
+    .partial()
+    .optional(),
+  // Park-level hero carousel (video + image slides). Used by the geo cron to
+  // capture a park photo; the deep `mediaEngine.data` path mirrors the live feed.
+  heroData: z
+    .object({
+      mediaEngine: z
+        .object({ data: z.array(DisneyHeroSlide).default([]) })
         .partial()
         .optional(),
     })
