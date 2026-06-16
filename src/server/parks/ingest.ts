@@ -85,22 +85,34 @@ async function resolveAttractions(
   return map;
 }
 
-/** Latest known status per attraction (the change-log carry-forward value). */
-async function latestStatuses(attractionIds: Array<number>): Promise<Map<number, number>> {
-  const map = new Map<number, number>();
+interface LatestStatus {
+  status: number;
+  observedAt: Date;
+}
+
+/** Latest known status + its observation time per attraction (carry-forward). */
+async function latestStatuses(attractionIds: Array<number>): Promise<Map<number, LatestStatus>> {
+  const map = new Map<number, LatestStatus>();
   if (attractionIds.length === 0) return map;
   const idList = sql.join(
     attractionIds.map((id) => sql`${id}`),
     sql`, `,
   );
-  const result = await db.execute<{ attraction_id: string; status: number }>(sql`
-    SELECT DISTINCT ON (attraction_id) attraction_id, status
+  const result = await db.execute<{
+    attraction_id: string;
+    status: number;
+    observed_at: string;
+  }>(sql`
+    SELECT DISTINCT ON (attraction_id) attraction_id, status, observed_at
     FROM ${attractionStatusObs}
     WHERE attraction_id IN (${idList})
     ORDER BY attraction_id, observed_at DESC
   `);
   for (const r of result.rows) {
-    map.set(Number(r.attraction_id), Number(r.status));
+    map.set(Number(r.attraction_id), {
+      status: Number(r.status),
+      observedAt: new Date(r.observed_at),
+    });
   }
   return map;
 }
@@ -192,16 +204,29 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
   const attractionIds = [...idMap.values()];
   const prevStatus = await latestStatuses(attractionIds);
 
-  // (A) status — write only on change (change-log semantics)
+  // (A) status — change-log: write on transition, plus a heartbeat re-assert when
+  // the last recorded observation has gone stale, so a single missed transition
+  // can't strand a ride at the wrong status (see config.statusHeartbeatMs).
+  const heartbeatMs = config.statusHeartbeatMs;
   const statusRows = normalized
     .map((e) => ({ e, attractionId: idMap.get(e.externalId)! }))
-    .filter(({ e, attractionId }) => prevStatus.get(attractionId) !== e.status)
-    .map(({ e, attractionId }) => ({
-      observedAt: e.observedAt,
-      attractionId,
-      status: e.status,
-      source,
-    }));
+    .filter(({ e, attractionId }) => {
+      const prev = prevStatus.get(attractionId);
+      if (!prev) return true; // never seen — record it
+      if (prev.status !== e.status) return true; // genuine transition
+      // unchanged: re-assert only once the prior row is older than the heartbeat
+      return heartbeatMs > 0 && tickNow.getTime() - prev.observedAt.getTime() >= heartbeatMs;
+    })
+    .map(({ e, attractionId }) => {
+      // The row must become the carry-forward latest (max observed_at). The feed's
+      // `lastUpdated` can be stale or non-monotonic, so if it isn't strictly newer
+      // than the prior row, stamp it at tickNow — otherwise the write lands behind
+      // the existing row and the transition/heartbeat is silently lost.
+      const prev = prevStatus.get(attractionId);
+      const observedAt =
+        prev && e.observedAt.getTime() <= prev.observedAt.getTime() ? tickNow : e.observedAt;
+      return { observedAt, attractionId, status: e.status, source };
+    });
   if (statusRows.length > 0) {
     await db.insert(attractionStatusObs).values(statusRows).onConflictDoNothing();
   }

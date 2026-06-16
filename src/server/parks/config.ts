@@ -80,6 +80,17 @@ export const config = {
   /** How often the worker polls every active park, in ms. */
   pollIntervalMs: num("POLL_INTERVAL_MS", 60_000),
   /**
+   * `attraction_status_obs` is a change-log (one row per transition), so a ride
+   * that hasn't changed emits no rows. If a single transition is ever missed
+   * (feed glitch, non-monotonic `lastUpdated`, brief outage) the ride is
+   * stranded at a stale status until its *next* genuine change — which for a
+   * steadily-open ride can be the next overnight close, hours away. To bound
+   * that, ingest also re-asserts the current status when the last recorded
+   * observation is older than this — a heartbeat that lets a stranded ride
+   * self-heal within one interval. Set 0 to disable (pure change-log).
+   */
+  statusHeartbeatMs: num("STATUS_HEARTBEAT_MS", 20 * 60_000),
+  /**
    * Minimum gap between two notifications for the same ride alert. Alert
    * latency itself is governed by `pollIntervalMs` (alerts are evaluated once
    * per tick); this only rate-limits repeat fires of a still-matching rule.

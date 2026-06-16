@@ -51,9 +51,19 @@ export const MORPH_MS = 420;
 // photo disc (size-9 = 36px) plus a hair of breathing room.
 export const DECLUTTER_SIZE = 40;
 
-// Classes layered onto the selected attraction marker. Applied to the inner
-// element (not the marker root, whose transform the engine owns for positioning).
-export const SELECTED_CLASSES = ["scale-125", "ring-2", "ring-primary", "ring-offset-1"];
+// Ring highlight layered onto the selected attraction marker (no scale — the
+// charted ride shouldn't balloon). Applied to the inner element, not the marker
+// root whose transform the engine owns for positioning.
+const SELECTED_CLASSES = ["ring-2", "ring-primary", "ring-offset-1"];
+
+/**
+ * Mark a marker selected/deselected: ring highlight on, and its hover label
+ * suppressed (the charted ride is already identified — no need to expand it).
+ */
+export function applySelected(detail: HTMLElement, on: boolean): void {
+  for (const c of SELECTED_CLASSES) detail.classList.toggle(c, on);
+  detail.querySelector<HTMLElement>("[data-label]")?.classList.toggle("hidden", on);
+}
 
 /** Escape user-facing strings before injecting into marker/popup innerHTML. */
 export function escapeHtml(s: string): string {
@@ -133,19 +143,27 @@ export function waitLabelFor(a: BoardItem): string {
           : "Closed";
 }
 
-/** Placement priority for the declutter pass — busiest operating rides win a
- *  spot first; closed/no-wait rides yield to a collapsed dot. */
+/**
+ * Placement priority for the cluster pass — the highest-priority marker in a
+ * group becomes its visible head. Tiered so a ride with a posted wait always
+ * heads its group (and, among several, the longest wait wins), then open rides
+ * with no wait, then everything closed/down.
+ */
 export function attractionPriority(a: BoardItem): number {
-  return a.status === "OPERATING" ? 1000 + (a.standbyWait ?? 0) : 0;
+  if (a.status === "OPERATING" && a.standbyWait != null) return 2000 + a.standbyWait;
+  if (a.status === "OPERATING") return 1000;
+  return 0;
 }
 
 /**
  * Build the attraction popup body. Disney rides carry rich `meta` (hero image,
- * tags, height/land, detail page); Universal (and un-enriched rows) degrade to
- * just the name + live wait line — no broken image. Both engines' popups have a
- * white background, so fixed dark text (theme tokens would vanish in dark mode).
+ * tags, height/land); Universal (and un-enriched rows) degrade to just the name +
+ * live wait line — no broken image. Both engines' popups have a white background,
+ * so fixed dark text (theme tokens would vanish in dark mode). The "More info"
+ * link points at our own ride page (`rideHref`); the renderer intercepts its
+ * click (marked `data-spa`) for client-side navigation.
  */
-export function attractionPopupHtml(a: BoardItem, waitLabel: string): string {
+export function attractionPopupHtml(a: BoardItem, waitLabel: string, rideHref: string): string {
   const meta = a.meta;
   const hero =
     (meta?.imageHeroUrl ?? meta?.imageThumbUrl)
@@ -164,29 +182,28 @@ export function attractionPopupHtml(a: BoardItem, waitLabel: string): string {
           )
           .join("")}</div>`
       : "";
-  const detailBits = [meta?.heightRequirement, meta?.land].filter(Boolean) as Array<string>;
-  const detail =
-    detailBits.length > 0
-      ? `<div class="mt-1 text-[11px] text-neutral-500">${detailBits
-          .map(escapeHtml)
-          .join(" · ")}</div>`
-      : "";
-  const moreInfo = meta?.detailUrl
-    ? `<a href="${escapeHtml(
-        meta.detailUrl,
-      )}" target="_blank" rel="noreferrer" class="mt-1.5 inline-block text-[11px] font-medium text-blue-600 hover:underline">More info ↗</a>`
-    : "";
+  // Height requirement first, then the land/location on its own line below it.
+  const detail = [meta?.heightRequirement, meta?.land]
+    .filter(Boolean)
+    .map(
+      (bit, i) =>
+        `<div class="${i === 0 ? "mt-1 " : ""}text-[11px] text-neutral-500">${escapeHtml(bit as string)}</div>`,
+    )
+    .join("");
+  const moreInfo = `<a href="${escapeHtml(
+    rideHref,
+  )}" data-spa class="mt-1.5 inline-block text-[11px] font-medium text-blue-600 hover:underline">More info →</a>`;
   return `<div class="w-44 px-0.5">${hero}<div class="text-xs font-semibold text-neutral-900">${escapeHtml(
     a.name,
   )}</div><div class="text-[11px] text-neutral-500">${waitLabel}</div>${tags}${detail}${moreInfo}</div>`;
 }
 
-// The expanding "chip" that wraps every marker: a transparent rounded shell that
-// holds just the circular photo at rest, and on hover (the root carries `group`)
-// fades in a card background + slides out the detail panel. One class string so
-// park badges and ride pins animate identically.
-const CHIP_CLASS =
-  "flex items-center rounded-full border border-transparent p-0.5 transition-all duration-200 ease-out group-hover:border-border group-hover:bg-card/95 group-hover:shadow-lg group-hover:backdrop-blur";
+// The wrapper that the cluster controller hides / translates / highlights: a
+// disc-sized box (so the marker's footprint is just the photo, centered on the
+// point) holding the photo plus an absolutely-positioned label that slides out on
+// hover. `will-change-transform` keeps the spiderfy translate smooth.
+const DETAIL_CLASS =
+  "relative rounded-full transition-transform duration-200 will-change-transform";
 
 /** A circular photo disc (white-bordered, colour-ringed) or, with no photo, the
  *  fallback icon disc. `badge` is optional overlay HTML (e.g. a ride's wait). */
@@ -208,12 +225,38 @@ function discMarkup(opts: {
   return `<span class="relative block ${opts.size} shrink-0">${face}${opts.badge ?? ""}</span>`;
 }
 
-/** The hover-revealed detail panel: clipped to zero width at rest, expands +
- *  fades in on `group-hover`. `subtitle` is pre-escaped/markup; `title` is plain. */
+/**
+ * The hover-revealed label: a card pill anchored to the photo's right edge,
+ * clipped to zero width at rest and expanding on `group-hover`. Its width is
+ * capped at the smaller of 13rem and 50vw so it never overflows a narrow (mobile)
+ * map, and the title wraps to two lines (`line-clamp-2`) instead of being cut off.
+ * Carries `flip` variants so a renderer can re-anchor it to the LEFT (via
+ * `wireHoverLabelFlip`) when the marker is near the container's right edge.
+ * `pointer-events-none` so it never eats a click meant for the photo/map.
+ * `subtitle` is pre-escaped markup; `title` is plain text.
+ */
 function labelMarkup(title: string, subtitle: string): string {
-  return `<span class="flex max-w-0 flex-col items-start overflow-hidden whitespace-nowrap pl-0 leading-tight opacity-0 transition-all duration-200 ease-out group-hover:max-w-[14rem] group-hover:pl-2 group-hover:pr-1 group-hover:opacity-100"><span class="text-[11px] font-semibold text-card-foreground">${escapeHtml(
+  return `<span data-label class="pointer-events-none absolute top-1/2 left-full z-20 ml-1.5 flex w-max max-w-0 -translate-y-1/2 flex-col items-start overflow-hidden rounded-xl bg-card/95 px-0 py-0 text-left leading-tight opacity-0 shadow-lg ring-1 ring-black/5 backdrop-blur transition-all duration-200 ease-out group-hover:max-w-[min(10rem,45vw)] group-hover:px-2.5 group-hover:py-1 group-hover:opacity-100 [&.flip]:left-auto [&.flip]:right-full [&.flip]:ml-0 [&.flip]:mr-1.5 [&.flip]:items-end [&.flip]:text-right"><span class="line-clamp-2 text-[11px] font-medium text-card-foreground">${escapeHtml(
     title,
-  )}</span><span class="text-[10px] text-muted-foreground">${subtitle}</span></span>`;
+  )}</span><span class="whitespace-nowrap text-[10px] font-normal text-muted-foreground">${subtitle}</span></span>`;
+}
+
+/**
+ * On hover, flip a marker's label to the left when expanding it rightward would
+ * spill past the map container's right edge (and there's room on the left).
+ * Measured live since the marker's screen position changes with pan/zoom.
+ */
+export function wireHoverLabelFlip(el: HTMLElement, container: HTMLElement): void {
+  const label = el.querySelector<HTMLElement>("[data-label]");
+  if (!label) return;
+  el.addEventListener("mouseenter", () => {
+    // Flip to the left whenever the marker sits in the right half of the map:
+    // the label (capped at min(13rem, 50vw)) always fits the wider side, so this
+    // keeps it on-screen without depending on a fragile width estimate.
+    const c = container.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    label.classList.toggle("flip", (r.left + r.right) / 2 > c.left + c.width / 2);
+  });
 }
 
 /**
@@ -221,21 +264,18 @@ function labelMarkup(title: string, subtitle: string): string {
  * hover to reveal the name + live "N open · Ym avg" line. The caller wires the
  * click (navigate) and a hover z-lift so the expanded panel clears its neighbors.
  */
-export function buildParkBadgeEl(
-  p: {
-    name: string;
-    slug: string;
-    operatorSlug: string | null;
-    operating: number;
-    avgWait: number | null;
-    imageUrl?: string | null;
-    imageAlt?: string | null;
-  },
-  onClick: () => void,
-): HTMLButtonElement {
+export function buildParkBadgeEl(p: {
+  name: string;
+  slug: string;
+  operatorSlug: string | null;
+  operating: number;
+  avgWait: number | null;
+  imageUrl?: string | null;
+  imageAlt?: string | null;
+}): { el: HTMLButtonElement; detail: HTMLDivElement } {
   const el = document.createElement("button");
   el.type = "button";
-  el.title = p.name;
+  el.setAttribute("aria-label", p.name);
   el.className = "group relative block cursor-pointer";
   const color = operatorColor(p.operatorSlug);
   const wait = p.avgWait != null ? `${p.avgWait}m avg` : "—";
@@ -248,9 +288,11 @@ export function buildParkBadgeEl(
     size: "size-11",
   });
   const subtitle = `${p.operating} open · ${escapeHtml(wait)}`;
-  el.innerHTML = `<div class="${CHIP_CLASS}">${disc}${labelMarkup(p.name, subtitle)}</div>`;
-  el.addEventListener("click", onClick);
-  return el;
+  const detail = document.createElement("div");
+  detail.className = DETAIL_CLASS;
+  detail.innerHTML = `${disc}${labelMarkup(p.name, subtitle)}`;
+  el.append(detail);
+  return { el, detail };
 }
 
 /**
@@ -263,19 +305,19 @@ export function buildParkBadgeEl(
 export function buildAttractionEl(
   a: BoardItem,
   selected: boolean,
-): { el: HTMLButtonElement; detail: HTMLDivElement; dot: HTMLDivElement } {
+): { el: HTMLButtonElement; detail: HTMLDivElement } {
   const color = waitColor(a.standbyWait, a.status);
   const operating = a.status === "OPERATING";
 
   const el = document.createElement("button");
   el.type = "button";
-  el.title = a.name;
+  el.setAttribute("aria-label", a.name);
   el.className = "group relative block cursor-pointer";
 
-  // `detail` IS the expanding chip (decluttered in/out and highlighted on
-  // select): the ride photo at rest, expanding on hover to its name + wait line.
+  // `detail` is the wrapper the controller clusters/translates/highlights: the
+  // ride photo at rest, with a label that slides out on hover.
   const detail = document.createElement("div");
-  detail.className = CHIP_CLASS;
+  detail.className = DETAIL_CLASS;
   const waitBadge =
     operating && a.standbyWait != null
       ? `<span class="absolute -top-1 -right-1 min-w-[1rem] rounded-full border border-white bg-neutral-900 px-1 text-center text-[9px] leading-[14px] font-bold text-white shadow">${a.standbyWait}</span>`
@@ -290,12 +332,8 @@ export function buildAttractionEl(
     badge: waitBadge,
   });
   detail.innerHTML = `${disc}${labelMarkup(a.name, escapeHtml(waitLabelFor(a)))}`;
-  if (selected) detail.classList.add(...SELECTED_CLASSES);
+  applySelected(detail, selected);
 
-  const dot = document.createElement("div");
-  dot.className = "hidden size-2.5 rounded-full border border-white shadow transition-transform";
-  dot.style.background = color;
-
-  el.append(detail, dot);
-  return { el, detail, dot };
+  el.append(detail);
+  return { el, detail };
 }

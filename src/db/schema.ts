@@ -64,8 +64,11 @@ export * from "./auth-schema.ts";
  *   attraction/queue_type/tick) rather than widening a fact table with
  *   Disney-specific columns. A park with no paid line simply never emits
  *   PAID_RETURN_TIME rows.
- * - `attraction_status_obs` is a CHANGE-LOG: one row per status transition,
- *   carried forward until the next row. Reads use "latest row <= T".
+ * - `attraction_status_obs` is a CHANGE-LOG: a row on each status transition,
+ *   carried forward until the next row. Reads use "latest row <= T". Ingest also
+ *   re-asserts the current status on a heartbeat (config.statusHeartbeatMs) so a
+ *   missed transition self-heals, so consecutive rows may repeat a status —
+ *   transition queries must compare against the prior row, not assume distinctness.
  * - Two pricing grains: per-attraction demand price (LL Single, à-la-carte
  *   paid returns) lives on `queue_obs.price_cents`; per-park-date bundle price
  *   (LL Multi, Universal Express tiers) lives in `product_price_obs`.

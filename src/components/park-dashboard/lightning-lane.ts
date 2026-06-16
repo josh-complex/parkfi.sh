@@ -53,6 +53,32 @@ export function isUniversal(operatorSlug: string | null | undefined): boolean {
   return operatorSlug === "universal";
 }
 
+/**
+ * Universal posts a standalone "<Ride> Single Rider" attraction row alongside
+ * the main ride. We collapse those into the parent (hide the row, flag the base
+ * ride as accepting single riders), so these helpers detect such rows and
+ * recover the parent ride's name for matching.
+ */
+const SINGLE_RIDER_RE = /\s*[-–—:]?\s*single\s+rider\b.*$/i;
+
+export function isSingleRiderName(name: string): boolean {
+  return /\bsingle\s+rider\b/i.test(name);
+}
+
+/** The parent ride's name, with the "Single Rider" suffix stripped. */
+export function baseRideName(name: string): string {
+  return name.replace(SINGLE_RIDER_RE, "").trim();
+}
+
+/** Loose key for matching a single-rider row to its parent ride row. */
+export function normalizeRideName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[®™©]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** Human label for an operator's per-ride line product. */
 export function paidLineProduct(operatorSlug: string | null | undefined): string {
   return isUniversal(operatorSlug) ? "Express" : "Lightning Lane";

@@ -8,7 +8,9 @@ import { useTheme } from "next-themes";
 
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
+import { MarkerCluster, type DeclutterItem } from "./declutter.ts";
 import {
+  applySelected,
   attractionPopupHtml,
   attractionPriority,
   buildAttractionEl,
@@ -19,8 +21,8 @@ import {
   MORPH_MS,
   ORLANDO_CENTER,
   ORLANDO_ZOOM,
-  SELECTED_CLASSES,
   waitLabelFor,
+  wireHoverLabelFlip,
 } from "./shared.tsx";
 
 import "leaflet/dist/leaflet.css";
@@ -56,12 +58,48 @@ function makeTileLayer(dark: boolean): L.TileLayer {
  * (whose default anchor is the center). The translate lives on the wrapper, not
  * the element, so the element's own hover/selection scaling never fights it.
  */
-/** Lift a marker above its neighbors while hovered, so its expanded hover panel
- *  isn't occluded by adjacent markers. Leaflet computes each marker's z-index
- *  from its latitude; a large offset wins while the cursor is over it. */
-function raiseOnHover(el: HTMLElement, marker: L.Marker): void {
-  el.addEventListener("mouseenter", () => marker.setZIndexOffset(1000));
-  el.addEventListener("mouseleave", () => marker.setZIndexOffset(0));
+/**
+ * A marker's z-lift, reference-counted so hover and spiderfy don't clobber each
+ * other (a marker stays raised while *either* is active). Leaflet computes each
+ * marker's z-index from its latitude; a large offset wins. Also wires hover to
+ * the same lift; returns the `raise(on)` to hand the cluster controller.
+ */
+function makeRaise(el: HTMLElement, marker: L.Marker): (on: boolean) => void {
+  let count = 0;
+  // Recompute the marker's resting z-offset from its lift count (spiderfy uses this).
+  const applyZ = () => marker.setZIndexOffset(count > 0 ? 1000 : 0);
+  const raise = (on: boolean) => {
+    count += on ? 1 : -1;
+    applyZ();
+  };
+  el.addEventListener("mouseenter", () => {
+    raise(true);
+    // The hovered marker jumps to an exclusive z-offset above every other marker
+    // so its expanded label always clears its neighbors. Demote the previously
+    // hovered marker back to its resting z first, so only one ever holds the top
+    // slot (no DOM reorder, which would drop :hover and cancel the click).
+    if (topHover && topHover !== applyZ) topHover();
+    topHover = applyZ;
+    marker.setZIndexOffset(3000);
+  });
+  el.addEventListener("mouseleave", () => {
+    raise(false);
+    if (topHover === applyZ) topHover = null;
+  });
+  return raise;
+}
+/** The demote-to-resting-z callback of the marker currently holding the top
+ *  hover slot, so a new hover can knock the previous one down. */
+let topHover: (() => void) | null = null;
+
+/** Transparent SVG overlay for spiderfy leader lines. It's prepended INTO the
+ *  marker pane and drawn in layer-point coords (same space Leaflet positions
+ *  markers in), so the lines sit behind the discs and stay aligned. */
+function makeOverlay(): SVGSVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "pointer-events-none absolute top-0 left-0 text-foreground/40");
+  svg.style.overflow = "visible";
+  return svg;
 }
 
 function pointIcon(el: HTMLElement): L.DivIcon {
@@ -104,15 +142,10 @@ export function ParkMapLeaflet({
   const tileRef = React.useRef<L.TileLayer | null>(null);
   const markersRef = React.useRef<Array<L.Marker>>([]);
   const markerElsRef = React.useRef<Map<number, HTMLElement>>(new Map());
-  const declutterItemsRef = React.useRef<
-    Array<{
-      id: number;
-      latLng: [number, number];
-      detail: HTMLElement;
-      dot: HTMLElement;
-      priority: number;
-    }>
-  >([]);
+  // Cluster/spiderfy controller (shared with the MapLibre renderer) + its leader-
+  // line overlay; see park-map.tsx for the rationale.
+  const overlayRef = React.useRef<SVGSVGElement | null>(null);
+  const layerRef = React.useRef<MarkerCluster | null>(null);
   const declutterRafRef = React.useRef(0);
   const popupRef = React.useRef<L.Popup | null>(null);
   const onSelectRef = React.useRef(onSelectAttraction);
@@ -145,6 +178,17 @@ export function ParkMapLeaflet({
     });
     L.control.zoom({ position: "topright" }).addTo(map);
     tileRef.current = makeTileLayer(dark).addTo(map);
+    // Leader-line overlay + cluster controller. The overlay is prepended into the
+    // marker pane so its leader lines render behind the marker discs but over the
+    // tiles; it's drawn in layer-point coords (the space markers are placed in).
+    const overlay = makeOverlay();
+    map.getPanes().markerPane.prepend(overlay);
+    overlayRef.current = overlay;
+    layerRef.current = new MarkerCluster(
+      overlay,
+      DECLUTTER_SIZE,
+      () => selectedIdRef.current ?? null,
+    );
     map.whenReady(() => setReady(true));
     mapRef.current = map;
     onMapRef?.({
@@ -159,6 +203,8 @@ export function ParkMapLeaflet({
       map.remove();
       mapRef.current = null;
       tileRef.current = null;
+      layerRef.current = null;
+      overlayRef.current = null;
       onMapRef?.(null);
       setReady(false);
     };
@@ -189,118 +235,122 @@ export function ParkMapLeaflet({
   }, [mounted]);
 
   const clearMarkers = React.useCallback(() => {
+    layerRef.current?.clear();
     for (const m of markersRef.current) m.remove();
     markersRef.current = [];
     markerElsRef.current.clear();
-    declutterItemsRef.current = [];
   }, []);
 
-  // Collision pass — identical strategy to the MapLibre renderer, projecting via
-  // Leaflet's container-point transform.
-  const declutter = React.useCallback(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    const sel = selectedIdRef.current;
-    const items = [...declutterItemsRef.current].sort(
-      (a, b) => (b.id === sel ? Infinity : b.priority) - (a.id === sel ? Infinity : a.priority),
-    );
-    const placed: Array<{ x: number; y: number }> = [];
-    for (const it of items) {
-      const p = map.latLngToContainerPoint(it.latLng);
-      const collides =
-        it.id !== sel &&
-        placed.some(
-          (q) => Math.abs(p.x - q.x) < DECLUTTER_SIZE && Math.abs(p.y - q.y) < DECLUTTER_SIZE,
-        );
-      it.detail.classList.toggle("hidden", collides);
-      it.dot.classList.toggle("hidden", !collides);
-      if (!collides) placed.push(p);
-    }
-  }, []);
-
-  const scheduleDeclutter = React.useCallback(() => {
+  // Re-run the cluster/spiderfy pass (rAF-coalesced) on every pan/zoom frame.
+  const scheduleRefresh = React.useCallback(() => {
     if (declutterRafRef.current) return;
     declutterRafRef.current = requestAnimationFrame(() => {
       declutterRafRef.current = 0;
-      declutter();
+      layerRef.current?.refresh();
     });
-  }, [declutter]);
+  }, []);
 
   // Rebuild markers: park badges on the overview, attraction pins when a park is
-  // active.
+  // active. Each marker becomes a DeclutterItem the cluster controller drives.
   React.useEffect(() => {
     const map = mapRef.current;
-    if (!map || !ready) return;
+    const layer = layerRef.current;
+    if (!map || !layer || !ready) return;
     clearMarkers();
+    const items: Array<DeclutterItem> = [];
 
     if (!activeSlug) {
       popupRef.current?.remove();
       popupRef.current = null;
       for (const p of overview?.parks ?? []) {
         if (p.latitude == null || p.longitude == null) continue;
-        const el = buildParkBadgeEl(p, () => {
-          void navigate({ to: "/park/$slug", params: { slug: p.slug } });
-        });
-        const marker = L.marker([p.latitude, p.longitude], { icon: pointIcon(el) }).addTo(map);
-        raiseOnHover(el, marker);
+        const latLng: [number, number] = [p.latitude, p.longitude];
+        const { el, detail } = buildParkBadgeEl(p);
+        const marker = L.marker(latLng, { icon: pointIcon(el) }).addTo(map);
+        const raise = makeRaise(el, marker);
+        if (containerRef.current) wireHoverLabelFlip(el, containerRef.current);
         markersRef.current.push(marker);
+        items.push({
+          id: p.id,
+          point: () => map.latLngToLayerPoint(latLng),
+          detail,
+          raise,
+          onActivate: () => void navigate({ to: "/park/$slug", params: { slug: p.slug } }),
+          priority: p.operating,
+        });
       }
-      return;
+    } else {
+      for (const a of board ?? []) {
+        if (a.latitude == null || a.longitude == null) continue;
+        if (a.entityType !== "ATTRACTION") continue;
+        const latLng: [number, number] = [a.latitude, a.longitude];
+        const { el, detail } = buildAttractionEl(a, a.id === selectedIdRef.current);
+        const waitLabel = waitLabelFor(a);
+        const rideHref = `/park/${activeSlug}/ride/${a.slug}`;
+        const marker = L.marker(latLng, { icon: pointIcon(el) }).addTo(map);
+        const raise = makeRaise(el, marker);
+        if (containerRef.current) wireHoverLabelFlip(el, containerRef.current);
+        markersRef.current.push(marker);
+        markerElsRef.current.set(a.id, detail);
+        items.push({
+          id: a.id,
+          point: () => map.latLngToLayerPoint(latLng),
+          detail,
+          raise,
+          onActivate: () => {
+            onSelectRef.current?.({ id: a.id, name: a.name });
+            popupRef.current?.remove();
+            // autoPan slides the map once so the popup is fully on-screen.
+            // (keepInView is intentionally off — it re-pans on every moveend and,
+            // when the popup can't fully fit a small map, loops into a stack
+            // overflow. autoPan alone positions it without the feedback loop.)
+            const popup = L.popup({
+              offset: [0, -16],
+              closeButton: false,
+              className: "parkfi-popup",
+              autoPan: true,
+              autoPanPadding: [16, 16],
+            })
+              .setLatLng(latLng)
+              .setContent(attractionPopupHtml(a, waitLabel, rideHref));
+            popupRef.current = popup;
+            popup.openOn(map);
+            popup
+              .getElement()
+              ?.querySelector<HTMLAnchorElement>("[data-spa]")
+              ?.addEventListener("click", (e) => {
+                e.preventDefault();
+                void navigate({
+                  to: "/park/$slug/ride/$rideSlug",
+                  params: { slug: activeSlug, rideSlug: a.slug },
+                });
+              });
+          },
+          priority: attractionPriority(a),
+        });
+      }
     }
 
-    for (const a of board ?? []) {
-      if (a.latitude == null || a.longitude == null) continue;
-      if (a.entityType !== "ATTRACTION") continue;
-      const latLng: [number, number] = [a.latitude, a.longitude];
-      const { el, detail, dot } = buildAttractionEl(a, a.id === selectedIdRef.current);
-      const waitLabel = waitLabelFor(a);
-      const marker = L.marker(latLng, { icon: pointIcon(el) }).addTo(map);
-      raiseOnHover(el, marker);
-      marker.on("click", () => {
-        onSelectRef.current?.({ id: a.id, name: a.name });
-        popupRef.current?.remove();
-        popupRef.current = L.popup({
-          offset: [0, -16],
-          closeButton: false,
-          className: "parkfi-popup",
-        })
-          .setLatLng(latLng)
-          .setContent(attractionPopupHtml(a, waitLabel));
-        popupRef.current.openOn(map);
-        map.panTo(latLng, { animate: true, duration: 0.5 });
-      });
-
-      markerElsRef.current.set(a.id, detail);
-      declutterItemsRef.current.push({
-        id: a.id,
-        latLng,
-        detail,
-        dot,
-        priority: attractionPriority(a),
-      });
-      markersRef.current.push(marker);
-    }
-
-    // Initial placement, then keep it current as the user pans/zooms.
-    scheduleDeclutter();
-    map.on("move zoom", scheduleDeclutter);
+    layer.setItems(items);
+    layer.refresh();
+    const onMapClick = () => layer.unspiderfy();
+    map.on("move zoom", scheduleRefresh);
+    map.on("click", onMapClick);
     return () => {
-      map.off("move zoom", scheduleDeclutter);
+      map.off("move zoom", scheduleRefresh);
+      map.off("click", onMapClick);
       if (declutterRafRef.current) {
         cancelAnimationFrame(declutterRafRef.current);
         declutterRafRef.current = 0;
       }
     };
-  }, [activeSlug, overview, board, ready, navigate, clearMarkers, scheduleDeclutter]);
+  }, [activeSlug, overview, board, ready, navigate, clearMarkers, scheduleRefresh]);
 
   // Update selection highlight in place (no marker rebuild, so a popup stays open).
   React.useEffect(() => {
-    for (const [id, el] of markerElsRef.current) {
-      const on = id === selectedId;
-      for (const c of SELECTED_CLASSES) el.classList.toggle(c, on);
-    }
-    scheduleDeclutter();
-  }, [selectedId, board, ready, scheduleDeclutter]);
+    for (const [id, el] of markerElsRef.current) applySelected(el, id === selectedId);
+    scheduleRefresh();
+  }, [selectedId, board, ready, scheduleRefresh]);
 
   // Camera: fit both resorts on the overview, fly into the active park. Stashed
   // in a ref so the delayed scheduler reads fresh data without re-firing on

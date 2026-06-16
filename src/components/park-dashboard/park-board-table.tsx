@@ -59,7 +59,15 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "#/components/ui/tooltip.tsx";
 import { cn } from "#/lib/utils.ts";
 
-import { formatPriceCents, isUniversal, paidLineInfo, paidLineProduct } from "./lightning-lane.ts";
+import {
+  baseRideName,
+  formatPriceCents,
+  isSingleRiderName,
+  isUniversal,
+  normalizeRideName,
+  paidLineInfo,
+  paidLineProduct,
+} from "./lightning-lane.ts";
 import { Sparkline } from "./sparkline.tsx";
 import type { BoardItem } from "./types.ts";
 
@@ -150,7 +158,27 @@ function StatusBadge({ status }: { status: string | null }) {
   return <Badge variant={STATUS_BADGE[label] ?? "outline"}>{label.toLowerCase()}</Badge>;
 }
 
-function AttractionCell({ item }: { item: BoardItem }) {
+function SingleRiderBadge() {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Badge
+            variant="outline"
+            className="text-muted-foreground shrink-0 cursor-help px-1.5 py-0 text-[10px] font-medium"
+          />
+        }
+      >
+        Singles Allowed
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs text-pretty">
+        Offers a single rider line — fill empty seats to wait less, but your group is split up.
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function AttractionCell({ item, singleRider }: { item: BoardItem; singleRider?: boolean }) {
   const meta = item.meta;
   const subtitle = [meta?.tags?.join(" · "), meta?.heightRequirement].filter(Boolean).join(" · ");
   return (
@@ -165,9 +193,10 @@ function AttractionCell({ item }: { item: BoardItem }) {
       ) : null}
       <div className="min-w-0">
         <span className="block truncate font-medium">{item.name}</span>
-        {subtitle ? (
-          <span className="text-muted-foreground block truncate text-xs font-normal">
-            {subtitle}
+        {subtitle || singleRider ? (
+          <span className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs font-normal">
+            {subtitle ? <span className="truncate">{subtitle}</span> : null}
+            {singleRider ? <SingleRiderBadge /> : null}
           </span>
         ) : null}
       </div>
@@ -339,26 +368,46 @@ export function ParkBoardTable({
     return m;
   }, [sparkQ.data]);
 
-  const rides = React.useMemo(
+  const allRides = React.useMemo(
     () => (board ?? []).filter((b) => b.entityType === "ATTRACTION"),
     [board],
   );
 
-  const hasLineRides = React.useMemo(
-    () => rides.some((r) => r.supportsQueueTypes.includes(1)),
-    [rides],
+  // Universal posts a standalone "<Ride> Single Rider" attraction row alongside
+  // the main ride. Collapse those: hide the row and flag the parent ride as
+  // accepting single riders. (Disney has no such rows, so this is a no-op there.)
+  const { rides, singleRiderIds } = React.useMemo(() => {
+    if (!isUniversal(operatorSlug)) return { rides: allRides, singleRiderIds: new Set<number>() };
+    const idByName = new Map<string, number>();
+    for (const r of allRides) idByName.set(normalizeRideName(r.name), r.id);
+    const singleRiderIds = new Set<number>();
+    const rides = allRides.filter((r) => {
+      if (!isSingleRiderName(r.name)) return true;
+      const baseId = idByName.get(normalizeRideName(baseRideName(r.name)));
+      if (baseId == null) return true; // no parent matched — keep the row visible
+      singleRiderIds.add(baseId);
+      return false;
+    });
+    return { rides, singleRiderIds };
+  }, [allRides, operatorSlug]);
+
+  // "Lines only" filters by standby capability — a Disney concept. Universal's
+  // per-ride line is the free Virtual Line, so the toggle is hidden there.
+  const lineFilter = React.useMemo(
+    () => !isUniversal(operatorSlug) && rides.some((r) => r.supportsQueueTypes.includes(1)),
+    [rides, operatorSlug],
   );
 
   // Status / lines-only filtering happens before the table so the row count and
   // sort apply to the visible set; sorting itself is owned by the table.
   const data = React.useMemo(() => {
     const lineFiltered =
-      linesOnly && hasLineRides ? rides.filter((r) => r.supportsQueueTypes.includes(1)) : rides;
+      linesOnly && lineFilter ? rides.filter((r) => r.supportsQueueTypes.includes(1)) : rides;
     if (filter === "ALL") return lineFiltered;
     if (filter === "CLOSED")
       return lineFiltered.filter((r) => r.status === "CLOSED" || r.status == null);
     return lineFiltered.filter((r) => r.status === filter);
-  }, [rides, filter, linesOnly, hasLineRides]);
+  }, [rides, filter, linesOnly, lineFilter]);
 
   const columns = React.useMemo<Array<ColumnDef<BoardItem>>>(
     () => [
@@ -366,7 +415,9 @@ export function ParkBoardTable({
         id: "attraction",
         accessorFn: (r) => r.name,
         header: "Attraction",
-        cell: ({ row }) => <AttractionCell item={row.original} />,
+        cell: ({ row }) => (
+          <AttractionCell item={row.original} singleRider={singleRiderIds.has(row.original.id)} />
+        ),
         sortingFn: (a, b) => a.original.name.localeCompare(b.original.name),
       },
       {
@@ -404,12 +455,20 @@ export function ParkBoardTable({
         enableSorting: false,
         cell: ({ row }) => <PaidLineCell item={row.original} operatorSlug={operatorSlug} />,
       },
-      {
-        id: "return",
-        header: "Next Available LL",
-        enableSorting: false,
-        cell: ({ row }) => <ReturnWindowCell item={row.original} operatorSlug={operatorSlug} />,
-      },
+      // Universal's per-ride paid return time is a Disney (Lightning Lane)
+      // concept — omit the "Next Available LL" column there.
+      ...(isUniversal(operatorSlug)
+        ? []
+        : [
+            {
+              id: "return",
+              header: "Next Available LL",
+              enableSorting: false,
+              cell: ({ row }) => (
+                <ReturnWindowCell item={row.original} operatorSlug={operatorSlug} />
+              ),
+            } as ColumnDef<BoardItem>,
+          ]),
       {
         id: "alert",
         header: () => <span className="sr-only">Alert</span>,
@@ -455,7 +514,7 @@ export function ParkBoardTable({
           ),
       },
     ],
-    [sparkByRide, operatorSlug, alertByAttraction, loggedIn, selectedId, parkSlug],
+    [sparkByRide, operatorSlug, alertByAttraction, loggedIn, selectedId, parkSlug, singleRiderIds],
   );
 
   const table = useReactTable({
@@ -480,7 +539,7 @@ export function ParkBoardTable({
         {/* Desktop controls live in the header; mobile gets a FAB (below). */}
         <CardAction className="hidden md:block">
           <div className="flex items-center gap-2">
-            {hasLineRides && (
+            {lineFilter && (
               <Button
                 variant={linesOnly ? "default" : "outline"}
                 size="sm"
@@ -529,6 +588,7 @@ export function ParkBoardTable({
           sparkByRide={sparkByRide}
           alertByAttraction={alertByAttraction}
           loggedIn={loggedIn}
+          singleRiderIds={singleRiderIds}
         />
       ) : (
         <div className="min-h-0 flex-1 overflow-x-auto px-2 pb-2 sm:px-6 sm:pb-4">
@@ -609,7 +669,7 @@ export function ParkBoardTable({
           onFilter={setFilter}
           linesOnly={linesOnly}
           onLinesOnly={setLinesOnly}
-          hasLineRides={hasLineRides}
+          hasLineRides={lineFilter}
         />
       )}
     </Card>
@@ -625,6 +685,7 @@ function MobileCardList({
   sparkByRide,
   alertByAttraction,
   loggedIn,
+  singleRiderIds,
 }: {
   rows: Array<BoardItem>;
   selectedId: number | null;
@@ -634,6 +695,7 @@ function MobileCardList({
   sparkByRide: Map<number, Array<number | null>>;
   alertByAttraction: Map<number, RideAlertEntry>;
   loggedIn: boolean;
+  singleRiderIds: Set<number>;
 }) {
   return (
     <div className="flex flex-col gap-2.5 px-3 pb-24">
@@ -651,7 +713,7 @@ function MobileCardList({
           >
             <div className="flex items-start gap-3">
               <div className="min-w-0 flex-1">
-                <AttractionCell item={item} />
+                <AttractionCell item={item} singleRider={singleRiderIds.has(item.id)} />
               </div>
               <div className="flex shrink-0 flex-col items-end gap-1">
                 <StandbyValue item={item} className="text-lg font-semibold" />

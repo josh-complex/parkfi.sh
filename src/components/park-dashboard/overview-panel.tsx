@@ -163,7 +163,7 @@ export function OverviewPanel() {
             <Card key={resort.operatorSlug}>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <MapPinnedIcon className="size-4 text-primary" />
+                  <MapPinnedIcon className="size-4 shrink-0 text-primary" />
                   {resort.operatorName ?? resort.operatorSlug}
                 </CardTitle>
                 <CardDescription>
@@ -180,15 +180,15 @@ export function OverviewPanel() {
                       to="/park/$slug"
                       params={{ slug: p.slug }}
                       className={cn(
-                        "group flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm",
+                        "group flex items-start justify-between gap-3 rounded-md px-2 py-1.5 text-sm",
                         "transition-colors hover:bg-primary hover:text-primary-foreground",
                         closed && "opacity-60",
                       )}
                     >
-                      <span className="min-w-0 truncate font-medium">{p.name}</span>
-                      <span className="flex shrink-0 items-center gap-2 tabular-nums">
+                      <span className="min-w-0 font-medium leading-snug">{p.name}</span>
+                      <span className="flex shrink-0 flex-col items-end gap-1 pt-px tabular-nums">
                         {closed ? (
-                          <span className="flex items-center gap-1.5 text-xs text-muted-foreground group-hover:text-primary-foreground/85">
+                          <span className="flex flex-col items-end gap-1 text-xs text-muted-foreground group-hover:text-primary-foreground/85">
                             <span className="rounded-full border px-1.5 py-0.5 font-medium group-hover:border-primary-foreground/40">
                               Closed
                             </span>

@@ -24,11 +24,19 @@ const STATUS_BADGE: Record<string, "default" | "secondary" | "destructive" | "ou
 
 function Stat({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-1">
+    <div
+      className={cn(
+        // Mobile: label/value on one row, divider between stats.
+        "flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0",
+        "border-b border-border/60 last:border-b-0",
+        // sm+: stacked cells in the 4-col grid, no dividers/padding.
+        "sm:flex-col sm:items-start sm:gap-1 sm:border-b-0 sm:py-0",
+      )}
+    >
       <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </span>
-      <span className="text-lg font-semibold tabular-nums">{children}</span>
+      <span className="text-right text-lg font-semibold tabular-nums sm:text-left">{children}</span>
     </div>
   );
 }
@@ -139,7 +147,7 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
 
       <Card>
         <CardContent className="flex flex-col gap-6 pt-6">
-          <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
+          <div className="flex flex-col sm:grid sm:grid-cols-4 sm:gap-6">
             <Stat label="Standby">
               {ride.standbyWait == null ? (
                 <span className="text-muted-foreground">—</span>

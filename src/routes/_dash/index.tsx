@@ -39,7 +39,7 @@ function Overview() {
       {/* Mobile: a rounded, bordered card inset from the blue shell — matching
           the park page's map. Only on desktop does it become the edge-to-edge
           60%-width hero split from the panel by a divider. */}
-      <MapSlot className="relative isolate mx-4 h-64 shrink-0 overflow-hidden rounded-2xl border shadow-md lg:mx-0 lg:h-auto lg:w-[60%] lg:rounded-none lg:border-0 lg:border-r lg:shadow-none" />
+      <MapSlot className="relative isolate mx-4 mt-4 h-64 shrink-0 overflow-hidden rounded-2xl border shadow-md md:mt-6 lg:mx-0 lg:mt-0 lg:h-auto lg:w-[60%] lg:rounded-none lg:border-0 lg:border-r lg:shadow-none" />
       <div className="min-w-0 flex-1 overflow-auto">
         <div className="@container/main flex flex-1 flex-col gap-2">
           <OverviewPanel />

@@ -24,16 +24,6 @@ const QUEUE_STATE_CODE: Record<number, string> = {
 const code = (map: Record<number, string>, v: number | null) =>
   v == null ? null : (map[v] ?? null);
 
-/**
- * How recent an attraction-status observation must be to count toward a park's
- * "operating" tally on the overview map. Without this bound a ride last seen
- * OPERATING long ago (e.g. before an overnight closure stopped polling) keeps
- * counting as open. Mirrors the 24h bound on `latest_standby`, but tighter so
- * overnight-closed parks fall toward 0 operating. Tune against live data: too
- * tight blanks parks that genuinely poll slowly.
- */
-const STATUS_STALE_HOURS = 6;
-
 export const parksRouter = {
   /** All active parks with operator/resort context. */
   list: publicProcedure.query(async () => {
@@ -448,10 +438,14 @@ export const parksRouter = {
         WHERE q.queue_type = 1 AND q.observed_at >= now() - INTERVAL '24 hours'
         ORDER BY q.attraction_id, q.observed_at DESC
       ),
+      -- Carry-forward latest status (no staleness bound): attraction_status_obs is
+      -- a change-log, so a steadily-open ride may not have re-emitted OPERATING for
+      -- hours/days (the WDW feed leaves some rides OPERATING indefinitely). Bounding
+      -- this by observation age wrongly drops genuinely-open rides. Overnight "still
+      -- shows operating" is instead handled by gating on the park's schedule below.
       latest_status AS (
         SELECT DISTINCT ON (s.attraction_id) s.attraction_id, s.status
         FROM attraction_status_obs s
-        WHERE s.observed_at >= now() - (${STATUS_STALE_HOURS} * INTERVAL '1 hour')
         ORDER BY s.attraction_id, s.observed_at DESC
       ),
       ride AS (
@@ -516,30 +510,38 @@ export const parksRouter = {
       ORDER BY r.name, p.name
     `);
 
-    const parks = result.rows.map((p) => ({
-      id: Number(p.id),
-      slug: p.slug,
-      name: p.name,
-      latitude: p.latitude,
-      longitude: p.longitude,
-      imageUrl: p.image_url,
-      imageAlt: p.image_alt,
-      operatorSlug: p.operator_slug,
-      operatorName: p.operator_name,
-      resortName: p.resort_name,
-      avgWait: p.avg_wait,
-      operating: Number(p.operating),
-      totalRides: Number(p.total_rides),
-      waitSamples: Number(p.wait_samples),
-      longest:
-        p.longest_name != null && p.longest_wait != null
-          ? { name: p.longest_name, wait: p.longest_wait }
-          : null,
+    const parks = result.rows.map((p) => {
       // null = no schedule data (UI shows "hours unavailable"); otherwise a
       // confident open/closed derived from the operating calendar.
-      isOpen: p.has_schedule ? Boolean(p.is_open) : null,
-      opensAt: p.opens_at,
-    }));
+      const isOpen = p.has_schedule ? Boolean(p.is_open) : null;
+      // When the calendar says the park is closed, suppress live tallies: the
+      // feed can keep rides marked OPERATING overnight, and we must never show
+      // rides as open while the park is closed. No schedule (isOpen === null) =>
+      // trust the live carry-forward status.
+      const knownClosed = isOpen === false;
+      return {
+        id: Number(p.id),
+        slug: p.slug,
+        name: p.name,
+        latitude: p.latitude,
+        longitude: p.longitude,
+        imageUrl: p.image_url,
+        imageAlt: p.image_alt,
+        operatorSlug: p.operator_slug,
+        operatorName: p.operator_name,
+        resortName: p.resort_name,
+        avgWait: knownClosed ? null : p.avg_wait,
+        operating: knownClosed ? 0 : Number(p.operating),
+        totalRides: Number(p.total_rides),
+        waitSamples: knownClosed ? 0 : Number(p.wait_samples),
+        longest:
+          !knownClosed && p.longest_name != null && p.longest_wait != null
+            ? { name: p.longest_name, wait: p.longest_wait }
+            : null,
+        isOpen,
+        opensAt: p.opens_at,
+      };
+    });
 
     // Operating-sample-weighted mean = exact overall avg over rides with a wait.
     const weighted = (items: Array<(typeof parks)[number]>) => {
