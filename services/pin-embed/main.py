@@ -13,7 +13,12 @@ Contract (the ONLY contract with the app — it never imports app code):
 
 Embeddings are L2-normalized so cosine distance (pgvector `<=>`) is meaningful.
 
-Run:  python main.py        (binds $PORT; Railway start command)
+Run:  python main.py        (local; binds $PORT, default 8000)
+
+On Railway the start command pins the port explicitly
+(`uvicorn main:app --host 0.0.0.0 --port 8000`, see railpack.json) so the
+private-network address is deterministic — callers always target :8000 and
+don't have to chase whatever $PORT Railway happens to inject.
 """
 
 from __future__ import annotations
