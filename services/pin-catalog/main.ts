@@ -280,13 +280,14 @@ async function ingestPin(
 
   const imageId = randomUUID();
   const r2Key = await putReferenceImage(imageId, bytes);
-  await db.insert(pinImage).values({
-    id: imageId,
-    pinId: row.id,
-    r2Key,
-    isPrimary: true,
-    source: raw.source,
-  });
+  // DO NOTHING on conflict so a re-run / race can't throw on the one-primary-per-
+  // pin unique index — if a primary already landed, skip silently.
+  const inserted = await db
+    .insert(pinImage)
+    .values({ id: imageId, pinId: row.id, r2Key, isPrimary: true, source: raw.source })
+    .onConflictDoNothing()
+    .returning({ id: pinImage.id });
+  if (inserted.length === 0) return "updated";
   await getPinEmbedQueue().add("embed", { pinImageId: imageId });
   return "new";
 }
@@ -384,8 +385,13 @@ async function pinpics(): Promise<void> {
 
   // Pins we already hold from PinPics — skip re-fetching them (politeness + speed
   // on re-runs). PinPics PIDs are numeric, stored as text in source_ref.
+  // "Known" = fully ingested, i.e. the pin exists AND has a reference image. A pin
+  // saved without an image (e.g. a prior failed run) is NOT known, so a re-run
+  // re-fetches it and fills in the missing image + embed — self-healing.
   const knownRows = await db.execute<{ source_ref: string }>(sql`
-    SELECT source_ref FROM pin WHERE source = 'pinpics' AND source_ref IS NOT NULL
+    SELECT p.source_ref FROM pin p
+    WHERE p.source = 'pinpics' AND p.source_ref IS NOT NULL
+      AND EXISTS (SELECT 1 FROM pin_image i WHERE i.pin_id = p.id)
   `);
   const known = new Set(knownRows.rows.map((r) => r.source_ref));
 
@@ -403,8 +409,12 @@ async function pinpics(): Promise<void> {
   let buffer: RawListing[] = [];
   const flush = async () => {
     if (buffer.length === 0) return;
-    await ingestListings(ai, buffer, totals);
+    // Swap the batch out SYNCHRONOUSLY (no await between read and reset) so two
+    // concurrent crawl workers can't both ingest the same buffer — that double-
+    // processing was inserting a second primary pin_image per pin (unique violation).
+    const batch = buffer;
     buffer = [];
+    await ingestListings(ai, batch, totals);
     console.log(`[pin-catalog] pinpics running totals: +${totals.newCount} new`);
   };
 
