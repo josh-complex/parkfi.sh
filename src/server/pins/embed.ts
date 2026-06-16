@@ -16,14 +16,18 @@
  * Railway exposes internal services as a bare `host:port` with no scheme
  * (e.g. `pin-embed.railway.internal:8000`); `fetch` rejects that with
  * `ERR_INVALID_URL`. Normalize by prepending `http://` when no scheme is
- * present, and strip any trailing slash so `${PIN_EMBED_URL}/embed` is clean.
+ * present, defaulting a missing port to the service's :8000 (the private
+ * network does no port mapping — a portless URL hits :80 and is refused), and
+ * strip any trailing slash so `${PIN_EMBED_URL}/embed` is clean.
  */
 export const PIN_EMBED_URL = normalizeBaseUrl(process.env.PIN_EMBED_URL ?? "http://localhost:8000");
 
 function normalizeBaseUrl(raw: string): string {
   const trimmed = raw.trim();
   const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
-  return withScheme.replace(/\/+$/, "");
+  const url = new URL(withScheme.replace(/\/+$/, ""));
+  if (!url.port) url.port = "8000";
+  return url.toString().replace(/\/+$/, "");
 }
 
 /** Identifier stored on every `pin_embedding.model` — bump on a re-embed. */
