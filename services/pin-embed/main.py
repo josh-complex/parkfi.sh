@@ -15,10 +15,11 @@ Embeddings are L2-normalized so cosine distance (pgvector `<=>`) is meaningful.
 
 Run:  python main.py        (local; binds $PORT, default 8000)
 
-On Railway the start command pins the port explicitly
-(`uvicorn main:app --host 0.0.0.0 --port 8000`, see railpack.json) so the
-private-network address is deterministic — callers always target :8000 and
-don't have to chase whatever $PORT Railway happens to inject.
+On Railway the start command pins the port and binds IPv6 dual-stack
+(`uvicorn main:app --host :: --port 8000`, see railpack.json): the port is
+deterministic so callers always target :8000, and `::` is required because
+Railway's private network is IPv6-only — an IPv4-only bind (`0.0.0.0`) is
+unreachable over *.railway.internal and refuses every internal connection.
 """
 
 from __future__ import annotations
@@ -118,7 +119,10 @@ def embed(req: EmbedRequest) -> EmbedResponse:
 
 def main() -> None:
     port = int(os.environ.get("PORT", "8000"))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    # Bind IPv6 dual-stack (`::`), NOT `0.0.0.0`: Railway's private network is
+    # IPv6-only, so an IPv4-only bind is unreachable over *.railway.internal and
+    # every internal call gets ECONNREFUSED. `::` accepts both v6 and v4.
+    uvicorn.run(app, host="::", port=port)
 
 
 if __name__ == "__main__":
