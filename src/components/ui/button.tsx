@@ -1,3 +1,4 @@
+import * as React from "react";
 import { Button as ButtonPrimitive } from "@base-ui/react/button";
 import { cva, type VariantProps } from "class-variance-authority";
 
@@ -44,11 +45,19 @@ function Button({
   className,
   variant = "default",
   size = "default",
+  nativeButton,
+  render,
   ...props
 }: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
+  // Base UI assumes a native <button> (`nativeButton` defaults true) and warns
+  // when `render` swaps in something else (a Link/anchor). Infer it from the
+  // rendered element so callers don't have to pass `nativeButton` themselves.
+  const isNative = nativeButton ?? (React.isValidElement(render) ? render.type === "button" : true);
   return (
     <ButtonPrimitive
       data-slot="button"
+      nativeButton={isNative}
+      render={render}
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     />

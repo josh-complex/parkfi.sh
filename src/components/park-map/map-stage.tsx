@@ -4,10 +4,17 @@ import * as React from "react";
 
 import { useSelection } from "#/components/park-dashboard/selection-context.tsx";
 
-import { ParkMap } from "./park-map.tsx";
-import { ParkMapLeaflet } from "./park-map-leaflet.tsx";
 import type { MapHandle } from "./shared.tsx";
 import { hasWebGl } from "./webgl.ts";
+
+// Lazy-loaded so the heavy map libraries (maplibre-gl, leaflet) are never
+// evaluated on the server — leaflet's UMD touches `window` at import time and
+// crashes SSR. The engine is only ever chosen on the client (see `engine`
+// below), so the chunks load exactly when a real renderer is mounted.
+const ParkMap = React.lazy(() => import("./park-map.tsx").then((m) => ({ default: m.ParkMap })));
+const ParkMapLeaflet = React.lazy(() =>
+  import("./park-map-leaflet.tsx").then((m) => ({ default: m.ParkMapLeaflet })),
+);
 
 type StageCtx = {
   /**
@@ -202,24 +209,26 @@ export function MapStageProvider({
       {/* Off-screen home for the singleton map whenever no slot owns it. */}
       <div ref={parkRef} className="pointer-events-none fixed -z-10 size-0 opacity-0" aria-hidden>
         <div ref={hostRef} className="size-full overflow-hidden">
-          {engine === "gl" && (
-            <ParkMap
-              activeSlug={activeSlug}
-              selectedId={selected?.id ?? null}
-              onSelectAttraction={setSelected}
-              onMapRef={onMapRef}
-              attached={attached}
-            />
-          )}
-          {engine === "leaflet" && (
-            <ParkMapLeaflet
-              activeSlug={activeSlug}
-              selectedId={selected?.id ?? null}
-              onSelectAttraction={setSelected}
-              onMapRef={onMapRef}
-              attached={attached}
-            />
-          )}
+          <React.Suspense fallback={null}>
+            {engine === "gl" && (
+              <ParkMap
+                activeSlug={activeSlug}
+                selectedId={selected?.id ?? null}
+                onSelectAttraction={setSelected}
+                onMapRef={onMapRef}
+                attached={attached}
+              />
+            )}
+            {engine === "leaflet" && (
+              <ParkMapLeaflet
+                activeSlug={activeSlug}
+                selectedId={selected?.id ?? null}
+                onSelectAttraction={setSelected}
+                onMapRef={onMapRef}
+                attached={attached}
+              />
+            )}
+          </React.Suspense>
         </div>
       </div>
       {children}

@@ -87,6 +87,12 @@ export function OmniSearch() {
   const trpc = useTRPC();
   const listRef = React.useRef<HTMLDivElement>(null);
 
+  // The palette renders through a portal into `document.body`, which doesn't
+  // exist during SSR. Gate it on a client-mounted flag so the server (and the
+  // first hydration pass) skip the portal entirely instead of crashing.
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
+
   // The full corpus is fetched once on first open and cached; filtering happens
   // in-memory so typing never hits the network.
   const indexQ = useQuery({
@@ -276,12 +282,16 @@ export function OmniSearch() {
         layoutId={PANEL_ID}
         type="button"
         onClick={() => setOpen(true)}
+        initial={false}
         animate={{ opacity: open ? 0 : 1 }}
         transition={{
           layout: SPRING,
           opacity: { duration: open ? 0.06 : 0.18, delay: open ? 0 : 0.2 },
         }}
-        style={{ borderRadius: RADIUS }}
+        // A concrete `opacity` in `style` gives Motion's layout-animation
+        // keyframe resolver a defined base to read — without it the shared
+        // `layoutId` path reads `undefined` from the DOM and warns.
+        style={{ borderRadius: RADIUS, opacity: 1 }}
         className={cn(
           buttonVariants({ variant: "outline" }),
           "w-full justify-start gap-2 px-3 font-normal text-muted-foreground md:max-w-xs",
@@ -294,108 +304,109 @@ export function OmniSearch() {
         </kbd>
       </motion.button>
 
-      {createPortal(
-        <AnimatePresence>
-          {open && (
-            <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-[10vh]">
-              <motion.div
-                className="absolute inset-0 bg-black/40 supports-backdrop-filter:backdrop-blur-sm"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1, transition: { duration: 0.14 } }}
-                exit={{ opacity: 0, transition: { duration: 0.07 } }}
-                onClick={close}
-              />
-
-              {/* Fixed height: the panel morphs to this size once and never
-                  resizes as results change, so the layout never jumps. */}
-              <motion.div
-                layoutId={PANEL_ID}
-                role="dialog"
-                aria-modal="true"
-                aria-label="Search"
-                style={{ borderRadius: RADIUS }}
-                transition={{ layout: SPRING }}
-                className={cn(
-                  "relative z-10 h-[clamp(22rem,60vh,34rem)] w-full max-w-xl overflow-hidden",
-                  SURFACE,
-                )}
-              >
-                {/* Contents fade in after the morph settles so they don't stretch
-                    while the container is animating its size. */}
+      {mounted &&
+        createPortal(
+          <AnimatePresence>
+            {open && (
+              <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-[10vh]">
                 <motion.div
-                  className="flex h-full flex-col"
+                  className="absolute inset-0 bg-black/40 supports-backdrop-filter:backdrop-blur-sm"
                   initial={{ opacity: 0 }}
-                  animate={{ opacity: 1, transition: { delay: 0.14, duration: 0.12 } }}
-                  exit={{ opacity: 0, transition: { duration: 0.05 } }}
+                  animate={{ opacity: 1, transition: { duration: 0.14 } }}
+                  exit={{ opacity: 0, transition: { duration: 0.07 } }}
+                  onClick={close}
+                />
+
+                {/* Fixed height: the panel morphs to this size once and never
+                  resizes as results change, so the layout never jumps. */}
+                <motion.div
+                  layoutId={PANEL_ID}
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Search"
+                  style={{ borderRadius: RADIUS }}
+                  transition={{ layout: SPRING }}
+                  className={cn(
+                    "relative z-10 h-[clamp(22rem,60vh,34rem)] w-full max-w-xl overflow-hidden",
+                    SURFACE,
+                  )}
                 >
-                  <div className="flex shrink-0 items-center gap-2 border-b px-4 py-3.5">
-                    <SearchIcon className="size-5 shrink-0 text-muted-foreground" />
-                    <input
-                      autoFocus
-                      value={query}
-                      onChange={(e) => {
-                        setQuery(e.target.value);
-                        setActive(0);
-                      }}
-                      onKeyDown={onKeyDown}
-                      placeholder="Search parks, attractions, dining, blog posts…"
-                      className="w-full bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground md:text-sm"
-                    />
-                  </div>
-
-                  <div
-                    ref={listRef}
-                    className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2"
+                  {/* Contents fade in after the morph settles so they don't stretch
+                    while the container is animating its size. */}
+                  <motion.div
+                    className="flex h-full flex-col"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1, transition: { delay: 0.14, duration: 0.12 } }}
+                    exit={{ opacity: 0, transition: { duration: 0.05 } }}
                   >
-                    {showLoading ? (
-                      <div className="px-3 py-12 text-center text-sm text-muted-foreground">
-                        Loading…
-                      </div>
-                    ) : items.length === 0 ? (
-                      <div className="px-3 py-12 text-center text-sm text-muted-foreground">
-                        {query ? (
-                          <>
-                            No matches for{" "}
-                            <span className="font-medium text-foreground">“{query.trim()}”</span>
-                          </>
-                        ) : (
-                          "Type to search across parks, attractions, dining, and posts"
-                        )}
-                      </div>
-                    ) : (
-                      items.map((item, i) => {
-                        const newGroup = i === 0 || items[i - 1].group !== item.group;
-                        return (
-                          <React.Fragment key={item.key}>
-                            {newGroup && (
-                              <div className="px-2 pt-3 pb-1 text-[11px] font-semibold tracking-widest text-muted-foreground uppercase first:pt-1">
-                                {item.group}
-                              </div>
-                            )}
-                            <ResultRow
-                              item={item}
-                              active={i === active}
-                              onMouseMove={() => setActive(i)}
-                              idx={i}
-                            />
-                          </React.Fragment>
-                        );
-                      })
-                    )}
-                  </div>
+                    <div className="flex shrink-0 items-center gap-2 border-b px-4 py-3.5">
+                      <SearchIcon className="size-5 shrink-0 text-muted-foreground" />
+                      <input
+                        autoFocus
+                        value={query}
+                        onChange={(e) => {
+                          setQuery(e.target.value);
+                          setActive(0);
+                        }}
+                        onKeyDown={onKeyDown}
+                        placeholder="Search parks, attractions, dining, blog posts…"
+                        className="w-full bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground md:text-sm"
+                      />
+                    </div>
 
-                  <div className="hidden shrink-0 items-center gap-3 border-t px-4 py-2 text-[11px] text-muted-foreground sm:flex">
-                    <Hint keys={["↑", "↓"]}>navigate</Hint>
-                    <Hint keys={["↵"]}>open</Hint>
-                    <Hint keys={["esc"]}>close</Hint>
-                  </div>
+                    <div
+                      ref={listRef}
+                      className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2"
+                    >
+                      {showLoading ? (
+                        <div className="px-3 py-12 text-center text-sm text-muted-foreground">
+                          Loading…
+                        </div>
+                      ) : items.length === 0 ? (
+                        <div className="px-3 py-12 text-center text-sm text-muted-foreground">
+                          {query ? (
+                            <>
+                              No matches for{" "}
+                              <span className="font-medium text-foreground">“{query.trim()}”</span>
+                            </>
+                          ) : (
+                            "Type to search across parks, attractions, dining, and posts"
+                          )}
+                        </div>
+                      ) : (
+                        items.map((item, i) => {
+                          const newGroup = i === 0 || items[i - 1].group !== item.group;
+                          return (
+                            <React.Fragment key={item.key}>
+                              {newGroup && (
+                                <div className="px-2 pt-3 pb-1 text-[11px] font-semibold tracking-widest text-muted-foreground uppercase first:pt-1">
+                                  {item.group}
+                                </div>
+                              )}
+                              <ResultRow
+                                item={item}
+                                active={i === active}
+                                onMouseMove={() => setActive(i)}
+                                idx={i}
+                              />
+                            </React.Fragment>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    <div className="hidden shrink-0 items-center gap-3 border-t px-4 py-2 text-[11px] text-muted-foreground sm:flex">
+                      <Hint keys={["↑", "↓"]}>navigate</Hint>
+                      <Hint keys={["↵"]}>open</Hint>
+                      <Hint keys={["esc"]}>close</Hint>
+                    </div>
+                  </motion.div>
                 </motion.div>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>,
-        document.body,
-      )}
+              </div>
+            )}
+          </AnimatePresence>,
+          document.body,
+        )}
     </>
   );
 }

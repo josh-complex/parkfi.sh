@@ -10,8 +10,21 @@
  * already in R2; use `images` for a freshly-uploaded scan photo.
  */
 
-/** Base URL of the embed service (Railway private network at runtime). */
-export const PIN_EMBED_URL = process.env.PIN_EMBED_URL ?? "http://localhost:8000";
+/**
+ * Base URL of the embed service (Railway private network at runtime).
+ *
+ * Railway exposes internal services as a bare `host:port` with no scheme
+ * (e.g. `pin-embed.railway.internal:8000`); `fetch` rejects that with
+ * `ERR_INVALID_URL`. Normalize by prepending `http://` when no scheme is
+ * present, and strip any trailing slash so `${PIN_EMBED_URL}/embed` is clean.
+ */
+export const PIN_EMBED_URL = normalizeBaseUrl(process.env.PIN_EMBED_URL ?? "http://localhost:8000");
+
+function normalizeBaseUrl(raw: string): string {
+  const trimmed = raw.trim();
+  const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+  return withScheme.replace(/\/+$/, "");
+}
 
 /** Identifier stored on every `pin_embedding.model` — bump on a re-embed. */
 export const EMBED_MODEL = process.env.PIN_EMBED_MODEL ?? "open_clip:ViT-L-14:v1";

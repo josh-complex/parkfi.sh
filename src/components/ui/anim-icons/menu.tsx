@@ -89,6 +89,7 @@ const MenuIcon = forwardRef<MenuIconHandle, MenuIconProps>(
         >
           <motion.line
             animate={controls}
+            initial="normal"
             custom={1}
             variants={LINE_VARIANTS}
             x1="4"
@@ -98,6 +99,7 @@ const MenuIcon = forwardRef<MenuIconHandle, MenuIconProps>(
           />
           <motion.line
             animate={controls}
+            initial="normal"
             custom={2}
             variants={LINE_VARIANTS}
             x1="4"
@@ -107,6 +109,7 @@ const MenuIcon = forwardRef<MenuIconHandle, MenuIconProps>(
           />
           <motion.line
             animate={controls}
+            initial="normal"
             custom={3}
             variants={LINE_VARIANTS}
             x1="4"
