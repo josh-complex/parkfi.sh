@@ -248,6 +248,9 @@ async function ingestPin(
     })
     .onConflictDoUpdate({
       target: [pin.source, pin.sourceRef],
+      // The unique index is PARTIAL (WHERE source_ref IS NOT NULL); the conflict
+      // target must carry the same predicate to match it (see migration).
+      targetWhere: sql`source_ref IS NOT NULL`,
       set: {
         // Refresh the price comp + any fields that improved; keep identity stable.
         // COALESCE keeps an existing price when a source (e.g. PinPics) has none.
@@ -386,6 +389,15 @@ async function pinpics(): Promise<void> {
   `);
   const known = new Set(knownRows.rows.map((r) => r.source_ref));
 
+  // Auto-resume: when no explicit start is set, begin just past the highest PID we
+  // already have so a plain repeating cron marches forward on its own (no manual
+  // range bumping). Empty catalog → start at 1.
+  const knownNums = [...known].map(Number).filter((n) => Number.isFinite(n));
+  const resumeStart = knownNums.length ? Math.max(...knownNums) + 1 : 1;
+  if (!process.env.PINPICS_START_ID) {
+    console.log(`[pin-catalog] pinpics auto-resume from PID ${resumeStart}`);
+  }
+
   // Buffer crawl output and normalize+ingest in batches of 20 so a long crawl
   // persists progress incrementally rather than only at the end.
   let buffer: RawListing[] = [];
@@ -401,7 +413,7 @@ async function pinpics(): Promise<void> {
       buffer.push(listing);
       if (buffer.length >= 20) await flush();
     },
-    { isKnown: (pid) => known.has(String(pid)) },
+    { isKnown: (pid) => known.has(String(pid)), startId: resumeStart },
   );
   await flush();
 

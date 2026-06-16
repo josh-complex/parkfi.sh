@@ -27,12 +27,14 @@
  * detail-page path + range are configurable because the DOM shifts):
  *
  *   PINPICS_PIN_URL_TEMPLATE   default https://pinpics.com/pin/{id}/  ('{id}' = numeric PID)
- *   PINPICS_START_ID / END_ID  inclusive PID range to walk
+ *   PINPICS_START_ID / END_ID  inclusive PID range. If START is unset the crawl
+ *                              AUTO-RESUMES from (highest PID we already have)+1,
+ *                              so a repeating cron marches forward unattended.
  *   PINPICS_CONCURRENCY        parallel pages (default 5)
  *   PINPICS_RATE_MS            per-worker delay between page loads (default 250)
- *   PINPICS_MAX                hard ceiling per run (default 100 — fits one
- *                              Browserless session; run ranges across invocations)
- *   PINPICS_CRAWL_TIMEOUT_MS   whole-crawl budget for the browser session
+ *   PINPICS_MAX                hard ceiling on pins fetched per run (default 100)
+ *   PINPICS_SESSION_CHUNK      pins per Browserless session before reconnecting
+ *   PINPICS_SESSION_TIMEOUT_MS per-session connect+run budget
  *   PINPICS_UA                 page User-Agent (a real Chrome UA passes; bot UAs
  *                              get harder-blocked by Cloudflare)
  *
@@ -61,7 +63,11 @@ const MAX = Number(process.env.PINPICS_MAX ?? 100);
  *  cookie) is shared across the browser, so after the warm-up these load without
  *  re-challenging. */
 const CONCURRENCY = Number(process.env.PINPICS_CONCURRENCY ?? 2);
-const CRAWL_TIMEOUT_MS = Number(process.env.PINPICS_CRAWL_TIMEOUT_MS ?? 540_000);
+/** Pins per Browserless session before reconnecting — kept small so a session
+ *  drop loses little and we recover quickly. */
+const SESSION_CHUNK = Number(process.env.PINPICS_SESSION_CHUNK ?? 25);
+/** Per-session (per-chunk) connect+run budget. */
+const SESSION_TIMEOUT_MS = Number(process.env.PINPICS_SESSION_TIMEOUT_MS ?? 180_000);
 const UA =
   process.env.PINPICS_UA ??
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
@@ -180,62 +186,82 @@ function parseListing(html: string, pid: number, url: string): RawListing | null
  */
 export async function crawlPinPics(
   onListing: (listing: RawListing) => void | Promise<void>,
-  opts: { isKnown?: (pid: number) => boolean } = {},
+  opts: { isKnown?: (pid: number) => boolean; startId?: number; endId?: number } = {},
 ): Promise<void> {
-  const start = Number(process.env.PINPICS_START_ID ?? 1);
-  const end = Number(process.env.PINPICS_END_ID ?? start + MAX - 1);
+  // Explicit env wins; otherwise the caller's resume point (max known + 1); else 1.
+  const start = Number(process.env.PINPICS_START_ID ?? opts.startId ?? 1);
+  const end = Number(process.env.PINPICS_END_ID ?? opts.endId ?? start + MAX - 1);
+  const origin = new URL(URL_TEMPLATE.replace("{id}", String(start))).origin;
 
-  await withBrowser(async (browser) => {
-    // Warm-up: clear the Cloudflare challenge once so every worker reuses the
-    // cf_clearance cookie instead of all racing the interstitial cold.
-    const origin = new URL(URL_TEMPLATE.replace("{id}", String(start))).origin;
-    await loadPage(browser, origin).catch(() => null);
+  let next = start;
+  let fetched = 0;
+  let challenged = 0;
+  let skipped = 0;
 
-    let next = start;
-    let fetched = 0;
-    let challenged = 0;
-    let skipped = 0;
+  // Crawl in CHUNK-sized batches, each in a FRESH Browserless session. A long
+  // crawl otherwise dies when the single session drops (a detached frame or the
+  // server recycling the slot) and never recovers. Reconnecting per chunk also
+  // re-clears the Cloudflare challenge cleanly. `next` persists across sessions
+  // so a dropped session just resumes where it left off.
+  while (next <= end && fetched < MAX) {
+    const chunkEnd = Math.min(end, next + SESSION_CHUNK - 1);
+    let progressed = false;
+    try {
+      await withBrowser(async (browser) => {
+        // Warm-up: clear the challenge once per session so workers reuse the
+        // cf_clearance cookie instead of all racing the interstitial cold.
+        await loadPage(browser, origin).catch(() => null);
 
-    async function worker(): Promise<void> {
-      while (fetched < MAX) {
-        const pid = next++;
-        if (pid > end) return;
-        // Don't re-fetch a pin we already have — politeness + speed on re-runs.
-        // (No rate-limit sleep when we skip, since we never hit the network.)
-        if (opts.isKnown?.(pid)) {
-          skipped++;
-          continue;
-        }
-        const url = URL_TEMPLATE.replace("{id}", String(pid));
-        try {
-          const html = await loadPage(browser, url);
-          if (!html) continue;
-          const listing = parseListing(html, pid, url);
-          if (listing) {
-            fetched++;
-            await onListing(listing);
-          } else if (/just a moment|attention required/i.test(html)) {
-            challenged++;
+        async function worker(): Promise<void> {
+          while (fetched < MAX) {
+            const pid = next++;
+            if (pid > chunkEnd) return;
+            // Don't re-fetch a pin we already have — politeness + speed on re-runs.
+            if (opts.isKnown?.(pid)) {
+              skipped++;
+              progressed = true;
+              continue;
+            }
+            const url = URL_TEMPLATE.replace("{id}", String(pid));
+            try {
+              const html = await loadPage(browser, url);
+              progressed = true;
+              if (!html) continue;
+              const listing = parseListing(html, pid, url);
+              if (listing) {
+                fetched++;
+                await onListing(listing);
+              } else if (/just a moment|attention required/i.test(html)) {
+                challenged++;
+              }
+            } catch (err) {
+              console.error(`[pinpics] pid=${pid} load failed:`, (err as Error)?.message ?? err);
+            }
+            await sleep(RATE_MS);
           }
-        } catch (err) {
-          console.error(`[pinpics] pid=${pid} load failed:`, (err as Error)?.message ?? err);
         }
-        await sleep(RATE_MS);
-      }
-    }
 
-    await Promise.all(Array.from({ length: Math.max(1, CONCURRENCY) }, () => worker()));
-
-    if (challenged > 0) {
+        await Promise.all(Array.from({ length: Math.max(1, CONCURRENCY) }, () => worker()));
+      }, AbortSignal.timeout(SESSION_TIMEOUT_MS));
+    } catch (err) {
       console.warn(
-        `[pinpics] ${challenged} page(s) stuck on the Cloudflare challenge — ` +
-          "set BROWSERLESS_WS_QUERY=stealth&proxy=residential (see services/README.md).",
+        `[pinpics] session ended near PID ${next} (${(err as Error)?.message ?? err}); reconnecting…`,
       );
     }
-    console.log(
-      `[pinpics] crawl done — ${fetched} pin(s) from PID ${start}..${end} (${skipped} already known, skipped)`,
+    // Guarantee forward progress even if the session died during warm-up (before
+    // any worker ran) — otherwise we'd retry the same dead chunk forever.
+    if (!progressed && next <= chunkEnd) next = chunkEnd + 1;
+  }
+
+  if (challenged > 0) {
+    console.warn(
+      `[pinpics] ${challenged} page(s) stuck on the Cloudflare challenge — ` +
+        "a proxy-capable Browserless helps (see services/README.md).",
     );
-  }, AbortSignal.timeout(CRAWL_TIMEOUT_MS));
+  }
+  console.log(
+    `[pinpics] crawl done — ${fetched} pin(s) from PID ${start}..${end} (${skipped} already known, skipped)`,
+  );
 }
 
 /**
