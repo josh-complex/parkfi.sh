@@ -75,8 +75,8 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <PostHogProvider>
           <ThemeProvider
             attribute="class"
-            defaultTheme="system"
-            enableSystem
+            defaultTheme="light"
+            enableSystem={false}
             disableTransitionOnChange
           >
             <TooltipProvider>
