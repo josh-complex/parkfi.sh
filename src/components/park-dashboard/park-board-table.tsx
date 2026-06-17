@@ -702,12 +702,19 @@ function MobileCardList({
       {rows.map((item) => {
         const down = item.status === "DOWN" || item.status === "REFURBISHMENT";
         return (
-          <button
+          <div
             key={item.id}
-            type="button"
+            role="button"
+            tabIndex={0}
             onClick={() => onSelect(item)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelect(item);
+              }
+            }}
             className={cn(
-              "flex flex-col gap-2.5 rounded-2xl border bg-card p-3 text-left transition-colors",
+              "flex cursor-pointer flex-col gap-2.5 rounded-2xl border bg-card p-3 text-left transition-colors",
               item.id === selectedId ? "border-primary bg-muted/50" : "hover:bg-muted/40",
             )}
           >
@@ -751,7 +758,7 @@ function MobileCardList({
                 <ChevronRightIcon className="size-3.5" />
               </Link>
             )}
-          </button>
+          </div>
         );
       })}
     </div>

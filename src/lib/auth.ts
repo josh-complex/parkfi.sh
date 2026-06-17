@@ -71,7 +71,6 @@ export const auth = betterAuth({
       productionURL: process.env.PRODUCTION_URL ?? process.env.BETTER_AUTH_URL,
       secret: process.env.OAUTH_PROXY_SECRET,
     }),
-    tanstackStartCookies(),
     // Google One Tap — uses the google social provider clientId automatically
     oneTap(),
     // Cloudflare Turnstile on email sign-in, sign-up, and password reset
@@ -87,6 +86,9 @@ export const auth = betterAuth({
     twoFactor(),
     // WebAuthn passkeys
     passkey(),
+    // Cookie integration MUST be last so it forwards Set-Cookie headers set by
+    // any preceding plugin's `hooks.after` to the framework cookie store.
+    tanstackStartCookies(),
   ],
   trustedOrigins: import.meta.env.DEV ? ["http://localhost:3000"] : [],
 });
