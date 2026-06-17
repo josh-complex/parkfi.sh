@@ -159,6 +159,7 @@ export function OmniSearch() {
           group: "Parks",
           title: p.name,
           subtitle: p.resortName,
+          image: p.imageUrl,
           ...parkPrice(p.ticketPriceCents),
           onSelect: go(() => navigate({ to: "/park/$slug", params: { slug: p.slug } })),
         })),
@@ -183,6 +184,7 @@ export function OmniSearch() {
           group: "Parks",
           title: p.name,
           subtitle: p.resortName,
+          image: p.imageUrl,
           ...parkPrice(p.ticketPriceCents),
           onSelect: go(() => navigate({ to: "/park/$slug", params: { slug: p.slug } })),
         })),
@@ -540,12 +542,10 @@ function ResultRow({
       </span>
       {item.price && (
         <span className="flex shrink-0 flex-col items-end leading-none">
-          {item.priceKind === "ticket" && (
-            <TicketIcon className="mb-0.5 size-3.5 text-muted-foreground" />
-          )}
           <span className="text-sm font-semibold tabular-nums text-foreground">{item.price}</span>
           {item.priceKind === "ticket" && (
-            <span className="mt-0.5 text-[10px] tracking-wide text-muted-foreground uppercase">
+            <span className="mt-0.5 flex items-center gap-1 text-[10px] tracking-wide text-muted-foreground uppercase">
+              <TicketIcon className="size-3.5" />
               from
             </span>
           )}

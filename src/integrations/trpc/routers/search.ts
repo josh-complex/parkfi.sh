@@ -26,8 +26,14 @@ const SLUG_TO_CODE = new Map<string, string>(
 export const searchRouter = {
   index: publicProcedure.query(async () => {
     const [parks, attractions, dining, blogPosts, ticketPrices] = await Promise.all([
-      db.execute<{ id: string; name: string; slug: string; resort_name: string | null }>(sql`
-        SELECT p.id, p.name, p.slug, r.name AS resort_name
+      db.execute<{
+        id: string;
+        name: string;
+        slug: string;
+        resort_name: string | null;
+        image_url: string | null;
+      }>(sql`
+        SELECT p.id, p.name, p.slug, p.image_url, r.name AS resort_name
         FROM parks p
         LEFT JOIN resorts r ON r.id = p.resort_id
         WHERE p.active = true
@@ -115,6 +121,7 @@ export const searchRouter = {
           name: p.name,
           slug: p.slug,
           resortName: p.resort_name,
+          imageUrl: p.image_url,
           // today's "from" admission price, in cents (null when unpriced)
           ticketPriceCents: cents ?? null,
         };
