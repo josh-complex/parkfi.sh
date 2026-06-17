@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { useSelection } from "#/components/park-dashboard/selection-context.tsx";
+import { lazyWithReload } from "#/lib/lazy-with-reload.tsx";
 
 import type { MapHandle } from "./shared.tsx";
 import { hasWebGl } from "./webgl.ts";
@@ -11,9 +12,15 @@ import { hasWebGl } from "./webgl.ts";
 // evaluated on the server — leaflet's UMD touches `window` at import time and
 // crashes SSR. The engine is only ever chosen on the client (see `engine`
 // below), so the chunks load exactly when a real renderer is mounted.
-const ParkMap = React.lazy(() => import("./park-map.tsx").then((m) => ({ default: m.ParkMap })));
-const ParkMapLeaflet = React.lazy(() =>
-  import("./park-map-leaflet.tsx").then((m) => ({ default: m.ParkMapLeaflet })),
+// `lazyWithReload` recovers from stale-chunk 404s after a redeploy by reloading
+// once for fresh HTML instead of surfacing a hard error.
+const ParkMap = lazyWithReload(
+  () => import("./park-map.tsx").then((m) => ({ default: m.ParkMap })),
+  "park-map",
+);
+const ParkMapLeaflet = lazyWithReload(
+  () => import("./park-map-leaflet.tsx").then((m) => ({ default: m.ParkMapLeaflet })),
+  "park-map-leaflet",
 );
 
 type StageCtx = {

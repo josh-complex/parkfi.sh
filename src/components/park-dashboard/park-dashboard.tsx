@@ -7,6 +7,7 @@ import { useTRPC } from "#/integrations/trpc/react.ts";
 
 import { MapSlot } from "#/components/park-map/map-stage.tsx";
 import { NotificationPrompt } from "#/components/notifications/notification-prompt.tsx";
+import { lazyWithReload } from "#/lib/lazy-with-reload.tsx";
 
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 
@@ -17,8 +18,9 @@ import { useSelection } from "./selection-context.tsx";
 // recharts + d3 are heavy and the chart isn't crawler content (the same numbers
 // live in the SSR'd board table), so split it out of the critical park-page
 // chunk and stream it in after first paint.
-const ParkWaitChart = React.lazy(() =>
-  import("./park-wait-chart.tsx").then((m) => ({ default: m.ParkWaitChart })),
+const ParkWaitChart = lazyWithReload(
+  () => import("./park-wait-chart.tsx").then((m) => ({ default: m.ParkWaitChart })),
+  "park-wait-chart",
 );
 
 export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
