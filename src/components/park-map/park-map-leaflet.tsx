@@ -13,6 +13,7 @@ import {
   applySelected,
   attractionPopupHtml,
   attractionPriority,
+  boundaryFeatureCollection,
   buildAttractionEl,
   buildParkBadgeEl,
   DECLUTTER_SIZE,
@@ -148,6 +149,7 @@ export function ParkMapLeaflet({
   const layerRef = React.useRef<MarkerCluster | null>(null);
   const declutterRafRef = React.useRef(0);
   const popupRef = React.useRef<L.Popup | null>(null);
+  const boundaryRef = React.useRef<L.GeoJSON | null>(null);
   const onSelectRef = React.useRef(onSelectAttraction);
   onSelectRef.current = onSelectAttraction;
   const selectedIdRef = React.useRef(selectedId);
@@ -175,6 +177,10 @@ export function ParkMapLeaflet({
       zoom: ORLANDO_ZOOM,
       zoomControl: false,
       attributionControl: true,
+      // Solid wall at maxBounds (no elastic rubber-band). A popup's autoPan can
+      // still slide within the padded bounds to reveal itself, but the view no
+      // longer springs back toward the park when it reaches the edge.
+      maxBoundsViscosity: 1.0,
     });
     L.control.zoom({ position: "topright" }).addTo(map);
     tileRef.current = makeTileLayer(dark).addTo(map);
@@ -188,6 +194,11 @@ export function ParkMapLeaflet({
       overlay,
       DECLUTTER_SIZE,
       () => selectedIdRef.current ?? null,
+      // Any marker click dismisses an open ride popup before it spiders/activates.
+      () => {
+        popupRef.current?.remove();
+        popupRef.current = null;
+      },
     );
     map.whenReady(() => setReady(true));
     mapRef.current = map;
@@ -257,6 +268,8 @@ export function ParkMapLeaflet({
     const layer = layerRef.current;
     if (!map || !layer || !ready) return;
     clearMarkers();
+    // Overview spreads its handful of parks apart; a park view clusters its rides.
+    layer.setMode(activeSlug ? "cluster" : "spread");
     const items: Array<DeclutterItem> = [];
 
     if (!activeSlug) {
@@ -352,6 +365,35 @@ export function ParkMapLeaflet({
     scheduleRefresh();
   }, [selectedId, board, ready, scheduleRefresh]);
 
+  // Draw the park outline(s): all parks on the overview, just the active park in
+  // a park view. Lives in the overlayPane (above tiles, below markers) and is
+  // non-interactive so clicks fall through to the map/markers.
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    boundaryRef.current?.remove();
+    boundaryRef.current = null;
+    const shapes = activeSlug
+      ? (parks ?? []).filter((p) => p.slug === activeSlug)
+      : (overview?.parks ?? []);
+    const fc = boundaryFeatureCollection(shapes);
+    if (fc.features.length === 0) return;
+    const layer = L.geoJSON(fc, {
+      interactive: false,
+      style: (f) => ({
+        color: f?.properties?.color ?? "#475569",
+        weight: 2,
+        opacity: 0.9,
+        fillColor: f?.properties?.color ?? "#475569",
+        fillOpacity: 0.07,
+      }),
+    }).addTo(map);
+    boundaryRef.current = layer;
+    return () => {
+      layer.remove();
+    };
+  }, [activeSlug, parks, overview, ready]);
+
   // Camera: fit both resorts on the overview, fly into the active park. Stashed
   // in a ref so the delayed scheduler reads fresh data without re-firing on
   // every query refetch.
@@ -362,6 +404,8 @@ export function ParkMapLeaflet({
     const clearMaxBounds = () => map.setMaxBounds(null as unknown as L.LatLngBoundsExpression);
 
     if (!activeSlug) {
+      // Overview is a regional picture — cap zoom-in so it can't dive to street level.
+      map.setMaxZoom(13);
       clearMaxBounds();
       const coords = (overview?.parks ?? [])
         .filter((p) => p.latitude != null && p.longitude != null)
@@ -378,6 +422,8 @@ export function ParkMapLeaflet({
 
     const park = parks?.find((p) => p.slug === activeSlug);
     if (!park) return;
+    // Park views need close zoom; lift the overview's cap.
+    map.setMaxZoom(19);
     if (park.bounds) {
       const bd = park.bounds;
       const b = L.latLngBounds([

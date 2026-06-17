@@ -86,12 +86,27 @@ export class MarkerCluster {
   /** anchorId -> the markers it absorbed (empty array for a lone anchor). */
   private members = new Map<number, Array<DeclutterItem>>();
   private spiderAnchor: number | null = null;
+  /**
+   * Layout strategy. `cluster` (park view): absorb overlapping markers under a
+   * "+N" anchor that fans out on click. `spread` (overview/home): never absorb —
+   * keep every marker visible and just nudge overlapping ones apart, converging
+   * back onto their true points as a zoom-in pulls them clear of each other.
+   */
+  private mode: "cluster" | "spread" = "cluster";
 
   constructor(
     private readonly overlay: SVGSVGElement,
     private readonly clusterDist: number,
     private readonly selectedId: () => number | null,
+    /** Called at the start of every marker click (before spider/activate) so the
+     *  renderer can dismiss any open popup — clicking any marker closes the modal. */
+    private readonly onInteract?: () => void,
   ) {}
+
+  /** Switch layout strategy (park view clusters; overview spreads). */
+  setMode(mode: "cluster" | "spread"): void {
+    this.mode = mode;
+  }
 
   /** Replace the marker set (after a rebuild) and wire each one's click. */
   setItems(items: Array<DeclutterItem>): void {
@@ -101,8 +116,16 @@ export class MarkerCluster {
     for (const it of items) {
       it.detail.addEventListener("click", (e) => {
         e.stopPropagation();
+        this.onInteract?.();
+        // Overview: no clustering/spider — every marker is a plain activate.
+        if (this.mode === "spread") {
+          it.onActivate();
+          return;
+        }
         if (this.spiderAnchor === it.id) {
-          this.unspiderfy();
+          // Clicking the open cluster's head opens *its* info modal; the fanned
+          // spider stays put rather than collapsing.
+          it.onActivate();
           return;
         }
         const mem = this.members.get(it.id);
@@ -117,13 +140,19 @@ export class MarkerCluster {
     }
   }
 
-  /** Re-cluster; if a spider is open, collapse it first (which re-clusters). */
+  /** Re-lay-out per the active mode (cluster or spread). */
+  private relayout(): void {
+    if (this.mode === "spread") this.spread();
+    else this.cluster();
+  }
+
+  /** Re-cluster; if a spider is open, collapse it first (which re-lays-out). */
   refresh(): void {
     if (this.spiderAnchor != null) {
       this.unspiderfy();
     } else {
       this.clearLines();
-      this.cluster();
+      this.relayout();
     }
   }
 
@@ -214,7 +243,67 @@ export class MarkerCluster {
     }
     // Restore the normal clustered view (re-hides the folded-away members and the
     // markers that were hidden while the spider was open, and rebuilds "+N" chips).
-    this.cluster();
+    this.relayout();
+  }
+
+  /**
+   * Overview layout: keep every marker on screen and resolve overlaps by nudging
+   * markers apart with a short force-relaxation pass, applied as a CSS transform
+   * offset from each marker's true projected point. Displacement is kept minimal
+   * (only overlapping pairs push), so markers sit as close to their real location
+   * as possible and slide back onto it as a zoom-in separates the underlying
+   * points (the detail's `transition-transform` animates the convergence).
+   */
+  private spread(): void {
+    this.clearLines();
+    const nodes: Array<{ it: DeclutterItem; x: number; y: number; ox: number; oy: number }> = [];
+    for (const it of this.items) {
+      it.detail.style.transform = "";
+      const p = it.point();
+      if (!p) {
+        it.detail.classList.add("hidden");
+        continue;
+      }
+      it.detail.classList.remove("hidden");
+      setClusterCount(it.detail, 0);
+      nodes.push({ it, x: p.x, y: p.y, ox: 0, oy: 0 });
+    }
+    // Desired center-to-center separation — the collision box plus a little air.
+    const min = this.clusterDist + 12;
+    const ITER = 60;
+    for (let k = 0; k < ITER; k++) {
+      let moved = false;
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const a = nodes[i];
+          const b = nodes[j];
+          let dx = b.x + b.ox - (a.x + a.ox);
+          let dy = b.y + b.oy - (a.y + a.oy);
+          let d = Math.hypot(dx, dy);
+          if (d >= min) continue;
+          if (d < 0.01) {
+            // Coincident points — split along a deterministic golden-angle ray so
+            // the result is stable frame-to-frame (no random jitter).
+            const ang = i * 2.39996;
+            dx = Math.cos(ang);
+            dy = Math.sin(ang);
+            d = 1;
+          }
+          const push = (min - d) / 2;
+          const ux = dx / d;
+          const uy = dy / d;
+          a.ox -= ux * push;
+          a.oy -= uy * push;
+          b.ox += ux * push;
+          b.oy += uy * push;
+          moved = true;
+        }
+      }
+      if (!moved) break;
+    }
+    for (const n of nodes) {
+      n.it.detail.style.transform = n.ox || n.oy ? `translate(${n.ox}px, ${n.oy}px)` : "";
+    }
   }
 
   private drawLine(x1: number, y1: number, x2: number, y2: number): void {

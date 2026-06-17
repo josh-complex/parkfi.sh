@@ -13,6 +13,7 @@ import {
   applySelected,
   attractionPopupHtml,
   attractionPriority,
+  boundaryFeatureCollection,
   buildAttractionEl,
   buildParkBadgeEl,
   DECLUTTER_SIZE,
@@ -170,6 +171,9 @@ export function ParkMap({
   const layerRef = React.useRef<MarkerCluster | null>(null);
   const declutterRafRef = React.useRef(0);
   const popupRef = React.useRef<maplibregl.Popup | null>(null);
+  // Park-outline FeatureCollection + a (re-)installer. The basemap is rebuilt on
+  // theme swap (setStyle wipes custom sources/layers), so we re-add on styledata.
+  const boundaryFCRef = React.useRef(boundaryFeatureCollection([]));
   // Latest select callback / selection, read inside the marker effect so it
   // doesn't rebuild every render or on each selection change.
   const onSelectRef = React.useRef(onSelectAttraction);
@@ -213,6 +217,11 @@ export function ParkMap({
       overlay,
       DECLUTTER_SIZE,
       () => selectedIdRef.current ?? null,
+      // Any marker click dismisses an open ride popup before it spiders/activates.
+      () => {
+        popupRef.current?.remove();
+        popupRef.current = null;
+      },
     );
     map.on("load", () => setReady(true));
     mapRef.current = map;
@@ -228,13 +237,56 @@ export function ParkMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted]);
 
+  // Add (or refresh) the park-boundary fill+line layers from boundaryFCRef. The
+  // markers are DOM (above the canvas), so these style layers always sit beneath
+  // them. Re-installs itself once the style finishes loading after a theme swap.
+  const ensureBoundaries = React.useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!map.isStyleLoaded()) {
+      map.once("styledata", ensureBoundaries);
+      return;
+    }
+    const src = map.getSource("park-boundaries");
+    if (src) {
+      (src as maplibregl.GeoJSONSource).setData(boundaryFCRef.current);
+      return;
+    }
+    map.addSource("park-boundaries", { type: "geojson", data: boundaryFCRef.current });
+    map.addLayer({
+      id: "park-boundaries-fill",
+      type: "fill",
+      source: "park-boundaries",
+      paint: { "fill-color": ["get", "color"], "fill-opacity": 0.07 },
+    });
+    map.addLayer({
+      id: "park-boundaries-line",
+      type: "line",
+      source: "park-boundaries",
+      paint: { "line-color": ["get", "color"], "line-width": 2, "line-opacity": 0.9 },
+    });
+  }, []);
+
   // Theme swap — DOM markers survive setStyle (they aren't style layers), so
   // swapping the basemap is all that's needed here.
   React.useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
     map.setStyle(basemapStyle(dark));
-  }, [dark, ready]);
+    // setStyle wipes custom sources/layers — re-add the outlines once it reloads.
+    ensureBoundaries();
+  }, [dark, ready, ensureBoundaries]);
+
+  // Recompute the park outline(s) and (re)install the layers: all parks on the
+  // overview, just the active park in a park view.
+  React.useEffect(() => {
+    if (!ready) return;
+    const shapes = activeSlug
+      ? (parks ?? []).filter((p) => p.slug === activeSlug)
+      : (overview?.parks ?? []);
+    boundaryFCRef.current = boundaryFeatureCollection(shapes);
+    ensureBoundaries();
+  }, [activeSlug, parks, overview, ready, ensureBoundaries]);
 
   // Keep the canvas correct as the layout width animates.
   React.useEffect(() => {
@@ -268,6 +320,8 @@ export function ParkMap({
     const layer = layerRef.current;
     if (!map || !layer || !ready) return;
     clearMarkers();
+    // Overview spreads its handful of parks apart; a park view clusters its rides.
+    layer.setMode(activeSlug ? "cluster" : "spread");
     const items: Array<DeclutterItem> = [];
 
     if (!activeSlug) {
@@ -328,7 +382,9 @@ export function ParkMap({
                   params: { slug: activeSlug, rideSlug: a.slug },
                 });
               });
-            map.easeTo({ center: lngLat, duration: 500 });
+            // No recentre: MapLibre auto-anchors the popup to keep it on screen,
+            // so easing toward the marker only fought maxBounds (snapping the view
+            // back to the park when the marker sat near the edge).
           },
           priority: attractionPriority(a),
         });
@@ -368,6 +424,8 @@ export function ParkMap({
 
     if (!activeSlug) {
       // Overview/home: fit both resorts, then cap pan/zoom-out to that area.
+      // Cap zoom-in too — the overview is a regional picture, not a park view.
+      map.setMaxZoom(13);
       map.setMaxBounds(null);
       const coords = (overview?.parks ?? []).filter(
         (p): p is typeof p & { latitude: number; longitude: number } =>
@@ -386,6 +444,8 @@ export function ParkMap({
 
     const park = parks?.find((p) => p.slug === activeSlug);
     if (!park) return;
+    // Park views need close zoom; lift the overview's cap.
+    map.setMaxZoom(19);
     if (park.bounds) {
       const bounds = park.bounds;
       // Clear first so the fit isn't constrained mid-flight, then cap the

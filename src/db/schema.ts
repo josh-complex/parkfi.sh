@@ -149,12 +149,23 @@ export const parks = pgTable("parks", {
   lngMin: doublePrecision("lng_min"),
   lngMax: doublePrecision("lng_max"),
   mapZoom: integer("map_zoom"),
+  // GeoJSON geometry ([lng,lat] Polygon | MultiPolygon) outlining the actual
+  // theme-park area, enriched monthly by services/geo from OpenStreetMap
+  // (`tourism=theme_park`, matched by name). Nullable — absent until the geo cron
+  // runs. Drawn on the map so we outline just the park, not the whole resort
+  // property (which is only an artifact of the OSM basemap tiles).
+  boundary: jsonb("boundary").$type<GeoPolygon>(),
   // Park-level hero photo + alt, enriched monthly by services/geo from the
   // operator's own feed (Disney finder `heroData`; Universal places `Park`
   // entry `heroImage`). Nullable — absent until the geo cron runs.
   imageUrl: text("image_url"),
   imageAlt: text("image_alt"),
 });
+
+/** GeoJSON geometry stored on `parks.boundary` — a park's outline in [lng,lat]. */
+export type GeoPolygon =
+  | { type: "Polygon"; coordinates: Array<Array<[number, number]>> }
+  | { type: "MultiPolygon"; coordinates: Array<Array<Array<[number, number]>>> };
 
 export const attractions = pgTable(
   "attractions",

@@ -27,6 +27,8 @@ import {
 } from "lucide-react";
 
 import type { BoardItem } from "#/components/park-dashboard/types.ts";
+import type { GeoPolygon } from "#/db/schema.ts";
+import type { Feature, FeatureCollection, MultiPolygon, Polygon } from "geojson";
 
 /** A renderer handle the map stage can poke to keep the canvas sized during the
  *  layout morph — the only capability the stage needs from either engine. */
@@ -119,6 +121,31 @@ function operatorColor(operatorSlug: string | null): string {
   return "#475569"; // slate fallback
 }
 
+/** A park-boundary feature: the OSM polygon plus its operator-brand color, read
+ *  by both engines (Leaflet `style`, MapLibre `['get','color']`). */
+export type BoundaryFeature = Feature<Polygon | MultiPolygon, { color: string }>;
+
+/**
+ * Build a GeoJSON FeatureCollection of park outlines (operator-colored) for the
+ * map to draw beneath the markers — so we highlight just the actual theme-park
+ * areas rather than the whole resort property. Parks without a stored boundary
+ * are skipped. Both engines consume the same collection.
+ */
+export function boundaryFeatureCollection(
+  parks: Array<{ boundary: GeoPolygon | null; operatorSlug?: string | null }>,
+): FeatureCollection<Polygon | MultiPolygon, { color: string }> {
+  const features: Array<BoundaryFeature> = [];
+  for (const p of parks) {
+    if (!p.boundary) continue;
+    features.push({
+      type: "Feature",
+      properties: { color: operatorColor(p.operatorSlug ?? null) },
+      geometry: p.boundary,
+    });
+  }
+  return { type: "FeatureCollection", features };
+}
+
 /** Marker fill by wait/status — gray when not operating, green→red by wait. */
 export function waitColor(wait: number | null, status: string | null): string {
   if (status && status !== "OPERATING") return "#6b7280"; // muted gray
@@ -206,14 +233,17 @@ const DETAIL_CLASS =
   "relative rounded-full transition-transform duration-200 will-change-transform";
 
 /** A circular photo disc (white-bordered, colour-ringed) or, with no photo, the
- *  fallback icon disc. `badge` is optional overlay HTML (e.g. a ride's wait). */
+ *  fallback icon disc. `badge` is optional overlay HTML (e.g. a ride's wait).
+ *  `px` sizes the disc with an explicit square box (not a Tailwind size class)
+ *  so it's guaranteed round — a non-square box would render the round-clipped
+ *  photo as a wide oval. */
 function discMarkup(opts: {
   url: string | null;
   alt: string;
   fallbackSvg: string;
   ring: string;
   bg: string;
-  size: string;
+  px: number;
   badge?: string;
 }): string {
   const ring = `--tw-ring-color:${opts.ring}`;
@@ -222,7 +252,7 @@ function discMarkup(opts: {
         opts.alt,
       )}" loading="lazy" class="size-full rounded-full border-2 border-white object-cover shadow-md ring-2" style="${ring}" />`
     : `<span class="flex size-full items-center justify-center rounded-full border-2 border-white text-white shadow-md ring-2" style="background:${opts.bg};${ring}">${opts.fallbackSvg}</span>`;
-  return `<span class="relative block ${opts.size} shrink-0">${face}${opts.badge ?? ""}</span>`;
+  return `<span class="relative block shrink-0" style="width:${opts.px}px;height:${opts.px}px">${face}${opts.badge ?? ""}</span>`;
 }
 
 /**
@@ -285,7 +315,7 @@ export function buildParkBadgeEl(p: {
     fallbackSvg: parkIconSvg(p.slug, p.operatorSlug),
     ring: color,
     bg: color,
-    size: "size-11",
+    px: 44,
   });
   const subtitle = `${p.operating} open · ${escapeHtml(wait)}`;
   const detail = document.createElement("div");
@@ -328,7 +358,7 @@ export function buildAttractionEl(
     fallbackSvg: categoryIconSvg(a.category),
     ring: color,
     bg: color,
-    size: "size-9",
+    px: 36,
     badge: waitBadge,
   });
   detail.innerHTML = `${disc}${labelMarkup(a.name, escapeHtml(waitLabelFor(a)))}`;

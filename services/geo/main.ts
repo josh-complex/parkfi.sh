@@ -47,6 +47,10 @@ import {
 import { config } from "#/server/parks/config.ts";
 import { browserlessConfigured } from "#/server/parks/sources/browserless.ts";
 import { fetchParkDetail, toNum } from "#/server/parks/sources/disney-finder.ts";
+import {
+  fetchThemeParkBoundaries,
+  normalizeParkName,
+} from "#/server/parks/sources/osm-boundaries.ts";
 import { fetchChildren } from "#/server/parks/sources/themeparks.ts";
 import { fetchUniversalPlaces } from "#/server/parks/sources/universal-places.ts";
 import type { UniversalPlace, UniversalPlaces } from "#/server/parks/schemas.ts";
@@ -250,6 +254,61 @@ async function updateParkGeo(
   if (fields.mapZoom != null) sets.push(sql`map_zoom = ${fields.mapZoom}`);
   if (sets.length === 0) return;
   await db.execute(sql`UPDATE parks SET ${sql.join(sets, sql`, `)} WHERE id = ${parkId}`);
+}
+
+// Bounding box ([south, west, north, east]) covering both Orlando resorts — the
+// single Overpass theme-park query is scoped to this.
+const ORLANDO_BBOX: [number, number, number, number] = [28.3, -81.65, 28.62, -81.4];
+
+// Our park slug -> the OSM theme-park name(s) to match against (the DB `name`
+// often carries a "Theme Park" suffix the OSM name lacks, so list it explicitly).
+// "Walt Disney World" — the property-wide relation — is intentionally absent, so
+// it's never selected; only the individual parks get outlined.
+const OSM_PARK_NAMES: Record<string, Array<string>> = {
+  "magic-kingdom": ["Magic Kingdom"],
+  epcot: ["EPCOT"],
+  "animal-kingdom": ["Disney's Animal Kingdom"],
+  "hollywood-studios": ["Disney's Hollywood Studios"],
+  "universal-studios-florida": ["Universal Studios Florida"],
+  "islands-of-adventure": ["Universal Islands of Adventure", "Islands of Adventure"],
+  "epic-universe": ["Universal Epic Universe", "Epic Universe"],
+};
+
+/**
+ * Step 0: outline each active park from OpenStreetMap. One Overpass query returns
+ * every `tourism=theme_park` boundary around Orlando; we match each park to its
+ * own polygon by name and store it on `parks.boundary`. Independent of the
+ * per-park feed steps (no ThemeParks UUID needed), so it runs once up front.
+ */
+async function ingestBoundaries(): Promise<void> {
+  const boundaries = await fetchThemeParkBoundaries(
+    ORLANDO_BBOX,
+    AbortSignal.timeout(config.overpassTimeoutMs),
+  );
+  const result = await db.execute<{ id: string; slug: string; name: string }>(sql`
+    SELECT id, slug, name FROM parks WHERE active = true
+  `);
+  let matched = 0;
+  for (const row of result.rows) {
+    const candidates = [...(OSM_PARK_NAMES[row.slug] ?? []), row.name].map(normalizeParkName);
+    let geom = null;
+    for (const c of candidates) {
+      const g = boundaries.get(c);
+      if (g) {
+        geom = g;
+        break;
+      }
+    }
+    if (!geom) {
+      console.warn(`[geo] ${row.slug}: no OSM theme_park boundary matched`);
+      continue;
+    }
+    await db.execute(
+      sql`UPDATE parks SET boundary = ${JSON.stringify(geom)}::jsonb WHERE id = ${Number(row.id)}`,
+    );
+    matched++;
+  }
+  console.log(`[geo] boundaries: ${matched}/${result.rows.length} parks outlined`);
 }
 
 /** Write a park's hero photo + alt (from the operator's own enrichment feed). */
@@ -519,6 +578,9 @@ async function main() {
     console.warn("[cron-geo] no active parks with a themeparks_wiki mapping — run db:seed first");
     return;
   }
+
+  // Park outlines from OpenStreetMap — one resort-wide Overpass query up front.
+  await runStep("boundaries", ingestBoundaries);
 
   // The Universal "places" feed is resort-wide — fetch + index it once, then
   // enrich every UOR park from it (mirrors how the Disney destinations feed is

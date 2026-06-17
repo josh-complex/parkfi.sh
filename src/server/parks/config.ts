@@ -179,4 +179,13 @@ export const config = {
    */
   userAgent:
     process.env.INGEST_USER_AGENT ?? "parkfi.sh/1.0 (+https://parkfi.sh; theme-park data platform)",
+
+  /**
+   * OpenStreetMap Overpass API — source of theme-park boundary polygons for the
+   * monthly geo cron. Public, keyless; be a polite client (long timeout, run once
+   * a month). Override to a self-hosted/alt mirror if rate-limited.
+   */
+  overpassBase: process.env.OVERPASS_BASE ?? "https://overpass-api.de/api/interpreter",
+  /** Budget for the single monthly Overpass boundary query (it can be slow). */
+  overpassTimeoutMs: num("OVERPASS_TIMEOUT_MS", 120_000),
 } as const;

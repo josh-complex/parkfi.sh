@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "#/db/index.ts";
 import { publicProcedure } from "../init.ts";
 
+import type { GeoPolygon } from "#/db/schema.ts";
 import type { TRPCRouterRecord } from "@trpc/server";
 
 const STATUS_CODE: Record<number, string> = {
@@ -42,10 +43,12 @@ export const parksRouter = {
       lng_min: number | null;
       lng_max: number | null;
       map_zoom: number | null;
+      boundary: GeoPolygon | null;
     }>(sql`
       SELECT p.id, p.slug, p.name, p.timezone,
              o.slug AS operator_slug, o.name AS operator_name, r.name AS resort_name,
-             p.latitude, p.longitude, p.lat_min, p.lat_max, p.lng_min, p.lng_max, p.map_zoom
+             p.latitude, p.longitude, p.lat_min, p.lat_max, p.lng_min, p.lng_max, p.map_zoom,
+             p.boundary
       FROM parks p
       LEFT JOIN operators o ON o.id = p.operator_id
       LEFT JOIN resorts r ON r.id = p.resort_id
@@ -67,6 +70,7 @@ export const parksRouter = {
           ? { latMin: p.lat_min, latMax: p.lat_max, lngMin: p.lng_min, lngMax: p.lng_max }
           : null,
       mapZoom: p.map_zoom,
+      boundary: p.boundary,
     }));
   }),
 
@@ -417,6 +421,7 @@ export const parksRouter = {
       name: string;
       latitude: number | null;
       longitude: number | null;
+      boundary: GeoPolygon | null;
       image_url: string | null;
       image_alt: string | null;
       operator_slug: string | null;
@@ -492,7 +497,7 @@ export const parksRouter = {
         LEFT JOIN sched s ON s.park_id = p.id
         GROUP BY p.id
       )
-      SELECT p.id, p.slug, p.name, p.latitude, p.longitude, p.image_url, p.image_alt,
+      SELECT p.id, p.slug, p.name, p.latitude, p.longitude, p.boundary, p.image_url, p.image_alt,
              o.slug AS operator_slug, o.name AS operator_name, r.name AS resort_name,
              coalesce(pa.total_rides, 0) AS total_rides,
              coalesce(pa.operating, 0) AS operating,
@@ -525,6 +530,7 @@ export const parksRouter = {
         name: p.name,
         latitude: p.latitude,
         longitude: p.longitude,
+        boundary: p.boundary,
         imageUrl: p.image_url,
         imageAlt: p.image_alt,
         operatorSlug: p.operator_slug,
