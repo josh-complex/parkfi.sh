@@ -32,7 +32,10 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
         "Track real-time wait times, Lightning Lane availability, ticket pricing, and dining reservations across Walt Disney World and Universal Orlando — all on one live park map.",
       keywords:
         "theme park wait times, Disney World wait times, Universal Orlando wait times, Lightning Lane availability, theme park ticket prices, dining reservations, live park map",
-      path: "/",
+      // No `path` here: each route owns its own canonical. TanStack merges/dedupes
+      // meta by name but NOT <link> tags, so a canonical set here would be emitted
+      // on every page *in addition* to the route's own — telling Google every deep
+      // page is a duplicate of "/". The homepage canonical comes from _dash/index.
     });
     return {
       meta: [
