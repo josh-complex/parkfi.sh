@@ -187,20 +187,42 @@ export function ParkWaitChart({
   const ridesKey = rides.map((r) => r.id).join(",");
   const chartData = React.useMemo(() => {
     const ids = rides.map((r) => r.id);
+    // How many consecutive buckets a ride's last reading stays "live" for the
+    // park average before we drop it. Bounds carry-forward so a closed/down ride
+    // doesn't keep inflating the average indefinitely.
+    const STALE_BUCKETS = 2;
     // Pass 1: aggregate each bucket and flag the ones where the park was open
-    // *and* reporting, so we can bound the 0-baseline to the live data range.
-    const rows = points.map((p) => {
-      const vals: Array<number> = [];
+    // *and* reporting, so we can bound the 0-baseline to the live data range. The
+    // park average is taken over every ride whose most recent reading is still
+    // live (carried forward up to STALE_BUCKETS), not just the rides that
+    // happened to refresh in this exact bucket — otherwise the denominator
+    // changes bucket-to-bucket and the line swings on composition, not on waits.
+    const lastVal = new Map<number, number>();
+    const lastSeen = new Map<number, number>();
+    const rows = points.map((p, i) => {
+      let reporting = false;
       for (const id of ids) {
         const v = p[String(id)];
-        if (typeof v === "number") vals.push(v);
+        if (typeof v === "number") {
+          lastVal.set(id, v);
+          lastSeen.set(id, i);
+          reporting = true;
+        }
       }
-      const open = !p.closed && vals.length > 0;
-      const avg = open
-        ? mode === "price"
-          ? Number((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2))
-          : Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
-        : null;
+      const open = !p.closed && reporting;
+      const vals: Array<number> = [];
+      if (open) {
+        for (const id of ids) {
+          const seen = lastSeen.get(id);
+          if (seen != null && i - seen <= STALE_BUCKETS) vals.push(lastVal.get(id)!);
+        }
+      }
+      const avg =
+        open && vals.length > 0
+          ? mode === "price"
+            ? Number((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2))
+            : Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
+          : null;
       return { p, open, avg };
     });
 

@@ -231,11 +231,17 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
     await db.insert(attractionStatusObs).values(statusRows).onConflictDoNothing();
   }
 
-  // (B) queue observations — always upsert, idempotent on the PK
+  // (B) queue observations — one row per ride per poll tick. We stamp
+  // `observedAt` at `tickNow` (uniform poll cadence) rather than the feed's
+  // `lastUpdated`: the PK is (attraction, queue_type, observed_at), so keying it
+  // on `lastUpdated` collapsed every unchanged poll into the same row via
+  // onConflictDoNothing, leaving buckets with wildly uneven sample counts and a
+  // jagged park-average line. The feed timestamp is preserved on `lastUpdated`.
   const queueRows = normalized.flatMap((e) => {
     const attractionId = idMap.get(e.externalId)!;
     return e.queues.map((q) => ({
-      observedAt: e.observedAt,
+      observedAt: tickNow,
+      lastUpdated: e.observedAt,
       attractionId,
       queueType: q.queueType,
       waitMin: q.waitMin,

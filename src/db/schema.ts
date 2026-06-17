@@ -291,6 +291,10 @@ export const attractionStatusObs = pgTable(
 export const queueObs = pgTable(
   "queue_obs",
   {
+    // Sample time = the poll tick that captured this row, NOT the feed's
+    // `lastUpdated`. Stamping at tick time gives uniform poll-cadence sampling;
+    // keying on the feed timestamp (its old behavior) deduped every unchanged
+    // poll away, so buckets ended up with wildly uneven sample counts.
     observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
     attractionId: bigint("attraction_id", { mode: "number" }).notNull(),
     queueType: smallint("queue_type")
@@ -310,6 +314,10 @@ export const queueObs = pgTable(
     source: smallint("source")
       .notNull()
       .references(() => refSource.id),
+    // The feed's own `lastUpdated` for this reading (when upstream last refreshed
+    // the value). Retained for staleness checks; the sample cadence lives on
+    // `observed_at`. Nullable: some sources / readings don't report one.
+    lastUpdated: timestamp("last_updated", { withTimezone: true }),
   },
   (t) => [primaryKey({ columns: [t.attractionId, t.queueType, t.observedAt] })],
 );
