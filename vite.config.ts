@@ -7,6 +7,7 @@ import viteReact, { reactCompilerPreset } from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import { nitro } from "nitro/vite";
+import { VitePWA } from "vite-plugin-pwa";
 
 const config = defineConfig({
   staged: {
@@ -37,12 +38,20 @@ const config = defineConfig({
     tanstackStart(),
     viteReact(),
     babel({ presets: [reactCompilerPreset()] }),
-    // The service worker is hand-written and import-free (see public/sw.js); it's
-    // served verbatim from the public dir and registered manually in
-    // pwa-register.tsx. We dropped vite-plugin-pwa because its bundled worker
-    // landed in an orphaned dist/ that Nitro never serves, while Nitro served the
-    // raw public/sw.js as a classic worker — so the bundled SW never shipped and
-    // the raw one failed to install ("Cannot use import statement outside a module").
+    VitePWA({
+      strategies: "injectManifest",
+      srcDir: "public",
+      filename: "sw.js",
+      registerType: "autoUpdate",
+      manifest: false,
+      devOptions: {
+        enabled: true,
+        type: "module",
+      },
+      injectManifest: {
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+      },
+    }),
   ],
 });
 
