@@ -6,12 +6,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { createPortal } from "react-dom";
 import { SearchIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
 
-import {
-  clearExtraFilters,
-  diningStore,
-  patchFilters,
-  setPartySize,
-} from "#/components/dining/dining-store.ts";
+import { clearExtraFilters, diningStore, patchFilters } from "#/components/dining/dining-store.ts";
 import {
   countExtraFilters,
   FEATURE_FILTERS,
@@ -128,7 +123,6 @@ export function AllSelect({
  */
 export function ExtendedFilters({ options }: { options: FilterOptions }) {
   const filters = useStore(diningStore, (s) => s.filters);
-  const partySize = useStore(diningStore, (s) => s.partySize);
   const todayOnly = filters.availability === "today";
 
   return (
@@ -143,6 +137,18 @@ export function ExtendedFilters({ options }: { options: FilterOptions }) {
           className="pl-9"
         />
       </div>
+
+      {options.experiences.length > 0 && (
+        <Section label="Service level">
+          <AllSelect
+            value={filters.experienceType}
+            onValueChange={(v) => patchFilters({ experienceType: v })}
+            allLabel="Any service level"
+            options={options.experiences}
+            ariaLabel="Service level"
+          />
+        </Section>
+      )}
 
       <Section label="Operator">
         <PillRow
@@ -222,15 +228,6 @@ export function ExtendedFilters({ options }: { options: FilterOptions }) {
             );
           })}
         </div>
-      </Section>
-
-      <Section label="Party size">
-        <PillRow
-          options={Array.from({ length: 8 }, (_, i) => String(i + 1))}
-          value={partySize}
-          onSelect={setPartySize}
-          labelOf={(v) => v}
-        />
       </Section>
     </div>
   );

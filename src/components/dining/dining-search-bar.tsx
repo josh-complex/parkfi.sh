@@ -12,12 +12,18 @@ import {
   useCloseOnScroll,
   type SegPos,
 } from "#/components/core-search.tsx";
-import { AllSelect, ExtendedFilters, Section } from "#/components/dining/dining-filters-modal.tsx";
+import {
+  AllSelect,
+  ExtendedFilters,
+  PillRow,
+  Section,
+} from "#/components/dining/dining-filters-modal.tsx";
 import {
   clearExtraFilters,
   commitSearch,
   diningStore,
   patchFilters,
+  setPartySize,
   setSortKey,
 } from "#/components/dining/dining-store.ts";
 import {
@@ -39,6 +45,13 @@ import {
 } from "#/components/ui/drawer.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "#/components/ui/popover.tsx";
 import { cn } from "#/lib/utils.ts";
+
+/** Party-size choices shared by the desktop pill and the mobile search drawer. */
+const PARTY_SIZE_OPTIONS = Array.from({ length: 8 }, (_, i) => String(i + 1));
+
+function partySizeLabel(size: string): string {
+  return `${size} ${size === "1" ? "guest" : "guests"}`;
+}
 
 /** A selectable option row inside the Where / Cuisine popovers. */
 function OptionRow({
@@ -110,23 +123,23 @@ function SearchSegment({
 /** Desktop sticky search bar — hidden on mobile, the FAB carries it there. */
 export function DiningSearchBar({ options }: { options: FilterOptions }) {
   const filters = useStore(diningStore, (s) => s.filters);
+  const partySize = useStore(diningStore, (s) => s.partySize);
   const searched = useStore(diningStore, (s) => s.searched);
   const stuck = useStore(diningStore, (s) => s.stuck);
 
   const [whereOpen, setWhereOpen] = React.useState(false);
   const [cuisineOpen, setCuisineOpen] = React.useState(false);
-  const [serviceOpen, setServiceOpen] = React.useState(false);
+  const [partyOpen, setPartyOpen] = React.useState(false);
 
   const closeSegments = React.useCallback(() => {
     setWhereOpen(false);
     setCuisineOpen(false);
-    setServiceOpen(false);
+    setPartyOpen(false);
   }, []);
-  useCloseOnScroll(whereOpen || cuisineOpen || serviceOpen, closeSegments);
+  useCloseOnScroll(whereOpen || cuisineOpen || partyOpen, closeSegments);
 
   const whereLabel = filters.parkResort === "ALL" ? "All restaurants" : filters.parkResort;
   const cuisineLabel = filters.cuisine === "ALL" ? "All cuisines" : filters.cuisine;
-  const serviceLabel = filters.experienceType === "ALL" ? "Any service" : filters.experienceType;
 
   return (
     <div
@@ -201,29 +214,21 @@ export function DiningSearchBar({ options }: { options: FilterOptions }) {
 
           <SearchSegment
             pos="last"
-            label="Service"
-            value={serviceLabel}
-            muted={filters.experienceType === "ALL"}
-            open={serviceOpen}
-            onOpenChange={setServiceOpen}
+            label="Party size"
+            value={partySizeLabel(partySize)}
+            muted={false}
+            open={partyOpen}
+            onOpenChange={setPartyOpen}
             align="end"
           >
-            <OptionRow
-              label="Any service level"
-              selected={filters.experienceType === "ALL"}
-              onSelect={() => {
-                patchFilters({ experienceType: "ALL" });
-                setServiceOpen(false);
-              }}
-            />
-            {options.experiences.map((e) => (
+            {PARTY_SIZE_OPTIONS.map((n) => (
               <OptionRow
-                key={e}
-                label={e}
-                selected={filters.experienceType === e}
+                key={n}
+                label={partySizeLabel(n)}
+                selected={partySize === n}
                 onSelect={() => {
-                  patchFilters({ experienceType: e });
-                  setServiceOpen(false);
+                  setPartySize(n);
+                  setPartyOpen(false);
                 }}
               />
             ))}
@@ -239,6 +244,7 @@ export function DiningSearchBar({ options }: { options: FilterOptions }) {
 /** Mobile floating action button — owns search, sort, and filters drawers. */
 export function DiningMobileFAB({ options }: { options: FilterOptions }) {
   const filters = useStore(diningStore, (s) => s.filters);
+  const partySize = useStore(diningStore, (s) => s.partySize);
   const sortKey = useStore(diningStore, (s) => s.sortKey);
   const searched = useStore(diningStore, (s) => s.searched);
   const extraCount = useStore(diningStore, (s) => countExtraFilters(s.filters));
@@ -246,7 +252,6 @@ export function DiningMobileFAB({ options }: { options: FilterOptions }) {
   const activeSearchFacets = [
     filters.parkResort !== "ALL" ? filters.parkResort : null,
     filters.cuisine !== "ALL" ? filters.cuisine : null,
-    filters.experienceType !== "ALL" ? filters.experienceType : null,
   ].filter(Boolean);
   const mobileSearchLabel = activeSearchFacets.length
     ? activeSearchFacets.join(" · ")
@@ -273,7 +278,7 @@ export function DiningMobileFAB({ options }: { options: FilterOptions }) {
           <DrawerContent>
             <DrawerHeader className="border-b pb-4">
               <DrawerTitle>Search restaurants</DrawerTitle>
-              <DrawerDescription>Choose a place, cuisine, and service level.</DrawerDescription>
+              <DrawerDescription>Choose a place, cuisine, and party size.</DrawerDescription>
             </DrawerHeader>
             <div className="flex flex-col gap-5 overflow-y-auto px-4 pb-4 pt-6">
               <Section label="Where">
@@ -294,17 +299,14 @@ export function DiningMobileFAB({ options }: { options: FilterOptions }) {
                   ariaLabel="Cuisine"
                 />
               </Section>
-              {options.experiences.length > 0 && (
-                <Section label="Service level">
-                  <AllSelect
-                    value={filters.experienceType}
-                    onValueChange={(v) => patchFilters({ experienceType: v })}
-                    allLabel="Any service level"
-                    options={options.experiences}
-                    ariaLabel="Service level"
-                  />
-                </Section>
-              )}
+              <Section label="Party size">
+                <PillRow
+                  options={PARTY_SIZE_OPTIONS}
+                  value={partySize}
+                  onSelect={setPartySize}
+                  labelOf={(v) => v}
+                />
+              </Section>
             </div>
             <DrawerFooter>
               <DrawerClose asChild>

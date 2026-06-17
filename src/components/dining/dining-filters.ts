@@ -197,14 +197,16 @@ export function countActiveFilters(f: ClientFilters): number {
 }
 
 /**
- * Active count for the post-search "extended filters" only — excludes the three
- * facets promoted into the search pill (`parkResort`, `cuisine`, `experienceType`),
- * so the Filters badge reflects just what the drawer/controls own. Hours always
- * narrows (default `now`), so only a non-default hours choice counts.
+ * Active count for the post-search "extended filters" only — excludes the
+ * facets promoted into the search pill (`parkResort`, `cuisine`), so the Filters
+ * badge reflects just what the drawer/controls own. Service (`experienceType`)
+ * lives in the drawer now, so it counts here. Hours always narrows (default
+ * `now`), so only a non-default hours choice counts.
  */
 export function countExtraFilters(f: ClientFilters): number {
   let n = 0;
   if (f.search.trim()) n++;
+  if (f.experienceType !== "ALL") n++;
   if (f.operator !== "ALL") n++;
   if (f.prices.length) n++;
   if (f.availability !== "ALL") n++;

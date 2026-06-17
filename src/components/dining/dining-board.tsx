@@ -8,7 +8,12 @@ import { DiningSearchBar, DiningMobileFAB } from "#/components/dining/dining-sea
 import { ResultsView } from "#/components/dining/dining-results-view.tsx";
 import { DiningMenuChanges } from "#/components/dining/dining-menu-changes.tsx";
 import { DiningPicks } from "#/components/dining/dining-picks.tsx";
-import { diningStore, resetDiningStore, setStuck } from "#/components/dining/dining-store.ts";
+import {
+  diningStore,
+  hydratePartySize,
+  resetDiningStore,
+  setStuck,
+} from "#/components/dining/dining-store.ts";
 import {
   deriveOptions,
   filterRestaurants,
@@ -69,8 +74,12 @@ export function DiningBoard() {
   const sortKey = useStore(diningStore, (s) => s.sortKey);
   const page = useStore(diningStore, (s) => s.page);
 
-  // Reset store state when the board unmounts (navigation away).
-  React.useEffect(() => resetDiningStore, []);
+  // Restore the remembered party size on mount, and reset store state when the
+  // board unmounts (navigation away).
+  React.useEffect(() => {
+    hydratePartySize();
+    return resetDiningStore;
+  }, []);
 
   // The pill rides a hero wash at rest, then flips to a translucent bar once it
   // sticks over the scrolling content. A flow sentinel marks the hand-off.

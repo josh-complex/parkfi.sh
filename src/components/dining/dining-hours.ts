@@ -101,6 +101,84 @@ export function isOpenLate(schedules: Array<ScheduleEntry>): boolean {
   });
 }
 
+// A venue counts as "closing soon" when it shuts within this many minutes, and
+// "opening soon" when it opens within this many.
+const CLOSES_SOON_WITHIN = 60;
+const OPENS_SOON_WITHIN = 120;
+
+export type OpenStatus = "open" | "closes-soon" | "opens-soon" | "closed";
+
+export const OPEN_STATUS_LABELS: Record<OpenStatus, string> = {
+  open: "Open",
+  "closes-soon": "Closes soon",
+  "opens-soon": "Opens soon",
+  closed: "Closed",
+};
+
+/** "95" → "1h 35m"; "40" → "40 min". */
+function fmtDuration(min: number): string {
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+/** Minutes from `nowMin` until the venue next closes, or null when not open now. */
+function minutesUntilClose(schedules: Array<ScheduleEntry>, nowMin: number): number | null {
+  let soonest: number | null = null;
+  for (const s of operating(schedules)) {
+    const start = toMinutes(s.startTime);
+    const end = toMinutes(s.endTime);
+    const open = end <= start ? nowMin >= start || nowMin < end : nowMin >= start && nowMin < end;
+    if (!open) continue;
+    let until = end - nowMin;
+    if (until <= 0) until += 24 * 60; // close past midnight
+    soonest = soonest === null ? until : Math.min(soonest, until);
+  }
+  return soonest;
+}
+
+/** Minutes from `nowMin` until the venue's next opening later today, else null. */
+function minutesUntilOpen(schedules: Array<ScheduleEntry>, nowMin: number): number | null {
+  let soonest: number | null = null;
+  for (const s of operating(schedules)) {
+    const until = toMinutes(s.startTime) - nowMin;
+    if (until > 0) soonest = soonest === null ? until : Math.min(soonest, until);
+  }
+  return soonest;
+}
+
+/** Classify a venue right now: open, closing soon, opening soon, or closed. */
+export function openStatus(schedules: Array<ScheduleEntry>, nowMin: number): OpenStatus {
+  const untilClose = minutesUntilClose(schedules, nowMin);
+  if (untilClose !== null) return untilClose <= CLOSES_SOON_WITHIN ? "closes-soon" : "open";
+  const untilOpen = minutesUntilOpen(schedules, nowMin);
+  if (untilOpen !== null && untilOpen <= OPENS_SOON_WITHIN) return "opens-soon";
+  return "closed";
+}
+
+/** Full-sentence detail for the open-status chip tooltip. */
+export function openStatusDetail(schedules: Array<ScheduleEntry>, nowMin: number): string {
+  const label = hoursLabel(schedules);
+  const suffix = label ? ` · ${label} today` : "";
+  switch (openStatus(schedules, nowMin)) {
+    case "open":
+      return `Open now${suffix}`;
+    case "closes-soon": {
+      const until = minutesUntilClose(schedules, nowMin);
+      const tail = until !== null ? ` (in ${fmtDuration(until)})` : "";
+      return `Closing soon${tail}${suffix}`;
+    }
+    case "opens-soon": {
+      const until = minutesUntilOpen(schedules, nowMin);
+      const tail = until !== null ? ` (in ${fmtDuration(until)})` : "";
+      return `Opens soon${tail}${suffix}`;
+    }
+    default:
+      return `Closed now${suffix}`;
+  }
+}
+
 /** Compact label for a venue's primary operating window today ("11:00 AM–9:00 PM"). */
 export function hoursLabel(schedules: Array<ScheduleEntry>): string | null {
   const op = operating(schedules);
