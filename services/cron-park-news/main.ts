@@ -28,7 +28,7 @@ import Parser from "rss-parser";
 
 import { db } from "#/db/index.ts";
 import { blogPost, newsItem } from "#/db/schema.ts";
-import { parseSocialUrl, socialExists } from "#/server/blog/embeds.ts";
+import { parseSocialUrl, socialExists, type SocialEmbed } from "#/server/blog/embeds.ts";
 
 const MODEL = process.env.NEWS_MODEL ?? "gemini-3.5-flash";
 /** Safety cap on drafts per run — a ceiling, not a target (skips yield fewer). */
@@ -59,7 +59,15 @@ const SERVICE_TIER =
  * LOW keeps thinking light so the answer always has room; raise via env if a
  * future model needs more. Set NEWS_THINKING_LEVEL=minimal|low|medium|high.
  */
-const MAX_OUTPUT_TOKENS = Number(process.env.NEWS_MAX_OUTPUT_TOKENS ?? 12_000);
+const MAX_OUTPUT_TOKENS = Number(process.env.NEWS_MAX_OUTPUT_TOKENS ?? 16_000);
+/**
+ * Floor on in-body media (inline images) every post should carry beyond the
+ * hero. The writer is handed a palette of REAL, pre-verified images/embeds
+ * harvested from the source article; if the finished body still falls short we
+ * top it up from that palette, and anything still under the floor is surfaced as
+ * "media-thin" in the review queue. Set NEWS_MIN_INLINE_IMAGES.
+ */
+const MIN_INLINE_IMAGES = Number(process.env.NEWS_MIN_INLINE_IMAGES ?? 2);
 const THINKING_LEVELS: Record<string, ThinkingLevel> = {
   minimal: ThinkingLevel.MINIMAL,
   low: ThinkingLevel.LOW,
@@ -88,18 +96,19 @@ SUBSTANCE:
 - Tie it to what ParkFi readers care about: crowds, wait times, Lightning Lane, dining, trip timing — only where it's honestly relevant. Skip the tie-in if it's a stretch.
 
 IMAGES (inline, in the body) — a rich post is a media-rich post:
-- Include 2–3 relevant images INSIDE the body using Markdown: ![descriptive alt](https://image-url), spread through the post (next to the section each one illustrates), not stacked at the top. Right after each image add an italic credit line: *Photo: Source Name* (link the source name if you have its URL).
-- Use Google Search to find real, directly relevant image URLs (a press photo, the ride, the food item, the resort). Prefer official/press sources. Use ONLY a URL you actually found in a search result — NEVER guess, pattern-match, or fabricate an image path. Every image URL is fetched before publish and silently dropped if it 404s, so a guessed link just vanishes — it doesn't help you.
+- A post MUST carry AT LEAST 2 relevant images INSIDE the body (3–4 is better for a meatier story), using Markdown: ![descriptive alt](https://image-url), spread through the post (next to the section each one illustrates), not stacked at the top. Right after each image add an italic credit line: *Photo: Source Name* (link the source name to its URL).
+- You will be given a "VERIFIED MEDIA" palette: real image URLs we already pulled from the source article and confirmed load. PREFER these — they are guaranteed to work and are already correctly attributed. Use as many as fit the story.
+- You may ALSO add images via Google Search, but ONLY a URL you actually found in a search result — NEVER guess, pattern-match, or fabricate an image path. Every image URL is fetched before publish and silently dropped if it 404s, so a guessed link just vanishes and can leave the post under the 2-image floor.
 - Don't decorate for the sake of it: an image must show the actual thing the post is about.
 
-EMBEDS (social posts) — STRONGLY PREFERRED when one exists:
-- A real embedded post (TikTok, YouTube, Instagram, or X) is one of the biggest things that makes a post feel rich and credible, so actively go looking for one. When the story is visual or shareable — a new ride, a food item, a show, a reveal, a viral moment, an official announcement — search the OFFICIAL account (the park, Universal, Disney, the resort) and relevant creators for the actual post, and embed it by putting its REAL URL on its OWN line (just the bare URL, nothing else). We turn it into a clean embedded player. Prefer the official announcement post when there is one.
-- Truth gate still applies: embed ONLY a post you actually found in a search result — never invent or guess a URL. Every embed is verified to exist before publish and dropped if it doesn't, so a fabricated link is wasted effort, not a shortcut.
-- If — after genuinely looking — no real, relevant post exists, omit it; a forced or vague embed is worse than none. But "prefer one" means search first and default to including a real one, not skip it.
+EMBEDS (social posts / video) — STRONGLY PREFERRED when one exists:
+- A real embedded post (TikTok, YouTube, Instagram, or X) is one of the biggest things that makes a post feel rich and credible. The VERIFIED MEDIA palette often includes embeds we pulled straight from the source article — if one is listed, INCLUDE it (put its bare URL on its OWN line, nothing else) unless it's truly irrelevant. We turn it into a clean embedded player.
+- You may also search the OFFICIAL account (the park, Universal, Disney, the resort) and relevant creators for the actual post when the palette has none. Prefer the official announcement post when there is one.
+- Truth gate still applies: embed ONLY a post from the palette or one you actually found in a search result — never invent or guess a URL. Every embed is verified to exist before publish and dropped if it doesn't.
 
 TRUTH ONLY. Every claim, quote, date, number, image, and embed must trace to a real source. If you can't verify it, leave it out. Never invent attendance figures, prices, or quotes.
 
-FORMAT: original wording (never copy/closely paraphrase the source), Markdown body, ## subheads ok, NO H1. 550–800 words — room to actually develop the angle, not padded filler. Cite EVERY source you used (original + anything from Search) in "extraSources".`;
+FORMAT: original wording (never copy/closely paraphrase the source), Markdown body, ## subheads ok, NO H1. 900–1300 words — real depth and development, with a couple of ## subheads to structure it, not padded filler. Cite EVERY source you used (original + anything from Search) in "extraSources".`;
 
 /**
  * RSS feeds to pull. Override with NEWS_FEEDS (comma-separated).
@@ -357,6 +366,173 @@ async function fetchOgImage(pageUrl: string): Promise<OgImage | null> {
   }
 }
 
+/** Real, pre-verified assets harvested from a source article for the writer. */
+interface HarvestedMedia {
+  images: OgImage[];
+  embeds: SocialEmbed[];
+}
+
+const HTML_IMG_RE = /<img\b[^>]*>/gi;
+const SRC_RE = /\ssrc\s*=\s*["']([^"']+)["']/i;
+const DATASRC_RE = /\sdata-src\s*=\s*["']([^"']+)["']/i;
+const ALT_RE = /\salt\s*=\s*["']([^"']*)["']/i;
+/** URL fragments that mark non-content images we never want inline. */
+const IMG_SKIP =
+  /(sprite|logo|favicon|\bicon\b|avatar|gravatar|emoji|pixel|spacer|1x1|blank|placeholder|badge|button|loading|share|social|tracking|beacon|wp-content\/plugins)/i;
+/** Bare social-post URLs embedded in article HTML (one pattern per platform). */
+const EMBED_SCAN: RegExp[] = [
+  /https?:\/\/(?:www\.)?youtube\.com\/watch\?v=[\w-]{6,}/gi,
+  /https?:\/\/(?:www\.)?youtu\.be\/[\w-]{6,}/gi,
+  /https?:\/\/(?:www\.)?youtube\.com\/shorts\/[\w-]{6,}/gi,
+  /https?:\/\/(?:www\.)?tiktok\.com\/@[\w.-]+\/video\/\d+/gi,
+  /https?:\/\/(?:www\.)?instagram\.com\/(?:p|reel|tv)\/[\w-]+/gi,
+  /https?:\/\/(?:www\.)?(?:twitter|x)\.com\/\w+\/status\/\d+/gi,
+];
+/** YouTube embed iframes (youtube.com/embed/ID) — normalized to a watch URL. */
+const YT_EMBED_RE = /https?:\/\/(?:www\.)?(?:youtube(?:-nocookie)?\.com)\/embed\/([\w-]{6,})/gi;
+
+function looksLikeContentImage(url: string): boolean {
+  return /^https?:\/\//i.test(url) && !/\.svg(\?|$)/i.test(url) && !IMG_SKIP.test(url);
+}
+
+/**
+ * Pull real media OUT of the source article — the same trick that makes the hero
+ * reliable, applied to the rest of the post. News articles already embed press
+ * photos, galleries, and the official YouTube/social post; lifting those (rather
+ * than asking the model to find live URLs, which it guesses and 404s) is what
+ * lets a post clear the in-body media floor. Best-effort: a fetch failure just
+ * returns nothing and the writer falls back to Search. Caller verifies liveness.
+ */
+async function harvestSourceMedia(pageUrl: string, excludeUrl?: string): Promise<HarvestedMedia> {
+  let html: string;
+  try {
+    const res = await fetch(pageUrl, {
+      headers: { "User-Agent": UA, Accept: "text/html" },
+      signal: AbortSignal.timeout(12_000),
+      redirect: "follow",
+    });
+    if (!res.ok) return { images: [], embeds: [] };
+    html = (await res.text()).slice(0, 600_000);
+  } catch {
+    return { images: [], embeds: [] };
+  }
+
+  const images: OgImage[] = [];
+  const seenImg = new Set<string>(excludeUrl ? [excludeUrl] : []);
+  for (const tag of html.match(HTML_IMG_RE) ?? []) {
+    const raw = SRC_RE.exec(tag)?.[1] ?? DATASRC_RE.exec(tag)?.[1];
+    if (!raw) continue;
+    let abs: string;
+    try {
+      abs = new URL(raw, pageUrl).toString();
+    } catch {
+      continue;
+    }
+    if (seenImg.has(abs) || !looksLikeContentImage(abs)) continue;
+    seenImg.add(abs);
+    images.push({ url: abs, alt: ALT_RE.exec(tag)?.[1]?.trim() || null });
+    if (images.length >= 10) break;
+  }
+
+  const embeds: HarvestedMedia["embeds"] = [];
+  const seenEmb = new Set<string>();
+  const pushEmbed = (url: string) => {
+    const e = parseSocialUrl(url);
+    if (e && !seenEmb.has(e.url)) {
+      seenEmb.add(e.url);
+      embeds.push(e);
+    }
+  };
+  for (const re of EMBED_SCAN) for (const m of html.match(re) ?? []) pushEmbed(m);
+  for (const m of html.matchAll(YT_EMBED_RE)) pushEmbed(`https://www.youtube.com/watch?v=${m[1]}`);
+
+  return { images, embeds };
+}
+
+/** Keep only harvested media that actually loads/exists, capped to a sane palette. */
+async function verifyHarvest(m: HarvestedMedia): Promise<HarvestedMedia> {
+  const [imgOk, embOk] = await Promise.all([
+    Promise.all(m.images.map((i) => isLiveImage(i.url))),
+    Promise.all(m.embeds.map((e) => socialExists(e, UA))),
+  ]);
+  return {
+    images: m.images.filter((_, i) => imgOk[i]).slice(0, 6),
+    embeds: m.embeds.filter((_, i) => embOk[i]).slice(0, 2),
+  };
+}
+
+/** Count in-body media (inline images + social embeds) — the review-queue floor. */
+function countBodyMedia(md: string): { images: number; embeds: number } {
+  const images = [...md.matchAll(BODY_IMG_RE)].length;
+  const embeds = md.split("\n").filter((l) => parseSocialUrl(l.trim())).length;
+  return { images, embeds };
+}
+
+/**
+ * Top up a finished body that fell short of the image floor (or carries no
+ * embed) from the pre-verified palette, so a thin-but-real post still ships with
+ * media rather than a lone hero. The writer normally places these inline; this
+ * is the safety net, so the extras land at the end with a proper credit line.
+ */
+function ensureBodyMedia(
+  md: string,
+  media: HarvestedMedia,
+  source: string,
+  sourceUrl: string,
+): string {
+  const have = countBodyMedia(md);
+  const usedImg = new Set([...md.matchAll(BODY_IMG_RE)].map((m) => m[1]));
+  const usedEmb = new Set(
+    md
+      .split("\n")
+      .map((l) => parseSocialUrl(l.trim())?.url)
+      .filter((u): u is string => !!u),
+  );
+  const credit = `*Photo: [${source}](${sourceUrl})*`;
+  let out = md;
+  let added = 0;
+  let need = MIN_INLINE_IMAGES - have.images;
+  for (const img of media.images) {
+    if (need <= 0) break;
+    if (usedImg.has(img.url)) continue;
+    out += `\n\n![${img.alt || source}](${img.url})\n${credit}`;
+    usedImg.add(img.url);
+    need--;
+    added++;
+  }
+  if (have.embeds === 0) {
+    const e = media.embeds.find((e) => !usedEmb.has(e.url));
+    if (e) {
+      out += `\n\n${e.url}`;
+      added++;
+    }
+  }
+  if (added) console.log(`[park-news]   topped up body with ${added} palette media item(s)`);
+  return out.trim();
+}
+
+/** Matches an internal blog backlink `[text](/blog/some-slug)` (not an image). */
+const BODY_INTERNAL_LINK_RE = /(?<!!)\[([^\]]+)\]\((\/blog\/[a-z0-9-]+)\/?\)/g;
+
+/** Unwrap any internal /blog/<slug> link whose slug doesn't exist (keep the text). */
+function validateInternalLinks(md: string, validSlugs: Set<string>): string {
+  let dropped = 0;
+  const out = md.replace(BODY_INTERNAL_LINK_RE, (full, text: string, path: string) => {
+    const slug = path.replace(/^\/blog\//, "").replace(/\/$/, "");
+    if (validSlugs.has(slug)) return full;
+    dropped++;
+    return text;
+  });
+  if (dropped) console.log(`[park-news]   unwrapped ${dropped} bad internal /blog link(s)`);
+  return out;
+}
+
+/** Every existing blog slug — so a hallucinated internal backlink gets unwrapped. */
+async function allBlogSlugs(): Promise<Set<string>> {
+  const { rows } = await db.execute<{ slug: string }>(sql`SELECT slug FROM blog_post`);
+  return new Set(rows.map((r) => r.slug));
+}
+
 /** Record an item as considered so it isn't reprocessed (idempotent). */
 async function recordSeen(item: FeedItem, clusteredInto?: number): Promise<void> {
   await db
@@ -490,12 +666,27 @@ function buildPrompt(
   item: FeedItem,
   parks: Array<{ slug: string; name: string }>,
   covered: RecentPost[],
+  media: HarvestedMedia,
 ): string {
   const slugList = parks.map((p) => `${p.slug} (${p.name})`).join(", ");
   const coveredList =
     covered.length === 0
       ? "(nothing yet)"
       : covered.map((c) => `- "${c.title}" (/blog/${c.slug}): ${c.aiSummary ?? "—"}`).join("\n");
+
+  const imgPalette =
+    media.images.length === 0
+      ? "(none found — use Google Search to find real, relevant image URLs)"
+      : media.images.map((i) => `- ${i.url}${i.alt ? `  (alt: ${i.alt})` : ""}`).join("\n");
+  const embedPalette =
+    media.embeds.length === 0
+      ? "(none found in the source — search for an official post if the story is visual)"
+      : media.embeds.map((e) => `- ${e.url}`).join("\n");
+  const mediaBlock = `VERIFIED MEDIA from the source article — real, already confirmed to load. Prefer these (credit them as "*Photo: [${item.source}](${item.url})*"):
+Images (use at least ${MIN_INLINE_IMAGES}, spread through the body):
+${imgPalette}
+Embeds (put a bare URL on its own line where it fits — include one if listed):
+${embedPalette}`;
 
   return `A theme-park news item just came in:
 
@@ -504,28 +695,31 @@ Headline: ${item.title}
 Summary: ${item.summary}
 URL: ${item.url}
 
+${mediaBlock}
+
 We've ALREADY published/drafted these recent posts (do not repeat their angle):
 ${coveredList}
 
 If this item is already substantially covered above, or isn't genuinely
 newsworthy on its own, respond with exactly {"skip": true} and nothing else.
 
-Otherwise research it (per your instructions) and write the post (550–800 words):
+Otherwise research it (per your instructions) and write the post (900–1300 words):
 real voice, an optimistic headline that leads with the exciting thing, inline
 backlinks (only to URLs you actually found — dead ones get dropped), a verifiable
-quote if one exists, 2–3 relevant inline images spread through the body (Markdown,
-with an italic credit line under each), and — search for this, it makes the post
-much richer — a real embedded social post (official park account or a creator) on
-its own line whenever one exists. When it fits, link a
-closely related prior post inline using its /blog/<slug> path. Reference a park
-by its ParkFi slug only from this list (we link it internally): ${slugList || "(none)"}.
+quote if one exists, AT LEAST ${MIN_INLINE_IMAGES} relevant inline images spread
+through the body (Markdown, with an italic credit line under each — prefer the
+VERIFIED MEDIA above), and a real embedded social post on its own line whenever
+one exists (prefer the verified embed above). When a recent post above is
+genuinely related, link it inline using its EXACT /blog/<slug> path from that list
+(a wrong slug is dropped). Reference a park by its ParkFi slug only from this list
+(we link it internally): ${slugList || "(none)"}.
 
 Respond with ONLY a JSON object (no code fence), shape:
 {
   "skip": false,
   "title": "compelling, specific, OPTIMISTIC, <70 chars — lead with the exciting thing, not a hedge, question, or warning",
   "dek": "one-sentence reader summary / meta description, <160 chars",
-  "bodyMd": "the post in Markdown (550–800 words) — ## subheads ok, NO H1, 2-3 inline ![alt](url) images spread through the body each followed by an italic *Photo: ...* credit, a > blockquote for any real quote, and (strongly preferred when a real one exists) an embedded social post as a bare URL on its own line",
+  "bodyMd": "the post in Markdown (900–1300 words) — ## subheads ok, NO H1, AT LEAST 2 inline ![alt](url) images spread through the body each followed by an italic *Photo: ...* credit, a > blockquote for any real quote, and (strongly preferred when a real one exists) an embedded social post as a bare URL on its own line",
   "aiSummary": "dense 1-2 sentence FACTUAL summary for our internal dedup index",
   "tags": ["2-4 short lowercase tags"],
   "parkSlugs": ["relevant slugs from the list, or empty"],
@@ -604,6 +798,7 @@ async function main() {
     return;
   }
   const covered = await recentCoverage();
+  const blogSlugs = await allBlogSlugs();
 
   // Google Search grounding lets the model verify + add context before writing.
   const tools = WEB_SEARCH ? [{ googleSearch: {} }] : undefined;
@@ -612,9 +807,15 @@ async function main() {
   let skipped = 0;
   for (const item of items) {
     try {
+      // Pull the hero (source og:image) AND a palette of real, verified media
+      // straight out of the source article BEFORE writing — so the writer places
+      // guaranteed-live images/embeds instead of guessing URLs that 404.
+      const og = await fetchOgImage(item.url);
+      const media = await verifyHarvest(await harvestSourceMedia(item.url, og?.url));
+
       const res = await ai.models.generateContent({
         model: MODEL,
-        contents: buildPrompt(item, parks, covered),
+        contents: buildPrompt(item, parks, covered, media),
         config: {
           systemInstruction: SYSTEM,
           tools,
@@ -654,9 +855,19 @@ async function main() {
       }
 
       // Normalize the headline to consistent title case, and scrub the body of
-      // any dead inline images / unverified embeds before it's ever stored.
+      // any dead inline images / unverified embeds before it's ever stored. Then
+      // unwrap hallucinated internal /blog links, and top up from the verified
+      // palette if the writer left the post under the in-body media floor.
       draft.title = titleCase(draft.title);
       draft.bodyMd = await validateBodyMedia(draft.bodyMd);
+      draft.bodyMd = validateInternalLinks(draft.bodyMd, blogSlugs);
+      draft.bodyMd = ensureBodyMedia(draft.bodyMd, media, item.source, item.url);
+      const finalMedia = countBodyMedia(draft.bodyMd);
+      if (finalMedia.images < MIN_INLINE_IMAGES) {
+        console.log(
+          `[park-news]   media-thin draft (${finalMedia.images} inline image(s), ${finalMedia.embeds} embed(s)): ${draft.title}`,
+        );
+      }
 
       const parkSlugs = draft.parkSlugs.filter((s) => validSlugs.has(s));
       const slug = `${slugify(draft.title)}-${sha256(item.url).slice(0, 6)}`;
@@ -672,10 +883,9 @@ async function main() {
         ...liveExtra,
       ];
 
-      // Hero image: prefer the source article's og:image (deterministic, and we
-      // already credit + link that source), falling back to the model's pick —
-      // and verify whichever we land on actually loads.
-      const og = await fetchOgImage(item.url);
+      // Hero image: prefer the source article's og:image (fetched up top —
+      // deterministic, and we already credit + link that source), falling back to
+      // the model's pick — and verify whichever we land on actually loads.
       const ogHero: HeroImage | null = og
         ? { url: og.url, alt: og.alt ?? draft.title, credit: item.source, creditUrl: item.url }
         : null;
@@ -708,8 +918,10 @@ async function main() {
       if (post) {
         await recordSeen(item, post.id);
         drafted++;
-        // Let later items in this same run see this one, avoiding intra-run dupes.
+        // Let later items in this same run see this one, avoiding intra-run dupes
+        // and letting them backlink to it (so its slug must count as valid).
         covered.unshift({ slug, title: draft.title, aiSummary: draft.aiSummary });
+        blogSlugs.add(slug);
       }
     } catch (err) {
       // Leave the item unrecorded so a transient API/network failure (e.g. a

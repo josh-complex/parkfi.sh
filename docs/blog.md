@@ -60,7 +60,8 @@ NEWS_FEEDS=<csv of RSS urls>    # optional, overrides the ~10 default feeds
 NEWS_USER_AGENT=<ua string>    # optional, override the browser UA
 NEWS_WEB_SEARCH=1              # optional, set 0 to disable Google Search grounding
 NEWS_SERVICE_TIER=flex        # "flex" (cheap, PAID TIER ONLY) or "standard" (free tier)
-NEWS_MAX_OUTPUT_TOKENS=12000  # optional, output ceiling (incl. thinking tokens)
+NEWS_MIN_INLINE_IMAGES=2      # optional, in-body image floor (palette top-up + media-thin flag)
+NEWS_MAX_OUTPUT_TOKENS=16000  # optional, output ceiling (incl. thinking tokens)
 NEWS_THINKING_LEVEL=low       # optional, minimal|low|medium|high (Gemini 3 thinking)
 NEWS_REQUEST_TIMEOUT_MS=180000 # optional, per-request timeout for the grounded call
 CLOUDFLARE_ZONE_ID / CLOUDFLARE_API_TOKEN   # optional: lets publish purge the edge
@@ -99,12 +100,29 @@ zero drafts rather than filler. Drafts are edited in a Markdown editor in
 `/admin/blog` (rich preview + toolbar) before publishing.
 
 **What's in a draft.** The writer prompt aims for human, opinionated analysis
-(550–800 words) — not corporate filler — and Search grounding lets it add: a real
+(900–1300 words) — not corporate filler — and Search grounding lets it add: a real
 attributed **quote** (blockquote) when one exists, **inline backlinks** (to
 related `/blog/<slug>` posts and authoritative external pages), **inline images**
 (`![alt](url)` + an italic `*Photo: …*` credit), and **social embeds** (a bare
 TikTok / YouTube / Instagram / X post URL on its own line). Headlines are
 normalized to consistent title case on insert.
+
+**Verified media palette (the reliability trick).** Asking the model for live
+image/embed URLs is fragile — it guesses paths that 404, and `validateBodyMedia`
+then drops them, leaving a lone-hero post. So before writing, the cron
+_harvests_ real media straight out of the source article
+(`harvestSourceMedia`): content `<img>`s (skipping logos/icons/sprites/pixels)
+and any embedded YouTube / TikTok / Instagram / X post — including YouTube embed
+iframes, normalized to a watch URL. Each is liveness-checked (`verifyHarvest`)
+and handed to the writer as a "VERIFIED MEDIA" palette it's told to prefer. The
+post must carry **at least `NEWS_MIN_INLINE_IMAGES` (default 2)** in-body images;
+if the finished body falls short (or carries no embed), `ensureBodyMedia` tops it
+up from the leftover palette with a correct `*Photo: [source](url)*` credit.
+Anything still under the floor is logged and flagged **media-thin** in the review
+queue (a count-based badge — no schema change). Internal `/blog/<slug>` backlinks
+are validated against real slugs too (`validateInternalLinks`); a hallucinated
+one is unwrapped to plain text. The post page also shows an **"Originally
+reported by …"** byline linking the primary source.
 
 **Media & link validation (cron, before insert).** Hallucinated media and dead
 links never reach review: every inline image URL is fetched (`isLiveImage`) and

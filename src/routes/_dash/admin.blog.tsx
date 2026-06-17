@@ -368,7 +368,13 @@ function AdminBlog() {
                       <CardDescription>{d.dek}</CardDescription>
                     </CardHeader>
                     <CardContent className="flex flex-col gap-3">
-                      <div className="flex flex-wrap gap-1.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {d.media.images < 2 && (
+                          <Badge variant="destructive" className="font-normal">
+                            media-thin · {d.media.images} img
+                            {d.media.embeds > 0 ? ` · ${d.media.embeds} embed` : ""}
+                          </Badge>
+                        )}
                         {d.tags.map((t) => (
                           <Badge key={t} variant="secondary" className="font-normal">
                             {t}

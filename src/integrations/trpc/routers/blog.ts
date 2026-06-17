@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { db } from "#/db/index.ts";
 import { blogPost, newsItem } from "#/db/schema.ts";
+import { parseSocialUrl } from "#/server/blog/embeds.ts";
 import { renderMarkdown } from "#/server/blog/render.ts";
 import { purgeEdge } from "#/server/edge/purge.ts";
 import { adminProcedure, publicProcedure } from "../init.ts";
@@ -11,6 +12,14 @@ import { adminProcedure, publicProcedure } from "../init.ts";
 interface SourceUrl {
   title: string;
   url: string;
+}
+
+/** Count in-body media (inline images + social embeds) for the review queue. */
+const INLINE_IMG_RE = /!\[[^\]]*\]\(https?:\/\/[^)\s]+/g;
+function bodyMediaCount(md: string): { images: number; embeds: number } {
+  const images = (md.match(INLINE_IMG_RE) ?? []).length;
+  const embeds = md.split("\n").filter((l) => parseSocialUrl(l.trim())).length;
+  return { images, embeds };
 }
 
 /** URL-safe slug from a title (mirrors the park-news cron's slugify). */
@@ -227,9 +236,10 @@ export const blogRouter = {
 
   // --- Admin (auth-gated): the draft → approve → publish queue ---------------
 
-  /** All drafts (and archived), newest first — the review queue. */
+  /** All drafts (and archived), newest first — the review queue. Each row carries
+   *  an in-body media count so the UI can flag "media-thin" drafts. */
   drafts: adminProcedure.query(async () => {
-    return db
+    const rows = await db
       .select({
         id: blogPost.id,
         slug: blogPost.slug,
@@ -241,10 +251,12 @@ export const blogRouter = {
         sourceUrls: blogPost.sourceUrls,
         model: blogPost.model,
         createdAt: blogPost.createdAt,
+        bodyMd: blogPost.bodyMd,
       })
       .from(blogPost)
       .where(sql`${blogPost.status} <> 'published'`)
       .orderBy(desc(blogPost.createdAt));
+    return rows.map(({ bodyMd, ...r }) => ({ ...r, media: bodyMediaCount(bodyMd) }));
   }),
 
   /** Full draft incl. rendered preview, for the review screen. */
