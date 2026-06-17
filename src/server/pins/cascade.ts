@@ -22,6 +22,22 @@ import { pinPublicUrl } from "#/server/pins/storage.ts";
 
 /** Below this Stage-1 cosine similarity, escalate to the Stage-3 LLM re-rank. */
 const STAGE3_TRIGGER = Number(process.env.PIN_STAGE3_TRIGGER ?? 0.9);
+
+/**
+ * Calibration anchors that map raw cosine distance → the 0–1 display/ranking
+ * score. pgvector `<=>` returns cosine distance in [0,2], but L2-normalized
+ * CLIP image embeddings of real photos never reach the far end: any two pin
+ * photos are positively correlated, so even unrelated pins sit around distance
+ * ~0.3–0.5. The old `1 - distance/2` mapping read those as ~75–85% "match"
+ * (why a wrong pin showed "84%"). Instead we rescale the band that actually
+ * carries signal: at/below MATCH_FLOOR is a confident match (→1.0), at/above
+ * MATCH_CEIL there is no meaningful similarity (→0.0), linear in between. These
+ * defaults are heuristic — tune against confirmed scans. Ordering is unaffected
+ * (the mapping is monotonic in distance), and STAGE3_TRIGGER still lives in this
+ * score space so the escalation gate tracks the calibration automatically.
+ */
+const MATCH_FLOOR = Number(process.env.PIN_MATCH_FLOOR ?? 0.15);
+const MATCH_CEIL = Number(process.env.PIN_MATCH_CEIL ?? 0.45);
 /** How many neighbours Stage 1 pulls (and the max we ever show the user). */
 const TOP_N = Number(process.env.PIN_TOP_N ?? 10);
 /** Gemini model for the Stage-3 re-rank (cheap Flash-class vision). */
@@ -42,9 +58,10 @@ export interface CascadeResult {
   stageResolved: number;
 }
 
-/** Cosine distance (pgvector `<=>`, range 0–2) → a 0–1 similarity score. */
+/** Cosine distance (pgvector `<=>`) → a calibrated 0–1 similarity score. */
 export function scoreFromDistance(distance: number): number {
-  return Math.max(0, Math.min(1, 1 - distance / 2));
+  const span = Math.max(1e-6, MATCH_CEIL - MATCH_FLOOR);
+  return Math.max(0, Math.min(1, (MATCH_CEIL - distance) / span));
 }
 
 type NeighborRow = {
