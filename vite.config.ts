@@ -29,6 +29,10 @@ const config = defineConfig({
   plugins: [
     devtools(),
     nitro({
+      // Sets `cache-control: no-cache` on the SSR HTML shell so Cloudflare can't
+      // serve a stale shell that references hashed chunks a redeploy has deleted
+      // (the "Failed to fetch dynamically imported module" PWA crash).
+      plugins: ["./src/server/edge/no-cache-html.ts"],
       rollupConfig: {
         external: [/^@sentry\//, /^ioredis/, /^bullmq/, /^web-push/, /^@node-rs\//, /^@resvg\//],
       },
