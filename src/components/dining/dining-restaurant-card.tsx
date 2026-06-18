@@ -27,7 +27,7 @@ import {
 } from "#/components/ui/card.tsx";
 import { cn } from "#/lib/utils.ts";
 
-function AvailabilityCalendar({
+export function AvailabilityCalendar({
   days,
   windowDays,
   referenceDate,

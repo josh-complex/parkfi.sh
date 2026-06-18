@@ -116,6 +116,29 @@ export const AVAILABILITY_LABELS: Record<AvailabilityFilter, string> = {
   window: "Open in window",
 };
 
+/**
+ * Human labels for the `dining_interests` / `disney_favorites` taxonomy slugs
+ * the finder tags venues with (the same slugs the `dining.picks` shelves group
+ * on). Used to render taxonomy chips on the venue detail page. Unknown slugs are
+ * dropped rather than shown raw.
+ */
+export const TAXONOMY_LABELS: Record<string, string> = {
+  // diningInterests
+  "character-dining-rec": "Character Dining",
+  "fine-signature-dining-rec": "Signature & Fine Dining",
+  "dining-events-rec": "Dining Events",
+  // disneyFavorites (franchise affinity)
+  "star-wars-rec": "Star Wars",
+  "disney-princesses-rec": "Disney Princesses",
+  "mickey-friends-rec": "Mickey & Friends",
+  "pixar-rec": "Pixar",
+};
+
+/** Prettify a taxonomy slug, or null if we don't have a label for it. */
+export function taxonomyLabel(slug: string): string | null {
+  return TAXONOMY_LABELS[slug] ?? null;
+}
+
 /** Client-side narrowing state (party size + window drive the query separately). */
 export interface ClientFilters {
   search: string;

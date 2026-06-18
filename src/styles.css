@@ -144,6 +144,69 @@
   }
 }
 
+/* ── Blog "live waits" ticker ─────────────────────────────────────────────── *
+ * A screen-width marquee homage to Disney's TRENDING strip. The track holds two
+ * identical copies of the chip list and slides left by exactly half its width,
+ * so the loop is seamless. Pauses on hover; respects reduced-motion. The flash
+ * utilities pulse a chip when its posted wait changes (red = went up,
+ * green = went down) — applied via a React key so the node remounts on change.
+ * -------------------------------------------------------------------------- */
+
+@keyframes parkfi-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.parkfi-marquee-track {
+  display: inline-flex;
+  width: max-content;
+  animation: parkfi-marquee var(--marquee-duration, 60s) linear infinite;
+}
+
+.parkfi-marquee:hover .parkfi-marquee-track {
+  animation-play-state: paused;
+}
+
+@keyframes parkfi-flash-up {
+  0% {
+    background-color: color-mix(in oklch, var(--color-red-500, #ef4444), transparent 60%);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+@keyframes parkfi-flash-down {
+  0% {
+    background-color: color-mix(in oklch, var(--color-emerald-500, #10b981), transparent 60%);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.parkfi-flash-up {
+  animation: parkfi-flash-up 1.2s ease-out;
+}
+
+.parkfi-flash-down {
+  animation: parkfi-flash-down 1.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .parkfi-marquee-track {
+    animation: none;
+  }
+  .parkfi-flash-up,
+  .parkfi-flash-down {
+    animation: none;
+  }
+}
+
 /* ── 3D surface system ────────────────────────────────────────────────────── *
  * Three CSS variables drive every 3D-embossed surface:
  *   --btn-3d          bottom shadow + border color (the "shelf" edge)

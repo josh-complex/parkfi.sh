@@ -21,6 +21,8 @@ export const Route = createFileRoute("/dining_/$facilityId")({
     void context.queryClient.prefetchQuery(
       context.trpc.dining.menu.queryOptions({ facilityId: params.facilityId }),
     );
+    // Today's operating hours back the SSR'd open-now chip (indexable, no flash).
+    void context.queryClient.prefetchQuery(context.trpc.dining.hours.queryOptions({}));
     return { name: venue?.name ?? null, cuisine: venue?.cuisine ?? null };
   },
   head: ({ params, loaderData }) => {

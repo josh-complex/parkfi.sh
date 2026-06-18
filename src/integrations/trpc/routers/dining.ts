@@ -83,16 +83,40 @@ export const diningRouter = {
       park_resort: string | null;
       image_url: string | null;
       detail_url: string | null;
+      url_friendly_id: string | null;
       entity_type: string;
       character_dining: boolean;
       fine_dining: boolean;
+      walkup_wait_list: boolean;
+      mobile_order: boolean;
+      annual_pass_discount: boolean;
+      disney_visa_discount: boolean;
+      trip_advisor_award: boolean;
+      dining_plan_qs: boolean;
+      dining_plan_ts: boolean;
+      land: string | null;
+      map_pin: string | null;
+      latitude: number | null;
+      longitude: number | null;
+      maximum_party_size: number | null;
+      dining_interests: string[] | null;
+      disney_favorites: string[] | null;
+      entertainment_type: string[] | null;
+      priority: boolean;
+      bookable: boolean;
       has_menu: boolean;
       last_checked_at: string | null;
       location_type: string | null;
     }>(sql`
       SELECT r.facility_id, r.name, r.cuisine, r.experience_type, r.price_range, r.park_resort,
-             r.image_url, r.detail_url, r.entity_type,
+             r.image_url, r.detail_url, r.url_friendly_id, r.entity_type,
              r.character_dining, r.fine_dining,
+             r.walkup_wait_list, r.mobile_order,
+             r.annual_pass_discount, r.disney_visa_discount, r.trip_advisor_award,
+             r.dining_plan_qs, r.dining_plan_ts,
+             r.land, r.map_pin, r.latitude, r.longitude, r.maximum_party_size,
+             r.dining_interests, r.disney_favorites, r.entertainment_type,
+             r.priority, r.bookable,
              (m.facility_id IS NOT NULL AND m.item_count > 0) AS has_menu,
              m.last_checked_at,
              dl.location_type
@@ -113,12 +137,31 @@ export const diningRouter = {
       parkResort: r.park_resort,
       imageUrl: r.image_url,
       detailUrl: r.detail_url,
+      urlFriendlyId: r.url_friendly_id,
       dinnerShow: r.entity_type === "dinner-show",
       characterDining: r.character_dining,
       fineDining: r.fine_dining,
+      walkupWaitList: r.walkup_wait_list,
+      mobileOrder: r.mobile_order,
+      annualPassDiscount: r.annual_pass_discount,
+      disneyVisaDiscount: r.disney_visa_discount,
+      tripAdvisorAward: r.trip_advisor_award,
+      diningPlanQs: r.dining_plan_qs,
+      diningPlanTs: r.dining_plan_ts,
+      land: r.land,
+      mapPin: r.map_pin,
+      latitude: r.latitude,
+      longitude: r.longitude,
+      maximumPartySize: r.maximum_party_size,
+      diningInterests: r.dining_interests ?? [],
+      disneyFavorites: r.disney_favorites ?? [],
+      entertainmentType: r.entertainment_type ?? [],
       hasMenu: r.has_menu,
       lastCheckedAt: r.last_checked_at,
       requiresParkTicket: r.location_type === "theme-park" || r.location_type === "water-park",
+      // `dining.availability` only returns rows for swept venues (priority &&
+      // bookable); the detail page gates its inline reservation UI on this.
+      availabilityEligible: r.priority && r.bookable,
     };
   }),
 

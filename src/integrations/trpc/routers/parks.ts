@@ -74,6 +74,60 @@ export const parksRouter = {
     }));
   }),
 
+  /**
+   * Cross-park "stock ticker" of live STANDBY waits: every operating ride with a
+   * current posted wait, plus the delta vs. ~30 min earlier so the UI can render
+   * up/down trend signals. Ordered busiest-first; capped for a marquee strip.
+   */
+  ticker: publicProcedure.query(async () => {
+    const result = await db.execute<{
+      ride_name: string;
+      ride_slug: string;
+      park_slug: string;
+      park_name: string;
+      wait_min: number;
+      prev_wait: number | null;
+    }>(sql`
+      WITH latest AS (
+        SELECT DISTINCT ON (q.attraction_id) q.attraction_id, q.wait_min
+        FROM queue_obs q
+        WHERE q.queue_type = 1
+          AND q.observed_at >= now() - INTERVAL '60 minutes'
+        ORDER BY q.attraction_id, q.observed_at DESC
+      ),
+      prev AS (
+        SELECT DISTINCT ON (q.attraction_id) q.attraction_id, q.wait_min
+        FROM queue_obs q
+        WHERE q.queue_type = 1
+          AND q.observed_at <= now() - INTERVAL '30 minutes'
+          AND q.observed_at >= now() - INTERVAL '120 minutes'
+        ORDER BY q.attraction_id, q.observed_at DESC
+      )
+      SELECT a.name AS ride_name, a.slug AS ride_slug,
+             p.slug AS park_slug, p.name AS park_name,
+             l.wait_min, pr.wait_min AS prev_wait
+      FROM latest l
+      JOIN attractions a ON a.id = l.attraction_id AND a.active = true
+      JOIN parks p ON p.id = a.park_id AND p.active = true
+      LEFT JOIN prev pr ON pr.attraction_id = l.attraction_id
+      WHERE l.wait_min IS NOT NULL AND l.wait_min > 0
+      ORDER BY l.wait_min DESC, a.name
+      LIMIT 40
+    `);
+    return result.rows.map((r) => {
+      const delta = r.prev_wait == null ? 0 : r.wait_min - r.prev_wait;
+      return {
+        rideName: r.ride_name,
+        rideSlug: r.ride_slug,
+        parkSlug: r.park_slug,
+        parkName: r.park_name,
+        waitMin: r.wait_min,
+        delta,
+        trend: delta > 0 ? ("up" as const) : delta < 0 ? ("down" as const) : ("flat" as const),
+      };
+    });
+  }),
+
   /** Paid/virtual products a park sells (capability — drives UI tabs). */
   products: publicProcedure.input(z.object({ parkSlug: z.string() })).query(async ({ input }) => {
     const result = await db.execute<{
