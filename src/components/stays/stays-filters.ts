@@ -45,39 +45,15 @@ export const TIER_LABEL: Record<ResortTier, string> = Object.fromEntries(
 ) as Record<ResortTier, string>;
 
 /**
- * Disney's resort "areas" double as park neighborhoods, so we let the sidebar
- * scope Stays by one. `key` is the URL value; `area` matches the catalog's
- * `area` string exactly. Order mirrors the four parks, then Disney Springs.
+ * The "Where" segment scopes Stays by hotel operator, not by park — guests pick
+ * a resort by who runs it, not its position relative to the theme parks. Only
+ * Disney is bookable today; Universal is listed but disabled until its catalog
+ * lands.
  */
-export const RESORT_AREAS: Array<{ key: string; label: string; area: string }> = [
-  { key: "magic-kingdom", label: "Magic Kingdom", area: "Magic Kingdom Resort Area" },
-  { key: "epcot", label: "EPCOT", area: "EPCOT Resort Area" },
-  {
-    key: "animal-kingdom",
-    label: "Animal Kingdom",
-    area: "Disney's Animal Kingdom Resort Area",
-  },
-  { key: "disney-springs", label: "Disney Springs", area: "Disney Springs Resort Area" },
-  {
-    key: "wide-world-of-sports",
-    label: "ESPN Wide World of Sports",
-    area: "Wide World of Sports Resort Area",
-  },
+export const STAY_OPERATORS: Array<{ key: string; label: string; available: boolean }> = [
+  { key: "disney", label: "Disney", available: true },
+  { key: "universal", label: "Universal", available: false },
 ];
-
-const AREA_BY_KEY = new Map(RESORT_AREAS.map((a) => [a.key, a]));
-
-/** The catalog `area` string for a URL area key, or null if unset/unknown. */
-export function areaStringForKey(key: string | null | undefined): string | null {
-  if (!key) return null;
-  return AREA_BY_KEY.get(key)?.area ?? null;
-}
-
-/** Human label for a URL area key (e.g. for headings), or null. */
-export function areaLabelForKey(key: string | null | undefined): string | null {
-  if (!key) return null;
-  return AREA_BY_KEY.get(key)?.label ?? null;
-}
 
 /** Human-readable copy for Disney's `reasonsUnavailable` codes. */
 export function reasonLabel(code: string | null): string {

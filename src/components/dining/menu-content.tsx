@@ -287,7 +287,7 @@ export function MenuBody({
     <>
       {/* Period tabs */}
       {hasMultiplePeriods && (
-        <div className="flex shrink-0 gap-2 border-b px-4 pb-3">
+        <div className="flex shrink-0 gap-2 border-b px-4 py-3">
           {periods.map((p, i) => (
             <button
               key={p.mealPeriod}

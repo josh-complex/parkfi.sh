@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useStore } from "@tanstack/react-store";
 import { CalendarDaysIcon } from "lucide-react";
@@ -105,12 +106,11 @@ function PickCard({
       </div>
     </div>
   );
-  return venue.detailUrl ? (
-    <a href={venue.detailUrl} target="_blank" rel="noreferrer" className="block">
+  // Always open our own detail page first; the external reservation link lives there.
+  return (
+    <Link to="/dining/$facilityId" params={{ facilityId: venue.facilityId }} className="block">
       {body}
-    </a>
-  ) : (
-    body
+    </Link>
   );
 }
 

@@ -3,7 +3,7 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowLeftIcon, ExternalLinkIcon } from "lucide-react";
 
-import { RESORT_AREAS, TIER_LABEL } from "#/components/stays/stays-filters.ts";
+import { TIER_LABEL } from "#/components/stays/stays-filters.ts";
 import { Badge } from "#/components/ui/badge.tsx";
 import { buttonVariants } from "#/components/ui/button.tsx";
 import { RESORT_CATALOG } from "#/server/stays/resort-catalog.generated.ts";
@@ -15,17 +15,10 @@ export function resortBySlug(slug: string) {
   return RESORT_BY_SLUG.get(slug) ?? null;
 }
 
-/** The `/stays?area=` key whose catalog `area` matches this resort's area. */
-function areaKeyForArea(area: string | null): string | null {
-  if (!area) return null;
-  return RESORT_AREAS.find((a) => a.area === area)?.key ?? null;
-}
-
 /**
  * Standalone resort hotel detail page. The stays data is resort-level only (no
  * room/view granularity), so this is a catalog landing: identity, tier, area,
- * and a deep link into the `/stays` availability board pre-scoped to this
- * resort's area.
+ * and a link into the `/stays` availability board.
  */
 export function ResortDetail({ slug }: { slug: string }) {
   const resort = resortBySlug(slug);
@@ -44,8 +37,6 @@ export function ResortDetail({ slug }: { slug: string }) {
       </div>
     );
   }
-
-  const areaKey = areaKeyForArea(resort.area);
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-6 lg:px-6">
@@ -88,7 +79,7 @@ export function ResortDetail({ slug }: { slug: string }) {
       </header>
 
       <div className="flex flex-wrap items-center gap-3">
-        <Link to="/stays" search={areaKey ? { area: areaKey } : {}} className={buttonVariants()}>
+        <Link to="/stays" className={buttonVariants()}>
           Check availability &amp; rates
         </Link>
         <a

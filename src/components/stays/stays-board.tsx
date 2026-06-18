@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { differenceInCalendarDays, format } from "date-fns";
 import { type DateRange } from "react-day-picker";
@@ -24,13 +24,11 @@ import {
 import { StayAlertButton, type StayAlertDims } from "#/components/stays/stay-alert-button.tsx";
 import {
   EMPTY_FILTERS,
-  RESORT_AREAS,
+  STAY_OPERATORS,
   STAY_SORT_LABELS,
   TIER_LABEL,
   TIER_META,
   activeFilterCount,
-  areaLabelForKey,
-  areaStringForKey,
   reasonLabel,
   sortOffers,
   type StayFilters,
@@ -248,35 +246,42 @@ const TIER_CHIPS: Array<{ key: ResortTier | "ALL"; label: string }> = [
   ...TIER_META.map((t) => ({ key: t.key, label: t.label })),
 ];
 
-/** A selectable park/area row inside the "Where" popover. */
-function AreaOption({
+/** A selectable operator row inside the "Where" popover. */
+function OperatorOption({
   label,
   selected,
+  disabled,
   onSelect,
 }: {
   label: string;
   selected: boolean;
+  disabled?: boolean;
   onSelect: () => void;
 }) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={onSelect}
       className={cn(
         "hover:bg-accent hover:text-accent-foreground flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm outline-none transition-colors",
         selected && "font-medium",
+        disabled && "cursor-not-allowed opacity-60 hover:bg-transparent hover:text-inherit",
       )}
     >
       <span className="truncate">{label}</span>
-      {selected && <CheckIcon className="size-4 shrink-0" />}
+      {disabled ? (
+        <span className="text-muted-foreground shrink-0 text-xs">Coming soon</span>
+      ) : (
+        selected && <CheckIcon className="size-4 shrink-0" />
+      )}
     </button>
   );
 }
 
-export function StaysBoard({ areaKey }: { areaKey: string | null }) {
+export function StaysBoard() {
   const trpc = useTRPC();
   const isMobile = useIsMobile();
-  const navigate = useNavigate();
   const { data: session } = authClient.useSession();
 
   // Draft search inputs (the pill); committed to `search` on submit so the
@@ -357,21 +362,9 @@ export function StaysBoard({ areaKey }: { areaKey: string | null }) {
     setSearch((s) => (s ? { ...s, filters: { ...s.filters, ...patch } } : s));
   }, []);
 
-  // The "where" segment scopes by resort area via the route's `?area=` param.
-  const pickArea = React.useCallback(
-    (key: string | null) => {
-      setWhereOpen(false);
-      void navigate({ to: "/stays", search: key ? { area: key } : {} });
-    },
-    [navigate],
-  );
-
   const guestLabel = `${adults} adult${adults === 1 ? "" : "s"}`;
   const kidsLabel = `${children} kid${children === 1 ? "" : "s"}`;
   const today = React.useMemo(() => new Date(), []);
-
-  const areaStr = areaStringForKey(areaKey);
-  const areaLabel = areaLabelForKey(areaKey);
 
   const activeCount = activeFilterCount(filters) + (tierFilter === "ALL" ? 0 : 1);
   const onClear = React.useCallback(() => {
@@ -380,11 +373,7 @@ export function StaysBoard({ areaKey }: { areaKey: string | null }) {
   }, [applyFilters]);
 
   const mobileSearchLabel =
-    range?.from && range.to
-      ? `${rangeLabel(range)} · ${guestLabel}`
-      : areaLabel
-        ? `${areaLabel} · Add dates`
-        : "Search resorts";
+    range?.from && range.to ? `${rangeLabel(range)} · ${guestLabel}` : "Search resorts";
 
   // Refs so the auto-submit effect can read current values without re-running.
   const searchRef = React.useRef(search);
@@ -410,22 +399,20 @@ export function StaysBoard({ areaKey }: { areaKey: string | null }) {
   }, [range, adults, children, isMobile]);
 
   const offers = availabilityQ.data?.offers ?? [];
-  const inArea = areaStr ? offers.filter((o) => o.area === areaStr) : offers;
-  const tierScoped = tierFilter === "ALL" ? inArea : inArea.filter((o) => o.tier === tierFilter);
+  const tierScoped = tierFilter === "ALL" ? offers : offers.filter((o) => o.tier === tierFilter);
   const filteredOffers = sortOffers(
     tierScoped.filter((o) => o.available),
     sortKey,
   );
-  const availableCount = inArea.filter((o) => o.available).length;
+  const availableCount = offers.filter((o) => o.available).length;
 
   // Browse rows (pre-search): catalog grouped by tier, in TIER_META order.
   const byTier = React.useMemo(() => {
-    const scoped = areaStr ? catalog.filter((r) => r.area === areaStr) : catalog;
     return TIER_META.map((meta) => ({
       meta,
-      resorts: scoped.filter((r) => r.tier === meta.key),
+      resorts: catalog.filter((r) => r.tier === meta.key),
     })).filter((g) => g.resorts.length > 0);
-  }, [catalog, areaStr]);
+  }, [catalog]);
 
   return (
     <div className="relative isolate flex flex-col">
@@ -446,11 +433,10 @@ export function StaysBoard({ areaKey }: { areaKey: string | null }) {
         <div className="overflow-hidden">
           <div className="px-4 pt-8 pb-5 text-center lg:px-6">
             <h1 className="text-2xl font-bold tracking-tight">
-              {areaLabel ? `Stays near ${areaLabel}` : "Find your stay at Walt Disney World"}
+              Find your stay at Walt Disney World
             </h1>
             <p className="text-muted-foreground mx-auto mt-1 max-w-xl text-sm">
-              Browse {areaLabel ? "these" : "every"} Disney Resort hotel
-              {areaLabel ? "s" : ""}, then add dates to see live nightly rates.
+              Browse every Disney Resort hotel, then add dates to see live nightly rates.
             </p>
           </div>
         </div>
@@ -475,27 +461,18 @@ export function StaysBoard({ areaKey }: { areaKey: string | null }) {
               <PopoverTrigger
                 render={
                   <button type="button" className={coreSegClass("first", whereOpen)}>
-                    <SegContent
-                      label="Where"
-                      value={areaLabel ?? "All resorts"}
-                      muted={!areaLabel}
-                      active={whereOpen}
-                    />
+                    <SegContent label="Where" value="Disney" muted={false} active={whereOpen} />
                   </button>
                 }
               />
               <PopoverContent align="start" className={cn("w-64 p-1.5", coreSearchPopoverClass)}>
-                <AreaOption
-                  label="All resorts"
-                  selected={!areaKey}
-                  onSelect={() => pickArea(null)}
-                />
-                {RESORT_AREAS.map((a) => (
-                  <AreaOption
-                    key={a.key}
-                    label={a.label}
-                    selected={areaKey === a.key}
-                    onSelect={() => pickArea(a.key)}
+                {STAY_OPERATORS.map((op) => (
+                  <OperatorOption
+                    key={op.key}
+                    label={op.label}
+                    selected={op.available}
+                    disabled={!op.available}
+                    onSelect={() => setWhereOpen(false)}
                   />
                 ))}
               </PopoverContent>
@@ -642,23 +619,19 @@ export function StaysBoard({ areaKey }: { areaKey: string | null }) {
                     Where
                   </span>
                   <div className="flex flex-wrap gap-2 pt-3">
-                    <Button
-                      size="sm"
-                      variant={!areaKey ? "default" : "outline"}
-                      className="rounded-full"
-                      onClick={() => pickArea(null)}
-                    >
-                      All resorts
-                    </Button>
-                    {RESORT_AREAS.map((a) => (
+                    {STAY_OPERATORS.map((op) => (
                       <Button
-                        key={a.key}
+                        key={op.key}
                         size="sm"
-                        variant={areaKey === a.key ? "default" : "outline"}
+                        variant={op.available ? "default" : "outline"}
                         className="rounded-full"
-                        onClick={() => pickArea(a.key)}
+                        disabled={!op.available}
+                        title={op.available ? undefined : "Coming soon"}
                       >
-                        {a.label}
+                        {op.label}
+                        {!op.available && (
+                          <span className="text-muted-foreground ml-1.5 text-xs">Coming soon</span>
+                        )}
                       </Button>
                     ))}
                   </div>
