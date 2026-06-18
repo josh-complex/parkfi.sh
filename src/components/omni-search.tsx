@@ -25,7 +25,6 @@ import type { ReactNode } from "react";
 
 // Shared-layout ids morph the trigger box ↔ the palette container — the same
 // device the Eats "Filters" control uses (see dining-filters-modal.tsx).
-const PANEL_ID = "omni-search-panel";
 const RADIUS = 18;
 const SPRING = { type: "spring" as const, stiffness: 420, damping: 34, mass: 0.9 };
 
@@ -81,8 +80,19 @@ type Item = {
   onSelect: () => void;
 };
 
-export function OmniSearch() {
+/**
+ * `bar` (default) renders the full search-box trigger that morphs into the
+ * palette via the shared `layoutId`. `icon` renders a compact icon-only trigger
+ * (e.g. for the blog masthead) that opens the very same palette — it skips the
+ * morph and the palette simply animates in.
+ */
+export function OmniSearch({ variant = "bar" }: { variant?: "bar" | "icon" } = {}) {
   const [open, setOpen] = React.useState(false);
+  // Per-instance so the palette's shared-layout morph connects to *this*
+  // trigger. A module-level constant would make every OmniSearch on the page
+  // (e.g. the footer bar) share one id, and the palette would fly out of
+  // whichever one Motion matched first instead of the trigger that opened it.
+  const panelId = React.useId();
   const [query, setQuery] = React.useState("");
   const [active, setActive] = React.useState(0);
   const navigate = useNavigate();
@@ -283,31 +293,57 @@ export function OmniSearch() {
 
   return (
     <>
-      <motion.button
-        layoutId={PANEL_ID}
-        type="button"
-        onClick={() => setOpen(true)}
-        initial={false}
-        animate={{ opacity: open ? 0 : 1 }}
-        transition={{
-          layout: SPRING,
-          opacity: { duration: open ? 0.06 : 0.18, delay: open ? 0 : 0.2 },
-        }}
-        // A concrete `opacity` in `style` gives Motion's layout-animation
-        // keyframe resolver a defined base to read — without it the shared
-        // `layoutId` path reads `undefined` from the DOM and warns.
-        style={{ borderRadius: RADIUS, opacity: 1 }}
-        className={cn(
-          buttonVariants({ variant: "outline" }),
-          "w-full justify-start gap-2 px-3 font-normal text-muted-foreground md:max-w-xs",
-        )}
-      >
-        <SearchIcon className="size-4 shrink-0" />
-        <span className="truncate">Search parks, rides…</span>
-        <kbd className="ml-auto hidden h-5 select-none items-center gap-0.5 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground sm:flex">
-          <span className="text-xs">⌘</span>K
-        </kbd>
-      </motion.button>
+      {variant === "icon" ? (
+        // Same 3D outline surface as the bar, collapsed to a circle. Carries the
+        // shared `layoutId` so the palette morphs out of *this* button.
+        <motion.button
+          layoutId={panelId}
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label="Search parks, rides, dining…"
+          initial={false}
+          animate={{ opacity: open ? 0 : 1 }}
+          transition={{
+            layout: SPRING,
+            opacity: { duration: open ? 0.06 : 0.18, delay: open ? 0 : 0.2 },
+          }}
+          // Match the palette's corner radius so the shared-layout morph has no
+          // border-radius delta to animate (a circle → 18px delta bounces).
+          style={{ borderRadius: RADIUS, opacity: 1 }}
+          className={cn(
+            buttonVariants({ variant: "outline", size: "icon" }),
+            "size-11 text-muted-foreground",
+          )}
+        >
+          <SearchIcon className="size-5 shrink-0" />
+        </motion.button>
+      ) : (
+        <motion.button
+          layoutId={panelId}
+          type="button"
+          onClick={() => setOpen(true)}
+          initial={false}
+          animate={{ opacity: open ? 0 : 1 }}
+          transition={{
+            layout: SPRING,
+            opacity: { duration: open ? 0.06 : 0.18, delay: open ? 0 : 0.2 },
+          }}
+          // A concrete `opacity` in `style` gives Motion's layout-animation
+          // keyframe resolver a defined base to read — without it the shared
+          // `layoutId` path reads `undefined` from the DOM and warns.
+          style={{ borderRadius: RADIUS, opacity: 1 }}
+          className={cn(
+            buttonVariants({ variant: "outline" }),
+            "w-full justify-start gap-2 px-3 font-normal text-muted-foreground md:max-w-xs",
+          )}
+        >
+          <SearchIcon className="size-4 shrink-0" />
+          <span className="truncate">Search parks, rides…</span>
+          <kbd className="ml-auto hidden h-5 select-none items-center gap-0.5 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground sm:flex">
+            <span className="text-xs">⌘</span>K
+          </kbd>
+        </motion.button>
+      )}
 
       {/* Mobile: a bottom drawer — easier to reach, full-width, denser type.
           Desktop: the morphing centered palette. */}
@@ -350,7 +386,7 @@ export function OmniSearch() {
                 {/* Fixed height: the panel morphs to this size once and never
                   resizes as results change, so the layout never jumps. */}
                 <motion.div
-                  layoutId={PANEL_ID}
+                  layoutId={panelId}
                   role="dialog"
                   aria-modal="true"
                   aria-label="Search"

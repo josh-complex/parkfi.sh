@@ -1,41 +1,51 @@
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { ArrowDownRight, ArrowUpRight, Clock, Minus, Search } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { motion, useMotionValueEvent, useReducedMotion, useScroll } from "motion/react";
+import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 
+import { OmniSearch } from "#/components/omni-search.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
 /**
- * Reading progress through the document, 0..1. Drives the thick sidebar-blue
- * gradient line at the very top of the header, which grows as you scroll the
- * article — an homage to Disney's dark-red masthead bar, repurposed as a
- * scroll-position indicator.
+ * Tracks vertical scroll *direction* to drive the auto-hiding nav menu: hidden
+ * while scrolling down (past a small threshold so it doesn't flicker at the very
+ * top), revealed the instant you scroll up — the pattern the Walt Disney Company
+ * site uses. Disabled under reduced-motion. Returns false on the server/first
+ * paint so the menu always renders open initially.
  */
-function useScrollProgress(): number {
-  const [progress, setProgress] = useState(0);
+function useHideOnScrollDown(): boolean {
+  const { scrollY } = useScroll();
+  const reduce = useReducedMotion();
+  const [hidden, setHidden] = useState(false);
 
+  useMotionValueEvent(scrollY, "change", (current) => {
+    if (reduce) {
+      setHidden(false);
+      return;
+    }
+    const previous = scrollY.getPrevious() ?? 0;
+    setHidden(current > previous && current > 150);
+  });
+
+  return hidden;
+}
+
+/** Measures an element's pixel height, kept current across resizes/reflows. */
+function useMeasuredHeight<T extends HTMLElement>(
+  ref: React.RefObject<T | null>,
+): number | undefined {
+  const [height, setHeight] = useState<number>();
   useEffect(() => {
-    let frame = 0;
-    const update = () => {
-      frame = 0;
-      const el = document.documentElement;
-      const scrollable = el.scrollHeight - el.clientHeight;
-      setProgress(scrollable > 0 ? Math.min(1, Math.max(0, el.scrollTop / scrollable)) : 0);
-    };
-    const onScroll = () => {
-      if (!frame) frame = requestAnimationFrame(update);
-    };
-    update();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll, { passive: true });
-    return () => {
-      if (frame) cancelAnimationFrame(frame);
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onScroll);
-    };
-  }, []);
-
-  return progress;
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setHeight(el.offsetHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return height;
 }
 
 const NAV_LEFT = [
@@ -86,10 +96,11 @@ function TickerChip({
   const Arrow = trend === "up" ? ArrowUpRight : trend === "down" ? ArrowDownRight : Minus;
 
   return (
-    <span className="flex items-center gap-2 px-4 py-2">
-      <span className="text-sm font-medium whitespace-nowrap text-foreground">{rideName}</span>
-      <span className="hidden text-xs whitespace-nowrap text-muted-foreground sm:inline">
-        {parkName}
+    <span className="flex items-center gap-3 border-r border-border px-4 py-2.5">
+      {/* Ride name over its location, stacked. */}
+      <span className="flex flex-col leading-tight">
+        <span className="text-sm font-medium whitespace-nowrap text-foreground">{rideName}</span>
+        <span className="text-xs whitespace-nowrap text-muted-foreground">{parkName}</span>
       </span>
       {/* `key` on the value remounts this node when the wait changes, replaying
           the flash animation: red when it ticked up, green when it dropped. */}
@@ -108,19 +119,30 @@ function TickerChip({
 }
 
 /**
- * Disney-masthead homage for the blog: a centered wordmark flanked by nav links,
- * bracketed by thin primary-color rules, with a screen-width "LIVE WAITS" marquee
- * standing in for Disney's TRENDING strip. Sticky; the top gradient line tracks
- * reading progress. Pass `readingMinutes` to surface a predicted read time.
+ * Walt-Disney-Company-style masthead for the blog: a thick metallic gradient bar
+ * pinned at the very top, a centered wordmark flanked by nav links, and a
+ * screen-width "LIVE WAITS" marquee standing in for Disney's TRENDING strip.
+ *
+ * The bar and the marquee stay sticky; the nav menu auto-hides on scroll-down
+ * and reveals on scroll-up. To keep the page from jumping as the menu collapses,
+ * a sibling spacer grows by exactly the menu's height as the menu shrinks, so
+ * the total reserved space never changes. The bar also carries a reading-progress
+ * sheen.
  */
-export function BlogTickerHeader({ readingMinutes }: { readingMinutes?: number }) {
+export function BlogTickerHeader() {
   const trpc = useTRPC();
   const { data: ticker } = useQuery({
     ...trpc.parks.ticker.queryOptions(),
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
   });
-  const progress = useScrollProgress();
+  // A motion value (0..1) for the reading-progress sheen. Driving the bar off
+  // this directly — rather than React state — means it updates on the compositor
+  // without a re-render per scroll frame, so the sweep stays smooth.
+  const { scrollYProgress } = useScroll();
+  const hidden = useHideOnScrollDown();
+  const navRef = useRef<HTMLDivElement>(null);
+  const navHeight = useMeasuredHeight(navRef);
 
   const chips = ticker ?? [];
   // The track is two identical halves and slides by exactly -50%, so the loop is
@@ -132,110 +154,124 @@ export function BlogTickerHeader({ readingMinutes }: { readingMinutes?: number }
   // A slow, readable drift; scales with one half's width so the pace stays even.
   const durationSec = Math.max(80, itemsPerHalf * 7);
 
+  const collapse = { duration: 0.3, ease: "easeInOut" } as const;
+
   return (
-    <header className="sticky top-0 z-50 border-b border-border bg-background/90 backdrop-blur-md">
-      {/* Scroll-progress masthead line: sidebar blue fading to transparent, grown
-          to the reading position. */}
-      <div className="absolute inset-x-0 top-0 h-1" aria-hidden>
-        <div
-          className="h-full transition-[width] duration-150 ease-out"
-          style={{
-            width: `${progress * 100}%`,
-            background:
-              "linear-gradient(to right, var(--sidebar), color-mix(in oklch, var(--sidebar), transparent 100%))",
+    <>
+      <header className="sticky top-0 z-50 border-b border-border bg-background/90 backdrop-blur-md">
+        {/* Metallic masthead bar (Disney's dark-red gradient, in brand blue),
+            with the reading-progress sheen sweeping across it. */}
+        <div className="relative h-2.5 w-full overflow-hidden" aria-hidden>
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                "linear-gradient(90deg,#08152e 0%,#14346b 22%,#3f74cf 50%,#14346b 78%,#08152e 100%)",
+            }}
+          />
+          <motion.div
+            className="absolute inset-0 origin-left"
+            style={{
+              scaleX: scrollYProgress,
+              background:
+                "linear-gradient(to right, transparent, color-mix(in oklch, white, transparent 55%))",
+            }}
+          />
+        </div>
+
+        {/* Nav menu: collapses to nothing on scroll-down, springs back on
+            scroll-up — only the bar above and the marquee below stay pinned. */}
+        <motion.div
+          initial={false}
+          animate={{
+            height: hidden && navHeight ? 0 : (navHeight ?? "auto"),
+            opacity: hidden ? 0 : 1,
           }}
-        />
-      </div>
-
-      {/* Nav row: the brand mark anchors the far left and search the far right,
-          while the nav links + wordmark cluster toward the center. */}
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-        <Link to="/blog" aria-label="ParkFi — Park News" className="flex shrink-0 items-center">
-          <img src="/img/brand/blue.webp" alt="ParkFi" className="h-9 w-auto" />
-        </Link>
-
-        <div className="flex flex-1 items-center justify-center gap-6">
-          <nav className="hidden items-center gap-6 md:flex">
-            <NavLinks items={NAV_LEFT} />
-          </nav>
-
-          <Link to="/blog" className="flex flex-col items-center leading-none">
-            <span className="font-heading text-2xl font-bold tracking-tight">ParkFi</span>
-            <span className="font-heading text-[0.6rem] font-semibold tracking-[0.25em] text-muted-foreground uppercase">
-              Park News
-            </span>
-          </Link>
-
-          <nav className="hidden items-center gap-6 md:flex">
-            <NavLinks items={NAV_RIGHT} />
-          </nav>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-4 sm:gap-6">
-          {readingMinutes != null && (
-            <span className="flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs font-medium whitespace-nowrap text-muted-foreground">
-              <Clock className="size-3.5" aria-hidden />
-              {readingMinutes} min read
-            </span>
-          )}
-          <Link
-            to="/"
-            aria-label="Search live park data"
-            className="text-foreground/70 transition-colors hover:text-primary"
+          transition={collapse}
+          className="overflow-hidden"
+        >
+          <div
+            ref={navRef}
+            className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-6 sm:px-6"
           >
-            <Search className="size-5" />
-          </Link>
-        </div>
-      </div>
+            <Link to="/" aria-label="ParkFi — Home" className="flex shrink-0 items-center">
+              <img src="/img/brand/blue.webp" alt="ParkFi" className="h-11 w-auto" />
+            </Link>
 
-      {/* Ticker strip, bracketed by thin primary rules (Disney's TRENDING bar). */}
-      <div className="border-t border-primary/40">
-        <div className="flex items-stretch">
-          <div className="flex shrink-0 items-center gap-2 border-r border-primary/40 bg-primary/5 px-4 py-2">
-            <span className="relative flex size-2">
-              <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75" />
-              <span className="relative inline-flex size-2 rounded-full bg-primary" />
-            </span>
-            <span className="font-heading text-xs font-bold tracking-widest text-primary uppercase">
-              Live Waits
-            </span>
-          </div>
+            <div className="flex flex-1 items-center justify-center gap-6">
+              <nav className="hidden items-center gap-6 md:flex">
+                <NavLinks items={NAV_LEFT} />
+              </nav>
 
-          <div className="parkfi-marquee relative flex-1 overflow-hidden">
-            {chips.length === 0 ? (
-              <div className="px-4 py-2 text-sm text-muted-foreground">
-                Loading live wait times…
-              </div>
-            ) : (
-              <div
-                className="parkfi-marquee-track"
-                style={{ "--marquee-duration": `${durationSec}s` } as React.CSSProperties}
-              >
-                {[0, 1].map((copy) => (
-                  <div
-                    key={copy}
-                    className="flex items-center divide-x divide-border"
-                    aria-hidden={copy === 1}
-                  >
-                    {Array.from({ length: repeatsPerHalf }).flatMap((_, rep) =>
-                      chips.map((c) => (
-                        <TickerChip
-                          key={`${copy}-${rep}-${c.parkSlug}-${c.rideSlug}`}
-                          rideName={c.rideName}
-                          parkName={c.parkName}
-                          waitMin={c.waitMin}
-                          delta={c.delta}
-                          trend={c.trend}
-                        />
-                      )),
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
+              <Link to="/blog" className="flex flex-col items-center leading-none">
+                <span className="font-heading text-3xl font-bold tracking-tight">ParkFi</span>
+              </Link>
+
+              <nav className="hidden items-center gap-6 md:flex">
+                <NavLinks items={NAV_RIGHT} />
+              </nav>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-4 sm:gap-6">
+              <OmniSearch variant="icon" />
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Ticker strip, bracketed by thin primary rules (Disney's TRENDING bar). */}
+        <div className="border-t border-primary/40">
+          <div className="flex items-stretch">
+            <div className="flex shrink-0 items-center gap-2 border-r border-primary/40 bg-primary/5 px-4 py-2">
+              <span className="relative flex size-2">
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75" />
+                <span className="relative inline-flex size-2 rounded-full bg-primary" />
+              </span>
+              <span className="font-heading text-xs font-bold tracking-widest text-primary uppercase">
+                Live Waits
+              </span>
+            </div>
+
+            <div className="parkfi-marquee relative flex-1 overflow-hidden">
+              {chips.length === 0 ? (
+                <div className="px-4 py-2 text-sm text-muted-foreground">
+                  Loading live wait times…
+                </div>
+              ) : (
+                <div
+                  className="parkfi-marquee-track"
+                  style={{ "--marquee-duration": `${durationSec}s` } as React.CSSProperties}
+                >
+                  {[0, 1].map((copy) => (
+                    <div key={copy} className="flex items-center" aria-hidden={copy === 1}>
+                      {Array.from({ length: repeatsPerHalf }).flatMap((_, rep) =>
+                        chips.map((c) => (
+                          <TickerChip
+                            key={`${copy}-${rep}-${c.parkSlug}-${c.rideSlug}`}
+                            rideName={c.rideName}
+                            parkName={c.parkName}
+                            waitMin={c.waitMin}
+                            delta={c.delta}
+                            trend={c.trend}
+                          />
+                        )),
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
-    </header>
+      </header>
+
+      {/* Compensating spacer: grows exactly as the nav menu collapses so the
+          content below never jumps when the menu hides or reveals. */}
+      <motion.div
+        aria-hidden
+        initial={false}
+        animate={{ height: hidden ? (navHeight ?? 0) : 0 }}
+        transition={collapse}
+      />
+    </>
   );
 }

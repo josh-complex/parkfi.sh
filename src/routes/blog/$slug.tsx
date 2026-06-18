@@ -1,5 +1,6 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { Clock } from "lucide-react";
 
 import { BlogSidebar } from "#/components/blog/blog-sidebar.tsx";
 import { BlogTickerHeader } from "#/components/blog/blog-ticker-header.tsx";
@@ -67,9 +68,11 @@ function BlogPost() {
 
   if (!post) return null;
 
+  const minutes = readingMinutes(post.bodyHtml);
+
   return (
     <>
-      <BlogTickerHeader readingMinutes={readingMinutes(post.bodyHtml)} />
+      <BlogTickerHeader />
       <div className="mx-auto grid max-w-6xl grid-cols-1 gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[1fr_18rem]">
         <article className="min-w-0">
           <JsonLd
@@ -124,6 +127,10 @@ function BlogPost() {
                 </Link>
               ))}
             </div>
+            <p className="mt-1.5 flex items-center gap-1.5 text-sm text-muted-foreground">
+              <Clock className="size-3.5" aria-hidden />
+              {minutes} min read
+            </p>
           </header>
 
           {post.heroImageUrl && (

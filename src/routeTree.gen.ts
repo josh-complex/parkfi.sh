@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WelcomeRouteImport } from './routes/welcome'
 import { Route as UnsubscribeRouteImport } from './routes/unsubscribe'
 import { Route as TicketsRouteImport } from './routes/tickets'
 import { Route as StaysRouteImport } from './routes/stays'
@@ -49,6 +50,11 @@ import { Route as OgDiningFacilityIdCardDotpngRouteImport } from './routes/og.di
 import { Route as OgRideParkSlugRideSlugCardDotpngRouteImport } from './routes/og.ride.$parkSlug.$rideSlug.card[.]png'
 import { Route as DashParkSlugRideRideSlugRouteImport } from './routes/_dash/park.$slug_.ride.$rideSlug'
 
+const WelcomeRoute = WelcomeRouteImport.update({
+  id: '/welcome',
+  path: '/welcome',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const UnsubscribeRoute = UnsubscribeRouteImport.update({
   id: '/unsubscribe',
   path: '/unsubscribe',
@@ -259,6 +265,7 @@ export interface FileRoutesByFullPath {
   '/stays': typeof StaysRoute
   '/tickets': typeof TicketsRoute
   '/unsubscribe': typeof UnsubscribeRoute
+  '/welcome': typeof WelcomeRoute
   '/account': typeof DashAccountRouteWithChildren
   '/alerts': typeof DashAlertsRoute
   '/blog/$slug': typeof BlogSlugRoute
@@ -298,6 +305,7 @@ export interface FileRoutesByTo {
   '/stays': typeof StaysRoute
   '/tickets': typeof TicketsRoute
   '/unsubscribe': typeof UnsubscribeRoute
+  '/welcome': typeof WelcomeRoute
   '/alerts': typeof DashAlertsRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/blog/rss.xml': typeof BlogRssDotxmlRoute
@@ -339,6 +347,7 @@ export interface FileRoutesById {
   '/stays': typeof StaysRoute
   '/tickets': typeof TicketsRoute
   '/unsubscribe': typeof UnsubscribeRoute
+  '/welcome': typeof WelcomeRoute
   '/_dash/account': typeof DashAccountRouteWithChildren
   '/_dash/alerts': typeof DashAlertsRoute
   '/blog/$slug': typeof BlogSlugRoute
@@ -382,6 +391,7 @@ export interface FileRouteTypes {
     | '/stays'
     | '/tickets'
     | '/unsubscribe'
+    | '/welcome'
     | '/account'
     | '/alerts'
     | '/blog/$slug'
@@ -421,6 +431,7 @@ export interface FileRouteTypes {
     | '/stays'
     | '/tickets'
     | '/unsubscribe'
+    | '/welcome'
     | '/alerts'
     | '/blog/$slug'
     | '/blog/rss.xml'
@@ -461,6 +472,7 @@ export interface FileRouteTypes {
     | '/stays'
     | '/tickets'
     | '/unsubscribe'
+    | '/welcome'
     | '/_dash/account'
     | '/_dash/alerts'
     | '/blog/$slug'
@@ -503,6 +515,7 @@ export interface RootRouteChildren {
   StaysRoute: typeof StaysRoute
   TicketsRoute: typeof TicketsRoute
   UnsubscribeRoute: typeof UnsubscribeRoute
+  WelcomeRoute: typeof WelcomeRoute
   BlogSlugRoute: typeof BlogSlugRoute
   BlogRssDotxmlRoute: typeof BlogRssDotxmlRoute
   DiningFacilityIdRoute: typeof DiningFacilityIdRoute
@@ -524,6 +537,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/welcome': {
+      id: '/welcome'
+      path: '/welcome'
+      fullPath: '/welcome'
+      preLoaderRoute: typeof WelcomeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/unsubscribe': {
       id: '/unsubscribe'
       path: '/unsubscribe'
@@ -852,6 +872,7 @@ const rootRouteChildren: RootRouteChildren = {
   StaysRoute: StaysRoute,
   TicketsRoute: TicketsRoute,
   UnsubscribeRoute: UnsubscribeRoute,
+  WelcomeRoute: WelcomeRoute,
   BlogSlugRoute: BlogSlugRoute,
   BlogRssDotxmlRoute: BlogRssDotxmlRoute,
   DiningFacilityIdRoute: DiningFacilityIdRoute,
