@@ -55,8 +55,16 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
       links: [
         { rel: "stylesheet", href: appCss },
         { rel: "manifest", href: "/manifest.json" },
-        { rel: "apple-touch-icon", href: "/icons/icon-192.png" },
-        { rel: "icon", href: "/favicon.ico" },
+        // iOS home-screen icon: Safari doesn't reliably decode webp for
+        // apple-touch-icon, so point at the brand PNG.
+        { rel: "apple-touch-icon", href: "/img/brand/full_white.png" },
+        // Tab favicon. The SVG carries a prefers-color-scheme media query so the
+        // mark flips to white on dark tab bars (and stays brand blue on light) —
+        // honored by SVG-favicon browsers (Chrome/Edge/Firefox/Safari 16+). The
+        // webp/PNG are raster fallbacks for browsers without SVG-favicon support.
+        { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
+        { rel: "icon", type: "image/webp", href: "/img/brand/blue.webp" },
+        { rel: "icon", type: "image/png", href: "/img/brand/blue.png" },
         ...base.links,
       ],
     };

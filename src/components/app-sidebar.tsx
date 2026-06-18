@@ -122,7 +122,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               onClick={closeOnMobile}
               render={<Link to="/" />}
             >
-              <img src="/logo512.png" alt="ParkFi" className="size-6! shrink-0 rounded-md" />
+              <img
+                src="/img/brand/yellow_white_marker.webp"
+                alt="ParkFi"
+                className="size-7! shrink-0"
+              />
               <span className="text-base font-semibold">ParkFi</span>
             </SidebarMenuButton>
           </SidebarMenuItem>

@@ -4,7 +4,7 @@
  * link, and a physical postal address. Inline styles only — email clients ignore
  * <style>/external CSS.
  */
-import { Body, Container, Head, Hr, Html, Link, Preview, Section, Text } from "react-email";
+import { Body, Container, Head, Hr, Html, Img, Link, Preview, Section, Text } from "react-email";
 import * as React from "react";
 
 export interface StayEmailProps {
@@ -43,6 +43,17 @@ const container: React.CSSProperties = {
   maxWidth: "520px",
   borderRadius: "12px",
 };
+const brandHeader: React.CSSProperties = {
+  paddingBottom: "20px",
+};
+const brandWordmark: React.CSSProperties = {
+  color: "#1c468e",
+  fontSize: "20px",
+  fontWeight: 700,
+  letterSpacing: "-0.01em",
+  marginLeft: "10px",
+  verticalAlign: "middle",
+};
 const footerText: React.CSSProperties = {
   color: "#71717a",
   fontSize: "12px",
@@ -72,6 +83,18 @@ export function AlertLayout({
       <Preview>{preview}</Preview>
       <Body style={main}>
         <Container style={container}>
+          {/* Brand header. PNG (not webp) + absolute URL for broad email-client
+              support; the yellow/white marker reads well on the white card. */}
+          <Section style={brandHeader}>
+            <Img
+              src="https://parkfi.sh/img/brand/yellow_white_marker.png"
+              width="40"
+              height="40"
+              alt="ParkFi"
+              style={{ display: "inline-block", verticalAlign: "middle" }}
+            />
+            <span style={brandWordmark}>ParkFi</span>
+          </Section>
           {children}
           <Hr style={{ borderColor: "#e4e4e7", margin: "24px 0" }} />
           <Section>

@@ -88,8 +88,8 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     self.registration.showNotification(data.title ?? "ParkFi", {
       body: data.body ?? "",
-      icon: "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
+      icon: "/img/brand/yellow_white_marker.webp",
+      badge: "/img/brand/full_white.webp",
       data: { url: data.url ?? "/" },
     }),
   );

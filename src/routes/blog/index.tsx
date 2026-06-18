@@ -70,28 +70,6 @@ function BlogIndex() {
 
       <BlogTickerHeader />
 
-      <header className="bg-sidebar text-sidebar-foreground">
-        <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-          <p className="font-heading text-sm font-semibold tracking-wide text-sidebar-foreground/70 uppercase">
-            The ParkFi Dispatch
-          </p>
-          <h1 className="font-heading mt-1 text-4xl font-bold tracking-tight sm:text-5xl">
-            Park News &amp; Analysis
-          </h1>
-          <p className="mt-3 max-w-2xl text-lg text-sidebar-foreground/80">
-            What's changing at Walt Disney World and Universal Orlando — and what it means for your
-            day, backed by{" "}
-            <Link
-              to="/"
-              className="font-medium text-sidebar-foreground underline underline-offset-4"
-            >
-              live ParkFi data
-            </Link>
-            .
-          </p>
-        </div>
-      </header>
-
       <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
         <div className="grid grid-cols-1 gap-10 lg:grid-cols-[1fr_18rem]">
           <main>

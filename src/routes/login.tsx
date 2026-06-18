@@ -183,7 +183,7 @@ function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <div className="flex w-full max-w-sm flex-col gap-6">
         <div className="flex flex-col items-center gap-2">
-          <img src="/logo192.png" alt="ParkFi" className="size-12" />
+          <img src="/img/brand/yellow_white_marker.webp" alt="ParkFi" className="size-14" />
           <h1 className="text-xl font-semibold tracking-tight">parkfi.sh</h1>
         </div>
 

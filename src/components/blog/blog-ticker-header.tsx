@@ -141,23 +141,31 @@ export function BlogTickerHeader({ readingMinutes }: { readingMinutes?: number }
         />
       </div>
 
-      {/* Nav row */}
+      {/* Nav row: the brand mark anchors the far left and search the far right,
+          while the nav links + wordmark cluster toward the center. */}
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-        <nav className="hidden flex-1 items-center gap-6 md:flex">
-          <NavLinks items={NAV_LEFT} />
-        </nav>
-
-        <Link to="/blog" className="flex flex-col items-center leading-none">
-          <span className="font-heading text-2xl font-bold tracking-tight">ParkFi</span>
-          <span className="font-heading text-[0.6rem] font-semibold tracking-[0.25em] text-muted-foreground uppercase">
-            Park News
-          </span>
+        <Link to="/blog" aria-label="ParkFi — Park News" className="flex shrink-0 items-center">
+          <img src="/img/brand/blue.webp" alt="ParkFi" className="h-9 w-auto" />
         </Link>
 
-        <div className="flex flex-1 items-center justify-end gap-6">
+        <div className="flex flex-1 items-center justify-center gap-6">
+          <nav className="hidden items-center gap-6 md:flex">
+            <NavLinks items={NAV_LEFT} />
+          </nav>
+
+          <Link to="/blog" className="flex flex-col items-center leading-none">
+            <span className="font-heading text-2xl font-bold tracking-tight">ParkFi</span>
+            <span className="font-heading text-[0.6rem] font-semibold tracking-[0.25em] text-muted-foreground uppercase">
+              Park News
+            </span>
+          </Link>
+
           <nav className="hidden items-center gap-6 md:flex">
             <NavLinks items={NAV_RIGHT} />
           </nav>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-4 sm:gap-6">
           {readingMinutes != null && (
             <span className="flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs font-medium whitespace-nowrap text-muted-foreground">
               <Clock className="size-3.5" aria-hidden />
