@@ -2,6 +2,7 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
 import { BlogSidebar } from "#/components/blog/blog-sidebar.tsx";
+import { BlogTickerHeader } from "#/components/blog/blog-ticker-header.tsx";
 import { ExternalShelves } from "#/components/blog/external-shelves.tsx";
 import { PostCard } from "#/components/blog/post-card.tsx";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
@@ -66,6 +67,8 @@ function BlogIndex() {
   return (
     <div>
       <JsonLd data={blogJsonLd()} />
+
+      <BlogTickerHeader />
 
       <header className="bg-sidebar text-sidebar-foreground">
         <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
