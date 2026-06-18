@@ -4,7 +4,7 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
-import { MinusIcon, TrendingDownIcon, TrendingUpIcon, XIcon } from "lucide-react";
+import { MinusIcon, TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 
 import {
   Card,
@@ -14,8 +14,6 @@ import {
   CardHeader,
   CardTitle,
 } from "#/components/ui/card.tsx";
-import { Button } from "#/components/ui/button.tsx";
-import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "#/components/ui/drawer.tsx";
 import {
   ChartContainer,
   ChartTooltip,
@@ -55,9 +53,8 @@ const RANGE_HOURS: Record<string, number> = { "24h": 24, "7d": 168, "30d": 720 }
 const AVG_KEY = "__avg";
 
 /**
- * The ride-series toggle list. Rendered inline beside the chart at `@[640px]/card`
- * and up; on narrower cards it moves into a Sheet behind a "Rides (n)" button so
- * the plot keeps full width. Both surfaces share this list.
+ * The ride-series toggle list, rendered below the chart as wrapping chips
+ * (`layout="wrap"`) so every ride stays visible at any card width.
  */
 function RideLegend({
   rides,
@@ -65,9 +62,6 @@ function RideLegend({
   colorOf,
   trendOf,
   toggle,
-  toggleAll,
-  allEnabled,
-  onClose,
   layout = "list",
 }: {
   rides: Array<{ id: number; name: string }>;
@@ -75,96 +69,58 @@ function RideLegend({
   colorOf: (id: number) => string;
   trendOf: (id: number) => "up" | "down" | "flat";
   toggle: (id: number) => void;
-  toggleAll: () => void;
-  allEnabled: boolean;
-  /** When provided (the drawer), renders a close control in the header. */
-  onClose?: () => void;
   /**
-   * `list` — one ride per row (drawer). `wrap` — chips that flow across the full
-   * width, used for the always-on section below the chart at desktop.
+   * `list` — one ride per row. `wrap` — chips that flow across the full width,
+   * used for the always-on section below the chart.
    */
   layout?: "list" | "wrap";
 }) {
   const wrap = layout === "wrap";
   return (
-    <>
-      <div
-        className={cn(
-          // Round the sticky header's top corners to match the bordered inline
-          // container — its backdrop-blur paints past the parent's rounded clip,
-          // so the corners need to be rounded on the header itself. The drawer
-          // surface has no rounded shell, so skip it there.
-          "text-muted-foreground sticky top-0 z-10 flex items-center justify-between gap-2 bg-card/95 px-3 py-2 text-xs font-medium supports-backdrop-filter:backdrop-blur",
-          !onClose && "rounded-t-lg",
-        )}
-      >
-        <span>Rides ({rides.length})</span>
-        <div className="flex items-center gap-1">
+    <div className={cn(wrap ? "flex flex-wrap gap-1 p-1.5" : "flex flex-col gap-0.5 p-1")}>
+      {rides.map((r) => {
+        const on = enabled.has(r.id);
+        const trend = trendOf(r.id);
+        // Rising waits read as "worse" (rose), falling as "better" (emerald),
+        // flat as muted. Colour only — the live value stays off the row to keep
+        // the ride name room to breathe.
+        const TrendIcon =
+          trend === "up" ? TrendingUpIcon : trend === "down" ? TrendingDownIcon : MinusIcon;
+        return (
           <button
+            key={r.id}
             type="button"
-            onClick={toggleAll}
-            aria-pressed={allEnabled}
-            className="text-primary rounded px-1 py-0.5 font-medium transition-colors hover:underline"
+            onClick={() => toggle(r.id)}
+            aria-pressed={on}
+            title={r.name}
+            className={cn(
+              "flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted/50",
+              wrap ? "w-auto max-w-[14rem] border bg-background/40" : "w-full",
+              on ? "text-foreground" : "text-muted-foreground",
+            )}
           >
-            {allEnabled ? "Clear all" : "Select all"}
-          </button>
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              className="inline-flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <XIcon className="size-4" />
-            </button>
-          )}
-        </div>
-      </div>
-      <div className={cn(wrap ? "flex flex-wrap gap-1 p-1.5" : "flex flex-col gap-0.5 p-1")}>
-        {rides.map((r) => {
-          const on = enabled.has(r.id);
-          const trend = trendOf(r.id);
-          // Rising waits read as "worse" (rose), falling as "better" (emerald),
-          // flat as muted. Colour only — the live value stays off the row to keep
-          // the ride name room to breathe.
-          const TrendIcon =
-            trend === "up" ? TrendingUpIcon : trend === "down" ? TrendingDownIcon : MinusIcon;
-          return (
-            <button
-              key={r.id}
-              type="button"
-              onClick={() => toggle(r.id)}
-              aria-pressed={on}
-              title={r.name}
+            <span
+              className="size-2.5 shrink-0 rounded-[3px]"
+              style={{ backgroundColor: colorOf(r.id), opacity: on ? 1 : 0.35 }}
+            />
+            <span className="min-w-0 flex-1 truncate">{r.name}</span>
+            <TrendIcon
               className={cn(
-                "flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted/50",
-                wrap ? "w-auto max-w-[14rem] border bg-background/40" : "w-full",
-                on ? "text-foreground" : "text-muted-foreground",
+                "size-3.5 shrink-0",
+                trend === "up"
+                  ? "text-rose-500 dark:text-rose-400"
+                  : trend === "down"
+                    ? "text-emerald-500 dark:text-emerald-400"
+                    : "text-muted-foreground/50",
               )}
-            >
-              <span
-                className="size-2.5 shrink-0 rounded-[3px]"
-                style={{ backgroundColor: colorOf(r.id), opacity: on ? 1 : 0.35 }}
-              />
-              <span className="min-w-0 flex-1 truncate">{r.name}</span>
-              <TrendIcon
-                className={cn(
-                  "size-3.5 shrink-0",
-                  trend === "up"
-                    ? "text-rose-500 dark:text-rose-400"
-                    : trend === "down"
-                      ? "text-emerald-500 dark:text-emerald-400"
-                      : "text-muted-foreground/50",
-                )}
-                aria-label={
-                  trend === "up" ? "Trending up" : trend === "down" ? "Trending down" : "Steady"
-                }
-              />
-            </button>
-          );
-        })}
-      </div>
-    </>
+              aria-label={
+                trend === "up" ? "Trending up" : trend === "down" ? "Trending down" : "Steady"
+              }
+            />
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -183,7 +139,6 @@ export function ParkWaitChart({
   const queueOptions = React.useMemo(() => getQueueOptions(operatorSlug), [operatorSlug]);
   const [queueType, setQueueType] = React.useState("1");
   const [range, setRange] = React.useState("24h");
-  const [ridesOpen, setRidesOpen] = React.useState(false);
 
   React.useEffect(() => {
     const exists = queueOptions.some((q) => q.value === queueType);
@@ -464,51 +419,12 @@ export function ParkWaitChart({
             value={range ? [range] : []}
             onValueChange={(v) => setRange(v[0] ?? "24h")}
             variant="outline"
-            className="hidden *:data-[slot=toggle-group-item]:px-3! @[640px]/card:flex"
+            className="hidden *:data-[slot=toggle-group-item]:px-3! @[440px]/card:flex"
           >
             <ToggleGroupItem value="24h">24h</ToggleGroupItem>
             <ToggleGroupItem value="7d">7d</ToggleGroupItem>
             <ToggleGroupItem value="30d">30d</ToggleGroupItem>
           </ToggleGroup>
-          {/* Narrow cards: the legend collapses into a bottom drawer behind this
-              button (the inline list is hidden below 640px) so the chart keeps
-              full width. */}
-          {rides.length > 0 && (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                className="@[640px]/card:hidden"
-                onClick={() => setRidesOpen(true)}
-              >
-                Rides ({rides.length})
-              </Button>
-              <Drawer open={ridesOpen} onOpenChange={setRidesOpen}>
-                <DrawerContent className="max-h-[85vh] px-2">
-                  <DrawerTitle className="sr-only">Ride series</DrawerTitle>
-                  <DrawerDescription className="sr-only">
-                    Toggle which ride series appear on the chart.
-                  </DrawerDescription>
-                  <div
-                    className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+0.5rem)]"
-                    role="group"
-                    aria-label="Toggle ride series"
-                  >
-                    <RideLegend
-                      rides={rides}
-                      enabled={enabled}
-                      colorOf={colorOf}
-                      trendOf={(id) => trendOf.get(id) ?? "flat"}
-                      toggle={toggle}
-                      toggleAll={toggleAll}
-                      allEnabled={allEnabled}
-                      onClose={() => setRidesOpen(false)}
-                    />
-                  </div>
-                </DrawerContent>
-              </Drawer>
-            </>
-          )}
         </CardAction>
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col px-2 pt-4 sm:px-6 sm:pt-6">
@@ -522,7 +438,7 @@ export function ParkWaitChart({
           // fixed height across the loading → loaded transition.
           <div className="flex min-h-0 min-w-0 flex-col gap-3">
             <Skeleton className="h-[200px] w-full" />
-            <Skeleton className="hidden h-[180px] w-full rounded-lg @[640px]/card:block" />
+            <Skeleton className="h-[180px] w-full rounded-lg" />
           </div>
         ) : !hasData ? (
           <ConstructionState
@@ -602,24 +518,53 @@ export function ParkWaitChart({
               </LineChart>
             </ChartContainer>
 
-            {/* Ride legend — always present below the chart from 640px up,
-                wrapping across the full card width. Below that it collapses into
-                the drawer behind the "Rides" button so the plot keeps its space. */}
+            {/* Ride legend — always present below the chart, wrapping as chips
+                across the full card width at every size. */}
             <div
-              className="hidden h-[180px] flex-col overflow-y-auto rounded-lg border bg-muted/20 @[640px]/card:flex"
+              className="flex h-[180px] flex-col overflow-hidden rounded-lg border bg-muted/20"
               role="group"
               aria-label="Toggle ride series"
             >
-              <RideLegend
-                rides={rides}
-                enabled={enabled}
-                colorOf={colorOf}
-                trendOf={(id) => trendOf.get(id) ?? "flat"}
-                toggle={toggle}
-                toggleAll={toggleAll}
-                allEnabled={allEnabled}
-                layout="wrap"
-              />
+              {/* Header lives outside the scroll area so it's clipped by the
+                  parent's rounded border and never reveals on overscroll. */}
+              <div className="text-muted-foreground flex items-center justify-between gap-2 px-3 py-2 text-xs font-medium">
+                <span>Rides ({rides.length})</span>
+                <button
+                  type="button"
+                  onClick={toggleAll}
+                  aria-pressed={allEnabled}
+                  className="text-primary rounded px-1 py-0.5 font-medium transition-colors hover:underline"
+                >
+                  {allEnabled ? "Clear all" : "Select all"}
+                </button>
+              </div>
+              <div
+                className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-x-none"
+                style={{
+                  // Fade list rows into the header at the top edge, but keep a
+                  // solid strip over the scrollbar gutter (right) so the bar
+                  // stays crisp instead of fading with the content.
+                  maskImage:
+                    "linear-gradient(to bottom, transparent, #000 20px), linear-gradient(#000, #000)",
+                  maskSize: "calc(100% - 12px) 100%, 12px 100%",
+                  maskPosition: "left top, right top",
+                  maskRepeat: "no-repeat",
+                  WebkitMaskImage:
+                    "linear-gradient(to bottom, transparent, #000 20px), linear-gradient(#000, #000)",
+                  WebkitMaskSize: "calc(100% - 12px) 100%, 12px 100%",
+                  WebkitMaskPosition: "left top, right top",
+                  WebkitMaskRepeat: "no-repeat",
+                }}
+              >
+                <RideLegend
+                  rides={rides}
+                  enabled={enabled}
+                  colorOf={colorOf}
+                  trendOf={(id) => trendOf.get(id) ?? "flat"}
+                  toggle={toggle}
+                  layout="wrap"
+                />
+              </div>
             </div>
           </div>
         )}

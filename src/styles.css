@@ -49,6 +49,10 @@
   /* Inner-top shadow that makes inputs/search bars read as recessed (the
      counterpart to the embossed 3D shadow on buttons). */
   --shadow-deboss: inset 0 2px 4px -1px oklch(0 0 0 / 0.12), inset 0 -1px 0 0 oklch(1 0 0 / 0.55);
+  /* Scrollbar thumb color (track stays transparent). Drives every native
+     scrollbar app-wide via the inherited rule in the base layer below. */
+  --scrollbar-thumb: oklch(0.78 0 0);
+  --scrollbar-thumb-hover: oklch(0.62 0 0);
 }
 
 .dark {
@@ -85,6 +89,8 @@
   --sidebar-border: oklch(1 0 0 / 18%);
   --sidebar-ring: oklch(1 0 0 / 50%);
   --shadow-deboss: inset 0 2px 5px -1px oklch(0 0 0 / 0.55), inset 0 -1px 0 0 oklch(1 0 0 / 0.04);
+  --scrollbar-thumb: #2c4a82;
+  --scrollbar-thumb-hover: #3f6098;
 }
 
 @theme inline {
@@ -141,7 +147,51 @@
   }
   html {
     @apply font-sans bg-sidebar;
+    /* Reserve the page scrollbar's space so layout never reflows when it
+       appears/disappears (the classic Win-vs-Mac jump). */
+    scrollbar-gutter: stable;
   }
+
+  /* ── Cross-platform scrollbars ──────────────────────────────────────────── *
+   * scrollbar-width / scrollbar-color are INHERITED, so setting them once here
+   * themes every native scroll container in the app (Chrome 121+, Firefox,
+   * Safari 18.2+) — a thin, design-matched bar instead of the chunky default
+   * Windows one. Containers that opt out via `.no-scrollbar` set
+   * `scrollbar-width: none` locally, which still wins.
+   * -------------------------------------------------------------------------- */
+  html {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+
+  /* WebKit fallback for engines that predate standardized scrollbar-color
+     (older Chromium). Harmless where the standard props already apply. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+  /* Don't paint a WebKit bar on hidden containers. */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Opt-in: reserve scrollbar space on an internal container that flickers when
+   its scrollbar toggles (e.g. a popover/list whose content grows past max-h). */
+@utility scrollbar-stable {
+  scrollbar-gutter: stable;
 }
 
 /* ── Blog "live waits" ticker ─────────────────────────────────────────────── *
