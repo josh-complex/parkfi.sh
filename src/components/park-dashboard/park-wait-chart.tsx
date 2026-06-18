@@ -4,7 +4,7 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
-import { XIcon } from "lucide-react";
+import { MinusIcon, TrendingDownIcon, TrendingUpIcon, XIcon } from "lucide-react";
 
 import {
   Card,
@@ -51,9 +51,6 @@ function getQueueOptions(operatorSlug?: string | null) {
 
 const RANGE_HOURS: Record<string, number> = { "24h": 24, "7d": 168, "30d": 720 };
 
-/** How many of the busiest rides light up by default, alongside the park lines. */
-const DEFAULT_SERIES = 3;
-
 // Reserved series key for the whole-park average line.
 const AVG_KEY = "__avg";
 
@@ -66,23 +63,41 @@ function RideLegend({
   rides,
   enabled,
   colorOf,
+  trendOf,
   toggle,
   toggleAll,
   allEnabled,
   onClose,
+  layout = "list",
 }: {
   rides: Array<{ id: number; name: string }>;
   enabled: Set<number>;
   colorOf: (id: number) => string;
+  trendOf: (id: number) => "up" | "down" | "flat";
   toggle: (id: number) => void;
   toggleAll: () => void;
   allEnabled: boolean;
   /** When provided (the drawer), renders a close control in the header. */
   onClose?: () => void;
+  /**
+   * `list` — one ride per row (drawer). `wrap` — chips that flow across the full
+   * width, used for the always-on section below the chart at desktop.
+   */
+  layout?: "list" | "wrap";
 }) {
+  const wrap = layout === "wrap";
   return (
     <>
-      <div className="text-muted-foreground sticky top-0 z-10 flex items-center justify-between gap-2 bg-card/95 px-3 py-2 text-xs font-medium supports-backdrop-filter:backdrop-blur">
+      <div
+        className={cn(
+          // Round the sticky header's top corners to match the bordered inline
+          // container — its backdrop-blur paints past the parent's rounded clip,
+          // so the corners need to be rounded on the header itself. The drawer
+          // surface has no rounded shell, so skip it there.
+          "text-muted-foreground sticky top-0 z-10 flex items-center justify-between gap-2 bg-card/95 px-3 py-2 text-xs font-medium supports-backdrop-filter:backdrop-blur",
+          !onClose && "rounded-t-lg",
+        )}
+      >
         <span>Rides ({rides.length})</span>
         <div className="flex items-center gap-1">
           <button
@@ -105,9 +120,15 @@ function RideLegend({
           )}
         </div>
       </div>
-      <div className="flex flex-col gap-0.5 p-1">
+      <div className={cn(wrap ? "flex flex-wrap gap-1 p-1.5" : "flex flex-col gap-0.5 p-1")}>
         {rides.map((r) => {
           const on = enabled.has(r.id);
+          const trend = trendOf(r.id);
+          // Rising waits read as "worse" (rose), falling as "better" (emerald),
+          // flat as muted. Colour only — the live value stays off the row to keep
+          // the ride name room to breathe.
+          const TrendIcon =
+            trend === "up" ? TrendingUpIcon : trend === "down" ? TrendingDownIcon : MinusIcon;
           return (
             <button
               key={r.id}
@@ -116,7 +137,8 @@ function RideLegend({
               aria-pressed={on}
               title={r.name}
               className={cn(
-                "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted/50",
+                "flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted/50",
+                wrap ? "w-auto max-w-[14rem] border bg-background/40" : "w-full",
                 on ? "text-foreground" : "text-muted-foreground",
               )}
             >
@@ -124,7 +146,20 @@ function RideLegend({
                 className="size-2.5 shrink-0 rounded-[3px]"
                 style={{ backgroundColor: colorOf(r.id), opacity: on ? 1 : 0.35 }}
               />
-              <span className="truncate">{r.name}</span>
+              <span className="min-w-0 flex-1 truncate">{r.name}</span>
+              <TrendIcon
+                className={cn(
+                  "size-3.5 shrink-0",
+                  trend === "up"
+                    ? "text-rose-500 dark:text-rose-400"
+                    : trend === "down"
+                      ? "text-emerald-500 dark:text-emerald-400"
+                      : "text-muted-foreground/50",
+                )}
+                aria-label={
+                  trend === "up" ? "Trending up" : trend === "down" ? "Trending down" : "Steady"
+                }
+              />
             </button>
           );
         })}
@@ -182,9 +217,30 @@ export function ParkWaitChart({
     [orderIndex],
   );
 
+  // Recent direction per ride for the legend's trend marker. Compares the latest
+  // reading to one a few buckets back (smoothing out single-bucket jitter) over
+  // the readings that actually landed — gaps are dropped, same as the sparkline.
+  const ridesKey = rides.map((r) => r.id).join(",");
+  const trendOf = React.useMemo(() => {
+    const m = new Map<number, "up" | "down" | "flat">();
+    for (const r of rides) {
+      const series = points
+        .map((p) => p[String(r.id)])
+        .filter((v): v is number => typeof v === "number");
+      if (series.length < 2) {
+        m.set(r.id, "flat");
+        continue;
+      }
+      const last = series[series.length - 1]!;
+      const prev = series[Math.max(0, series.length - 4)]!;
+      m.set(r.id, last > prev ? "up" : last < prev ? "down" : "flat");
+    }
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [points, ridesKey]);
+
   // Augment each bucket with the whole-park average across rides so the chart
   // always carries a park-wide summary line over the individual ride series.
-  const ridesKey = rides.map((r) => r.id).join(",");
   const chartData = React.useMemo(() => {
     const ids = rides.map((r) => r.id);
     // How many consecutive buckets a ride's last reading stays "live" for the
@@ -269,12 +325,12 @@ export function ParkWaitChart({
     return cfg;
   }, [rides]);
 
-  // Which ride series are drawn alongside the park lines. Defaults to the
-  // busiest few; resets when the ride roster changes (new park / metric).
+  // Which ride series are drawn alongside the park lines. Starts empty so the
+  // chart opens on just the park-average line; the viewer opts rides in from the
+  // legend (or by picking one on the board/map). Resets when the roster changes.
   const [enabled, setEnabled] = React.useState<Set<number>>(() => new Set());
   React.useEffect(() => {
-    setEnabled(new Set(rides.slice(0, DEFAULT_SERIES).map((r) => r.id)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setEnabled(new Set());
   }, [ridesKey]);
 
   // Picking a ride on the board/map lights up its series.
@@ -442,6 +498,7 @@ export function ParkWaitChart({
                       rides={rides}
                       enabled={enabled}
                       colorOf={colorOf}
+                      trendOf={(id) => trendOf.get(id) ?? "flat"}
                       toggle={toggle}
                       toggleAll={toggleAll}
                       allEnabled={allEnabled}
@@ -456,15 +513,20 @@ export function ParkWaitChart({
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col px-2 pt-4 sm:px-6 sm:pt-6">
         {!parkSlug ? (
-          <Empty className="h-[380px]">
+          <Empty className="h-[394px]">
             <EmptyTitle>No park selected</EmptyTitle>
             <EmptyDescription>Pick a park to see its wait history.</EmptyDescription>
           </Empty>
         ) : historyQ.isLoading ? (
-          <Skeleton className="h-[340px] w-full" />
+          // Mirror the loaded layout (chart + legend below) so the card keeps a
+          // fixed height across the loading → loaded transition.
+          <div className="flex min-h-0 min-w-0 flex-col gap-3">
+            <Skeleton className="h-[200px] w-full" />
+            <Skeleton className="hidden h-[180px] w-full rounded-lg @[640px]/card:block" />
+          </div>
         ) : !hasData ? (
           <ConstructionState
-            className="h-[380px]"
+            className="h-[394px]"
             title="Charting in progress"
             description={
               <>
@@ -474,8 +536,8 @@ export function ParkWaitChart({
             }
           />
         ) : (
-          <div className="flex min-h-0 min-w-0 gap-3">
-            <ChartContainer config={chartConfig} className="aspect-auto h-[340px] min-w-0 flex-1">
+          <div className="flex min-h-0 min-w-0 flex-col gap-3">
+            <ChartContainer config={chartConfig} className="aspect-auto h-[200px] w-full min-w-0">
               <LineChart data={chartData} margin={{ left: 0, right: 0, top: 8 }}>
                 <CartesianGrid vertical={false} />
                 <XAxis
@@ -540,10 +602,11 @@ export function ParkWaitChart({
               </LineChart>
             </ChartContainer>
 
-            {/* Inline ride legend — only from 640px up; below that it lives in the
-                Sheet behind the "Rides" button so the chart keeps full width. */}
+            {/* Ride legend — always present below the chart from 640px up,
+                wrapping across the full card width. Below that it collapses into
+                the drawer behind the "Rides" button so the plot keeps its space. */}
             <div
-              className="hidden max-h-[340px] w-44 shrink-0 flex-col overflow-y-auto rounded-lg border bg-muted/20 @[640px]/card:flex"
+              className="hidden h-[180px] flex-col overflow-y-auto rounded-lg border bg-muted/20 @[640px]/card:flex"
               role="group"
               aria-label="Toggle ride series"
             >
@@ -551,9 +614,11 @@ export function ParkWaitChart({
                 rides={rides}
                 enabled={enabled}
                 colorOf={colorOf}
+                trendOf={(id) => trendOf.get(id) ?? "flat"}
                 toggle={toggle}
                 toggleAll={toggleAll}
                 allEnabled={allEnabled}
+                layout="wrap"
               />
             </div>
           </div>

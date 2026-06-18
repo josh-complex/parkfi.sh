@@ -93,17 +93,19 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
             (recharts container + the header toolbar) blows the column past 1fr
             and overflows the content card at lg+. */}
         <div className="grid items-stretch gap-4 lg:grid-cols-2 lg:[&>*]:min-w-0">
-          <MapSlot className="relative isolate h-[320px] overflow-hidden rounded-2xl border shadow-md lg:h-auto lg:min-h-[460px]" />
+          {/* Card-like surface to match the chart container, but no drop shadow:
+              the 3D shelf border carries the depth, a box-shadow under it would
+              double up and read as a floating panel. */}
+          <MapSlot className="border-3d btn-3d-outline relative isolate h-[320px] overflow-hidden rounded-4xl border-t-3 bg-card lg:h-auto lg:min-h-[460px] dark:border-border" />
           <React.Suspense
             fallback={
-              <Skeleton className="h-[320px] w-full rounded-2xl shadow-md lg:h-auto lg:min-h-[460px]" />
+              <Skeleton className="h-[320px] w-full rounded-2xl lg:h-auto lg:min-h-[460px]" />
             }
           >
             <ParkWaitChart
               parkSlug={activeSlug ?? null}
               focusedId={selected?.id ?? null}
               operatorSlug={operatorSlug}
-              className="shadow-md"
             />
           </React.Suspense>
         </div>
