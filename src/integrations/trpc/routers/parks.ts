@@ -77,7 +77,8 @@ export const parksRouter = {
   /**
    * Cross-park "stock ticker" of live STANDBY waits: every operating ride with a
    * current posted wait, plus the delta vs. ~30 min earlier so the UI can render
-   * up/down trend signals. Ordered busiest-first; capped for a marquee strip.
+   * up/down trend signals. Ordered busiest-first; a wide 3h freshness window and
+   * generous cap keep the marquee a long, varied list rather than a few repeats.
    */
   ticker: publicProcedure.query(async () => {
     const result = await db.execute<{
@@ -92,7 +93,7 @@ export const parksRouter = {
         SELECT DISTINCT ON (q.attraction_id) q.attraction_id, q.wait_min
         FROM queue_obs q
         WHERE q.queue_type = 1
-          AND q.observed_at >= now() - INTERVAL '60 minutes'
+          AND q.observed_at >= now() - INTERVAL '180 minutes'
         ORDER BY q.attraction_id, q.observed_at DESC
       ),
       prev AS (
@@ -100,7 +101,7 @@ export const parksRouter = {
         FROM queue_obs q
         WHERE q.queue_type = 1
           AND q.observed_at <= now() - INTERVAL '30 minutes'
-          AND q.observed_at >= now() - INTERVAL '120 minutes'
+          AND q.observed_at >= now() - INTERVAL '210 minutes'
         ORDER BY q.attraction_id, q.observed_at DESC
       )
       SELECT a.name AS ride_name, a.slug AS ride_slug,
@@ -112,7 +113,7 @@ export const parksRouter = {
       LEFT JOIN prev pr ON pr.attraction_id = l.attraction_id
       WHERE l.wait_min IS NOT NULL AND l.wait_min > 0
       ORDER BY l.wait_min DESC, a.name
-      LIMIT 40
+      LIMIT 30
     `);
     return result.rows.map((r) => {
       const delta = r.prev_wait == null ? 0 : r.wait_min - r.prev_wait;

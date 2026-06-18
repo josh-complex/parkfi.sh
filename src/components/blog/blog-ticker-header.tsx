@@ -123,8 +123,14 @@ export function BlogTickerHeader({ readingMinutes }: { readingMinutes?: number }
   const progress = useScrollProgress();
 
   const chips = ticker ?? [];
-  // A slow, readable drift; scales with list length so the pace stays even.
-  const durationSec = Math.max(80, chips.length * 7);
+  // The track is two identical halves and slides by exactly -50%, so the loop is
+  // seamless only if one half already overflows the viewport. With a short ride
+  // list that wouldn't hold, so repeat the list within each half until it's wide
+  // enough to fill even a large screen (~10 chips' worth) before doubling.
+  const repeatsPerHalf = chips.length > 0 ? Math.max(1, Math.ceil(10 / chips.length)) : 1;
+  const itemsPerHalf = chips.length * repeatsPerHalf;
+  // A slow, readable drift; scales with one half's width so the pace stays even.
+  const durationSec = Math.max(80, itemsPerHalf * 7);
 
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-background/90 backdrop-blur-md">
@@ -211,16 +217,18 @@ export function BlogTickerHeader({ readingMinutes }: { readingMinutes?: number }
                     className="flex items-center divide-x divide-border"
                     aria-hidden={copy === 1}
                   >
-                    {chips.map((c) => (
-                      <TickerChip
-                        key={`${copy}-${c.parkSlug}-${c.rideSlug}`}
-                        rideName={c.rideName}
-                        parkName={c.parkName}
-                        waitMin={c.waitMin}
-                        delta={c.delta}
-                        trend={c.trend}
-                      />
-                    ))}
+                    {Array.from({ length: repeatsPerHalf }).flatMap((_, rep) =>
+                      chips.map((c) => (
+                        <TickerChip
+                          key={`${copy}-${rep}-${c.parkSlug}-${c.rideSlug}`}
+                          rideName={c.rideName}
+                          parkName={c.parkName}
+                          waitMin={c.waitMin}
+                          delta={c.delta}
+                          trend={c.trend}
+                        />
+                      )),
+                    )}
                   </div>
                 ))}
               </div>
