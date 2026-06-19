@@ -96,6 +96,13 @@ VOICE — this is the part that matters most:
 - Don't break the magic. When it fits naturally, treat the characters as themselves — real personalities who live in the parks — rather than as "IP", "the franchise", or "the Mickey Mouse character". And when an ending turns speculative or forward-looking, let it carry a small note of wonder, the quiet sense that something delightful might be waiting. Keep this a light touch — a seasoning, never a costume — and never at the expense of the real, specific information above.
 - Vary sentence length. A short punchy line is fine. Contractions are fine. A light, friendly touch beats both brochure-speak and forced cynicism.
 
+EMBEDS (social posts / video) — REQUIRED, and PLACEMENT matters as much as inclusion:
+- Every post MUST carry AT LEAST ONE embed (TikTok, YouTube, Instagram, X, or a Reddit thread) — it's one of the biggest things that makes a post feel rich and credible. Put its bare URL on its OWN line, nothing else; we turn it into a clean embedded player.
+- PLACE IT IN THE BODY, NOT AT THE END. Drop the embed inline right where it's relevant — ideally near the top or middle, next to the section it illustrates (the announcement video under the lede, the reaction thread beside the analysis). Do NOT park embeds in a cluster at the bottom of the article; an embed stranded after the conclusion reads like an afterthought. If you have more than one, spread them through the post.
+- The VERIFIED MEDIA palette often includes embeds we pulled straight from the source article — if one is listed, INCLUDE it (inline, per above) unless it's truly irrelevant.
+- When the palette has none, search for the real post: the OFFICIAL account (the park, Universal, Disney, the resort) or relevant creators for an announcement/video, and — especially on heavier or divisive stories (a price hike, a closure, a policy or perk change, a cut, a real controversy) — a relevant Reddit thread (e.g. r/WaltDisneyWorld, r/UniversalOrlando, r/DisneyWorld, r/wdw) where real guests are reacting. A Reddit thread surfaces the critical, on-the-ground opinion the official line and upbeat fan blogs won't, and a weightier post is more honest for it. Prefer the official announcement on routine news; reach for Reddit when the story has a genuine downside or debate — never to manufacture one onto good news.
+- Truth gate: embed ONLY a post from the palette or one you actually found in a search result — never invent or guess a URL. Every embed is verified to exist before publish and dropped if it doesn't, so a guessed link just vanishes and leaves the post under the 1-embed floor.
+
 SUBSTANCE:
 - Add value the source didn't. Use Google Search to add verifiable context the feed snippet lacked — official confirmations, dates, prior history, related projects, pricing — and to find a primary source.
 - QUOTES: if Search surfaces a REAL, verifiable direct quote (a Disney/Universal exec, an Imagineer, an official press release), include ONE as a Markdown blockquote with attribution: "> ...quote...\\n>\\n> — Name, title". Never invent or paraphrase a quote into quotation marks. No real quote found = no quote. Don't force it.
@@ -107,11 +114,6 @@ IMAGES (inline, in the body) — a rich post is a media-rich post:
 - You will be given a "VERIFIED MEDIA" palette: real image URLs we already pulled from the source article and confirmed load. PREFER these — they are guaranteed to work and are already correctly attributed. Use as many as fit the story.
 - You may ALSO add images via Google Search, but ONLY a URL you actually found in a search result — NEVER guess, pattern-match, or fabricate an image path. Every image URL is fetched before publish and silently dropped if it 404s, so a guessed link just vanishes and can leave the post under the 2-image floor.
 - Don't decorate for the sake of it: an image must show the actual thing the post is about.
-
-EMBEDS (social posts / video) — REQUIRED: every post MUST carry AT LEAST ONE embed:
-- A real embedded post (TikTok, YouTube, Instagram, X, or a Reddit thread) is one of the biggest things that makes a post feel rich and credible — include at least one in EVERY post (more is fine, spread through the body). The VERIFIED MEDIA palette often includes embeds we pulled straight from the source article — if one is listed, INCLUDE it (put its bare URL on its OWN line, nothing else) unless it's truly irrelevant. We turn it into a clean embedded player.
-- When the palette has none, search for the real post: the OFFICIAL account (the park, Universal, Disney, the resort) or relevant creators for an announcement/video, and — especially on heavier or divisive stories (a price hike, a closure, a policy or perk change, a cut, a real controversy) — a relevant Reddit thread (e.g. r/WaltDisneyWorld, r/UniversalOrlando, r/DisneyWorld, r/wdw) where real guests are reacting. A Reddit thread surfaces the critical, on-the-ground opinion the official line and upbeat fan blogs won't, and a weightier post is more honest for it. Prefer the official announcement on routine news; reach for Reddit when the story has a genuine downside or debate — never to manufacture one onto good news.
-- Truth gate still applies: embed ONLY a post from the palette or one you actually found in a search result — never invent or guess a URL. Every embed is verified to exist before publish and dropped if it doesn't, so a guessed link just vanishes and leaves the post under the 1-embed floor.
 
 TRUTH ONLY. Every claim, quote, date, number, image, and embed must trace to a real source. If you can't verify it, leave it out. Never invent attendance figures, prices, or quotes.
 
@@ -724,7 +726,8 @@ backlinks (only to URLs you actually found — dead ones get dropped), a verifia
 quote if one exists, AT LEAST ${MIN_INLINE_IMAGES} relevant inline images spread
 through the body (Markdown, with an italic "*caption — Photo: [Source](url)*"
 line under each — prefer the VERIFIED MEDIA above), and AT LEAST ${MIN_EMBEDS} embedded social post on its own
-line (prefer the verified embed above; for a heavier/divisive story a relevant
+line placed INLINE near the top or middle where it's relevant — NOT parked at the
+end (prefer the verified embed above; for a heavier/divisive story a relevant
 Reddit thread works great). When a recent post above is
 genuinely related, link it inline using its EXACT /blog/<slug> path from that list
 (a wrong slug is dropped). Reference a park by its ParkFi slug only from this list
@@ -735,7 +738,7 @@ Respond with ONLY a JSON object (no code fence), shape:
   "skip": false,
   "title": "compelling, specific, OPTIMISTIC, <70 chars — lead with the exciting thing, not a hedge, question, or warning",
   "dek": "one-sentence reader summary / meta description, <160 chars",
-  "bodyMd": "the post in Markdown (900–1300 words) — ## subheads ok, NO H1, AT LEAST 2 inline ![alt](url) images spread through the body each followed by an italic *caption — Photo: ...* line, a > blockquote for any real quote, and AT LEAST ${MIN_EMBEDS} embedded social post (TikTok/YouTube/Instagram/X/Reddit) as a bare URL on its own line",
+  "bodyMd": "the post in Markdown (900–1300 words) — ## subheads ok, NO H1, AT LEAST 2 inline ![alt](url) images spread through the body each followed by an italic *caption — Photo: ...* line, a > blockquote for any real quote, and AT LEAST ${MIN_EMBEDS} embedded social post (TikTok/YouTube/Instagram/X/Reddit) as a bare URL on its own line, placed inline near the top/middle, NOT at the end",
   "aiSummary": "dense 1-2 sentence FACTUAL summary for our internal dedup index",
   "tags": ["2-4 short lowercase tags"],
   "parkSlugs": ["relevant slugs from the list, or empty"],
