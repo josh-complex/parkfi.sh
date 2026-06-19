@@ -174,9 +174,15 @@ export function embedHtml(e: SocialEmbed): string {
       // Reddit's iframe embed is served from redditmedia.com off the post's own
       // path (the `id` alone isn't enough — it needs r/sub/comments/id/slug).
       const path = new URL(e.url).pathname.replace(/\/+$/, "");
+      // Fixed height by necessity: the redditmedia embed never postMessages its
+      // content height (its only postMessage is service-worker registration), and
+      // it's cross-origin so we can't measure it. 420px is a compromise — it
+      // trims the dead space a short text post used to leave under the old 520px
+      // while still covering the common card. Posts with large media can clip;
+      // there's no single right value without height reporting from Reddit.
       return frame(
         `https://www.redditmedia.com${path}/?ref_source=embed&ref=share&embed=true&theme=dark`,
-        "max-width:640px;height:520px",
+        "max-width:640px;height:420px",
         "Reddit post",
       );
     }
