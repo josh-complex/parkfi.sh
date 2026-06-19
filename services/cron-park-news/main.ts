@@ -103,7 +103,7 @@ SUBSTANCE:
 - Tie it to what ParkFi readers care about: crowds, wait times, Lightning Lane, dining, trip timing — only where it's honestly relevant. Skip the tie-in if it's a stretch.
 
 IMAGES (inline, in the body) — a rich post is a media-rich post:
-- A post MUST carry AT LEAST 2 relevant images INSIDE the body (3–4 is better for a meatier story), using Markdown: ![descriptive alt](https://image-url), spread through the post (next to the section each one illustrates), not stacked at the top. Right after each image add an italic credit line: *Photo: Source Name* (link the source name to its URL).
+- A post MUST carry AT LEAST 2 relevant images INSIDE the body (3–4 is better for a meatier story), using Markdown: ![descriptive alt](https://image-url), spread through the post (next to the section each one illustrates), not stacked at the top. Right after each image add ONE italic caption line that pairs a short description with the credit: *Short caption — Photo: Source Name* (link the source name to its URL). The VERIFIED MEDIA palette gives each image's caption as its alt — reuse that as the short description. If you have no real caption, just write *Photo: Source Name*.
 - You will be given a "VERIFIED MEDIA" palette: real image URLs we already pulled from the source article and confirmed load. PREFER these — they are guaranteed to work and are already correctly attributed. Use as many as fit the story.
 - You may ALSO add images via Google Search, but ONLY a URL you actually found in a search result — NEVER guess, pattern-match, or fabricate an image path. Every image URL is fetched before publish and silently dropped if it 404s, so a guessed link just vanishes and can leave the post under the 2-image floor.
 - Don't decorate for the sake of it: an image must show the actual thing the post is about.
@@ -496,14 +496,19 @@ function ensureBodyMedia(
       .map((l) => parseSocialUrl(l.trim())?.url)
       .filter((u): u is string => !!u),
   );
-  const credit = `*Photo: [${source}](${sourceUrl})*`;
+  const credit = `Photo: [${source}](${sourceUrl})`;
   let out = md;
   let added = 0;
   let need = MIN_INLINE_IMAGES - have.images;
   for (const img of media.images) {
     if (need <= 0) break;
     if (usedImg.has(img.url)) continue;
-    out += `\n\n![${img.alt || source}](${img.url})\n${credit}`;
+    // Lead the caption with the source's own caption (the harvested alt) when
+    // it's more than a bare repeat of the source name, then the credit.
+    const desc =
+      img.alt && img.alt.trim().toLowerCase() !== source.toLowerCase() ? img.alt.trim() : "";
+    const caption = desc ? `*${desc} — ${credit}*` : `*${credit}*`;
+    out += `\n\n![${img.alt || source}](${img.url})\n${caption}`;
     usedImg.add(img.url);
     need--;
     added++;
@@ -692,7 +697,7 @@ function buildPrompt(
     media.embeds.length === 0
       ? "(none found in the source — you MUST find one: an official/creator post, or a Reddit thread for heavier topics)"
       : media.embeds.map((e) => `- ${e.url}`).join("\n");
-  const mediaBlock = `VERIFIED MEDIA from the source article — real, already confirmed to load. Prefer these (credit them as "*Photo: [${item.source}](${item.url})*"):
+  const mediaBlock = `VERIFIED MEDIA from the source article — real, already confirmed to load. Prefer these (caption them as "*<the image's alt caption> — Photo: [${item.source}](${item.url})*", or just "*Photo: [${item.source}](${item.url})*" when an image has no alt):
 Images (use at least ${MIN_INLINE_IMAGES}, spread through the body):
 ${imgPalette}
 Embeds (REQUIRED — at least ${MIN_EMBEDS} per post; put a bare URL on its own line; include any listed, else search for a real one — a Reddit thread is great for heavier topics):
@@ -717,8 +722,8 @@ Otherwise research it (per your instructions) and write the post (900–1300 wor
 real voice, an optimistic headline that leads with the exciting thing, inline
 backlinks (only to URLs you actually found — dead ones get dropped), a verifiable
 quote if one exists, AT LEAST ${MIN_INLINE_IMAGES} relevant inline images spread
-through the body (Markdown, with an italic credit line under each — prefer the
-VERIFIED MEDIA above), and AT LEAST ${MIN_EMBEDS} embedded social post on its own
+through the body (Markdown, with an italic "*caption — Photo: [Source](url)*"
+line under each — prefer the VERIFIED MEDIA above), and AT LEAST ${MIN_EMBEDS} embedded social post on its own
 line (prefer the verified embed above; for a heavier/divisive story a relevant
 Reddit thread works great). When a recent post above is
 genuinely related, link it inline using its EXACT /blog/<slug> path from that list
@@ -730,7 +735,7 @@ Respond with ONLY a JSON object (no code fence), shape:
   "skip": false,
   "title": "compelling, specific, OPTIMISTIC, <70 chars — lead with the exciting thing, not a hedge, question, or warning",
   "dek": "one-sentence reader summary / meta description, <160 chars",
-  "bodyMd": "the post in Markdown (900–1300 words) — ## subheads ok, NO H1, AT LEAST 2 inline ![alt](url) images spread through the body each followed by an italic *Photo: ...* credit, a > blockquote for any real quote, and AT LEAST ${MIN_EMBEDS} embedded social post (TikTok/YouTube/Instagram/X/Reddit) as a bare URL on its own line",
+  "bodyMd": "the post in Markdown (900–1300 words) — ## subheads ok, NO H1, AT LEAST 2 inline ![alt](url) images spread through the body each followed by an italic *caption — Photo: ...* line, a > blockquote for any real quote, and AT LEAST ${MIN_EMBEDS} embedded social post (TikTok/YouTube/Instagram/X/Reddit) as a bare URL on its own line",
   "aiSummary": "dense 1-2 sentence FACTUAL summary for our internal dedup index",
   "tags": ["2-4 short lowercase tags"],
   "parkSlugs": ["relevant slugs from the list, or empty"],
