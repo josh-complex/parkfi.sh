@@ -2,13 +2,16 @@ import { createFileRoute } from "@tanstack/react-router";
 import { sql } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
-import { renderOgCard, type OgChip } from "#/server/og/card.tsx";
+import { renderOgCard, type OgBadge, type OgChip } from "#/server/og/card.tsx";
 
 interface VenueStats {
   name: string;
   parkResort: string | null;
   cuisine: string | null;
   priceRange: string | null;
+  imageUrl: string | null;
+  characterDining: boolean;
+  fineDining: boolean;
   itemCount: number;
 }
 
@@ -19,9 +22,13 @@ async function loadStats(facilityId: string): Promise<VenueStats | null> {
       park_resort: string | null;
       cuisine: string | null;
       price_range: string | null;
+      image_url: string | null;
+      character_dining: boolean;
+      fine_dining: boolean;
       item_count: number | null;
     }>(sql`
-      SELECT r.name, r.park_resort, r.cuisine, r.price_range, m.item_count
+      SELECT r.name, r.park_resort, r.cuisine, r.price_range, r.image_url,
+             r.character_dining, r.fine_dining, m.item_count
       FROM restaurant_dim r
       LEFT JOIN dining_menu_snapshot m ON m.facility_id = r.facility_id
       WHERE r.facility_id = ${facilityId} AND r.active = true
@@ -34,6 +41,9 @@ async function loadStats(facilityId: string): Promise<VenueStats | null> {
       parkResort: row.park_resort,
       cuisine: row.cuisine,
       priceRange: row.price_range,
+      imageUrl: row.image_url,
+      characterDining: row.character_dining,
+      fineDining: row.fine_dining,
       itemCount: Number(row.item_count ?? 0),
     };
   } catch {
@@ -47,12 +57,17 @@ async function renderPng(facilityId: string): Promise<Buffer> {
   if (stats?.priceRange) chips.push({ value: stats.priceRange, label: "Price" });
   if (stats && stats.itemCount > 0)
     chips.push({ value: String(stats.itemCount), label: "Menu items" });
+  let badge: OgBadge | null = null;
+  if (stats?.characterDining) badge = { label: "Character Dining", tone: "neutral" };
+  else if (stats?.fineDining) badge = { label: "Fine Dining", tone: "neutral" };
   return renderOgCard({
     title: stats?.name ?? "Dining",
     subtitle: stats
       ? [stats.cuisine, stats.parkResort].filter(Boolean).join(" · ") || "Menus & reservations"
       : "Menus & reservations",
     chips,
+    badge,
+    imageUrl: stats?.imageUrl,
   });
 }
 

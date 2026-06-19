@@ -13,9 +13,10 @@ export const Route = createFileRoute("/resort/$slug")({
   head: ({ params }) => {
     const resort = resortBySlug(params.slug);
     const name = resort?.name ?? "Disney Resort";
+    const inArea = resort?.area ? ` in the ${resort.area}` : "";
     return seo({
       title: `${name} — Availability & Rates — ParkFi`,
-      description: `Live nightly availability and rates for ${name} at Walt Disney World. Track openings and set price alerts on ParkFi.`,
+      description: `Live nightly availability and rates for ${name}${inArea} at Walt Disney World. Track openings and set price alerts on ParkFi.`,
       path: `/resort/${params.slug}`,
       image: `/og/resort/${params.slug}/card.png`,
       imageWidth: 1200,

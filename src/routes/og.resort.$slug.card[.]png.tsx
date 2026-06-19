@@ -21,6 +21,7 @@ async function renderPng(slug: string): Promise<Buffer> {
     title: resort?.name ?? titleizeSlug(slug),
     subtitle: resort?.area ?? "Walt Disney World Resort",
     chips,
+    imageUrl: resort?.image,
   });
 }
 

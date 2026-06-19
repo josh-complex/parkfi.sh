@@ -23,13 +23,20 @@ export const Route = createFileRoute("/dining_/$facilityId")({
     );
     // Today's operating hours back the SSR'd open-now chip (indexable, no flash).
     void context.queryClient.prefetchQuery(context.trpc.dining.hours.queryOptions({}));
-    return { name: venue?.name ?? null, cuisine: venue?.cuisine ?? null };
+    return {
+      name: venue?.name ?? null,
+      cuisine: venue?.cuisine ?? null,
+      parkResort: venue?.parkResort ?? null,
+    };
   },
   head: ({ params, loaderData }) => {
     const name = loaderData?.name ?? "Restaurant";
+    // Anchor the copy to the venue's actual location instead of the generic
+    // "Walt Disney World and Universal Orlando".
+    const at = loaderData?.parkResort ? ` at ${loaderData.parkResort}` : "";
     return seo({
       title: `${name} — Menu & Reservations — ParkFi`,
-      description: `Full menu, pricing, and live reservation availability for ${name} at Walt Disney World and Universal Orlando on ParkFi.`,
+      description: `Full menu, pricing, and live reservation availability for ${name}${at} on ParkFi.`,
       path: `/dining/${params.facilityId}`,
       image: `/og/dining/${params.facilityId}/card.png`,
       imageWidth: 1200,
