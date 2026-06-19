@@ -15,6 +15,7 @@ import {
 import { NotificationPrompt } from "#/components/notifications/notification-prompt.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
+import { formatTimeInZone } from "#/lib/format-time.ts";
 import { cn } from "#/lib/utils.ts";
 
 /** Muted placeholder for empty Stat values — reads as intentional, not broken. */
@@ -22,8 +23,12 @@ function NoData({ children = "No data yet" }: { children?: React.ReactNode }) {
   return <span className="text-base font-normal text-muted-foreground">{children}</span>;
 }
 
+// Pin to the parks' zone (all Orlando → America/New_York, the helper's default).
+// A bare `toLocaleTimeString` reads UTC on the server and the viewer's zone in
+// the browser, so the two disagree and trip a hydration mismatch that crashes
+// the page in production.
 function formatOpensAt(iso: string): string {
-  return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  return formatTimeInZone(iso, null);
 }
 
 function Stat({
