@@ -120,17 +120,29 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
               the 3D shelf border carries the depth, a box-shadow under it would
               double up and read as a floating panel. */}
           <MapSlot className="border-3d btn-3d-outline relative isolate h-[320px] overflow-hidden rounded-4xl border-t-3 bg-card lg:h-auto lg:min-h-[460px] dark:border-border" />
-          <React.Suspense
-            fallback={
-              <Skeleton className="h-[320px] w-full rounded-2xl lg:h-auto lg:min-h-[460px]" />
-            }
-          >
-            <ParkWaitChart
-              parkSlug={activeSlug ?? null}
-              focusedId={selected?.id ?? null}
-              operatorSlug={operatorSlug}
-            />
-          </React.Suspense>
+          {/* The chart is a `React.lazy` boundary that DOES server-render (React
+              ships the resolved subtree), but its chunk isn't loaded yet when the
+              client hydrates — so the client falls back to this skeleton, the
+              server's chart markup is torn out, and the resulting `removeChild`
+              throw aborts hydration of the whole page. Render the skeleton on the
+              server AND the first client render (gate on `hydrated`); the lazy
+              chart then mounts cleanly after hydration. It isn't crawler content
+              — the same numbers ship in the SSR'd board table below. */}
+          {hydrated ? (
+            <React.Suspense
+              fallback={
+                <Skeleton className="h-[320px] w-full rounded-2xl lg:h-auto lg:min-h-[460px]" />
+              }
+            >
+              <ParkWaitChart
+                parkSlug={activeSlug ?? null}
+                focusedId={selected?.id ?? null}
+                operatorSlug={operatorSlug}
+              />
+            </React.Suspense>
+          ) : (
+            <Skeleton className="h-[320px] w-full rounded-2xl lg:h-auto lg:min-h-[460px]" />
+          )}
         </div>
       </div>
 
@@ -147,9 +159,15 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
       </div>
 
       <div className="px-4 lg:px-6">
-        <React.Suspense fallback={<Skeleton className="h-[640px] w-full rounded-2xl" />}>
-          <ParkAnalytics parkSlug={activeSlug ?? null} />
-        </React.Suspense>
+        {/* Same hazard as the chart above: a server-rendered `React.lazy`
+            boundary whose chunk isn't ready at hydration. Keep it client-only. */}
+        {hydrated ? (
+          <React.Suspense fallback={<Skeleton className="h-[640px] w-full rounded-2xl" />}>
+            <ParkAnalytics parkSlug={activeSlug ?? null} />
+          </React.Suspense>
+        ) : (
+          <Skeleton className="h-[640px] w-full rounded-2xl" />
+        )}
       </div>
     </div>
   );
