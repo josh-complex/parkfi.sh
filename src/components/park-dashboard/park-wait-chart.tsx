@@ -332,11 +332,18 @@ export function ParkWaitChart({
   const allEnabled = rides.length > 0 && rides.every((r) => enabled.has(r.id));
   const toggleAll = () => setEnabled(allEnabled ? new Set() : new Set(rides.map((r) => r.id)));
 
+  // Pin axis/tooltip formatting to the park's timezone. This chart is rendered
+  // during SSR, so a bare `toLocaleTimeString` would read UTC on the server and
+  // the viewer's zone in the browser — the two disagree and trip a hydration
+  // mismatch (#418) that crashes the page in production. `tz` comes from the
+  // same query payload on both sides, so server and client format identically.
+  const tz = historyQ.data?.timezone || "America/New_York";
+
   const formatTick = (value: string) => {
     const date = new Date(value);
     return hours <= 24
-      ? date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
-      : date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      ? date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: tz })
+      : date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: tz });
   };
 
   const labelFormatter = (value: unknown) =>
@@ -345,6 +352,7 @@ export function ParkWaitChart({
       day: "numeric",
       hour: "numeric",
       minute: hours <= 72 ? "2-digit" : undefined,
+      timeZone: tz,
     });
 
   const valueFormatter = (v: number) =>

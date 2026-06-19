@@ -823,7 +823,10 @@ export const parksRouter = {
         : isPrice
           ? sql`(avg(q.price_cents) / 100.0)`
           : sql`avg(q.wait_min)::int`;
-      const [result, spine] = await Promise.all([
+      const [meta, result, spine] = await Promise.all([
+        db.execute<{ timezone: string }>(
+          sql`SELECT timezone FROM parks WHERE slug = ${input.parkSlug} LIMIT 1`,
+        ),
         db.execute<{
           attraction_id: string;
           name: string;
@@ -919,7 +922,7 @@ export const parksRouter = {
       const points = [...buckets.values()].sort((a, b) =>
         String(a.bucket).localeCompare(String(b.bucket)),
       );
-      return { rides, points };
+      return { rides, points, timezone: meta.rows[0]?.timezone ?? "UTC" };
     }),
 
   /**

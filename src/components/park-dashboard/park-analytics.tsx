@@ -82,13 +82,19 @@ function AnalyticsCard({
 // ───────────────────────── 2. Average wait trend (area) ──────────────────────
 function ActivityChart({
   data,
+  timeZone,
 }: {
   data: Array<{ bucket: string; rides: number; avgWait: number | null }>;
+  timeZone: string;
 }) {
   const config: ChartConfig = {
     avgWait: { label: "Avg wait", color: "var(--primary)" },
   };
-  const fmtTick = (v: string) => new Date(v).toLocaleDateString("en-US", { weekday: "short" });
+  // Pin to the park timezone — this axis renders during SSR, so a bare
+  // `toLocaleDateString` would pick UTC on the server and the viewer's zone in
+  // the browser and trip a hydration mismatch.
+  const fmtTick = (v: string) =>
+    new Date(v).toLocaleDateString("en-US", { weekday: "short", timeZone });
   const hasData = data.some((d) => d.avgWait != null);
   if (!hasData) return <ChartEmpty label="No recent wait history yet." />;
   return (
@@ -130,6 +136,7 @@ function ActivityChart({
                       month: "short",
                       day: "numeric",
                       hour: "numeric",
+                      timeZone,
                     })
                   : "";
               }}
@@ -538,7 +545,10 @@ export function ParkAnalytics({ parkSlug }: { parkSlug: string | null }) {
           title="Average wait trend"
           description="Whole-park hourly average standby · 7 days"
         >
-          <ActivityChart data={q.data?.activity ?? []} />
+          <ActivityChart
+            data={q.data?.activity ?? []}
+            timeZone={q.data?.timezone ?? "America/New_York"}
+          />
         </AnalyticsCard>
         <AnalyticsCard title="Average wait by land" description="Mean standby per area · 7 days">
           <LandChart data={q.data?.byLand ?? []} />
