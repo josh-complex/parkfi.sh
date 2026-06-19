@@ -80,7 +80,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 // window.__HYDR__ for tooling. Remove this and its <script> once diagnosed.
 const HYDRATION_PROBE = `(function(){try{
   var snap=[];var w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);var n;
-  while(n=w.nextNode()){var t=n.nodeValue;if(t&&t.trim())snap.push([n,t,(n.parentElement&&(n.parentElement.tagName+'.'+(n.parentElement.className||'').slice(0,60)))||'']);}
+  while(n=w.nextNode()){var t=n.nodeValue;if(t&&t.trim()){var pe=n.parentElement;snap.push([n,t,pe?(pe.tagName+'.'+String(pe.getAttribute('class')||'').slice(0,60)):'']);}}
   var errs=[];var ce=console.error;console.error=function(){try{errs.push(Array.from(arguments).map(function(a){return a&&a.message||String(a)}).join(' | '))}catch(e){}return ce.apply(console,arguments)};
   setTimeout(function(){
     var removed=[],changed=[];
