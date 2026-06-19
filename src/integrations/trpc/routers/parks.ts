@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "#/db/index.ts";
+import { QueueState, QueueType } from "#/server/parks/codes.ts";
 import { publicProcedure } from "../init.ts";
 
 import type { GeoPolygon } from "#/db/schema.ts";
@@ -24,6 +25,16 @@ const QUEUE_STATE_CODE: Record<number, string> = {
 
 const code = (map: Record<number, string>, v: number | null) =>
   v == null ? null : (map[v] ?? null);
+
+/**
+ * Schedule rows that mean the park is actually operating and posting real waits:
+ * regular hours, extended/early-entry hours, and hard-ticket events all run rides
+ * and post live queues. A timestamp inside *none* of these windows is a genuine
+ * closure — which is how the overnight feed that keeps re-posting waits gets
+ * correctly treated as shut. Used by every park-open / closed-flag derivation
+ * below (`board`, `overview`, `parkHistory`) so they all agree on "open".
+ */
+const OPEN_SCHEDULE_TYPES = sql`('OPERATING', 'EXTRA_HOURS', 'TICKETED_EVENT')`;
 
 export const parksRouter = {
   /** All active parks with operator/resort context. */
@@ -183,8 +194,28 @@ export const parksRouter = {
       meta_land: string | null;
       meta_height_requirement: string | null;
       meta_tags: Array<string> | null;
+      is_open: boolean | null;
+      has_schedule: boolean;
     }>(sql`
         WITH park AS (SELECT id FROM parks WHERE slug = ${input.parkSlug}),
+        -- Latest daily snapshot's view of this park's operating windows, reused
+        -- from the overview query's schedule gating so the per-park board agrees
+        -- with the cross-park map: the upstream feed keeps rides marked OPERATING
+        -- (and re-posts waits) overnight, so a calendar gate is the only honest
+        -- way to know the park is actually shut.
+        sched AS (
+          SELECT DISTINCT ON (service_date, opening_time) opening_time, closing_time
+          FROM park_schedule
+          WHERE park_id = (SELECT id FROM park)
+            AND type IN ${OPEN_SCHEDULE_TYPES}
+            AND closing_time IS NOT NULL
+          ORDER BY service_date, opening_time, snapshot_date DESC
+        ),
+        park_open AS (
+          SELECT bool_or(opening_time <= now() AND now() < closing_time) AS is_open,
+                 count(*) > 0 AS has_schedule
+          FROM sched
+        ),
         latest_status AS (
           SELECT DISTINCT ON (s.attraction_id) s.attraction_id, s.status
           FROM attraction_status_obs s
@@ -241,7 +272,9 @@ export const parksRouter = {
                m.detail_url AS meta_detail_url,
                m.land AS meta_land,
                m.height_requirement AS meta_height_requirement,
-               m.tags AS meta_tags
+               m.tags AS meta_tags,
+               (SELECT is_open FROM park_open) AS is_open,
+               (SELECT has_schedule FROM park_open) AS has_schedule
         FROM attractions a
         LEFT JOIN latest_status ls ON ls.attraction_id = a.id
         LEFT JOIN latest_q sb ON sb.attraction_id = a.id AND sb.queue_type = 1
@@ -253,23 +286,34 @@ export const parksRouter = {
         WHERE a.park_id = (SELECT id FROM park) AND a.active = true
         ORDER BY a.name
       `);
+    // When the operating calendar says the park is closed, suppress live tallies:
+    // the feed leaves rides OPERATING and re-posts waits overnight, so every live
+    // field (status/standby/LL/return time) is reported as closed/empty. No
+    // schedule (has_schedule = false) trusts the live carry-forward as before.
+    // Capability + historical baseline (supportsQueueTypes, histStandbyWait) stay,
+    // since they aren't claims about the park being open right now.
+    const knownClosed = Boolean(result.rows[0]?.has_schedule) && result.rows[0]?.is_open === false;
     return result.rows.map((r) => ({
       id: Number(r.id),
       name: r.name,
       slug: r.slug,
       entityType: r.entity_type,
-      status: code(STATUS_CODE, r.status),
-      standbyWait: r.standby_wait,
+      status: knownClosed ? "CLOSED" : code(STATUS_CODE, r.status),
+      standbyWait: knownClosed ? null : r.standby_wait,
       observedAt: r.observed_at,
-      lightningLane: {
-        state: code(QUEUE_STATE_CODE, r.ll_state),
-        priceCents: r.ll_price_cents,
-        currency: r.ll_currency?.trim() ?? null,
-        returnStart: r.ll_return_start,
-        returnEnd: r.ll_return_end,
-      },
-      returnTimeState: code(QUEUE_STATE_CODE, r.return_state),
-      returnTimeWindow: { start: r.return_start ?? null, end: r.return_end ?? null },
+      lightningLane: knownClosed
+        ? { state: null, priceCents: null, currency: null, returnStart: null, returnEnd: null }
+        : {
+            state: code(QUEUE_STATE_CODE, r.ll_state),
+            priceCents: r.ll_price_cents,
+            currency: r.ll_currency?.trim() ?? null,
+            returnStart: r.ll_return_start,
+            returnEnd: r.ll_return_end,
+          },
+      returnTimeState: knownClosed ? null : code(QUEUE_STATE_CODE, r.return_state),
+      returnTimeWindow: knownClosed
+        ? { start: null, end: null }
+        : { start: r.return_start ?? null, end: r.return_end ?? null },
       supportsQueueTypes: (r.support_types ?? []).map(Number),
       histStandbyWait: r.hist_standby_wait,
       latitude: r.latitude,
@@ -537,7 +581,7 @@ export const parksRouter = {
         SELECT DISTINCT ON (park_id, service_date, opening_time)
                park_id, opening_time, closing_time
         FROM park_schedule
-        WHERE type = 'OPERATING' AND closing_time IS NOT NULL
+        WHERE type IN ${OPEN_SCHEDULE_TYPES} AND closing_time IS NOT NULL
         ORDER BY park_id, service_date, opening_time, snapshot_date DESC
       ),
       -- Per-park current open/closed state from the operating calendar. Parks
@@ -735,6 +779,11 @@ export const parksRouter = {
       z.object({
         parkSlug: z.string(),
         queueType: z.number().int().min(1).max(6).default(1),
+        // `wait` → avg standby/single-rider minutes; `price` → avg LL Single
+        // dollars; `availability` → whole-park Lightning Lane availability as a
+        // 0–100% line (AVAILABLE=100, LIMITED=50, SOLD_OUT/PAUSED=0), aggregated
+        // across LL Multi + Single, ignoring `queueType`.
+        metric: z.enum(["wait", "price", "availability"]).default("wait"),
         hours: z
           .number()
           .int()
@@ -754,7 +803,26 @@ export const parksRouter = {
               : input.hours <= 24 * 30
                 ? "6 hours"
                 : "1 day";
-      const isPrice = input.queueType === 4;
+      const isPrice = input.metric === "price";
+      const isAvailability = input.metric === "availability";
+      // Availability spans both Lightning Lane products (Multi = RETURN_TIME,
+      // Single = PAID_RETURN_TIME); wait/price key off the single requested type.
+      const queueFilter = isAvailability
+        ? sql`q.queue_type IN (${QueueType.RETURN_TIME}, ${QueueType.PAID_RETURN_TIME})`
+        : sql`q.queue_type = ${input.queueType}`;
+      // Map the categorical availability state to a percentage; NOT_OFFERED / no
+      // state drop to NULL so avg() ignores them (an all-unoffered bucket → null
+      // point → the client bridges it as downtime).
+      const valueExpr = isAvailability
+        ? sql`avg(CASE q.state
+                    WHEN ${QueueState.AVAILABLE} THEN 100
+                    WHEN ${QueueState.LIMITED} THEN 50
+                    WHEN ${QueueState.SOLD_OUT} THEN 0
+                    WHEN ${QueueState.PAUSED} THEN 0
+                    ELSE NULL END)::int`
+        : isPrice
+          ? sql`(avg(q.price_cents) / 100.0)`
+          : sql`avg(q.wait_min)::int`;
       const [result, spine] = await Promise.all([
         db.execute<{
           attraction_id: string;
@@ -765,12 +833,15 @@ export const parksRouter = {
           SELECT q.attraction_id,
                  a.name,
                  time_bucket(${bucket}::interval, q.observed_at) AS bucket,
-                 ${isPrice ? sql`(avg(q.price_cents) / 100.0)` : sql`avg(q.wait_min)::int`} AS value
+                 ${valueExpr} AS value
           FROM queue_obs q
           JOIN attractions a ON a.id = q.attraction_id
           WHERE a.park_id = (SELECT id FROM parks WHERE slug = ${input.parkSlug})
             AND a.active = true
-            AND q.queue_type = ${input.queueType}
+            -- Skip un-enriched "ghost" duplicates (null category) so a ride like
+            -- Soarin' doesn't show up as two identical series.
+            AND a.category IS NOT NULL
+            AND ${queueFilter}
             AND q.observed_at >= now() - (${input.hours} * INTERVAL '1 hour')
           GROUP BY q.attraction_id, a.name, bucket
           ORDER BY bucket
@@ -796,7 +867,7 @@ export const parksRouter = {
             SELECT DISTINCT ON (service_date, opening_time) opening_time, closing_time
             FROM park_schedule
             WHERE park_id = (SELECT id FROM park)
-              AND type = 'OPERATING'
+              AND type IN ${OPEN_SCHEDULE_TYPES}
               AND closing_time IS NOT NULL
             ORDER BY service_date, opening_time, snapshot_date DESC
           ),
@@ -850,4 +921,154 @@ export const parksRouter = {
       );
       return { rides, points };
     }),
+
+  /**
+   * Bottom-of-page analytics bundle: several independent rollups over the park's
+   * recent STANDBY `queue_obs`, each shaped for a differently-typed chart on the
+   * park page (area / heatmap / bar / radar / scatter). One procedure, one
+   * round-trip — the sub-queries run in parallel. Hour/date grouping is done in
+   * the park's *local* timezone so "9am" means 9am at the park, not in UTC.
+   */
+  analytics: publicProcedure.input(z.object({ parkSlug: z.string() })).query(async ({ input }) => {
+    const meta = await db.execute<{ id: string; timezone: string }>(sql`
+      SELECT id, timezone FROM parks WHERE slug = ${input.parkSlug}
+    `);
+    const park = meta.rows[0];
+    const empty = {
+      timezone: park?.timezone ?? "UTC",
+      activity: [] as Array<{ bucket: string; rides: number; avgWait: number | null }>,
+      heatmap: [] as Array<{ date: string; hour: number; avgWait: number }>,
+      byLand: [] as Array<{ land: string; avgWait: number; peak: number; rides: number }>,
+      rhythm: [] as Array<{ hour: number; avgWait: number }>,
+      scatter: [] as Array<{
+        id: number;
+        name: string;
+        avgWait: number;
+        volatility: number;
+        peak: number;
+        samples: number;
+      }>,
+      treemap: [] as Array<{ id: number; name: string; total: number; avgWait: number }>,
+    };
+    if (!park) return empty;
+    const pid = Number(park.id);
+    const tz = park.timezone;
+
+    const [activity, heatmap, byLand, rhythm, scatter, treemap] = await Promise.all([
+      // 1) Distinct rides reporting + avg wait per hour over 7 days. The count
+      // falls to zero overnight, so the area doubles as an open/closed rhythm.
+      db.execute<{ bucket: string; rides: number; avg_wait: number | null }>(sql`
+        SELECT time_bucket('1 hour'::interval, q.observed_at) AS bucket,
+               count(DISTINCT q.attraction_id) AS rides,
+               avg(q.wait_min)::int AS avg_wait
+        FROM queue_obs q JOIN attractions a ON a.id = q.attraction_id
+        WHERE a.park_id = ${pid} AND q.queue_type = 1
+          AND q.observed_at >= now() - INTERVAL '7 days'
+        GROUP BY bucket ORDER BY bucket
+      `),
+      // 2) Crowd calendar: avg standby by local date x hour-of-day over 14 days.
+      db.execute<{ d: string; h: number; avg_wait: number }>(sql`
+        SELECT (q.observed_at AT TIME ZONE ${tz})::date::text AS d,
+               extract(hour FROM q.observed_at AT TIME ZONE ${tz})::int AS h,
+               avg(q.wait_min)::int AS avg_wait
+        FROM queue_obs q JOIN attractions a ON a.id = q.attraction_id
+        WHERE a.park_id = ${pid} AND q.queue_type = 1 AND q.wait_min IS NOT NULL
+          AND q.observed_at >= now() - INTERVAL '14 days'
+        GROUP BY d, h ORDER BY d, h
+      `),
+      // 3) Avg + peak standby grouped by land (7 days).
+      db.execute<{ land: string; avg_wait: number; peak: number; rides: number }>(sql`
+        SELECT m.land,
+               avg(q.wait_min)::int AS avg_wait,
+               max(q.wait_min) AS peak,
+               count(DISTINCT a.id) AS rides
+        FROM queue_obs q
+        JOIN attractions a ON a.id = q.attraction_id
+        JOIN attraction_meta m ON m.attraction_id = a.id
+        WHERE a.park_id = ${pid} AND q.queue_type = 1 AND q.wait_min IS NOT NULL
+          AND m.land IS NOT NULL
+          AND q.observed_at >= now() - INTERVAL '7 days'
+        GROUP BY m.land ORDER BY avg_wait DESC
+      `),
+      // 4) Typical daily rhythm: avg standby by local hour-of-day (14 days).
+      db.execute<{ h: number; avg_wait: number }>(sql`
+        SELECT extract(hour FROM q.observed_at AT TIME ZONE ${tz})::int AS h,
+               avg(q.wait_min)::int AS avg_wait
+        FROM queue_obs q JOIN attractions a ON a.id = q.attraction_id
+        WHERE a.park_id = ${pid} AND q.queue_type = 1 AND q.wait_min IS NOT NULL
+          AND q.observed_at >= now() - INTERVAL '14 days'
+        GROUP BY h ORDER BY h
+      `),
+      // 5) Per-ride "busy vs. volatile" (7 days): mean wait vs. the spread of
+      // waits (population stddev), with peak for point sizing.
+      db.execute<{
+        id: string;
+        name: string;
+        avg_wait: number;
+        volatility: number;
+        peak: number;
+        samples: number;
+      }>(sql`
+        SELECT a.id, a.name,
+               avg(q.wait_min)::numeric(10,1) AS avg_wait,
+               coalesce(stddev_pop(q.wait_min), 0)::numeric(10,1) AS volatility,
+               max(q.wait_min) AS peak,
+               count(*) AS samples
+        FROM queue_obs q JOIN attractions a ON a.id = q.attraction_id
+        WHERE a.park_id = ${pid} AND q.queue_type = 1 AND q.wait_min IS NOT NULL
+          AND a.active = true
+          AND q.observed_at >= now() - INTERVAL '7 days'
+        GROUP BY a.id, a.name HAVING count(*) > 5
+        ORDER BY avg_wait DESC
+      `),
+      // 6) Total queue burden per ride (7 days): summed standby minutes, which
+      // sizes a treemap by how much of the park's waiting each ride accounts for.
+      db.execute<{ id: string; name: string; total: number; avg_wait: number }>(sql`
+        SELECT a.id, a.name,
+               sum(q.wait_min)::int AS total,
+               avg(q.wait_min)::int AS avg_wait
+        FROM queue_obs q JOIN attractions a ON a.id = q.attraction_id
+        WHERE a.park_id = ${pid} AND q.queue_type = 1 AND q.wait_min IS NOT NULL
+          AND a.active = true
+          AND q.observed_at >= now() - INTERVAL '7 days'
+        GROUP BY a.id, a.name HAVING sum(q.wait_min) > 0
+        ORDER BY total DESC
+      `),
+    ]);
+
+    return {
+      timezone: tz,
+      activity: activity.rows.map((r) => ({
+        bucket: r.bucket,
+        rides: Number(r.rides),
+        avgWait: r.avg_wait,
+      })),
+      heatmap: heatmap.rows.map((r) => ({
+        date: r.d,
+        hour: Number(r.h),
+        avgWait: Number(r.avg_wait),
+      })),
+      byLand: byLand.rows.map((r) => ({
+        land: r.land,
+        avgWait: Number(r.avg_wait),
+        peak: Number(r.peak),
+        rides: Number(r.rides),
+      })),
+      rhythm: rhythm.rows.map((r) => ({ hour: Number(r.h), avgWait: Number(r.avg_wait) })),
+      scatter: scatter.rows.map((r) => ({
+        id: Number(r.id),
+        name: r.name,
+        avgWait: Number(r.avg_wait),
+        volatility: Number(r.volatility),
+        peak: Number(r.peak),
+        samples: Number(r.samples),
+      })),
+      treemap: treemap.rows.map((r) => ({
+        id: Number(r.id),
+        name: r.name,
+        total: Number(r.total),
+        avgWait: Number(r.avg_wait),
+      })),
+    };
+  }),
 } satisfies TRPCRouterRecord;

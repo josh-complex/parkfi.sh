@@ -6,7 +6,7 @@ import { TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { cn } from "#/lib/utils.ts";
 
-import { paidLineInfo, paidLineProduct } from "./lightning-lane.ts";
+import { isSingleRiderName, paidLineInfo, paidLineProduct } from "./lightning-lane.ts";
 import type { BoardItem } from "./types.ts";
 
 function mean(xs: Array<number>): number {
@@ -64,7 +64,12 @@ export function ParkStatCards({
     );
   }
 
-  const rides = board.filter((b) => b.entityType === "ATTRACTION");
+  // Exclude single-rider rows and un-enriched "ghost" duplicates (null category)
+  // — both duplicate a real ride and would double-count the tallies. (Mirrors the
+  // board table's filtering so the counts match what's listed.)
+  const rides = board.filter(
+    (b) => b.entityType === "ATTRACTION" && b.category != null && !isSingleRiderName(b.name),
+  );
   const operating = rides.filter((b) => b.status === "OPERATING");
   const issues = rides.filter((b) => b.status === "DOWN" || b.status === "REFURBISHMENT");
   const waits = operating

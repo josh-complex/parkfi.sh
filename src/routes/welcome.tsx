@@ -169,6 +169,7 @@ function Hero() {
           aspect="4 / 3"
           label="Hero — ParkFi live dashboard"
           note="App screenshot: live map + wait-time panel"
+          src="/img/marketing/hero.webp"
         />
       </div>
     </section>
@@ -217,6 +218,7 @@ const FEATURES = [
       id: "feature-waits",
       label: "Live wait-times board",
       note: "Ride list with up/down trend chips",
+      src: "/img/marketing/wait-times.webp",
     },
   },
   {
@@ -227,6 +229,7 @@ const FEATURES = [
       id: "feature-ll",
       label: "Lightning Lane tracker",
       note: "Availability timeline for a headliner ride",
+      src: "/img/marketing/lightning.webp",
     },
   },
   {
@@ -237,6 +240,7 @@ const FEATURES = [
       id: "feature-dining",
       label: "Dining finder",
       note: "Restaurant grid with open reservation slots",
+      src: "/img/marketing/eats.webp",
     },
   },
   {
@@ -247,6 +251,7 @@ const FEATURES = [
       id: "feature-stays",
       label: "Resort rate board",
       note: "Resort cards with nightly-rate sparklines",
+      src: "/img/marketing/stays.webp",
     },
   },
   {
@@ -257,23 +262,19 @@ const FEATURES = [
       id: "feature-tickets",
       label: "Ticket-price calendar",
       note: "Month grid color-coded by price",
-    },
-  },
-  {
-    icon: BellRing,
-    title: "Personalized alerts",
-    body: "Set it and forget it. Tell ParkFi what you care about — a wait threshold, a reservation, a rate — and we'll notify you.",
-    img: {
-      id: "feature-alerts",
-      label: "Alerts setup",
-      note: "Alert rule builder + notification toast",
+      src: "/img/marketing/tickets.webp",
     },
   },
   {
     icon: MapPin,
     title: "Live interactive map",
     body: "A real-time map of every park with wait times, ride status, and dining overlaid right where you're standing.",
-    img: { id: "feature-map", label: "Live park map", note: "Map with ride pins and wait badges" },
+    img: {
+      id: "feature-map",
+      label: "Live park map",
+      note: "Map with ride pins and wait badges",
+      src: "/img/marketing/live-map.webp",
+    },
   },
   {
     icon: Newspaper,
@@ -283,6 +284,7 @@ const FEATURES = [
       id: "feature-news",
       label: "Park news feed",
       note: "Blog article cards with hero images",
+      src: "/img/marketing/news.webp",
     },
   },
   {
@@ -293,6 +295,7 @@ const FEATURES = [
       id: "feature-pins",
       label: "Pin collection",
       note: "Grid of trading pins with trade badges",
+      src: "/img/marketing/pins.webp",
     },
   },
 ] as const;
@@ -331,6 +334,7 @@ function FeatureRow({ feature, flip }: { feature: (typeof FEATURES)[number]; fli
         aspect="16 / 10"
         label={feature.img.label}
         note={feature.img.note}
+        src={feature.img.src}
         className={flip ? "lg:order-1" : undefined}
       />
     </div>
@@ -769,23 +773,40 @@ function SectionHeading({
 }
 
 /**
- * Labeled stand-in for marketing imagery. Swap each one for a real asset by
- * replacing this element with an <img src="/img/marketing/{id}.webp" />. The
- * `id` matches the image-prompt list handed off with this page.
+ * Renders a marketing screenshot when `src` is provided, otherwise a labeled
+ * dashed stand-in. Feature rows without a real screenshot yet (Lightning Lane,
+ * daily news) keep the placeholder until an asset is dropped in.
  */
 function ImagePlaceholder({
   id,
   aspect,
   label,
   note,
+  src,
   className,
 }: {
   id: string;
   aspect: string;
   label: string;
   note: string;
+  src?: string | null;
   className?: string;
 }) {
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt={label}
+        loading="lazy"
+        style={{ aspectRatio: aspect }}
+        className={[
+          "w-full rounded-3xl border border-border object-cover shadow-sm",
+          className ?? "",
+        ].join(" ")}
+      />
+    );
+  }
+
   return (
     <div
       data-image-id={id}

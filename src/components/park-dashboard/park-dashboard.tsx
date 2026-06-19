@@ -23,6 +23,13 @@ const ParkWaitChart = lazyWithReload(
   "park-wait-chart",
 );
 
+// The analytics grid is recharts-heavy and lives below the fold, so split it out
+// of the critical park-page chunk and stream it in after the board renders.
+const ParkAnalytics = lazyWithReload(
+  () => import("./park-analytics.tsx").then((m) => ({ default: m.ParkAnalytics })),
+  "park-analytics",
+);
+
 export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
   const trpc = useTRPC();
   const parksQ = useQuery(trpc.parks.list.queryOptions());
@@ -65,7 +72,7 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
             {board ? parks?.find((p) => p.slug === activeSlug)?.name : "Loading park…"}
           </h2>
           <p className="text-sm text-blue-100/90 md:text-muted-foreground">
-            Live wait times, ride status, and Lightning Lane pricing.
+            Live wait times, ride status, and Lightning Lane availability.
             {board &&
               (() => {
                 const latest = board.reduce<string | null>((m, b) => {
@@ -85,6 +92,13 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
 
       <div className="flex flex-col gap-4 px-4 lg:px-6">
         <NotificationPrompt />
+        {/* The at-a-glance stat bar leads the dashboard, above the map + chart. */}
+        <ParkStatCards
+          board={board}
+          loading={boardQ.isLoading || !activeSlug}
+          operatorSlug={operatorSlug}
+          className="rounded-2xl border shadow-md"
+        />
         {/* Map and wait chart share a row at equal width; the board table spans
             the full column underneath them. The map cell is a shared-layout
             slot — the live map morphs in from the overview hero. */}
@@ -109,12 +123,6 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
             />
           </React.Suspense>
         </div>
-        <ParkStatCards
-          board={board}
-          loading={boardQ.isLoading || !activeSlug}
-          operatorSlug={operatorSlug}
-          className="rounded-2xl border shadow-md"
-        />
       </div>
 
       <div className="px-4 lg:px-6">
@@ -126,6 +134,12 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
           onSelect={(item) => setSelected({ id: item.id, name: item.name })}
           operatorSlug={operatorSlug}
         />
+      </div>
+
+      <div className="px-4 lg:px-6">
+        <React.Suspense fallback={<Skeleton className="h-[640px] w-full rounded-2xl" />}>
+          <ParkAnalytics parkSlug={activeSlug ?? null} />
+        </React.Suspense>
       </div>
     </div>
   );

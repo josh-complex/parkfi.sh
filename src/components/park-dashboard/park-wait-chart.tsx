@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
-import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
+import { CartesianGrid, Line, LineChart, ReferenceArea, XAxis, YAxis } from "recharts";
 import { MinusIcon, TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 
 import {
@@ -20,7 +20,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "#/components/ui/chart.tsx";
-import { ConstructionIcon, ConstructionState } from "#/components/ui/anim-icons/construction.tsx";
+import { ConstructionState } from "#/components/ui/anim-icons/construction.tsx";
 import { Empty, EmptyDescription, EmptyTitle } from "#/components/ui/empty.tsx";
 import {
   Select,
@@ -34,16 +34,20 @@ import { ToggleGroup, ToggleGroupItem } from "#/components/ui/toggle-group.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { cn } from "#/lib/utils.ts";
 
-import { isUniversal, paidLineProduct } from "./lightning-lane.ts";
+import { isSingleRiderName, isUniversal, paidLineProduct } from "./lightning-lane.ts";
 import { rideColor } from "./ride-colors.ts";
+
+type Metric = "wait" | "price" | "availability";
 
 function getQueueOptions(operatorSlug?: string | null) {
   const paidLabel = paidLineProduct(operatorSlug);
   return [
-    { value: "1", label: "Standby wait", mode: "wait" as const },
+    { value: "1", label: "Standby wait", mode: "wait" as Metric },
     isUniversal(operatorSlug)
-      ? { value: "3", label: paidLabel, mode: "wait" as const }
-      : { value: "4", label: paidLabel, mode: "price" as const },
+      ? { value: "3", label: paidLabel, mode: "wait" as Metric }
+      : // Disney Lightning Lane reads as whole-park availability (% across LL
+        // Multi + Single), not the à-la-carte LL Single price.
+        { value: "4", label: paidLabel, mode: "availability" as Metric },
   ];
 }
 
@@ -51,6 +55,12 @@ const RANGE_HOURS: Record<string, number> = { "24h": 24, "7d": 168, "30d": 720 }
 
 // Reserved series key for the whole-park average line.
 const AVG_KEY = "__avg";
+// Synthetic series key for the tooltip's "+N more rides" overflow row.
+const MORE_KEY = "__more";
+// Cap how many ride rows the tooltip lists (busiest-first) before collapsing the
+// rest into a single "+N more" line — otherwise enabling the whole roster makes
+// the tooltip overflow the card and swamp the legend below it.
+const MAX_TOOLTIP_RIDES = 7;
 
 /**
  * The ride-series toggle list, rendered below the chart as wrapping chips
@@ -153,12 +163,18 @@ export function ParkWaitChart({
     ...trpc.parks.parkHistory.queryOptions({
       parkSlug: parkSlug ?? "",
       queueType: Number(queueType),
+      metric: mode,
       hours,
     }),
     enabled: !!parkSlug,
   });
 
-  const rides = historyQ.data?.rides ?? [];
+  // Drop "<Ride> Single Rider" series — they're a separate upstream attraction
+  // that duplicates the parent ride's line; the parent already carries it.
+  const rides = React.useMemo(
+    () => (historyQ.data?.rides ?? []).filter((r) => !isSingleRiderName(r.name)),
+    [historyQ.data],
+  );
   const points = historyQ.data?.points ?? [];
 
   // Stable color + ordering by ride id (busiest-first from the server).
@@ -237,38 +253,49 @@ export function ParkWaitChart({
       return { p, open, avg };
     });
 
-    // Bound the baseline to [first, last] live bucket: a gap *inside* the range
-    // is the park being shut overnight (draw 0, tooltip says "Park closed");
-    // gaps before history starts / after it ends stay null so we don't paint a
-    // phantom closed flatline where we simply have no data.
-    let first = -1;
-    let last = -1;
-    rows.forEach((r, i) => {
-      if (r.open) {
-        if (first < 0) first = i;
-        last = i;
-      }
-    });
-
-    return rows.map((r, i) => {
+    return rows.map((r) => {
       // Open bucket: keep raw per-ride values. A missing reading mid-day is ride
       // downtime — left null so the line bridges it (connectNulls), not a break.
       if (r.open) return { ...r.p, status: "open" as const, [AVG_KEY]: r.avg };
-      const inRange = first >= 0 && i >= first && i <= last;
-      // Out-of-range bucket (before history starts / after it ends): stay null so
-      // we don't paint a phantom flatline where we simply have no data.
-      if (!inRange) return { ...r.p, status: "open" as const, [AVG_KEY]: null };
-      // In-range gap: floor every series to 0 so the ride and park-average lines
-      // drop to the baseline together instead of breaking. The operating calendar
-      // (server `closed` flag from park_schedule) decides what that flatline means:
-      // a true overnight closure ("Park closed") vs. the park being open with a
-      // data-collection gap ("Missing data"). Either way we keep the 0 baseline.
-      const zeroed: Record<string, number> = { [AVG_KEY]: 0 };
-      for (const id of ids) zeroed[String(id)] = 0;
-      return { ...r.p, ...zeroed, status: r.p.closed ? ("closed" as const) : ("missing" as const) };
+      // Calendar says closed (server `closed` flag from park_schedule): floor
+      // every series to 0 so the lines sit on the baseline and the tooltip reads
+      // "Park closed". This applies to *any* closed bucket — including the
+      // overnight hours before the first open bucket in view — because the
+      // schedule still tells us the park was shut, so 0 is honest, not a guess.
+      if (r.p.closed) {
+        const zeroed: Record<string, number> = { [AVG_KEY]: 0 };
+        for (const id of ids) zeroed[String(id)] = 0;
+        return { ...r.p, ...zeroed, status: "closed" as const };
+      }
+      // No data *and* no closure signal: a mid-day collection gap, or a stretch
+      // before history began / outside any known schedule window. Leave it null
+      // so connectNulls bridges where it can and we never paint a phantom 0 where
+      // we simply don't know the park was shut.
+      return { ...r.p, status: "open" as const, [AVG_KEY]: null };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [points, ridesKey, mode]);
+
+  // Contiguous runs of "closed" buckets, shaded as bands behind the lines so the
+  // overnight/inter-session closures the calendar marks read at a glance rather
+  // than as an unexplained drop to the 0 baseline.
+  const closedSpans = React.useMemo(() => {
+    const spans: Array<{ x1: string; x2: string }> = [];
+    let start: string | null = null;
+    let prev: string | null = null;
+    for (const d of chartData) {
+      const row = d as { bucket: string; status?: string };
+      if (row.status === "closed") {
+        if (start == null) start = row.bucket;
+        prev = row.bucket;
+      } else if (start != null) {
+        spans.push({ x1: start, x2: prev! });
+        start = null;
+      }
+    }
+    if (start != null) spans.push({ x1: start, x2: prev! });
+    return spans;
+  }, [chartData]);
 
   const chartConfig = React.useMemo<ChartConfig>(() => {
     const cfg: ChartConfig = {
@@ -320,33 +347,63 @@ export function ParkWaitChart({
       minute: hours <= 72 ? "2-digit" : undefined,
     });
 
-  const valueFormatter = (v: number) => (mode === "price" ? `$${v.toFixed(2)}` : `${v} min`);
+  const valueFormatter = (v: number) =>
+    mode === "price" ? `$${v.toFixed(2)}` : mode === "availability" ? `${v}%` : `${v} min`;
 
-  const metricNoun = mode === "price" ? "price" : "standby wait";
+  const metricNoun =
+    mode === "price" ? "price" : mode === "availability" ? "availability" : "standby wait";
   const description = `Whole-park average ${metricNoun}`;
 
   const enabledRides = rides.filter((r) => enabled.has(r.id));
   const hasData = chartData.length > 0 && rides.length > 0;
 
-  const SpringTooltip = (props: React.ComponentProps<typeof ChartTooltipContent>) => (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.95, y: 6 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      transition={{ type: "spring", stiffness: 460, damping: 26, mass: 0.6 }}
-    >
-      <ChartTooltipContent
-        {...props}
-        indicator="dot"
-        labelFormatter={labelFormatter}
-        formatter={(value, name, item) => {
-          const key = String(name);
-          const status = item?.payload?.status as "open" | "closed" | "missing" | undefined;
-          // Flatlined bucket: render one clean line off the park-average series
-          // instead of a 0 for every ride; ride series drop out. Whether it reads
-          // as a closure or a data gap is decided by the operating calendar.
-          if (status === "closed" || status === "missing") {
-            if (key !== AVG_KEY) return null;
+  const SpringTooltip = (props: React.ComponentProps<typeof ChartTooltipContent>) => {
+    const items = props.payload ?? [];
+    const status = (items[0]?.payload as { status?: string } | undefined)?.status;
+    // Closed buckets collapse to the single "Park closed" park-average message, so
+    // only keep that row. Otherwise sort rides busiest-first and cap the list,
+    // folding the overflow into one "+N more rides" row.
+    let trimmed = items;
+    if (status === "closed") {
+      trimmed = items.filter((i) => i.name === AVG_KEY);
+    } else {
+      const avg = items.filter((i) => i.name === AVG_KEY);
+      const rideItems = items
+        .filter((i) => i.name !== AVG_KEY)
+        .sort((a, b) => Number(b.value ?? 0) - Number(a.value ?? 0));
+      const shown = rideItems.slice(0, MAX_TOOLTIP_RIDES);
+      const hidden = rideItems.length - shown.length;
+      trimmed = [...avg, ...shown];
+      if (hidden > 0) {
+        trimmed = [
+          ...trimmed,
+          { name: MORE_KEY, value: hidden, dataKey: MORE_KEY, color: "transparent", payload: {} },
+        ] as typeof items;
+      }
+    }
+    return (
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 6 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ type: "spring", stiffness: 460, damping: 26, mass: 0.6 }}
+      >
+        <ChartTooltipContent
+          {...props}
+          payload={trimmed}
+          indicator="dot"
+          labelFormatter={labelFormatter}
+          formatter={(value, name, item) => {
+            const key = String(name);
+            if (key === MORE_KEY) {
+              return <span className="text-muted-foreground">+{Number(value)} more rides</span>;
+            }
+            const status = item?.payload?.status as "open" | "closed" | undefined;
+            // Closed bucket: render one clean "Park closed" line off the
+            // park-average series instead of a 0 for every ride; ride series drop
+            // out. Open-hours data gaps aren't flatlined — they're bridged — so
+            // they never reach this branch.
             if (status === "closed") {
+              if (key !== AVG_KEY) return null;
               return (
                 <span className="flex items-center gap-1.5 text-muted-foreground">
                   <span className="bg-muted-foreground/40 size-2 shrink-0 rounded-[2px]" />
@@ -354,39 +411,28 @@ export function ParkWaitChart({
                 </span>
               );
             }
-            // Park was open per its schedule but no reading landed here — surface
-            // the gap honestly rather than wrongly claiming the park was closed.
+            if (value == null) return null;
+            const color = key === AVG_KEY ? "var(--primary)" : colorOf(Number(key));
+            const label = chartConfig[key]?.label ?? key;
             return (
-              <span className="flex items-center gap-1.5 text-muted-foreground">
-                <ConstructionIcon
-                  size={14}
-                  className="shrink-0 text-amber-500 dark:text-amber-400"
-                />
-                Missing data
-              </span>
+              <div className="flex w-full items-center justify-between gap-3">
+                <span className="flex items-center gap-1.5 text-muted-foreground">
+                  <span
+                    className="size-2 shrink-0 rounded-[2px]"
+                    style={{ backgroundColor: color }}
+                  />
+                  {label}
+                </span>
+                <span className="font-mono font-medium tabular-nums text-foreground">
+                  {valueFormatter(Number(value))}
+                </span>
+              </div>
             );
-          }
-          if (value == null) return null;
-          const color = key === AVG_KEY ? "var(--primary)" : colorOf(Number(key));
-          const label = chartConfig[key]?.label ?? key;
-          return (
-            <div className="flex w-full items-center justify-between gap-3">
-              <span className="flex items-center gap-1.5 text-muted-foreground">
-                <span
-                  className="size-2 shrink-0 rounded-[2px]"
-                  style={{ backgroundColor: color }}
-                />
-                {label}
-              </span>
-              <span className="font-mono font-medium tabular-nums text-foreground">
-                {valueFormatter(Number(value))}
-              </span>
-            </div>
-          );
-        }}
-      />
-    </motion.div>
-  );
+          }}
+        />
+      </motion.div>
+    );
+  };
 
   return (
     <Card className={cn("@container/card flex flex-col", className)}>
@@ -446,8 +492,9 @@ export function ParkWaitChart({
             title="Charting in progress"
             description={
               <>
-                We&rsquo;re still gathering {mode === "price" ? "pricing" : "wait"} history for this
-                park. Check back soon.
+                We&rsquo;re still gathering{" "}
+                {mode === "price" ? "pricing" : mode === "availability" ? "availability" : "wait"}{" "}
+                history for this park. Check back soon.
               </>
             }
           />
@@ -470,12 +517,17 @@ export function ParkWaitChart({
                   // instead of ceding a gutter to the labels.
                   orientation="right"
                   mirror
+                  // Availability is a 0–100% scale; pin the domain so the line
+                  // reads against a full bar instead of auto-zooming to its range.
+                  domain={mode === "availability" ? [0, 100] : undefined}
                   tickLine={false}
                   axisLine={false}
                   width={24}
                   tickMargin={2}
                   tick={{ fontSize: 11 }}
-                  tickFormatter={(v) => (mode === "price" ? `$${v}` : `${v}`)}
+                  tickFormatter={(v) =>
+                    mode === "price" ? `$${v}` : mode === "availability" ? `${v}%` : `${v}`
+                  }
                 />
                 <ChartTooltip
                   cursor={{ strokeDasharray: "3 3" }}
@@ -483,6 +535,18 @@ export function ParkWaitChart({
                   wrapperStyle={{ transition: "transform 90ms ease" }}
                   content={<SpringTooltip />}
                 />
+                {/* Shade the calendar's closed stretches behind everything. */}
+                {closedSpans.map((s) => (
+                  <ReferenceArea
+                    key={s.x1}
+                    x1={s.x1}
+                    x2={s.x2}
+                    fill="var(--muted-foreground)"
+                    fillOpacity={0.1}
+                    stroke="none"
+                    ifOverflow="hidden"
+                  />
+                ))}
                 {enabledRides.map((r) => {
                   const isFocused = r.id === focusedId;
                   const dim = focusedId != null && !isFocused;

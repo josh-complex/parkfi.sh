@@ -357,12 +357,17 @@ export function ParkBoardTable({
     const points = sparkQ.data?.points ?? [];
     const m = new Map<number, Array<number | null>>();
     for (const ride of sparkQ.data?.rides ?? []) {
-      // Drop the gaps (overnight/closed + intermittent downtime) so the tiny
-      // 24h trend reads as one compact continuous line rather than shattering
-      // into disconnected fragments with a detached last-point dot.
+      // Mirror the main chart: when the calendar says the park is closed, floor
+      // the point to 0 (so the trend dips to the baseline overnight rather than
+      // hiding the closure); otherwise use the reading, or null for a true gap so
+      // the sparkline breaks across it instead of bridging a phantom value.
       m.set(
         ride.id,
-        points.map((p) => p[String(ride.id)]).filter((v): v is number => typeof v === "number"),
+        points.map((p) => {
+          if (p.closed) return 0;
+          const v = p[String(ride.id)];
+          return typeof v === "number" ? v : null;
+        }),
       );
     }
     return m;
@@ -373,23 +378,32 @@ export function ParkBoardTable({
     [board],
   );
 
-  // Universal posts a standalone "<Ride> Single Rider" attraction row alongside
-  // the main ride. Collapse those: hide the row and flag the parent ride as
-  // accepting single riders. (Disney has no such rows, so this is a no-op there.)
+  // Two kinds of junk rows ship in the feed alongside the real attractions:
+  //  1. Standalone "<Ride> Single Rider" rows (Universal broadly; Disney for a
+  //     few, e.g. Remy's Ratatouille / Test Track) — collapse them, flagging the
+  //     parent ride as accepting single riders.
+  //  2. Un-enriched "ghost" duplicates with a null category (a second record for
+  //     a ride or character-meet that never got geo/metadata, e.g. a second
+  //     "Soarin' Across America" or an ATTRACTION twin of a character-meet SHOW).
+  // We drop both; ghosts are detected by category since every real attraction
+  // gets one during enrichment. Single-rider rows are read for the badge first
+  // (they're also null-category), then dropped.
   const { rides, singleRiderIds } = React.useMemo(() => {
-    if (!isUniversal(operatorSlug)) return { rides: allRides, singleRiderIds: new Set<number>() };
     const idByName = new Map<string, number>();
     for (const r of allRides) idByName.set(normalizeRideName(r.name), r.id);
     const singleRiderIds = new Set<number>();
     const rides = allRides.filter((r) => {
-      if (!isSingleRiderName(r.name)) return true;
-      const baseId = idByName.get(normalizeRideName(baseRideName(r.name)));
-      if (baseId == null) return true; // no parent matched — keep the row visible
-      singleRiderIds.add(baseId);
-      return false;
+      if (isSingleRiderName(r.name)) {
+        // Flag the parent when one is on the board (it may be absent, e.g. closed
+        // for refurbishment), then hide the single-rider row itself.
+        const baseId = idByName.get(normalizeRideName(baseRideName(r.name)));
+        if (baseId != null) singleRiderIds.add(baseId);
+        return false;
+      }
+      return r.category != null;
     });
     return { rides, singleRiderIds };
-  }, [allRides, operatorSlug]);
+  }, [allRides]);
 
   // "Lines only" filters by standby capability — a Disney concept. Universal's
   // per-ride line is the free Virtual Line, so the toggle is hidden there.

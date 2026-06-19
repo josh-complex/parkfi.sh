@@ -48,6 +48,10 @@ function useMeasuredHeight<T extends HTMLElement>(
   return height;
 }
 
+/** Hide the live-waits marquee entirely unless at least this many rides are
+ *  open — a near-empty ticker (or the loading flash) reads as broken. */
+const MIN_OPEN_RIDES = 5;
+
 const NAV_LEFT = [
   { label: "Park News", to: "/blog" },
   { label: "Wait Times", to: "/" },
@@ -218,25 +222,23 @@ export function BlogTickerHeader() {
           </div>
         </motion.div>
 
-        {/* Ticker strip, bracketed by thin primary rules (Disney's TRENDING bar). */}
-        <div className="border-t border-primary/40">
-          <div className="flex items-stretch">
-            <div className="flex shrink-0 items-center gap-2 border-r border-primary/40 bg-primary/5 px-4 py-2">
-              <span className="relative flex size-2">
-                <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75" />
-                <span className="relative inline-flex size-2 rounded-full bg-primary" />
-              </span>
-              <span className="font-heading text-xs font-bold tracking-widest text-primary uppercase">
-                Live Waits
-              </span>
-            </div>
+        {/* Ticker strip, bracketed by thin primary rules (Disney's TRENDING bar).
+            Hidden when too few rides are open (or while still loading) so it
+            never shows a near-empty marquee or a "Loading…" flash. */}
+        {chips.length >= MIN_OPEN_RIDES && (
+          <div className="border-t border-primary/40">
+            <div className="flex items-stretch">
+              <div className="flex shrink-0 items-center gap-2 border-r border-primary/40 bg-primary/5 px-4 py-2">
+                <span className="relative flex size-2">
+                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75" />
+                  <span className="relative inline-flex size-2 rounded-full bg-primary" />
+                </span>
+                <span className="font-heading text-xs font-bold tracking-widest text-primary uppercase">
+                  Live Waits
+                </span>
+              </div>
 
-            <div className="parkfi-marquee relative flex-1 overflow-hidden">
-              {chips.length === 0 ? (
-                <div className="px-4 py-2 text-sm text-muted-foreground">
-                  Loading live wait times…
-                </div>
-              ) : (
+              <div className="parkfi-marquee relative flex-1 overflow-hidden">
                 <div
                   className="parkfi-marquee-track"
                   style={{ "--marquee-duration": `${durationSec}s` } as React.CSSProperties}
@@ -258,10 +260,10 @@ export function BlogTickerHeader() {
                     </div>
                   ))}
                 </div>
-              )}
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </header>
 
       {/* Compensating spacer: grows exactly as the nav menu collapses so the
