@@ -591,107 +591,109 @@ function SiteFooter() {
             </div>
           </div>
 
-          <FooterColumn title="Explore">
-            <li>
-              <Link to="/" className={footerLinkClass}>
-                Live Map
-              </Link>
-            </li>
-            <li>
-              <Link to="/blog" className={footerLinkClass}>
-                Park News
-              </Link>
-            </li>
-            <li>
-              <Link to="/dining" className={footerLinkClass}>
-                Dining
-              </Link>
-            </li>
-            <li>
-              <Link to="/stays" className={footerLinkClass}>
-                Stays
-              </Link>
-            </li>
-            <li>
-              <Link to="/tickets" className={footerLinkClass}>
-                Tickets
-              </Link>
-            </li>
-            <li>
-              <Link to="/predictions" className={footerLinkClass}>
-                Crowd Predictions
-              </Link>
-            </li>
-          </FooterColumn>
+          <div className="grid grid-cols-2 gap-8 sm:gap-12 lg:contents">
+            <FooterColumn title="Explore">
+              <li>
+                <Link to="/" className={footerLinkClass}>
+                  Live Map
+                </Link>
+              </li>
+              <li>
+                <Link to="/blog" className={footerLinkClass}>
+                  Park News
+                </Link>
+              </li>
+              <li>
+                <Link to="/dining" className={footerLinkClass}>
+                  Dining
+                </Link>
+              </li>
+              <li>
+                <Link to="/stays" className={footerLinkClass}>
+                  Stays
+                </Link>
+              </li>
+              <li>
+                <Link to="/tickets" className={footerLinkClass}>
+                  Tickets
+                </Link>
+              </li>
+              <li>
+                <Link to="/predictions" className={footerLinkClass}>
+                  Crowd Predictions
+                </Link>
+              </li>
+            </FooterColumn>
 
-          <FooterColumn title="Pins">
-            <li>
-              <Link to="/pins" className={footerLinkClass}>
-                Pin Hub
-              </Link>
-            </li>
-            <li>
-              <Link to="/pins/collection" className={footerLinkClass}>
-                My Collection
-              </Link>
-            </li>
-            <li>
-              <Link to="/pins/trades" className={footerLinkClass}>
-                Trades
-              </Link>
-            </li>
-            <li>
-              <Link to="/pins/scan" className={footerLinkClass}>
-                Scan a Pin
-              </Link>
-            </li>
-          </FooterColumn>
+            <FooterColumn title="Pins">
+              <li>
+                <Link to="/pins" className={footerLinkClass}>
+                  Pin Hub
+                </Link>
+              </li>
+              <li>
+                <Link to="/pins/collection" className={footerLinkClass}>
+                  My Collection
+                </Link>
+              </li>
+              <li>
+                <Link to="/pins/trades" className={footerLinkClass}>
+                  Trades
+                </Link>
+              </li>
+              <li>
+                <Link to="/pins/scan" className={footerLinkClass}>
+                  Scan a Pin
+                </Link>
+              </li>
+            </FooterColumn>
 
-          <FooterColumn title="On this page">
-            <li>
-              <a href="#features" className={footerLinkClass}>
-                Features
-              </a>
-            </li>
-            <li>
-              <a href="#how-it-works" className={footerLinkClass}>
-                How it works
-              </a>
-            </li>
-            <li>
-              <a href="#use-cases" className={footerLinkClass}>
-                Who it&rsquo;s for
-              </a>
-            </li>
-            <li>
-              <a href="#faq" className={footerLinkClass}>
-                FAQ
-              </a>
-            </li>
-          </FooterColumn>
+            <FooterColumn title="On this page">
+              <li>
+                <a href="#features" className={footerLinkClass}>
+                  Features
+                </a>
+              </li>
+              <li>
+                <a href="#how-it-works" className={footerLinkClass}>
+                  How it works
+                </a>
+              </li>
+              <li>
+                <a href="#use-cases" className={footerLinkClass}>
+                  Who it&rsquo;s for
+                </a>
+              </li>
+              <li>
+                <a href="#faq" className={footerLinkClass}>
+                  FAQ
+                </a>
+              </li>
+            </FooterColumn>
 
-          <FooterColumn title="Company">
-            <li>
-              <Link to="/stays/alerts" className={footerLinkClass}>
-                Stay Alerts
-              </Link>
-            </li>
-            <li>
-              <Link to="/disclaimers" className={footerLinkClass}>
-                Disclaimers
-              </Link>
-            </li>
-            <li>
-              <Link to="/privacy" className={footerLinkClass}>
-                Privacy
-              </Link>
-            </li>
-            <li>
-              <a href="mailto:hello@parkfi.sh" className={footerLinkClass}>
-                Contact
-              </a>
-            </li>
-          </FooterColumn>
+            <FooterColumn title="Company">
+              <li>
+                <Link to="/stays/alerts" className={footerLinkClass}>
+                  Stay Alerts
+                </Link>
+              </li>
+              <li>
+                <Link to="/disclaimers" className={footerLinkClass}>
+                  Disclaimers
+                </Link>
+              </li>
+              <li>
+                <Link to="/privacy" className={footerLinkClass}>
+                  Privacy
+                </Link>
+              </li>
+              <li>
+                <a href="mailto:hello@parkfi.sh" className={footerLinkClass}>
+                  Contact
+                </a>
+              </li>
+            </FooterColumn>
+          </div>
         </div>
       </div>
 

@@ -27,14 +27,25 @@ export const Route = createFileRoute("/_dash/park/$slug_/ride/$rideSlug")({
         rideSlug: params.rideSlug,
       }),
     );
-    return { name: ride?.name ?? null, parkName: ride?.park.name ?? null };
+    return {
+      name: ride?.name ?? null,
+      parkName: ride?.park.name ?? null,
+      operatorSlug: ride?.park.operatorSlug ?? null,
+      standbyWait: ride?.standbyWait ?? null,
+    };
   },
   head: ({ params, loaderData }) => {
     const name = loaderData?.name ?? titleizeSlug(params.rideSlug);
     const parkName = loaderData?.parkName ?? titleizeSlug(params.slug);
+    // Universal rides have no Lightning Lane — only a free Virtual Line. Disney
+    // rides advertise Lightning Lane. Keep that out of Universal copy.
+    const isUniversal = loaderData?.operatorSlug === "universal";
+    const lineLabel = isUniversal ? "Virtual Line" : "Lightning Lane";
+    const wait = loaderData?.standbyWait;
+    const waitLede = wait != null ? `Now ${wait} min standby. ` : "";
     return seo({
-      title: `${name} Wait Times & Lightning Lane — ${parkName} — ParkFi`,
-      description: `Live standby wait, status, and Lightning Lane availability for ${name} at ${parkName}. Track it in real time on ParkFi.`,
+      title: `${name} Wait Times${isUniversal ? "" : " & Lightning Lane"} — ${parkName} — ParkFi`,
+      description: `${waitLede}Live standby wait, ride status, and ${lineLabel} availability for ${name} at ${parkName}. Track it in real time on ParkFi.`,
       path: `/park/${params.slug}/ride/${params.rideSlug}`,
       image: `/og/ride/${params.slug}/${params.rideSlug}/card.png`,
       imageWidth: 1200,

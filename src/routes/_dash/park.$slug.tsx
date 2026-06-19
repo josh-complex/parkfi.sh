@@ -26,12 +26,20 @@ export const Route = createFileRoute("/_dash/park/$slug")({
     await context.queryClient.ensureQueryData(
       context.trpc.parks.board.queryOptions({ parkSlug: params.slug }),
     );
+    // `parks.list` is already prefetched by the `_dash` loader — read it here to
+    // resolve the real park name + operator for operator-aware head copy.
+    const parks = await context.queryClient.ensureQueryData(context.trpc.parks.list.queryOptions());
+    const park = parks.find((p) => p.slug === params.slug);
+    return { name: park?.name ?? null, operatorSlug: park?.operatorSlug ?? null };
   },
-  head: ({ params }) => {
-    const name = titleizeSlug(params.slug);
+  head: ({ params, loaderData }) => {
+    const name = loaderData?.name ?? titleizeSlug(params.slug);
+    // Universal parks have no Lightning Lane — only a free Virtual Line.
+    const isUniversal = loaderData?.operatorSlug === "universal";
+    const lineLabel = isUniversal ? "Virtual Line" : "Lightning Lane";
     return seo({
       title: `${name} Wait Times & Live Map — ParkFi`,
-      description: `Live wait times, ride status, and Lightning Lane availability for ${name}. Plan your day with real-time queue data on ParkFi.`,
+      description: `Live wait times, ride status, and ${lineLabel} availability for ${name}. Plan your day with real-time queue data on ParkFi.`,
       path: `/park/${params.slug}`,
       image: `/og/park/${params.slug}/card.png`,
       imageWidth: 1200,

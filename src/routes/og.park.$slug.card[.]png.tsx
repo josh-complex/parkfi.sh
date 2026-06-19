@@ -6,18 +6,24 @@ import { renderOgCard, titleizeSlug, type OgChip } from "#/server/og/card.tsx";
 
 interface ParkStats {
   name: string;
+  resortName: string | null;
+  imageUrl: string | null;
   total: number;
   operating: number;
   avgWait: number | null;
+  longestWait: number | null;
 }
 
 async function loadStats(slug: string): Promise<ParkStats | null> {
   try {
     const result = await db.execute<{
       name: string;
+      resort_name: string | null;
+      image_url: string | null;
       total: number;
       operating: number;
       avg_wait: number | null;
+      longest_wait: number | null;
     }>(sql`
       WITH latest_standby AS (
         SELECT DISTINCT ON (q.attraction_id) q.attraction_id, q.wait_min
@@ -34,25 +40,30 @@ async function loadStats(slug: string): Promise<ParkStats | null> {
         WHERE a.park_id = (SELECT id FROM parks WHERE slug = ${slug})
         ORDER BY s.attraction_id, s.observed_at DESC
       )
-      SELECT p.name,
+      SELECT p.name, p.image_url, r.name AS resort_name,
              count(*) FILTER (WHERE a.entity_type = 'ATTRACTION')             AS total,
              count(*) FILTER (WHERE ls.status = 1)                            AS operating,
              avg(lsb.wait_min) FILTER (WHERE ls.status = 1
-                                        AND lsb.wait_min IS NOT NULL)::int    AS avg_wait
+                                        AND lsb.wait_min IS NOT NULL)::int    AS avg_wait,
+             max(lsb.wait_min) FILTER (WHERE ls.status = 1)                   AS longest_wait
       FROM parks p
+      LEFT JOIN resorts r ON r.id = p.resort_id
       LEFT JOIN attractions a ON a.park_id = p.id AND a.active = true
       LEFT JOIN latest_status ls ON ls.attraction_id = a.id
       LEFT JOIN latest_standby lsb ON lsb.attraction_id = a.id
       WHERE p.slug = ${slug}
-      GROUP BY p.name
+      GROUP BY p.name, p.image_url, r.name
     `);
     const row = result.rows[0];
     if (!row) return null;
     return {
       name: row.name,
+      resortName: row.resort_name,
+      imageUrl: row.image_url,
       total: Number(row.total),
       operating: Number(row.operating),
       avgWait: row.avg_wait,
+      longestWait: row.longest_wait,
     };
   } catch {
     return null;
@@ -65,10 +76,13 @@ async function renderPng(slug: string): Promise<Buffer> {
   if (stats?.avgWait != null) chips.push({ value: `${stats.avgWait} min`, label: "Average wait" });
   if (stats && stats.total > 0)
     chips.push({ value: `${stats.operating}/${stats.total}`, label: "Rides operating" });
+  if (stats?.longestWait != null && chips.length < 3)
+    chips.push({ value: `${stats.longestWait} min`, label: "Longest wait" });
   return renderOgCard({
     title: stats?.name ?? titleizeSlug(slug),
-    subtitle: "Live wait times, forecasts & dining",
+    subtitle: stats?.resortName ?? "Live wait times, forecasts & dining",
     chips,
+    imageUrl: stats?.imageUrl,
   });
 }
 
