@@ -58,6 +58,7 @@ import {
 } from "#/components/ui/table.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "#/components/ui/tooltip.tsx";
 import { formatTimeInZone } from "#/lib/format-time.ts";
+import { useHydrated } from "#/lib/use-hydrated.ts";
 import { cn } from "#/lib/utils.ts";
 
 import {
@@ -331,6 +332,15 @@ export function ParkBoardTable({
   const [linesOnly, setLinesOnly] = React.useState(true);
   const [sorting, setSorting] = React.useState<SortingState>(SORT_STATE["standby-desc"]);
   const isMobile = useIsMobile();
+  // The sparkline history query is NOT awaited in the route loader, so under
+  // SSR streaming the HTML shell flushes with empty sparklines while the fetch
+  // is still in flight — but its result is then streamed into the client cache
+  // before hydration. The client's first render would draw the loaded `<svg>`
+  // where the server emitted the empty `<div>—</div>`, a structural mismatch
+  // that throws (`removeChild` on null) and aborts hydration of the whole page.
+  // Gate the query on hydration so the server and first client render agree on
+  // the empty state, then it fetches and the sparklines fill in after mount.
+  const hydrated = useHydrated();
 
   const trpc = useTRPC();
   const { data: session } = authClient.useSession();
@@ -359,7 +369,7 @@ export function ParkBoardTable({
       queueType: 1,
       hours: 24,
     }),
-    enabled: !!parkSlug,
+    enabled: !!parkSlug && hydrated,
   });
   const sparkByRide = React.useMemo(() => {
     const points = sparkQ.data?.points ?? [];
