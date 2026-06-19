@@ -57,6 +57,7 @@ import {
   TableRow,
 } from "#/components/ui/table.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "#/components/ui/tooltip.tsx";
+import { formatTimeInZone } from "#/lib/format-time.ts";
 import { cn } from "#/lib/utils.ts";
 
 import {
@@ -71,10 +72,13 @@ import {
 import { Sparkline } from "./sparkline.tsx";
 import type { BoardItem } from "./types.ts";
 
-function formatReturnWindow(start: string | null, end: string | null): string | null {
+function formatReturnWindow(
+  start: string | null,
+  end: string | null,
+  timeZone: string | null | undefined,
+): string | null {
   if (!start && !end) return null;
-  const fmt = (iso: string) =>
-    new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  const fmt = (iso: string) => formatTimeInZone(iso, timeZone);
   if (start && end) return `${fmt(start)} – ${fmt(end)}`;
   if (start) return `from ${fmt(start)}`;
   if (end) return `until ${fmt(end)}`;
@@ -84,13 +88,15 @@ function formatReturnWindow(start: string | null, end: string | null): string | 
 function ReturnWindowCell({
   item,
   operatorSlug,
+  timeZone,
 }: {
   item: BoardItem;
   operatorSlug: string | null | undefined;
+  timeZone: string | null | undefined;
 }) {
   const ll = paidLineInfo(item, operatorSlug);
   if (!ll.has) return <span className="text-muted-foreground">—</span>;
-  const window = formatReturnWindow(ll.returnStart, ll.returnEnd);
+  const window = formatReturnWindow(ll.returnStart, ll.returnEnd, timeZone);
   if (!window) return <span className="text-muted-foreground">—</span>;
   return <span className="tabular-nums">{window}</span>;
 }
@@ -309,6 +315,7 @@ export function ParkBoardTable({
   selectedId,
   onSelect,
   operatorSlug,
+  timezone,
   className,
 }: {
   board: Array<BoardItem> | undefined;
@@ -317,6 +324,7 @@ export function ParkBoardTable({
   selectedId: number | null;
   onSelect: (item: BoardItem) => void;
   operatorSlug: string | null | undefined;
+  timezone: string | null | undefined;
   className?: string;
 }) {
   const [filter, setFilter] = React.useState<StatusFilter>("ALL");
@@ -479,7 +487,11 @@ export function ParkBoardTable({
               header: "Next Available LL",
               enableSorting: false,
               cell: ({ row }) => (
-                <ReturnWindowCell item={row.original} operatorSlug={operatorSlug} />
+                <ReturnWindowCell
+                  item={row.original}
+                  operatorSlug={operatorSlug}
+                  timeZone={timezone}
+                />
               ),
             } as ColumnDef<BoardItem>,
           ]),
@@ -599,6 +611,7 @@ export function ParkBoardTable({
           onSelect={onSelect}
           parkSlug={parkSlug}
           operatorSlug={operatorSlug}
+          timezone={timezone}
           sparkByRide={sparkByRide}
           alertByAttraction={alertByAttraction}
           loggedIn={loggedIn}
@@ -696,6 +709,7 @@ function MobileCardList({
   onSelect,
   parkSlug,
   operatorSlug,
+  timezone,
   sparkByRide,
   alertByAttraction,
   loggedIn,
@@ -706,6 +720,7 @@ function MobileCardList({
   onSelect: (item: BoardItem) => void;
   parkSlug: string | null;
   operatorSlug: string | null | undefined;
+  timezone: string | null | undefined;
   sparkByRide: Map<number, Array<number | null>>;
   alertByAttraction: Map<number, RideAlertEntry>;
   loggedIn: boolean;
@@ -759,7 +774,7 @@ function MobileCardList({
             </div>
             <div className="flex items-center justify-between gap-2 text-xs">
               <PaidLineCell item={item} operatorSlug={operatorSlug} />
-              <ReturnWindowCell item={item} operatorSlug={operatorSlug} />
+              <ReturnWindowCell item={item} operatorSlug={operatorSlug} timeZone={timezone} />
             </div>
             {parkSlug && (
               <Link

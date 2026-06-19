@@ -8,6 +8,7 @@ import { useTRPC } from "#/integrations/trpc/react.ts";
 import { MapSlot } from "#/components/park-map/map-stage.tsx";
 import { NotificationPrompt } from "#/components/notifications/notification-prompt.tsx";
 import { lazyWithReload } from "#/lib/lazy-with-reload.tsx";
+import { useHydrated } from "#/lib/use-hydrated.ts";
 
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 
@@ -57,7 +58,14 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
     if (!stillHere) setSelected(null);
   }, [board, selected, setSelected]);
 
-  const operatorSlug = parks?.find((p) => p.slug === activeSlug)?.operatorSlug;
+  const park = parks?.find((p) => p.slug === activeSlug);
+  const operatorSlug = park?.operatorSlug;
+  const timezone = park?.timezone;
+
+  // "Updated x ago" is computed from the current clock, so the server HTML and
+  // the first client render would disagree and trip a hydration mismatch. Only
+  // render it once we've hydrated on the client.
+  const hydrated = useHydrated();
 
   return (
     <div
@@ -73,7 +81,8 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
           </h2>
           <p className="text-sm text-blue-100/90 md:text-muted-foreground">
             Live wait times, ride status, and Lightning Lane availability.
-            {board &&
+            {hydrated &&
+              board &&
               (() => {
                 const latest = board.reduce<string | null>((m, b) => {
                   if (!b.observedAt) return m;
@@ -133,6 +142,7 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
           selectedId={selected?.id ?? null}
           onSelect={(item) => setSelected({ id: item.id, name: item.name })}
           operatorSlug={operatorSlug}
+          timezone={timezone}
         />
       </div>
 

@@ -47,6 +47,11 @@ export function parseSocialUrl(raw: string): SocialEmbed | null {
  * any network error counts as "not verifiable" → we drop the embed.
  */
 export async function socialExists(e: SocialEmbed, ua: string): Promise<boolean> {
+  // Reddit returns 200 (and the embed even renders) for posts that have been
+  // DELETED or REMOVED — a plain liveness GET can't tell, so we'd ship an embed
+  // that just says "This post has been deleted." Check the post JSON instead.
+  if (e.platform === "reddit") return redditExists(e, ua);
+
   const oembed: Partial<Record<SocialPlatform, string>> = {
     youtube: `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(e.url)}`,
     tiktok: `https://www.tiktok.com/oembed?url=${encodeURIComponent(e.url)}`,
@@ -62,7 +67,7 @@ export async function socialExists(e: SocialEmbed, ua: string): Promise<boolean>
       });
       return res.ok;
     }
-    // Instagram / X / Reddit have no usable public oEmbed and bot-block our UA
+    // Instagram / X have no usable public oEmbed and bot-block our UA
     // (403/429), so a strict res.ok would drop real posts. Mirror isDeadLink:
     // only an unambiguous 404/410 means "doesn't exist"; keep anything else.
     const res = await fetch(e.url, {
@@ -71,6 +76,40 @@ export async function socialExists(e: SocialEmbed, ua: string): Promise<boolean>
       redirect: "follow",
     });
     return res.status !== 404 && res.status !== 410;
+  } catch {
+    return false;
+  }
+}
+
+const REDDIT_DEAD = new Set(["[deleted]", "[removed]"]);
+
+/**
+ * A Reddit post counts as "exists" only if it's not deleted/removed. Reddit's
+ * page + embed both 200 on a scrubbed post, so we read the post JSON and check
+ * the deletion markers (`removed_by_category`, scrubbed author/selftext). If
+ * Reddit rate-limits/blocks us (403/429) we can't disprove existence, so we keep
+ * the embed rather than drop a real one; only a clear 404/410 or an explicit
+ * deletion marker drops it.
+ */
+async function redditExists(e: SocialEmbed, ua: string): Promise<boolean> {
+  try {
+    const jsonUrl = `${e.url.replace(/\/+$/, "")}/.json?raw_json=1`;
+    const res = await fetch(jsonUrl, {
+      headers: { "User-Agent": ua, Accept: "application/json" },
+      signal: AbortSignal.timeout(10_000),
+      redirect: "follow",
+    });
+    if (res.status === 404 || res.status === 410) return false;
+    if (!res.ok) return true; // blocked/rate-limited — can't disprove, keep it
+    const data = (await res.json()) as {
+      data?: { children?: { data?: Record<string, unknown> }[] };
+    }[];
+    const post = data?.[0]?.data?.children?.[0]?.data;
+    if (!post) return true; // unexpected shape — don't drop on a parse quirk
+    if (typeof post.removed_by_category === "string" && post.removed_by_category) return false;
+    if (REDDIT_DEAD.has(post.author as string)) return false;
+    if (REDDIT_DEAD.has(post.selftext as string)) return false;
+    return true;
   } catch {
     return false;
   }
