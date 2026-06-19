@@ -30,7 +30,7 @@ import { db } from "#/db/index.ts";
 import { blogPost, newsItem } from "#/db/schema.ts";
 import { parseSocialUrl, socialExists, type SocialEmbed } from "#/server/blog/embeds.ts";
 
-const MODEL = process.env.NEWS_MODEL ?? "gemini-3.5-flash";
+const MODEL = process.env.NEWS_MODEL ?? "gemini-3.1-flash-lite";
 /** Safety cap on drafts per run — a ceiling, not a target (skips yield fewer). */
 const MAX_DRAFTS_PER_RUN = Number(process.env.NEWS_MAX_DRAFTS ?? 2);
 /** Ignore items older than this so a quiet day / first run doesn't flood. */
@@ -94,6 +94,7 @@ SUBSTANCE:
 - QUOTES: if Search surfaces a REAL, verifiable direct quote (a Disney/Universal exec, an Imagineer, an official press release), include ONE as a Markdown blockquote with attribution: "> ...quote...\\n>\\n> — Name, title". Never invent or paraphrase a quote into quotation marks. No real quote found = no quote. Don't force it.
 - BACKLINKS: weave 1–2 contextual links INLINE in the prose (not just a list at the end) — to a closely related prior ParkFi post via its /blog/<slug> path when one fits, and to an authoritative external page (official park site, the primary source) where it helps the reader. Every external link AND every source you cite is fetched before publish: a confirmed-dead one (404) is unwrapped to plain text or dropped from the source list, so a guessed or half-remembered URL just disappears. Link only to a page whose exact URL you actually saw in a search result — never reconstruct a likely-looking article path.
 - Tie it to what ParkFi readers care about: crowds, wait times, Lightning Lane, dining, trip timing — only where it's honestly relevant. Skip the tie-in if it's a stretch.
+- COMMUNITY VIEW (heavier topics only): on a divisive or weightier story — a price hike, a closure, a policy or perk change, a cut, a genuine controversy — search Reddit (e.g. r/WaltDisneyWorld, r/UniversalOrlando, r/DisneyWorld, r/wdw) for how real guests are actually reacting. It surfaces the critical, on-the-ground opinions the official line and the upbeat fan blogs won't, and a heavier post is more honest and useful for it. Reflect that real sentiment, and where one comment genuinely captures the mood you MAY quote it as a Markdown blockquote with a link to the thread — truth gate applies (a real, verifiable comment you actually found; never invented or paraphrased into quotes). On routine good or neutral news, skip this entirely — do NOT mine for negativity to manufacture a downside.
 
 IMAGES (inline, in the body) — a rich post is a media-rich post:
 - A post MUST carry AT LEAST 2 relevant images INSIDE the body (3–4 is better for a meatier story), using Markdown: ![descriptive alt](https://image-url), spread through the post (next to the section each one illustrates), not stacked at the top. Right after each image add an italic credit line: *Photo: Source Name* (link the source name to its URL).

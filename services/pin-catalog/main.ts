@@ -37,7 +37,14 @@ import { putReferenceImage } from "#/server/pins/storage.ts";
 
 import { crawlPinPics, discoverPinPics, probePinPics, type RawListing } from "./pinpics.ts";
 
-const NORMALIZE_MODEL = process.env.PIN_NORMALIZE_MODEL ?? "gemini-3.5-flash";
+const NORMALIZE_MODEL = process.env.PIN_NORMALIZE_MODEL ?? "gemini-3.1-flash-lite";
+/**
+ * Titles per normalize call. Bigger batches amortize the system-prompt overhead
+ * across more pins (fewer requests, less cost) — but too big risks the model
+ * dropping items so the returned array misaligns with the input (handled
+ * defensively downstream, just yields empty fields). 60 is a safe middle.
+ */
+const NORMALIZE_BATCH = Number(process.env.PIN_NORMALIZE_BATCH ?? 60);
 const MARKETPLACE = process.env.EBAY_MARKETPLACE_ID ?? "EBAY_US";
 /**
  * eBay leaf category for Disney pins. 38004 = "Contemporary Disney Pins, Patches
@@ -182,7 +189,12 @@ async function normalizeBatch(ai: GoogleGenAI, titles: string[]): Promise<Normal
     contents: `Normalize these ${titles.length} listing titles:\n${titles
       .map((t, i) => `${i + 1}. ${t}`)
       .join("\n")}`,
-    config: { systemInstruction: NORMALIZE_SYSTEM, maxOutputTokens: 8_000 },
+    // Scale the output ceiling with the batch so a big batch can't truncate the
+    // JSON array mid-pin (~200 tokens/pin is generous for the structured fields).
+    config: {
+      systemInstruction: NORMALIZE_SYSTEM,
+      maxOutputTokens: Math.min(32_000, 1_000 + titles.length * 200),
+    },
   });
   const text = res.text ?? "";
   const json = text.slice(text.indexOf("["), text.lastIndexOf("]") + 1);
@@ -298,14 +310,14 @@ interface IngestTotals {
   skipped: number;
 }
 
-/** Normalize a batch of listings (≤20 at a time) and ingest each. Shared by all sources. */
+/** Normalize a batch of listings (NORMALIZE_BATCH at a time) and ingest each. Shared by all sources. */
 async function ingestListings(
   ai: GoogleGenAI,
   listings: RawListing[],
   totals: IngestTotals,
 ): Promise<void> {
-  for (let i = 0; i < listings.length; i += 20) {
-    const slice = listings.slice(i, i + 20);
+  for (let i = 0; i < listings.length; i += NORMALIZE_BATCH) {
+    const slice = listings.slice(i, i + NORMALIZE_BATCH);
     const norms = await normalizeBatch(
       ai,
       slice.map((l) => l.title),
@@ -372,8 +384,8 @@ async function sweep(): Promise<void> {
 
 /**
  * Crawl PinPics (the broadest clean reference catalog) through the same
- * normalize → upsert → image → embed pipeline. Flushes every 20 pins so a long
- * crawl persists progress incrementally rather than only at the end.
+ * normalize → upsert → image → embed pipeline. Flushes every NORMALIZE_BATCH
+ * pins so a long crawl persists progress incrementally rather than only at the end.
  */
 async function pinpics(): Promise<void> {
   if (!process.env.GEMINI_API_KEY) {
@@ -404,8 +416,8 @@ async function pinpics(): Promise<void> {
     console.log(`[pin-catalog] pinpics auto-resume from PID ${resumeStart}`);
   }
 
-  // Buffer crawl output and normalize+ingest in batches of 20 so a long crawl
-  // persists progress incrementally rather than only at the end.
+  // Buffer crawl output and normalize+ingest in batches of NORMALIZE_BATCH so a
+  // long crawl persists progress incrementally rather than only at the end.
   let buffer: RawListing[] = [];
   const flush = async () => {
     if (buffer.length === 0) return;
@@ -421,7 +433,7 @@ async function pinpics(): Promise<void> {
   await crawlPinPics(
     async (listing) => {
       buffer.push(listing);
-      if (buffer.length >= 20) await flush();
+      if (buffer.length >= NORMALIZE_BATCH) await flush();
     },
     { isKnown: (pid) => known.has(String(pid)), startId: resumeStart },
   );
