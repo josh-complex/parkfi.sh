@@ -112,12 +112,13 @@ SUBSTANCE:
 IMAGES (inline, in the body) — a rich post is a media-rich post:
 - A post MUST carry AT LEAST 2 relevant images INSIDE the body (3–4 is better for a meatier story), using Markdown: ![descriptive alt](https://image-url), spread through the post (next to the section each one illustrates), not stacked at the top. Right after each image add ONE italic caption line that pairs a short description with the credit: *Short caption — Photo: Source Name* (link the source name to its URL). The VERIFIED MEDIA palette gives each image's caption as its alt — reuse that as the short description. If you have no real caption, just write *Photo: Source Name*.
 - You will be given a "VERIFIED MEDIA" palette: real image URLs we already pulled from the source article and confirmed load. PREFER these — they are guaranteed to work and are already correctly attributed. Use as many as fit the story.
+- DON'T lean on a single source for every image. A post that pulls its photos from two or three different outlets (the palette + images you find via Search on other real articles) feels better-reported than one that reuses one site throughout. Credit EACH image to the outlet it actually came from — the "*Photo: Source*" name and link must match where that specific image lives, not a blanket source for the whole post.
 - You may ALSO add images via Google Search, but ONLY a URL you actually found in a search result — NEVER guess, pattern-match, or fabricate an image path. Every image URL is fetched before publish and silently dropped if it 404s, so a guessed link just vanishes and can leave the post under the 2-image floor.
 - Don't decorate for the sake of it: an image must show the actual thing the post is about.
 
 TRUTH ONLY. Every claim, quote, date, number, image, and embed must trace to a real source. If you can't verify it, leave it out. Never invent attendance figures, prices, or quotes.
 
-FORMAT: original wording (never copy/closely paraphrase the source), Markdown body, ## subheads ok, NO H1. 900–1300 words — real depth and development, with a couple of ## subheads to structure it, not padded filler. Cite EVERY source you used (original + anything from Search) in "extraSources".`;
+FORMAT: original wording (never copy/closely paraphrase the source), Markdown body, ## subheads ok, NO H1. 900–1300 words — real depth and development, with a couple of ## subheads to structure it, not padded filler. Cite EVERY source you used (original + anything from Search) in "extraSources". Separately, in "reportedBy", name the outlet(s) that originally reported this story — the original feed source plus any OTHER outlet you confirmed also broke/covered it (a story is often reported by two or three sites); this drives the "Originally reported by X and Y" byline.`;
 
 /**
  * RSS feeds to pull. Override with NEWS_FEEDS (comma-separated).
@@ -633,6 +634,16 @@ async function recentCoverage(): Promise<RecentPost[]> {
 interface Source {
   title: string;
   url: string;
+  /** Clean outlet name, set on reporting outlets so the byline can read "X and Y". */
+  name?: string;
+  /** True for the outlet(s) that originally reported the story (shown in the byline). */
+  reporting?: boolean;
+}
+
+/** An outlet that originally reported the story — drives the "reported by" byline. */
+interface Reporter {
+  name: string;
+  url: string;
 }
 
 interface HeroImage {
@@ -651,6 +662,7 @@ interface DraftJson {
   tags: string[];
   parkSlugs: string[];
   extraSources: Source[];
+  reportedBy: Reporter[];
   heroImage: HeroImage | null;
 }
 
@@ -677,6 +689,21 @@ function cleanSources(v: unknown): Source[] {
         typeof s?.title === "string" && typeof s?.url === "string" && /^https?:\/\//.test(s.url),
     )
     .slice(0, 6);
+}
+
+/** Keep only well-formed {name,url} reporting outlets (cap small — it's a byline). */
+function cleanReporters(v: unknown): Reporter[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter(
+      (s): s is Reporter =>
+        typeof s?.name === "string" &&
+        s.name.trim().length > 0 &&
+        typeof s?.url === "string" &&
+        /^https?:\/\//.test(s.url),
+    )
+    .map((s) => ({ name: s.name.trim(), url: s.url }))
+    .slice(0, 3);
 }
 
 function buildPrompt(
@@ -743,7 +770,8 @@ Respond with ONLY a JSON object (no code fence), shape:
   "tags": ["2-4 short lowercase tags"],
   "parkSlugs": ["relevant slugs from the list, or empty"],
   "heroImage": {"url": "https://...", "alt": "...", "credit": "Source Name", "creditUrl": "https://..."},  // a strong lead image; null if none found
-  "extraSources": [{"title": "...", "url": "https://..."}]  // every source you used beyond the original
+  "extraSources": [{"title": "...", "url": "https://..."}],  // every source you used beyond the original
+  "reportedBy": [{"name": "Outlet Name", "url": "https://..."}]  // the outlet(s) that ORIGINALLY reported this story — the original source above, PLUS any other outlet you confirmed also reported it. Name = outlet only (e.g. "WDW News Today"), 1-3 max. Drives the "Originally reported by X and Y" byline.
 }`;
 }
 
@@ -790,6 +818,7 @@ function parseDraft(text: string): DraftJson | null {
       tags: Array.isArray(obj.tags) ? obj.tags.slice(0, 4) : [],
       parkSlugs: Array.isArray(obj.parkSlugs) ? obj.parkSlugs : [],
       extraSources: cleanSources(obj.extraSources),
+      reportedBy: cleanReporters(obj.reportedBy),
       heroImage: cleanHero(obj.heroImage),
     };
   } catch {
@@ -897,9 +926,27 @@ async function main() {
       const liveExtra = await liveSources(
         draft.extraSources.filter((s) => !seenUrls.has(s.url) && seenUrls.add(s.url)),
       );
+
+      // Reporting outlets drive the "Originally reported by …" byline. The feed
+      // item always leads (real by definition); the model may name OTHER outlets
+      // that also broke the story — liveness-check those so a fabricated byline
+      // never ships. Tag each with a clean `name` + `reporting` so the renderer
+      // can list "X and Y" and link each one.
+      const liveReporters = await liveSources(
+        draft.reportedBy.map((r) => ({ title: r.name, url: r.url })),
+      );
+      const reporters = new Map<string, string>([[item.url, item.source]]);
+      for (const r of liveReporters) if (!reporters.has(r.url)) reporters.set(r.url, r.title);
+      const reportingSources: Source[] = [...reporters].map(([url, name]) => ({
+        name,
+        reporting: true,
+        title: url === item.url ? `${item.source}: ${item.title}` : name,
+        url,
+      }));
+      // Researched references that aren't themselves a reporting outlet follow.
       const sourceUrls: Source[] = [
-        { title: `${item.source}: ${item.title}`, url: item.url },
-        ...liveExtra,
+        ...reportingSources,
+        ...liveExtra.filter((s) => !reporters.has(s.url)),
       ];
 
       // Hero image: prefer the source article's og:image (fetched up top —

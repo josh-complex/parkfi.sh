@@ -134,20 +134,37 @@ function BlogPost() {
               {post.title}
             </h1>
             <p className="mt-3 text-lg text-muted-foreground">{post.dek}</p>
-            {post.sourceUrls[0] && (
-              <p className="mt-3 text-sm text-muted-foreground">
-                Originally reported by{" "}
-                <a
-                  href={post.sourceUrls[0].url}
-                  target="_blank"
-                  rel="nofollow noopener noreferrer"
-                  className="font-medium text-foreground underline underline-offset-4"
-                >
-                  {post.sourceUrls[0].title.split(":")[0]}
-                </a>{" "}
-                — full credits and sources below.
-              </p>
-            )}
+            {(() => {
+              // Byline credits the outlets that reported the story. Newer posts
+              // tag reporting outlets explicitly (often more than one); older
+              // posts have no flag, so fall back to the first/original source.
+              const reporters = post.sourceUrls.filter((s) => s.reporting);
+              const byline = (reporters.length ? reporters : post.sourceUrls.slice(0, 1)).slice(
+                0,
+                3,
+              );
+              if (byline.length === 0) return null;
+              return (
+                <p className="mt-3 text-sm text-muted-foreground">
+                  Originally reported by{" "}
+                  {byline.map((s, i) => (
+                    <span key={s.url}>
+                      {i > 0 &&
+                        (i === byline.length - 1 ? (byline.length > 2 ? ", and " : " and ") : ", ")}
+                      <a
+                        href={s.url}
+                        target="_blank"
+                        rel="nofollow noopener noreferrer"
+                        className="font-medium text-foreground underline underline-offset-4"
+                      >
+                        {s.name ?? s.title.split(":")[0]}
+                      </a>
+                    </span>
+                  ))}{" "}
+                  — full credits and sources below.
+                </p>
+              );
+            })()}
             <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
               <time dateTime={post.publishedAt?.toISOString()}>{formatDate(post.publishedAt)}</time>
               {post.tags.length > 0 && <span aria-hidden>·</span>}

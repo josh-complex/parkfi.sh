@@ -12,6 +12,10 @@ import { adminProcedure, publicProcedure } from "../init.ts";
 interface SourceUrl {
   title: string;
   url: string;
+  /** Clean outlet name, present on reporting outlets (drives the byline). */
+  name?: string;
+  /** True for outlets that originally reported the story. */
+  reporting?: boolean;
 }
 
 /** Count in-body media (inline images + social embeds) for the review queue. */
