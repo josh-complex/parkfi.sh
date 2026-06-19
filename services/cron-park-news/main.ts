@@ -68,6 +68,13 @@ const MAX_OUTPUT_TOKENS = Number(process.env.NEWS_MAX_OUTPUT_TOKENS ?? 16_000);
  * "media-thin" in the review queue. Set NEWS_MIN_INLINE_IMAGES.
  */
 const MIN_INLINE_IMAGES = Number(process.env.NEWS_MIN_INLINE_IMAGES ?? 2);
+/**
+ * Floor on embedded social posts (TikTok/YouTube/Instagram/X/Reddit) every post
+ * should carry — a real embed is the single biggest credibility/richness signal.
+ * Topped up from the verified palette if the writer left the post short, and
+ * flagged "media-thin" in the review queue if it still can't be met. Set NEWS_MIN_EMBEDS.
+ */
+const MIN_EMBEDS = Number(process.env.NEWS_MIN_EMBEDS ?? 1);
 const THINKING_LEVELS: Record<string, ThinkingLevel> = {
   minimal: ThinkingLevel.MINIMAL,
   low: ThinkingLevel.LOW,
@@ -94,7 +101,6 @@ SUBSTANCE:
 - QUOTES: if Search surfaces a REAL, verifiable direct quote (a Disney/Universal exec, an Imagineer, an official press release), include ONE as a Markdown blockquote with attribution: "> ...quote...\\n>\\n> — Name, title". Never invent or paraphrase a quote into quotation marks. No real quote found = no quote. Don't force it.
 - BACKLINKS: weave 1–2 contextual links INLINE in the prose (not just a list at the end) — to a closely related prior ParkFi post via its /blog/<slug> path when one fits, and to an authoritative external page (official park site, the primary source) where it helps the reader. Every external link AND every source you cite is fetched before publish: a confirmed-dead one (404) is unwrapped to plain text or dropped from the source list, so a guessed or half-remembered URL just disappears. Link only to a page whose exact URL you actually saw in a search result — never reconstruct a likely-looking article path.
 - Tie it to what ParkFi readers care about: crowds, wait times, Lightning Lane, dining, trip timing — only where it's honestly relevant. Skip the tie-in if it's a stretch.
-- COMMUNITY VIEW (heavier topics only): on a divisive or weightier story — a price hike, a closure, a policy or perk change, a cut, a genuine controversy — search Reddit (e.g. r/WaltDisneyWorld, r/UniversalOrlando, r/DisneyWorld, r/wdw) for how real guests are actually reacting. It surfaces the critical, on-the-ground opinions the official line and the upbeat fan blogs won't, and a heavier post is more honest and useful for it. Reflect that real sentiment, and where one comment genuinely captures the mood you MAY quote it as a Markdown blockquote with a link to the thread — truth gate applies (a real, verifiable comment you actually found; never invented or paraphrased into quotes). On routine good or neutral news, skip this entirely — do NOT mine for negativity to manufacture a downside.
 
 IMAGES (inline, in the body) — a rich post is a media-rich post:
 - A post MUST carry AT LEAST 2 relevant images INSIDE the body (3–4 is better for a meatier story), using Markdown: ![descriptive alt](https://image-url), spread through the post (next to the section each one illustrates), not stacked at the top. Right after each image add an italic credit line: *Photo: Source Name* (link the source name to its URL).
@@ -102,10 +108,10 @@ IMAGES (inline, in the body) — a rich post is a media-rich post:
 - You may ALSO add images via Google Search, but ONLY a URL you actually found in a search result — NEVER guess, pattern-match, or fabricate an image path. Every image URL is fetched before publish and silently dropped if it 404s, so a guessed link just vanishes and can leave the post under the 2-image floor.
 - Don't decorate for the sake of it: an image must show the actual thing the post is about.
 
-EMBEDS (social posts / video) — STRONGLY PREFERRED when one exists:
-- A real embedded post (TikTok, YouTube, Instagram, or X) is one of the biggest things that makes a post feel rich and credible. The VERIFIED MEDIA palette often includes embeds we pulled straight from the source article — if one is listed, INCLUDE it (put its bare URL on its OWN line, nothing else) unless it's truly irrelevant. We turn it into a clean embedded player.
-- You may also search the OFFICIAL account (the park, Universal, Disney, the resort) and relevant creators for the actual post when the palette has none. Prefer the official announcement post when there is one.
-- Truth gate still applies: embed ONLY a post from the palette or one you actually found in a search result — never invent or guess a URL. Every embed is verified to exist before publish and dropped if it doesn't.
+EMBEDS (social posts / video) — REQUIRED: every post MUST carry AT LEAST ONE embed:
+- A real embedded post (TikTok, YouTube, Instagram, X, or a Reddit thread) is one of the biggest things that makes a post feel rich and credible — include at least one in EVERY post (more is fine, spread through the body). The VERIFIED MEDIA palette often includes embeds we pulled straight from the source article — if one is listed, INCLUDE it (put its bare URL on its OWN line, nothing else) unless it's truly irrelevant. We turn it into a clean embedded player.
+- When the palette has none, search for the real post: the OFFICIAL account (the park, Universal, Disney, the resort) or relevant creators for an announcement/video, and — especially on heavier or divisive stories (a price hike, a closure, a policy or perk change, a cut, a real controversy) — a relevant Reddit thread (e.g. r/WaltDisneyWorld, r/UniversalOrlando, r/DisneyWorld, r/wdw) where real guests are reacting. A Reddit thread surfaces the critical, on-the-ground opinion the official line and upbeat fan blogs won't, and a weightier post is more honest for it. Prefer the official announcement on routine news; reach for Reddit when the story has a genuine downside or debate — never to manufacture one onto good news.
+- Truth gate still applies: embed ONLY a post from the palette or one you actually found in a search result — never invent or guess a URL. Every embed is verified to exist before publish and dropped if it doesn't, so a guessed link just vanishes and leaves the post under the 1-embed floor.
 
 TRUTH ONLY. Every claim, quote, date, number, image, and embed must trace to a real source. If you can't verify it, leave it out. Never invent attendance figures, prices, or quotes.
 
@@ -388,6 +394,7 @@ const EMBED_SCAN: RegExp[] = [
   /https?:\/\/(?:www\.)?tiktok\.com\/@[\w.-]+\/video\/\d+/gi,
   /https?:\/\/(?:www\.)?instagram\.com\/(?:p|reel|tv)\/[\w-]+/gi,
   /https?:\/\/(?:www\.)?(?:twitter|x)\.com\/\w+\/status\/\d+/gi,
+  /https?:\/\/(?:www\.|old\.)?reddit\.com\/r\/\w+\/comments\/\w+(?:\/[\w-]+)?/gi,
 ];
 /** YouTube embed iframes (youtube.com/embed/ID) — normalized to a watch URL. */
 const YT_EMBED_RE = /https?:\/\/(?:www\.)?(?:youtube(?:-nocookie)?\.com)\/embed\/([\w-]{6,})/gi;
@@ -501,12 +508,14 @@ function ensureBodyMedia(
     need--;
     added++;
   }
-  if (have.embeds === 0) {
-    const e = media.embeds.find((e) => !usedEmb.has(e.url));
-    if (e) {
-      out += `\n\n${e.url}`;
-      added++;
-    }
+  let needEmb = MIN_EMBEDS - have.embeds;
+  for (const e of media.embeds) {
+    if (needEmb <= 0) break;
+    if (usedEmb.has(e.url)) continue;
+    out += `\n\n${e.url}`;
+    usedEmb.add(e.url);
+    needEmb--;
+    added++;
   }
   if (added) console.log(`[park-news]   topped up body with ${added} palette media item(s)`);
   return out.trim();
@@ -681,12 +690,12 @@ function buildPrompt(
       : media.images.map((i) => `- ${i.url}${i.alt ? `  (alt: ${i.alt})` : ""}`).join("\n");
   const embedPalette =
     media.embeds.length === 0
-      ? "(none found in the source — search for an official post if the story is visual)"
+      ? "(none found in the source — you MUST find one: an official/creator post, or a Reddit thread for heavier topics)"
       : media.embeds.map((e) => `- ${e.url}`).join("\n");
   const mediaBlock = `VERIFIED MEDIA from the source article — real, already confirmed to load. Prefer these (credit them as "*Photo: [${item.source}](${item.url})*"):
 Images (use at least ${MIN_INLINE_IMAGES}, spread through the body):
 ${imgPalette}
-Embeds (put a bare URL on its own line where it fits — include one if listed):
+Embeds (REQUIRED — at least ${MIN_EMBEDS} per post; put a bare URL on its own line; include any listed, else search for a real one — a Reddit thread is great for heavier topics):
 ${embedPalette}`;
 
   return `A theme-park news item just came in:
@@ -709,8 +718,9 @@ real voice, an optimistic headline that leads with the exciting thing, inline
 backlinks (only to URLs you actually found — dead ones get dropped), a verifiable
 quote if one exists, AT LEAST ${MIN_INLINE_IMAGES} relevant inline images spread
 through the body (Markdown, with an italic credit line under each — prefer the
-VERIFIED MEDIA above), and a real embedded social post on its own line whenever
-one exists (prefer the verified embed above). When a recent post above is
+VERIFIED MEDIA above), and AT LEAST ${MIN_EMBEDS} embedded social post on its own
+line (prefer the verified embed above; for a heavier/divisive story a relevant
+Reddit thread works great). When a recent post above is
 genuinely related, link it inline using its EXACT /blog/<slug> path from that list
 (a wrong slug is dropped). Reference a park by its ParkFi slug only from this list
 (we link it internally): ${slugList || "(none)"}.
@@ -720,7 +730,7 @@ Respond with ONLY a JSON object (no code fence), shape:
   "skip": false,
   "title": "compelling, specific, OPTIMISTIC, <70 chars — lead with the exciting thing, not a hedge, question, or warning",
   "dek": "one-sentence reader summary / meta description, <160 chars",
-  "bodyMd": "the post in Markdown (900–1300 words) — ## subheads ok, NO H1, AT LEAST 2 inline ![alt](url) images spread through the body each followed by an italic *Photo: ...* credit, a > blockquote for any real quote, and (strongly preferred when a real one exists) an embedded social post as a bare URL on its own line",
+  "bodyMd": "the post in Markdown (900–1300 words) — ## subheads ok, NO H1, AT LEAST 2 inline ![alt](url) images spread through the body each followed by an italic *Photo: ...* credit, a > blockquote for any real quote, and AT LEAST ${MIN_EMBEDS} embedded social post (TikTok/YouTube/Instagram/X/Reddit) as a bare URL on its own line",
   "aiSummary": "dense 1-2 sentence FACTUAL summary for our internal dedup index",
   "tags": ["2-4 short lowercase tags"],
   "parkSlugs": ["relevant slugs from the list, or empty"],
@@ -864,7 +874,7 @@ async function main() {
       draft.bodyMd = validateInternalLinks(draft.bodyMd, blogSlugs);
       draft.bodyMd = ensureBodyMedia(draft.bodyMd, media, item.source, item.url);
       const finalMedia = countBodyMedia(draft.bodyMd);
-      if (finalMedia.images < MIN_INLINE_IMAGES) {
+      if (finalMedia.images < MIN_INLINE_IMAGES || finalMedia.embeds < MIN_EMBEDS) {
         console.log(
           `[park-news]   media-thin draft (${finalMedia.images} inline image(s), ${finalMedia.embeds} embed(s)): ${draft.title}`,
         );

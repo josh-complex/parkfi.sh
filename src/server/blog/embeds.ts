@@ -8,7 +8,7 @@
  * SSR render step can run on every request. Both share one URL parser so the
  * two halves can't drift on what counts as an embeddable URL.
  */
-export type SocialPlatform = "tiktok" | "youtube" | "instagram" | "twitter";
+export type SocialPlatform = "tiktok" | "youtube" | "instagram" | "twitter" | "reddit";
 
 export interface SocialEmbed {
   platform: SocialPlatform;
@@ -23,6 +23,9 @@ const YOUTUBE_SHORTS = /^https?:\/\/(?:www\.)?youtube\.com\/shorts\/([\w-]{6,})/
 const TIKTOK = /^https?:\/\/(?:www\.)?tiktok\.com\/@[\w.-]+\/video\/(\d+)/i;
 const INSTAGRAM = /^https?:\/\/(?:www\.)?instagram\.com\/(?:p|reel|tv)\/([\w-]+)/i;
 const TWITTER = /^https?:\/\/(?:www\.)?(?:twitter|x)\.com\/[\w]+\/status\/(\d+)/i;
+// A Reddit post (or comment) permalink — id is the base-36 submission id; the
+// embed iframe is built from the full URL path, not the id alone.
+const REDDIT = /^https?:\/\/(?:www\.|old\.|np\.)?reddit\.com\/r\/[\w]+\/comments\/([\w]+)/i;
 
 /** Parse a URL into an embeddable social post, or null if it isn't one. */
 export function parseSocialUrl(raw: string): SocialEmbed | null {
@@ -33,6 +36,7 @@ export function parseSocialUrl(raw: string): SocialEmbed | null {
   if ((m = TIKTOK.exec(url))) return { platform: "tiktok", id: m[1], url };
   if ((m = INSTAGRAM.exec(url))) return { platform: "instagram", id: m[1], url };
   if ((m = TWITTER.exec(url))) return { platform: "twitter", id: m[1], url };
+  if ((m = REDDIT.exec(url))) return { platform: "reddit", id: m[1], url };
   return null;
 }
 
@@ -48,13 +52,25 @@ export async function socialExists(e: SocialEmbed, ua: string): Promise<boolean>
     tiktok: `https://www.tiktok.com/oembed?url=${encodeURIComponent(e.url)}`,
   };
   try {
-    const probe = oembed[e.platform] ?? e.url;
-    const res = await fetch(probe, {
-      headers: { "User-Agent": ua, Accept: "application/json,text/html" },
+    const probe = oembed[e.platform];
+    // YouTube/TikTok expose oEmbed that cleanly 404s on dead/private posts.
+    if (probe) {
+      const res = await fetch(probe, {
+        headers: { "User-Agent": ua, Accept: "application/json" },
+        signal: AbortSignal.timeout(10_000),
+        redirect: "follow",
+      });
+      return res.ok;
+    }
+    // Instagram / X / Reddit have no usable public oEmbed and bot-block our UA
+    // (403/429), so a strict res.ok would drop real posts. Mirror isDeadLink:
+    // only an unambiguous 404/410 means "doesn't exist"; keep anything else.
+    const res = await fetch(e.url, {
+      headers: { "User-Agent": ua, Accept: "text/html,*/*" },
       signal: AbortSignal.timeout(10_000),
       redirect: "follow",
     });
-    return res.ok;
+    return res.status !== 404 && res.status !== 410;
   } catch {
     return false;
   }
@@ -69,11 +85,21 @@ const escapeAttr = (s: string) => s.replace(/"/g, "%22").replace(/[<>]/g, "");
  */
 export function embedHtml(e: SocialEmbed): string {
   const id = escapeAttr(e.id);
-  const frame = (src: string, style: string, title: string) =>
+  // No `referrerpolicy="no-referrer"` here: YouTube validates the embedding
+  // domain via the referrer and throws "Error 153 / Video player configuration
+  // error" when it's stripped. The browser default sends the origin, which the
+  // providers all accept.
+  const frame = (
+    src: string,
+    style: string,
+    title: string,
+    iframeStyle = "height:100%",
+    attrs = "",
+  ) =>
     `<div class="social-embed" style="margin:1.5rem auto;${style}">` +
-    `<iframe src="${src}" title="${title}" loading="lazy" frameborder="0" ` +
-    `style="width:100%;height:100%;border:0;border-radius:12px" ` +
-    `allow="encrypted-media;fullscreen" allowfullscreen referrerpolicy="no-referrer"></iframe></div>`;
+    `<iframe src="${src}" title="${title}" loading="lazy" frameborder="0"${attrs ? ` ${attrs}` : ""} ` +
+    `style="width:100%;${iframeStyle};border:0;border-radius:12px" ` +
+    `allow="encrypted-media;fullscreen" allowfullscreen></iframe></div>`;
   switch (e.platform) {
     case "youtube":
       return frame(
@@ -94,10 +120,26 @@ export function embedHtml(e: SocialEmbed): string {
         "Instagram post",
       );
     case "twitter":
+      // No fixed wrapper height: the iframe carries an initial height plus a
+      // `data-social-embed` hook so the client resize listener (see the blog
+      // post route) can grow it to the post's real height — tall posts with
+      // media or long threads were getting clipped at the old 600px cap.
       return frame(
-        `https://platform.twitter.com/embed/Tweet.html?id=${id}`,
-        "max-width:550px;height:600px",
+        `https://platform.twitter.com/embed/Tweet.html?id=${id}&dnt=true`,
+        "max-width:550px",
         "Post on X",
+        "height:600px",
+        'data-social-embed="twitter"',
       );
+    case "reddit": {
+      // Reddit's iframe embed is served from redditmedia.com off the post's own
+      // path (the `id` alone isn't enough — it needs r/sub/comments/id/slug).
+      const path = new URL(e.url).pathname.replace(/\/+$/, "");
+      return frame(
+        `https://www.redditmedia.com${path}/?ref_source=embed&ref=share&embed=true&theme=dark`,
+        "max-width:640px;height:520px",
+        "Reddit post",
+      );
+    }
   }
 }

@@ -1,6 +1,7 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Clock } from "lucide-react";
+import { useEffect } from "react";
 
 import { BlogSidebar } from "#/components/blog/blog-sidebar.tsx";
 import { BlogTickerHeader } from "#/components/blog/blog-ticker-header.tsx";
@@ -65,6 +66,37 @@ function BlogPost() {
   const trpc = useTRPC();
   const { data: post } = useQuery(trpc.blog.bySlug.queryOptions({ slug }));
   const { data: related } = useQuery(trpc.blog.related.queryOptions({ slug, limit: 3 }));
+
+  // Grow embedded X posts to their real height. The Tweet.html iframe posts a
+  // `twttr.private.resize` message with its content height; without the
+  // official widgets.js to listen, tall posts stayed clipped at the initial
+  // height. Match the message to its iframe by contentWindow and resize.
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      if (typeof event.origin !== "string" || !event.origin.endsWith("twitter.com")) return;
+      let data: unknown = event.data;
+      if (typeof data === "string") {
+        try {
+          data = JSON.parse(data);
+        } catch {
+          return;
+        }
+      }
+      const embed = (
+        data as { "twttr.embed"?: { method?: string; params?: { height?: number }[] } }
+      )?.["twttr.embed"];
+      if (embed?.method !== "twttr.private.resize") return;
+      const height = embed.params?.[0]?.height;
+      if (!height) return;
+      document
+        .querySelectorAll<HTMLIFrameElement>('iframe[data-social-embed="twitter"]')
+        .forEach((frame) => {
+          if (frame.contentWindow === event.source) frame.style.height = `${height}px`;
+        });
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
 
   if (!post) return null;
 
