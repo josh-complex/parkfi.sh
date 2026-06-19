@@ -73,6 +73,25 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
   shellComponent: RootDocument,
 });
 
+// TEMP: captures the hydration mismatch in production (where React only emits
+// minified #418). Snapshots every SSR text node before hydration, then 5s later
+// logs the ones the client removed or changed — i.e. the mismatching text, with
+// server vs client values and surrounding markup. Results also stored on
+// window.__HYDR__ for tooling. Remove this and its <script> once diagnosed.
+const HYDRATION_PROBE = `(function(){try{
+  var snap=[];var w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);var n;
+  while(n=w.nextNode()){var t=n.nodeValue;if(t&&t.trim())snap.push([n,t,(n.parentElement&&(n.parentElement.tagName+'.'+(n.parentElement.className||'').slice(0,60)))||'']);}
+  var errs=[];var ce=console.error;console.error=function(){try{errs.push(Array.from(arguments).map(function(a){return a&&a.message||String(a)}).join(' | '))}catch(e){}return ce.apply(console,arguments)};
+  setTimeout(function(){
+    var removed=[],changed=[];
+    for(var i=0;i<snap.length;i++){var node=snap[i][0],was=snap[i][1],where=snap[i][2];
+      if(!node.isConnected){removed.push({server:was,where:where});}
+      else if(node.nodeValue!==was){changed.push({server:was,client:node.nodeValue,where:where});}}
+    var out={removedCount:removed.length,changedCount:changed.length,removed:removed.slice(0,40),changed:changed.slice(0,40),errors:errs.slice(0,10)};
+    window.__HYDR__=out;console.log('[HYDR-PROBE]'+JSON.stringify(out));
+  },5000);
+}catch(e){console.log('[HYDR-PROBE-ERR]'+e)}})();`;
+
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
@@ -108,6 +127,10 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         </PostHogProvider>
         <PWARegister />
         <Scripts />
+        {/* TEMP hydration diagnostic — remove once the #418 mismatch is found.
+            Snapshots SSR text nodes before hydration, then reports which the
+            client removed/changed (the mismatch) with server-vs-client text. */}
+        <script dangerouslySetInnerHTML={{ __html: HYDRATION_PROBE }} />
       </body>
     </html>
   );
