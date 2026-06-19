@@ -30,7 +30,7 @@ import { db } from "#/db/index.ts";
 import { blogPost, newsItem } from "#/db/schema.ts";
 import { parseSocialUrl, socialExists, type SocialEmbed } from "#/server/blog/embeds.ts";
 
-const MODEL = process.env.NEWS_MODEL ?? "gemini-3.1-flash-lite";
+const MODEL = process.env.NEWS_MODEL ?? "gemini-3.5-flash";
 /** Safety cap on drafts per run — a ceiling, not a target (skips yield fewer). */
 const MAX_DRAFTS_PER_RUN = Number(process.env.NEWS_MAX_DRAFTS ?? 2);
 /** Ignore items older than this so a quiet day / first run doesn't flood. */

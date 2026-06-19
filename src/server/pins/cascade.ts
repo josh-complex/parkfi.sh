@@ -41,7 +41,7 @@ const MATCH_CEIL = Number(process.env.PIN_MATCH_CEIL ?? 0.45);
 /** How many neighbours Stage 1 pulls (and the max we ever show the user). */
 const TOP_N = Number(process.env.PIN_TOP_N ?? 10);
 /** Gemini model for the Stage-3 re-rank (cheap Flash-class vision). */
-const RERANK_MODEL = process.env.PIN_RERANK_MODEL ?? "gemini-3.5-flash";
+const RERANK_MODEL = process.env.PIN_RERANK_MODEL ?? "gemini-3.1-flash-lite";
 
 export interface Candidate {
   pinId: string;
