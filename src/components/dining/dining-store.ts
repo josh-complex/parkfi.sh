@@ -58,6 +58,7 @@ export function clearExtraFilters() {
     ...s,
     filters: {
       ...DEFAULT_FILTERS,
+      operator: s.filters.operator,
       parkResort: s.filters.parkResort,
       cuisine: s.filters.cuisine,
     },

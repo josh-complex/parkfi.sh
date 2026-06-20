@@ -103,9 +103,9 @@ export const SORT_LABELS: Record<SortKey, string> = {
 export type Operator = "ALL" | "disney" | "universal";
 
 export const OPERATOR_LABELS: Record<Operator, string> = {
-  ALL: "All operators",
-  disney: "Disney",
-  universal: "Universal",
+  ALL: "All parks",
+  disney: "Disney Parks",
+  universal: "Universal Parks",
 };
 
 export type AvailabilityFilter = "ALL" | "today" | "window";
@@ -166,6 +166,8 @@ export const DEFAULT_FILTERS: ClientFilters = {
 
 export interface FilterOptions {
   parks: string[];
+  /** Parks grouped by operator so the Park segment narrows to the chosen operator (`ALL` = every park). */
+  parksByOperator: Record<Operator, string[]>;
   cuisines: string[];
   experiences: string[];
   prices: string[];
@@ -187,18 +189,29 @@ function operatorOf(source: number): Operator {
 /** Distinct, sorted option lists for the filter controls, derived from data. */
 export function deriveOptions(restaurants: Array<Restaurant>): FilterOptions {
   const parks = new Set<string>();
+  const disneyParks = new Set<string>();
+  const universalParks = new Set<string>();
   const cuisines = new Set<string>();
   const experiences = new Set<string>();
   const prices = new Set<string>();
   for (const r of restaurants) {
-    if (r.parkResort) parks.add(r.parkResort);
+    if (r.parkResort) {
+      parks.add(r.parkResort);
+      (operatorOf(r.source) === "universal" ? universalParks : disneyParks).add(r.parkResort);
+    }
     if (r.cuisine) cuisines.add(r.cuisine);
     if (r.experienceType) experiences.add(r.experienceType);
     const t = priceTier(r.priceRange);
     if (t) prices.add(t);
   }
+  const sorted = (s: Set<string>) => [...s].sort((a, b) => a.localeCompare(b));
   return {
-    parks: [...parks].sort((a, b) => a.localeCompare(b)),
+    parks: sorted(parks),
+    parksByOperator: {
+      ALL: sorted(parks),
+      disney: sorted(disneyParks),
+      universal: sorted(universalParks),
+    },
     cuisines: [...cuisines].sort((a, b) => a.localeCompare(b)),
     experiences: [...experiences].sort((a, b) => a.localeCompare(b)),
     prices: [...prices].sort((a, b) => a.length - b.length),
@@ -221,15 +234,14 @@ export function countActiveFilters(f: ClientFilters): number {
 
 /**
  * Active count for the post-search "extended filters" only — excludes the
- * facets promoted into the search pill (`parkResort`, `cuisine`), so the Filters
- * badge reflects just what the drawer/controls own. Service (`experienceType`)
- * lives in the drawer now, so it counts here.
+ * facets promoted into the search pill (`operator`, `parkResort`, `cuisine`), so
+ * the Filters badge reflects just what the drawer/controls own. Service
+ * (`experienceType`) lives in the drawer now, so it counts here.
  */
 export function countExtraFilters(f: ClientFilters): number {
   let n = 0;
   if (f.search.trim()) n++;
   if (f.experienceType !== "ALL") n++;
-  if (f.operator !== "ALL") n++;
   if (f.prices.length) n++;
   if (f.availability !== "ALL") n++;
   if (f.features.length) n++;

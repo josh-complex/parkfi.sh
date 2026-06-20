@@ -10,9 +10,7 @@ import { clearExtraFilters, diningStore, patchFilters } from "#/components/dinin
 import {
   countExtraFilters,
   FEATURE_FILTERS,
-  OPERATOR_LABELS,
   type FilterOptions,
-  type Operator,
 } from "#/components/dining/dining-filters.ts";
 import { HOURS_LABELS, HOURS_OPTIONS } from "#/components/dining/dining-hours.ts";
 import { Button, buttonVariants } from "#/components/ui/button.tsx";
@@ -149,15 +147,6 @@ export function ExtendedFilters({ options }: { options: FilterOptions }) {
           />
         </Section>
       )}
-
-      <Section label="Operator">
-        <PillRow
-          options={Object.keys(OPERATOR_LABELS) as Array<Operator>}
-          value={filters.operator}
-          onSelect={(v) => patchFilters({ operator: v })}
-          labelOf={(v) => (v === "ALL" ? "All" : OPERATOR_LABELS[v])}
-        />
-      </Section>
 
       {options.prices.length > 0 && (
         <Section label="Price">

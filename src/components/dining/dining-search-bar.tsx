@@ -28,8 +28,10 @@ import {
 } from "#/components/dining/dining-store.ts";
 import {
   countExtraFilters,
+  OPERATOR_LABELS,
   SORT_LABELS,
   type FilterOptions,
+  type Operator,
   type SortKey,
 } from "#/components/dining/dining-filters.ts";
 import { Button } from "#/components/ui/button.tsx";
@@ -127,17 +129,37 @@ export function DiningSearchBar({ options }: { options: FilterOptions }) {
   const searched = useStore(diningStore, (s) => s.searched);
   const stuck = useStore(diningStore, (s) => s.stuck);
 
+  const [operatorOpen, setOperatorOpen] = React.useState(false);
   const [whereOpen, setWhereOpen] = React.useState(false);
   const [cuisineOpen, setCuisineOpen] = React.useState(false);
   const [partyOpen, setPartyOpen] = React.useState(false);
 
   const closeSegments = React.useCallback(() => {
+    setOperatorOpen(false);
     setWhereOpen(false);
     setCuisineOpen(false);
     setPartyOpen(false);
   }, []);
-  useCloseOnScroll(whereOpen || cuisineOpen || partyOpen, closeSegments);
+  useCloseOnScroll(operatorOpen || whereOpen || cuisineOpen || partyOpen, closeSegments);
 
+  // Switching operator drops a now-invalid park selection back to "all".
+  const selectOperator = React.useCallback(
+    (op: Operator) => {
+      const valid = options.parksByOperator[op];
+      patchFilters({
+        operator: op,
+        parkResort:
+          filters.parkResort !== "ALL" && !valid.includes(filters.parkResort)
+            ? "ALL"
+            : filters.parkResort,
+      });
+      setOperatorOpen(false);
+    },
+    [options.parksByOperator, filters.parkResort],
+  );
+
+  const parkOptions = options.parksByOperator[filters.operator];
+  const operatorLabel = OPERATOR_LABELS[filters.operator];
   const whereLabel = filters.parkResort === "ALL" ? "All restaurants" : filters.parkResort;
   const cuisineLabel = filters.cuisine === "ALL" ? "All cuisines" : filters.cuisine;
 
@@ -154,6 +176,25 @@ export function DiningSearchBar({ options }: { options: FilterOptions }) {
         <div className="flex">
           <SearchSegment
             pos="first"
+            label="Parks"
+            value={operatorLabel}
+            muted={filters.operator === "ALL"}
+            open={operatorOpen}
+            onOpenChange={setOperatorOpen}
+            align="start"
+          >
+            {(Object.keys(OPERATOR_LABELS) as Array<Operator>).map((op) => (
+              <OptionRow
+                key={op}
+                label={OPERATOR_LABELS[op]}
+                selected={filters.operator === op}
+                onSelect={() => selectOperator(op)}
+              />
+            ))}
+          </SearchSegment>
+
+          <SearchSegment
+            pos="middle"
             label="Where"
             value={whereLabel}
             muted={filters.parkResort === "ALL"}
@@ -169,7 +210,7 @@ export function DiningSearchBar({ options }: { options: FilterOptions }) {
                 setWhereOpen(false);
               }}
             />
-            {options.parks.map((p) => (
+            {parkOptions.map((p) => (
               <OptionRow
                 key={p}
                 label={p}
@@ -249,7 +290,22 @@ export function DiningMobileFAB({ options }: { options: FilterOptions }) {
   const searched = useStore(diningStore, (s) => s.searched);
   const extraCount = useStore(diningStore, (s) => countExtraFilters(s.filters));
 
+  const selectOperator = React.useCallback(
+    (op: Operator) => {
+      const valid = options.parksByOperator[op];
+      patchFilters({
+        operator: op,
+        parkResort:
+          filters.parkResort !== "ALL" && !valid.includes(filters.parkResort)
+            ? "ALL"
+            : filters.parkResort,
+      });
+    },
+    [options.parksByOperator, filters.parkResort],
+  );
+
   const activeSearchFacets = [
+    filters.operator !== "ALL" ? OPERATOR_LABELS[filters.operator] : null,
     filters.parkResort !== "ALL" ? filters.parkResort : null,
     filters.cuisine !== "ALL" ? filters.cuisine : null,
   ].filter(Boolean);
@@ -281,12 +337,20 @@ export function DiningMobileFAB({ options }: { options: FilterOptions }) {
               <DrawerDescription>Choose a place, cuisine, and party size.</DrawerDescription>
             </DrawerHeader>
             <div className="flex flex-col gap-5 overflow-y-auto px-4 pb-4 pt-6">
+              <Section label="Parks">
+                <PillRow
+                  options={Object.keys(OPERATOR_LABELS) as Array<Operator>}
+                  value={filters.operator}
+                  onSelect={selectOperator}
+                  labelOf={(v) => OPERATOR_LABELS[v]}
+                />
+              </Section>
               <Section label="Where">
                 <AllSelect
                   value={filters.parkResort}
                   onValueChange={(v) => patchFilters({ parkResort: v })}
                   allLabel="All restaurants"
-                  options={options.parks}
+                  options={options.parksByOperator[filters.operator]}
                   ariaLabel="Park or resort"
                 />
               </Section>
