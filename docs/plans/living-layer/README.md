@@ -54,6 +54,14 @@ run**.
 - **Engineers / build:** 02 → 10 → 11 → 12, then the deep dives (03, 05, 06, 07).
 - **Everyone:** start at 01.
 
+## Player-facing brand: **Wayfarer**
+
+The name users see is **Wayfarer** (explorer/adventurer energy — travel the
+realms, gather your party). "Living Layer" stays the _internal_ architecture
+term (and the `living-layer` PostHog flag key + `living` router/`Lumen`
+codename remain unchanged) to avoid churn. When writing user-facing copy, use
+**Wayfarer**; in code/docs, the internal names persist.
+
 ## Naming note (the loose skin)
 
 Throughout these docs the game is referred to by the codename **Lumen**, with

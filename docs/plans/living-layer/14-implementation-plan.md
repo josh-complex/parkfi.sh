@@ -7,12 +7,21 @@
 > Dimming hook) is wired for real against the existing ingest path; everything
 > else is scoped per [12](12-demo-vertical-slice.md).
 
-## Build status — M0–M2 shipped (2026-06-20)
+## Build status — M0–M3 shipped (2026-06-20)
 
-M0 (dev mode), M1 (realm + geofence), and M2 (mark + Dimming engine — the
-mic-drop) are **built and green** (`bun tsc --noEmit` clean repo-wide;
-`bun vp lint` clean on all new files; 18/18 unit tests pass in
-`src/server/living/`).
+M0 (dev mode), M1 (realm + geofence), M2 (mark + Dimming engine — the mic-drop),
+and M3 (public `living` router + discovery pins + the gated play map) are
+**built and green** (`bun tsc --noEmit` clean repo-wide; `bun vp lint` clean on
+all new files; 18/18 unit tests pass in `src/server/living/`).
+
+**M3 adds:** `src/integrations/trpc/routers/living.ts` (`realms`, `marks`,
+`leaveMark`, `reactMark` — public reads + presence-/rate-gated discovery loop),
+`src/components/living/play-map.tsx` (self-contained maplibre map rendering
+Dimming spawns + discovery pins, tap-to-drop, react-via-popup),
+`src/routes/play.$slug.tsx` (gated by `useLivingLayerEnabled()` — the PostHog
+flag now gates a real screen at `/play/$slug`). The route tree
+(`src/routeTree.gen.ts`) was regenerated via `@tanstack/router-generator`; the
+diff only **adds** the new route. Still additive + flag-off-by-default.
 
 > **SAFETY — this work does not affect the existing application.** Everything
 > added is **additive and dark by default**:
