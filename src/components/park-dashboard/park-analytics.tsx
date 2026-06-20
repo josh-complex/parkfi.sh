@@ -36,6 +36,7 @@ import {
   type ChartConfig,
 } from "#/components/ui/chart.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
+import { ChartErrorBoundary } from "#/components/chart-error-boundary.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
 import { isSingleRiderName } from "./lightning-lane.ts";
@@ -73,7 +74,11 @@ function AnalyticsCard({
         <CardDescription className="truncate">{description}</CardDescription>
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col px-2 pb-4 sm:px-4">
-        {children}
+        {/* Per-chart isolation: a crash in one recharts chart can't take down
+            the others, and the `[CHART-CRASH:<title>]` log names the culprit. */}
+        <ChartErrorBoundary label={title} fallback={<ChartEmpty label="Chart unavailable." />}>
+          {children}
+        </ChartErrorBoundary>
       </CardContent>
     </Card>
   );
