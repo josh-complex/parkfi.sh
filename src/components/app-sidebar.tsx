@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 
 import { NavUser } from "#/components/nav-user.tsx";
-import { ConstructionIcon } from "#/components/ui/anim-icons/construction.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import {
   Sidebar,
@@ -78,10 +77,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   // on both `/` and `/park/*`.
   const isDashboard = pathname === "/" || pathname.startsWith("/park");
   const activeParkSlug = params.slug;
-
-  // Stays lists the bookable operators; the park/area scope lives in the
-  // board's search bar rather than the sidebar.
-  const isStays = pathname.startsWith("/stays");
 
   const trpc = useTRPC();
   const parksQ = useQuery({ ...trpc.parks.list.queryOptions(), enabled: isDashboard });
@@ -178,44 +173,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </SidebarGroupContent>
               </SidebarGroup>
             ))}
-          </>
-        )}
-
-        {isStays && (
-          <>
-            <SidebarSeparator />
-            <SidebarGroup>
-              <SidebarGroupLabel>Operators</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      isActive
-                      onClick={() => {
-                        closeOnMobile();
-                        void navigate({ to: "/stays", search: {} });
-                      }}
-                    >
-                      <span>Walt Disney World</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      aria-disabled
-                      className="justify-between"
-                      title="Coming soon"
-                    >
-                      <span>Universal Orlando</span>
-                      <ConstructionIcon
-                        autoplay
-                        size={18}
-                        className="text-muted-foreground shrink-0"
-                      />
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
           </>
         )}
       </SidebarContent>

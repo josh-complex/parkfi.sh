@@ -247,12 +247,42 @@
   animation: parkfi-flash-down 1.2s ease-out;
 }
 
+/* Looping caution-tape stripes — faded yellow over transparent, marching
+ * diagonally. Used to flag "coming soon" rows in place of a static icon. */
+@keyframes parkfi-caution-strip {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 36px 0;
+  }
+}
+
+.parkfi-caution-strip {
+  --caution-color: color-mix(in oklch, #ffdd00, transparent 65%);
+  background-image: linear-gradient(
+    -45deg,
+    var(--caution-color) 25%,
+    transparent 25%,
+    transparent 50%,
+    var(--caution-color) 50%,
+    var(--caution-color) 75%,
+    transparent 75%,
+    transparent
+  );
+  background-size: 36px 36px;
+  animation: parkfi-caution-strip 3s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .parkfi-marquee-track {
     animation: none;
   }
   .parkfi-flash-up,
   .parkfi-flash-down {
+    animation: none;
+  }
+  .parkfi-caution-strip {
     animation: none;
   }
 }

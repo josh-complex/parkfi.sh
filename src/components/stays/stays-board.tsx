@@ -266,7 +266,8 @@ function OperatorOption({
       className={cn(
         "hover:bg-accent hover:text-accent-foreground flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm outline-none transition-colors",
         selected && "font-medium",
-        disabled && "cursor-not-allowed opacity-60 hover:bg-transparent hover:text-inherit",
+        disabled &&
+          "parkfi-caution-strip cursor-not-allowed hover:bg-transparent hover:text-inherit",
       )}
     >
       <span className="truncate">{label}</span>
