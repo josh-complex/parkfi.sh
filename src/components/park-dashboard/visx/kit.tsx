@@ -4,6 +4,15 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { ParentSize } from "@visx/responsive";
 
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "#/components/ui/card.tsx";
+import { ChartErrorBoundary } from "#/components/chart-error-boundary.tsx";
 import { cn } from "#/lib/utils.ts";
 
 /**
@@ -175,4 +184,57 @@ export function ChartNoCharacters({ height = 220 }: { height?: number }) {
 /** Truncate a string to roughly `max` chars with an ellipsis. */
 export function truncate(s: string, max: number): string {
   return s.length > max ? `${s.slice(0, Math.max(1, max - 1))}…` : s;
+}
+
+/** Standard body height for an analytics chart card. */
+export const CHART_H = 220;
+
+/** Short 12h label for an hour-of-day index (0–23): 0 -> "12a", 13 -> "1p". */
+export function hourLabel(h: number): string {
+  const period = h < 12 ? "a" : "p";
+  const base = h % 12 === 0 ? 12 : h % 12;
+  return `${base}${period}`;
+}
+
+/**
+ * Shared "busy" ramp (green → amber → red), so wait intensity reads the same way
+ * across every card — the crowd calendar, daily rhythm, treemap, and the
+ * per-ride charts. `t` is clamped to 0–1.
+ */
+export function intensityColor(t: number): string {
+  const c = Math.max(0, Math.min(1, t));
+  return `hsl(${Math.round(140 - 140 * c)} 72% ${Math.round(52 - 8 * c)}%)`;
+}
+
+/**
+ * The standard analytics card frame: title + description, an optional header
+ * action (e.g. a toggle), and an error-isolated body. A crash in one chart
+ * renders the fallback instead of taking down its neighbours, and the
+ * `[CHART-CRASH:<title>]` log names the culprit.
+ */
+export function AnalyticsCard({
+  title,
+  description,
+  action,
+  children,
+}: {
+  title: string;
+  description: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card className="@container/analytics flex flex-col overflow-hidden">
+      <CardHeader>
+        <CardTitle className="text-base">{title}</CardTitle>
+        <CardDescription className="truncate">{description}</CardDescription>
+        {action ? <CardAction className="self-center">{action}</CardAction> : null}
+      </CardHeader>
+      <CardContent className="flex min-h-0 flex-1 flex-col px-2 pb-4 sm:px-4">
+        <ChartErrorBoundary label={title} fallback={<ChartEmpty label="Chart unavailable." />}>
+          {children}
+        </ChartErrorBoundary>
+      </CardContent>
+    </Card>
+  );
 }

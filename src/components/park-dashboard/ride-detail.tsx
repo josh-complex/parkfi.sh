@@ -12,6 +12,7 @@ import { useTRPC } from "#/integrations/trpc/react.ts";
 import { cn } from "#/lib/utils.ts";
 
 import { formatPriceCents, isUniversal, paidLineInfo, paidLineProduct } from "./lightning-lane.ts";
+import { RideAnalytics } from "./ride-analytics.tsx";
 import { Sparkline } from "./sparkline.tsx";
 
 const STATUS_BADGE: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -209,6 +210,8 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
           )}
         </CardContent>
       </Card>
+
+      <RideAnalytics attractionId={ride.id} timezone={ride.park.timezone} />
     </div>
   );
 }

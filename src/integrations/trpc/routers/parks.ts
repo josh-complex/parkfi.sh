@@ -765,6 +765,90 @@ export const parksRouter = {
     }),
 
   /**
+   * Per-ride analytics rollups over recent STANDBY `queue_obs`, shaped for the
+   * charts on the individual ride page: hour-of-day rhythm and day-of-week
+   * pattern (both 30 days) plus a date × hour crowd calendar (14 days). Hour /
+   * date / weekday grouping is done in the park's *local* timezone so "9am" and
+   * "Saturday" mean what a guest at the park would expect, not UTC. The windowed
+   * wait-trend chart on that page reuses `history` directly.
+   */
+  rideAnalytics: publicProcedure
+    .input(z.object({ attractionId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const id = input.attractionId;
+      const meta = await db.execute<{ timezone: string }>(sql`
+        SELECT p.timezone
+        FROM attractions a JOIN parks p ON p.id = a.park_id
+        WHERE a.id = ${id}
+        LIMIT 1
+      `);
+      const tz = meta.rows[0]?.timezone ?? "UTC";
+      const empty = {
+        timezone: tz,
+        hourly: [] as Array<{ hour: number; avgWait: number; peak: number; samples: number }>,
+        weekday: [] as Array<{ dow: number; avgWait: number; peak: number; samples: number }>,
+        heatmap: [] as Array<{ date: string; hour: number; avgWait: number }>,
+      };
+      if (!meta.rows[0]) return empty;
+
+      const [hourly, weekday, heatmap] = await Promise.all([
+        // Avg + peak standby by local hour-of-day (30 days).
+        db.execute<{ h: number; avg_wait: number; peak: number; samples: number }>(sql`
+          SELECT extract(hour FROM observed_at AT TIME ZONE ${tz})::int AS h,
+                 avg(wait_min)::int AS avg_wait,
+                 max(wait_min)      AS peak,
+                 count(*)           AS samples
+          FROM queue_obs
+          WHERE attraction_id = ${id} AND queue_type = 1 AND wait_min IS NOT NULL
+            AND observed_at >= now() - INTERVAL '30 days'
+          GROUP BY h ORDER BY h
+        `),
+        // Avg + peak standby by local day-of-week (0=Sun … 6=Sat) over 30 days.
+        db.execute<{ dow: number; avg_wait: number; peak: number; samples: number }>(sql`
+          SELECT extract(dow FROM observed_at AT TIME ZONE ${tz})::int AS dow,
+                 avg(wait_min)::int AS avg_wait,
+                 max(wait_min)      AS peak,
+                 count(*)           AS samples
+          FROM queue_obs
+          WHERE attraction_id = ${id} AND queue_type = 1 AND wait_min IS NOT NULL
+            AND observed_at >= now() - INTERVAL '30 days'
+          GROUP BY dow ORDER BY dow
+        `),
+        // Crowd calendar: avg standby by local date × hour-of-day (14 days).
+        db.execute<{ d: string; h: number; avg_wait: number }>(sql`
+          SELECT (observed_at AT TIME ZONE ${tz})::date::text AS d,
+                 extract(hour FROM observed_at AT TIME ZONE ${tz})::int AS h,
+                 avg(wait_min)::int AS avg_wait
+          FROM queue_obs
+          WHERE attraction_id = ${id} AND queue_type = 1 AND wait_min IS NOT NULL
+            AND observed_at >= now() - INTERVAL '14 days'
+          GROUP BY d, h ORDER BY d, h
+        `),
+      ]);
+
+      return {
+        timezone: tz,
+        hourly: hourly.rows.map((r) => ({
+          hour: Number(r.h),
+          avgWait: Number(r.avg_wait),
+          peak: Number(r.peak),
+          samples: Number(r.samples),
+        })),
+        weekday: weekday.rows.map((r) => ({
+          dow: Number(r.dow),
+          avgWait: Number(r.avg_wait),
+          peak: Number(r.peak),
+          samples: Number(r.samples),
+        })),
+        heatmap: heatmap.rows.map((r) => ({
+          date: r.d,
+          hour: Number(r.h),
+          avgWait: Number(r.avg_wait),
+        })),
+      };
+    }),
+
+  /**
    * Whole-park bucketed history for one queue type, pivoted per attraction.
    *
    * Powers the multi-series park chart (one togglable line per ride) and the

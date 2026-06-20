@@ -15,78 +15,28 @@ import { scaleBand, scaleLinear, scaleLog, scaleSqrt, scaleTime } from "@visx/sc
 import { Arc, AreaClosed, Bar, Circle, Line, LinePath } from "@visx/shape";
 import { Text } from "@visx/text";
 
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "#/components/ui/card.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { ToggleGroup, ToggleGroupItem } from "#/components/ui/toggle-group.tsx";
-import { ChartErrorBoundary } from "#/components/chart-error-boundary.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
 import { isSingleRiderName } from "./lightning-lane.ts";
 import { rideColor } from "./ride-colors.ts";
 import {
+  AnalyticsCard,
   AXIS_INK,
   ChartEmpty,
   ChartFrame,
   ChartNoCharacters,
+  CHART_H,
   clientXY,
   GRID_INK,
+  hourLabel,
+  intensityColor,
   PRIMARY,
   tickLabelProps,
   truncate,
   useChartTooltip,
 } from "./visx/kit.tsx";
-
-const CHART_H = 220;
-
-// Short 12h label for an hour-of-day index (0–23): 0 -> "12a", 13 -> "1p".
-function hourLabel(h: number): string {
-  const period = h < 12 ? "a" : "p";
-  const base = h % 12 === 0 ? 12 : h % 12;
-  return `${base}${period}`;
-}
-
-// Shared "busy" ramp (green → amber → red), matching the crowd calendar so
-// intensity reads the same way across every card. `t` is 0–1.
-function intensityColor(t: number): string {
-  const c = Math.max(0, Math.min(1, t));
-  return `hsl(${Math.round(140 - 140 * c)} 72% ${Math.round(52 - 8 * c)}%)`;
-}
-
-function AnalyticsCard({
-  title,
-  description,
-  action,
-  children,
-}: {
-  title: string;
-  description: string;
-  action?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <Card className="@container/analytics flex flex-col overflow-hidden">
-      <CardHeader>
-        <CardTitle className="text-base">{title}</CardTitle>
-        <CardDescription className="truncate">{description}</CardDescription>
-        {action ? <CardAction className="self-center">{action}</CardAction> : null}
-      </CardHeader>
-      <CardContent className="flex min-h-0 flex-1 flex-col px-2 pb-4 sm:px-4">
-        {/* Per-chart isolation: a crash in one chart can't take down the others,
-            and the `[CHART-CRASH:<title>]` log names the culprit. */}
-        <ChartErrorBoundary label={title} fallback={<ChartEmpty label="Chart unavailable." />}>
-          {children}
-        </ChartErrorBoundary>
-      </CardContent>
-    </Card>
-  );
-}
 
 // ───────────────────────── 2. Average wait trend (area) ──────────────────────
 type ActivityDatum = { bucket: string; rides: number; avgWait: number | null; closed: boolean };
