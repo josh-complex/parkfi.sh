@@ -3,7 +3,16 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
-import { CartesianGrid, Line, LineChart, ReferenceArea, XAxis, YAxis } from "recharts";
+import { bisector, extent } from "d3-array";
+import { AxisBottom, AxisRight } from "@visx/axis";
+import { Brush } from "@visx/brush";
+import { curveMonotoneX } from "@visx/curve";
+import { localPoint } from "@visx/event";
+import { GridRows } from "@visx/grid";
+import { Group } from "@visx/group";
+import { PatternLines } from "@visx/pattern";
+import { scaleLinear, scaleTime } from "@visx/scale";
+import { Bar, Circle, Line, LinePath } from "@visx/shape";
 import { MinusIcon, TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 
 import {
@@ -14,12 +23,6 @@ import {
   CardHeader,
   CardTitle,
 } from "#/components/ui/card.tsx";
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from "#/components/ui/chart.tsx";
 import { ConstructionState } from "#/components/ui/anim-icons/construction.tsx";
 import { Empty, EmptyDescription, EmptyTitle } from "#/components/ui/empty.tsx";
 import {
@@ -36,6 +39,8 @@ import { cn } from "#/lib/utils.ts";
 
 import { isSingleRiderName, isUniversal, paidLineProduct } from "./lightning-lane.ts";
 import { rideColor } from "./ride-colors.ts";
+import { indicativeSeries, strokeRuns } from "./visx/indicative.ts";
+import { AXIS_INK, GRID_INK, PRIMARY, TooltipCard, tickLabelProps } from "./visx/kit.tsx";
 
 type Metric = "wait" | "price" | "availability";
 
@@ -55,12 +60,23 @@ const RANGE_HOURS: Record<string, number> = { "24h": 24, "7d": 168, "30d": 720 }
 
 // Reserved series key for the whole-park average line.
 const AVG_KEY = "__avg";
-// Synthetic series key for the tooltip's "+N more rides" overflow row.
-const MORE_KEY = "__more";
 // Cap how many ride rows the tooltip lists (busiest-first) before collapsing the
 // rest into a single "+N more" line — otherwise enabling the whole roster makes
 // the tooltip overflow the card and swamp the legend below it.
 const MAX_TOOLTIP_RIDES = 7;
+
+// Chart geometry. The card reserves a ~204px band: a line plot, a slim brush
+// context strip beneath it, then the always-on legend below.
+const PLOT_H = 152;
+const BRUSH_H = 34;
+const BRUSH_GAP = 14;
+const MARGIN = { top: 8, right: 26, bottom: 20, left: 6 };
+
+type Row = Record<string, number | string | boolean | null> & {
+  bucket: string;
+  status?: "open" | "closed";
+  t: number;
+};
 
 /**
  * The ride-series toggle list, rendered below the chart as wrapping chips
@@ -79,10 +95,6 @@ function RideLegend({
   colorOf: (id: number) => string;
   trendOf: (id: number) => "up" | "down" | "flat";
   toggle: (id: number) => void;
-  /**
-   * `list` — one ride per row. `wrap` — chips that flow across the full width,
-   * used for the always-on section below the chart.
-   */
   layout?: "list" | "wrap";
 }) {
   const wrap = layout === "wrap";
@@ -130,6 +142,499 @@ function RideLegend({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+const bisectT = bisector<Row, number>((d) => d.t).left;
+
+/**
+ * One ride series, drawn so it never breaks: live readings stroke solid, and
+ * stretches with no live reading — mid-day downtime gaps or park-closed buckets
+ * (sunk to the 0 baseline) — bridge with a faded dashed stroke. Same visual
+ * grammar as the row sparklines, so the board and the chart tell one story.
+ */
+function IndicativeLine({
+  rows,
+  seriesKey,
+  x,
+  y,
+  color,
+  strokeWidth,
+  strokeOpacity = 1,
+}: {
+  rows: Array<Row>;
+  seriesKey: string;
+  x: (d: Date) => number;
+  y: (v: number) => number;
+  color: string;
+  strokeWidth: number;
+  strokeOpacity?: number;
+}) {
+  const runs = React.useMemo(() => {
+    const { values, kinds } = indicativeSeries(
+      rows.map((r) =>
+        r.status === "closed"
+          ? { value: null, closed: true }
+          : { value: typeof r[seriesKey] === "number" ? (r[seriesKey] as number) : null },
+      ),
+      0,
+    );
+    return strokeRuns(kinds).map((run) => ({
+      bridge: run.bridge,
+      data: run.idx.map((i) => ({ t: rows[i].t, v: values[i] })),
+    }));
+  }, [rows, seriesKey]);
+
+  return (
+    <>
+      {runs.map((run, i) => (
+        <LinePath
+          key={i}
+          data={run.data}
+          x={(d) => x(new Date(d.t))}
+          y={(d) => y(d.v)}
+          curve={curveMonotoneX}
+          stroke={color}
+          strokeWidth={strokeWidth}
+          strokeOpacity={strokeOpacity * (run.bridge ? 0.5 : 1)}
+          strokeDasharray={run.bridge ? "3 3" : undefined}
+        />
+      ))}
+    </>
+  );
+}
+
+/**
+ * The SVG plot: park-average + enabled ride lines, closed-hours shading, a
+ * hover cursor with a multi-series readout, and a brush strip below for zooming
+ * the visible time window.
+ */
+function WaitPlot({
+  width,
+  rows,
+  enabledRides,
+  colorOf,
+  chartLabels,
+  focusedId,
+  mode,
+  tz,
+  hours,
+}: {
+  width: number;
+  rows: Array<Row>;
+  enabledRides: Array<{ id: number; name: string }>;
+  colorOf: (id: number) => string;
+  chartLabels: Record<string, string>;
+  focusedId: number | null;
+  mode: Metric;
+  tz: string;
+  hours: number;
+}) {
+  // Brush selection in timestamp space; null = full range.
+  const [sel, setSel] = React.useState<{ x0: number; x1: number } | null>(null);
+  // A new park / range / metric resets any zoom.
+  const resetKey = `${rows.length}:${mode}:${hours}`;
+  React.useEffect(() => setSel(null), [resetKey]);
+
+  const [hover, setHover] = React.useState<{ row: Row; left: number } | null>(null);
+
+  const innerW = Math.max(0, width - MARGIN.left - MARGIN.right);
+  const fullExtent = extent(rows, (d) => d.t) as [number, number];
+
+  const visibleRows = React.useMemo(() => {
+    if (!sel) return rows;
+    const out = rows.filter((r) => r.t >= sel.x0 && r.t <= sel.x1);
+    return out.length >= 2 ? out : rows;
+  }, [rows, sel]);
+
+  // Y domain spans the average + every enabled ride across the visible window.
+  const yMax = React.useMemo(() => {
+    if (mode === "availability") return 100;
+    let m = 0;
+    const keys = [AVG_KEY, ...enabledRides.map((r) => String(r.id))];
+    for (const row of visibleRows) {
+      for (const k of keys) {
+        const v = row[k];
+        if (typeof v === "number" && v > m) m = v;
+      }
+    }
+    return m;
+  }, [visibleRows, enabledRides, mode]);
+
+  const x = scaleTime({
+    domain: (extent(visibleRows, (d) => d.t) as [number, number]).map((t) => new Date(t)) as [
+      Date,
+      Date,
+    ],
+    range: [0, innerW],
+  });
+  const y = scaleLinear({
+    domain: [0, mode === "availability" ? 100 : yMax * 1.1 || 1],
+    range: [PLOT_H, 0],
+    nice: mode !== "availability",
+  });
+
+  // Contiguous runs of closed buckets in view → shaded bands behind the lines.
+  const closedBands = React.useMemo(() => {
+    const bands: Array<{ x0: number; x1: number }> = [];
+    let start: number | null = null;
+    let prev: number | null = null;
+    for (const r of visibleRows) {
+      if (r.status === "closed") {
+        if (start == null) start = r.t;
+        prev = r.t;
+      } else if (start != null) {
+        bands.push({ x0: start, x1: prev! });
+        start = null;
+      }
+    }
+    if (start != null) bands.push({ x0: start, x1: prev! });
+    return bands;
+  }, [visibleRows]);
+
+  // Per-ride point lists, nulls dropped so the line bridges collection gaps
+  // (recharts `connectNulls`); calendar-closed buckets are zeroed numbers and so
+  // stay in, dropping the line to the 0 baseline.
+  const linePts = React.useCallback(
+    (key: string) =>
+      visibleRows.flatMap((r) =>
+        typeof r[key] === "number" ? [{ t: r.t, v: r[key] as number }] : [],
+      ),
+    [visibleRows],
+  );
+
+  const valueFormatter = (v: number) =>
+    mode === "price" ? `$${v.toFixed(2)}` : mode === "availability" ? `${v}%` : `${v} min`;
+
+  // Brush context: a slim overview across the FULL range. It mirrors the main
+  // plot — the park average plus whatever ride series are enabled — so the strip
+  // reflects the current view, not just the average.
+  const brushX = scaleTime({
+    domain: fullExtent.map((t) => new Date(t)) as [Date, Date],
+    range: [0, innerW],
+  });
+  const brushKeys = [AVG_KEY, ...enabledRides.map((r) => String(r.id))];
+  const brushYMax = React.useMemo(() => {
+    if (mode === "availability") return 100;
+    let m = 0;
+    for (const r of rows) {
+      for (const k of brushKeys) {
+        const v = r[k];
+        if (typeof v === "number" && v > m) m = v;
+      }
+    }
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, mode, brushKeys.join(",")]);
+  const brushY = scaleLinear({
+    domain: [0, mode === "availability" ? 100 : brushYMax || 1],
+    range: [BRUSH_H, 0],
+  });
+  const brushPts = React.useCallback(
+    (key: string) =>
+      rows.flatMap((r) => (typeof r[key] === "number" ? [{ t: r.t, v: r[key] as number }] : [])),
+    [rows],
+  );
+
+  const onHover = (e: React.MouseEvent | React.TouchEvent) => {
+    const pt = localPoint(e);
+    if (!pt) return;
+    const date = x.invert(pt.x - MARGIN.left);
+    const idx = bisectT(visibleRows, date.getTime(), 1);
+    const a = visibleRows[idx - 1];
+    const b = visibleRows[idx];
+    const row = !b || (a && date.getTime() - a.t < b.t - date.getTime()) ? a : b;
+    if (!row) return;
+    setHover({ row, left: x(new Date(row.t)) });
+  };
+
+  // Build the tooltip rows: park average first, then enabled rides busiest-first,
+  // capped, with an overflow count.
+  const tipRows = React.useMemo(() => {
+    if (!hover) return null;
+    const row = hover.row;
+    if (row.status === "closed") return { closed: true as const, items: [], more: 0 };
+    const items = enabledRides
+      .map((r) => ({ id: r.id, value: row[String(r.id)] }))
+      .filter((i): i is { id: number; value: number } => typeof i.value === "number")
+      .sort((p, q) => q.value - p.value);
+    const shown = items.slice(0, MAX_TOOLTIP_RIDES);
+    return { closed: false as const, items: shown, more: items.length - shown.length };
+  }, [hover, enabledRides]);
+
+  const labelFor = (value: number) =>
+    new Date(value).toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: hours <= 72 ? "2-digit" : undefined,
+      timeZone: tz,
+    });
+
+  const avgVal = hover ? hover.row[AVG_KEY] : null;
+
+  return (
+    <div className="relative w-full" style={{ height: PLOT_H + BRUSH_GAP + BRUSH_H + 20 }}>
+      <svg width={width} height={PLOT_H + BRUSH_GAP + BRUSH_H + 20} className="overflow-visible">
+        <PatternLines
+          id="wait-closed-hatch"
+          height={6}
+          width={6}
+          stroke="color-mix(in srgb, var(--muted-foreground) 20%, transparent)"
+          strokeWidth={1}
+          orientation={["diagonal"]}
+        />
+        <PatternLines
+          id="wait-brush-pattern"
+          height={8}
+          width={8}
+          stroke="color-mix(in srgb, var(--primary) 45%, transparent)"
+          strokeWidth={1}
+          orientation={["diagonal"]}
+        />
+        {/* ── main plot ── */}
+        <Group left={MARGIN.left} top={MARGIN.top}>
+          <GridRows scale={y} width={innerW} stroke={GRID_INK} strokeOpacity={0.5} numTicks={4} />
+          {closedBands.map((b) => {
+            const x0 = x(new Date(b.x0));
+            const x1 = x(new Date(b.x1));
+            return (
+              <rect
+                key={b.x0}
+                x={Math.min(x0, x1)}
+                y={0}
+                width={Math.max(2, Math.abs(x1 - x0))}
+                height={PLOT_H}
+                fill="url(#wait-closed-hatch)"
+              />
+            );
+          })}
+          {/* enabled ride series — solid where live, dashed across bridged gaps */}
+          {enabledRides.map((r) => {
+            const isFocused = r.id === focusedId;
+            const dim = focusedId != null && !isFocused;
+            return (
+              <IndicativeLine
+                key={r.id}
+                rows={visibleRows}
+                seriesKey={String(r.id)}
+                x={x}
+                y={y}
+                color={colorOf(r.id)}
+                strokeWidth={isFocused ? 2.75 : 1.75}
+                strokeOpacity={dim ? 0.35 : 1}
+              />
+            );
+          })}
+          {/* whole-park average always on top */}
+          <LinePath
+            data={linePts(AVG_KEY)}
+            x={(d) => x(new Date(d.t))}
+            y={(d) => y(d.v)}
+            curve={curveMonotoneX}
+            stroke={PRIMARY}
+            strokeWidth={2.75}
+            strokeDasharray="5 4"
+          />
+          {/* hover cursor + dots */}
+          {hover && (
+            <g pointerEvents="none">
+              <Line
+                from={{ x: hover.left, y: 0 }}
+                to={{ x: hover.left, y: PLOT_H }}
+                stroke={AXIS_INK}
+                strokeWidth={1}
+                strokeDasharray="3 3"
+                strokeOpacity={0.6}
+              />
+              {typeof avgVal === "number" && hover.row.status !== "closed" && (
+                <Circle
+                  cx={hover.left}
+                  cy={y(avgVal)}
+                  r={4}
+                  fill={PRIMARY}
+                  stroke="var(--background)"
+                  strokeWidth={1.5}
+                />
+              )}
+              {hover.row.status !== "closed" &&
+                enabledRides.map((r) => {
+                  const v = hover.row[String(r.id)];
+                  if (typeof v !== "number") return null;
+                  return (
+                    <Circle
+                      key={r.id}
+                      cx={hover.left}
+                      cy={y(v)}
+                      r={3}
+                      fill={colorOf(r.id)}
+                      stroke="var(--background)"
+                      strokeWidth={1.25}
+                    />
+                  );
+                })}
+            </g>
+          )}
+          <AxisRight
+            left={innerW}
+            scale={y}
+            numTicks={4}
+            hideTicks
+            hideAxisLine
+            tickFormat={(v) =>
+              mode === "price" ? `$${v}` : mode === "availability" ? `${v}%` : `${v}`
+            }
+            tickLabelProps={() => tickLabelProps({ textAnchor: "end", dx: "2.2em", dy: "0.3em" })}
+          />
+          <AxisBottom
+            top={PLOT_H}
+            scale={x}
+            numTicks={Math.max(2, Math.floor(innerW / 80))}
+            stroke={GRID_INK}
+            hideTicks
+            tickFormat={(v) =>
+              hours <= 24
+                ? (v as Date).toLocaleTimeString("en-US", {
+                    hour: "numeric",
+                    minute: "2-digit",
+                    timeZone: tz,
+                  })
+                : (v as Date).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    timeZone: tz,
+                  })
+            }
+            tickLabelProps={() => tickLabelProps({ textAnchor: "middle", dy: "0.25em" })}
+          />
+          <Bar
+            width={innerW}
+            height={PLOT_H}
+            fill="transparent"
+            onMouseMove={onHover}
+            onTouchMove={onHover}
+            onMouseLeave={() => setHover(null)}
+          />
+        </Group>
+
+        {/* ── brush context strip ── */}
+        <Group left={MARGIN.left} top={MARGIN.top + PLOT_H + BRUSH_GAP}>
+          <rect width={innerW} height={BRUSH_H} rx={6} fill="var(--muted)" fillOpacity={0.4} />
+          {enabledRides.map((r) => (
+            <LinePath
+              key={r.id}
+              data={brushPts(String(r.id))}
+              x={(d) => brushX(new Date(d.t))}
+              y={(d) => brushY(d.v)}
+              curve={curveMonotoneX}
+              stroke={colorOf(r.id)}
+              strokeWidth={1}
+              strokeOpacity={0.6}
+            />
+          ))}
+          <LinePath
+            data={brushPts(AVG_KEY)}
+            x={(d) => brushX(new Date(d.t))}
+            y={(d) => brushY(d.v)}
+            curve={curveMonotoneX}
+            stroke={PRIMARY}
+            strokeWidth={1.5}
+            strokeOpacity={0.85}
+          />
+          <Brush
+            xScale={brushX}
+            yScale={brushY}
+            width={innerW}
+            height={BRUSH_H}
+            margin={{
+              top: MARGIN.top + PLOT_H + BRUSH_GAP,
+              left: MARGIN.left,
+              right: MARGIN.right,
+              bottom: 0,
+            }}
+            handleSize={8}
+            resizeTriggerAreas={["left", "right"]}
+            brushDirection="horizontal"
+            selectedBoxStyle={{ fill: "url(#wait-brush-pattern)", stroke: PRIMARY, strokeWidth: 1 }}
+            useWindowMoveEvents
+            onChange={(domain) => {
+              if (!domain) {
+                setSel(null);
+                return;
+              }
+              setSel({ x0: domain.x0, x1: domain.x1 });
+            }}
+            onClick={() => setSel(null)}
+          />
+        </Group>
+      </svg>
+
+      {/* tooltip */}
+      {hover && tipRows && (
+        <div
+          className="pointer-events-none absolute top-0"
+          style={{
+            left: MARGIN.left + hover.left,
+            // Size to content (capped), not to the space left of the container edge.
+            // Without this, an `absolute` box with only `left` set shrink-to-fits the
+            // remaining width, so the card narrows the further right the pointer is.
+            width: "max-content",
+            maxWidth: "16rem",
+            transform: `translateX(${hover.left > innerW / 2 ? "calc(-100% - 10px)" : "10px"})`,
+          }}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 6 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ type: "spring", stiffness: 460, damping: 26, mass: 0.6 }}
+          >
+            <TooltipCard className="min-w-36">
+              <div className="mb-1 font-medium text-foreground">{labelFor(hover.row.t)}</div>
+              {tipRows.closed ? (
+                <span className="flex items-center gap-1.5 text-muted-foreground">
+                  <span className="size-2 shrink-0 rounded-[2px] bg-muted-foreground/40" />
+                  Park closed
+                </span>
+              ) : (
+                <div className="grid gap-1">
+                  {typeof avgVal === "number" && (
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="flex items-center gap-1.5 text-muted-foreground">
+                        <span
+                          className="size-2 shrink-0 rounded-[2px]"
+                          style={{ backgroundColor: PRIMARY }}
+                        />
+                        Park average
+                      </span>
+                      <span className="font-mono font-medium tabular-nums text-foreground">
+                        {valueFormatter(avgVal)}
+                      </span>
+                    </div>
+                  )}
+                  {tipRows.items.map((i) => (
+                    <div key={i.id} className="flex items-center justify-between gap-3">
+                      <span className="flex items-center gap-1.5 text-muted-foreground">
+                        <span
+                          className="size-2 shrink-0 rounded-[2px]"
+                          style={{ backgroundColor: colorOf(i.id) }}
+                        />
+                        {chartLabels[String(i.id)] ?? i.id}
+                      </span>
+                      <span className="font-mono font-medium tabular-nums text-foreground">
+                        {valueFormatter(i.value)}
+                      </span>
+                    </div>
+                  ))}
+                  {tipRows.more > 0 && (
+                    <span className="text-muted-foreground">+{tipRows.more} more rides</span>
+                  )}
+                </div>
+              )}
+            </TooltipCard>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }
@@ -212,18 +717,12 @@ export function ParkWaitChart({
 
   // Augment each bucket with the whole-park average across rides so the chart
   // always carries a park-wide summary line over the individual ride series.
-  const chartData = React.useMemo(() => {
+  const chartData = React.useMemo<Array<Row>>(() => {
     const ids = rides.map((r) => r.id);
     // How many consecutive buckets a ride's last reading stays "live" for the
     // park average before we drop it. Bounds carry-forward so a closed/down ride
     // doesn't keep inflating the average indefinitely.
     const STALE_BUCKETS = 2;
-    // Pass 1: aggregate each bucket and flag the ones where the park was open
-    // *and* reporting, so we can bound the 0-baseline to the live data range. The
-    // park average is taken over every ride whose most recent reading is still
-    // live (carried forward up to STALE_BUCKETS), not just the rides that
-    // happened to refresh in this exact bucket — otherwise the denominator
-    // changes bucket-to-bucket and the line swings on composition, not on waits.
     const lastVal = new Map<number, number>();
     const lastSeen = new Map<number, number>();
     const rows = points.map((p, i) => {
@@ -254,57 +753,30 @@ export function ParkWaitChart({
     });
 
     return rows.map((r) => {
+      const t = new Date(r.p.bucket).getTime();
       // Open bucket: keep raw per-ride values. A missing reading mid-day is ride
-      // downtime — left null so the line bridges it (connectNulls), not a break.
-      if (r.open) return { ...r.p, status: "open" as const, [AVG_KEY]: r.avg };
-      // Calendar says closed (server `closed` flag from park_schedule): floor
-      // every series to 0 so the lines sit on the baseline and the tooltip reads
-      // "Park closed". This applies to *any* closed bucket — including the
-      // overnight hours before the first open bucket in view — because the
-      // schedule still tells us the park was shut, so 0 is honest, not a guess.
+      // downtime — left null so the line bridges it, not a break.
+      if (r.open) return { ...r.p, t, status: "open" as const, [AVG_KEY]: r.avg };
+      // Calendar says closed: floor every series to 0 so the lines sit on the
+      // baseline and the tooltip reads "Park closed".
       if (r.p.closed) {
         const zeroed: Record<string, number> = { [AVG_KEY]: 0 };
         for (const id of ids) zeroed[String(id)] = 0;
-        return { ...r.p, ...zeroed, status: "closed" as const };
+        return { ...r.p, ...zeroed, t, status: "closed" as const };
       }
-      // No data *and* no closure signal: a mid-day collection gap, or a stretch
-      // before history began / outside any known schedule window. Leave it null
-      // so connectNulls bridges where it can and we never paint a phantom 0 where
-      // we simply don't know the park was shut.
-      return { ...r.p, status: "open" as const, [AVG_KEY]: null };
+      // No data *and* no closure signal: a collection gap. Leave null so the line
+      // bridges where it can and we never paint a phantom 0.
+      return { ...r.p, t, status: "open" as const, [AVG_KEY]: null };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [points, ridesKey, mode]);
 
-  // Contiguous runs of "closed" buckets, shaded as bands behind the lines so the
-  // overnight/inter-session closures the calendar marks read at a glance rather
-  // than as an unexplained drop to the 0 baseline.
-  const closedSpans = React.useMemo(() => {
-    const spans: Array<{ x1: string; x2: string }> = [];
-    let start: string | null = null;
-    let prev: string | null = null;
-    for (const d of chartData) {
-      const row = d as { bucket: string; status?: string };
-      if (row.status === "closed") {
-        if (start == null) start = row.bucket;
-        prev = row.bucket;
-      } else if (start != null) {
-        spans.push({ x1: start, x2: prev! });
-        start = null;
-      }
-    }
-    if (start != null) spans.push({ x1: start, x2: prev! });
-    return spans;
-  }, [chartData]);
-
-  const chartConfig = React.useMemo<ChartConfig>(() => {
-    const cfg: ChartConfig = {
-      [AVG_KEY]: { label: "Park average", color: "var(--primary)" },
-    };
-    rides.forEach((r, i) => {
-      cfg[String(r.id)] = { label: r.name, color: rideColor(i) };
+  const chartLabels = React.useMemo<Record<string, string>>(() => {
+    const m: Record<string, string> = { [AVG_KEY]: "Park average" };
+    rides.forEach((r) => {
+      m[String(r.id)] = r.name;
     });
-    return cfg;
+    return m;
   }, [rides]);
 
   // Which ride series are drawn alongside the park lines. Starts empty so the
@@ -332,31 +804,11 @@ export function ParkWaitChart({
   const allEnabled = rides.length > 0 && rides.every((r) => enabled.has(r.id));
   const toggleAll = () => setEnabled(allEnabled ? new Set() : new Set(rides.map((r) => r.id)));
 
-  // Pin axis/tooltip formatting to the park's timezone. This chart is rendered
+  // Pin axis/tooltip formatting to the park's timezone. This chart can render
   // during SSR, so a bare `toLocaleTimeString` would read UTC on the server and
   // the viewer's zone in the browser — the two disagree and trip a hydration
-  // mismatch (#418) that crashes the page in production. `tz` comes from the
-  // same query payload on both sides, so server and client format identically.
+  // mismatch (#418). `tz` comes from the same query payload on both sides.
   const tz = historyQ.data?.timezone || "America/New_York";
-
-  const formatTick = (value: string) => {
-    const date = new Date(value);
-    return hours <= 24
-      ? date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: tz })
-      : date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: tz });
-  };
-
-  const labelFormatter = (value: unknown) =>
-    new Date(value as string).toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: hours <= 72 ? "2-digit" : undefined,
-      timeZone: tz,
-    });
-
-  const valueFormatter = (v: number) =>
-    mode === "price" ? `$${v.toFixed(2)}` : mode === "availability" ? `${v}%` : `${v} min`;
 
   const metricNoun =
     mode === "price" ? "price" : mode === "availability" ? "availability" : "standby wait";
@@ -364,83 +816,6 @@ export function ParkWaitChart({
 
   const enabledRides = rides.filter((r) => enabled.has(r.id));
   const hasData = chartData.length > 0 && rides.length > 0;
-
-  const SpringTooltip = (props: React.ComponentProps<typeof ChartTooltipContent>) => {
-    const items = props.payload ?? [];
-    const status = (items[0]?.payload as { status?: string } | undefined)?.status;
-    // Closed buckets collapse to the single "Park closed" park-average message, so
-    // only keep that row. Otherwise sort rides busiest-first and cap the list,
-    // folding the overflow into one "+N more rides" row.
-    let trimmed = items;
-    if (status === "closed") {
-      trimmed = items.filter((i) => i.name === AVG_KEY);
-    } else {
-      const avg = items.filter((i) => i.name === AVG_KEY);
-      const rideItems = items
-        .filter((i) => i.name !== AVG_KEY)
-        .sort((a, b) => Number(b.value ?? 0) - Number(a.value ?? 0));
-      const shown = rideItems.slice(0, MAX_TOOLTIP_RIDES);
-      const hidden = rideItems.length - shown.length;
-      trimmed = [...avg, ...shown];
-      if (hidden > 0) {
-        trimmed = [
-          ...trimmed,
-          { name: MORE_KEY, value: hidden, dataKey: MORE_KEY, color: "transparent", payload: {} },
-        ] as typeof items;
-      }
-    }
-    return (
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 6 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ type: "spring", stiffness: 460, damping: 26, mass: 0.6 }}
-      >
-        <ChartTooltipContent
-          {...props}
-          payload={trimmed}
-          indicator="dot"
-          labelFormatter={labelFormatter}
-          formatter={(value, name, item) => {
-            const key = String(name);
-            if (key === MORE_KEY) {
-              return <span className="text-muted-foreground">+{Number(value)} more rides</span>;
-            }
-            const status = item?.payload?.status as "open" | "closed" | undefined;
-            // Closed bucket: render one clean "Park closed" line off the
-            // park-average series instead of a 0 for every ride; ride series drop
-            // out. Open-hours data gaps aren't flatlined — they're bridged — so
-            // they never reach this branch.
-            if (status === "closed") {
-              if (key !== AVG_KEY) return null;
-              return (
-                <span className="flex items-center gap-1.5 text-muted-foreground">
-                  <span className="bg-muted-foreground/40 size-2 shrink-0 rounded-[2px]" />
-                  Park closed
-                </span>
-              );
-            }
-            if (value == null) return null;
-            const color = key === AVG_KEY ? "var(--primary)" : colorOf(Number(key));
-            const label = chartConfig[key]?.label ?? key;
-            return (
-              <div className="flex w-full items-center justify-between gap-3">
-                <span className="flex items-center gap-1.5 text-muted-foreground">
-                  <span
-                    className="size-2 shrink-0 rounded-[2px]"
-                    style={{ backgroundColor: color }}
-                  />
-                  {label}
-                </span>
-                <span className="font-mono font-medium tabular-nums text-foreground">
-                  {valueFormatter(Number(value))}
-                </span>
-              </div>
-            );
-          }}
-        />
-      </motion.div>
-    );
-  };
 
   return (
     <Card className={cn("@container/card flex flex-col", className)}>
@@ -508,87 +883,23 @@ export function ParkWaitChart({
           />
         ) : (
           <div className="flex min-h-0 min-w-0 flex-col gap-3">
-            <ChartContainer config={chartConfig} className="aspect-auto h-[200px] w-full min-w-0">
-              <LineChart data={chartData} margin={{ left: 0, right: 0, top: 8 }}>
-                <CartesianGrid vertical={false} />
-                <XAxis
-                  dataKey="bucket"
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                  minTickGap={32}
-                  tickFormatter={formatTick}
-                />
-                <YAxis
-                  // Axis on the right, with `mirror` drawing the tick labels inside
-                  // the plot area so the series still uses the full card width
-                  // instead of ceding a gutter to the labels.
-                  orientation="right"
-                  mirror
-                  // Availability is a 0–100% scale; pin the domain so the line
-                  // reads against a full bar instead of auto-zooming to its range.
-                  domain={mode === "availability" ? [0, 100] : undefined}
-                  tickLine={false}
-                  axisLine={false}
-                  width={24}
-                  tickMargin={2}
-                  tick={{ fontSize: 11 }}
-                  tickFormatter={(v) =>
-                    mode === "price" ? `$${v}` : mode === "availability" ? `${v}%` : `${v}`
-                  }
-                />
-                <ChartTooltip
-                  cursor={{ strokeDasharray: "3 3" }}
-                  isAnimationActive={false}
-                  wrapperStyle={{ transition: "transform 90ms ease" }}
-                  content={<SpringTooltip />}
-                />
-                {/* Shade the calendar's closed stretches behind everything. */}
-                {closedSpans.map((s) => (
-                  <ReferenceArea
-                    key={s.x1}
-                    x1={s.x1}
-                    x2={s.x2}
-                    fill="var(--muted-foreground)"
-                    fillOpacity={0.1}
-                    stroke="none"
-                    ifOverflow="hidden"
+            <ParentSizeWidth>
+              {(width) =>
+                width < 8 ? null : (
+                  <WaitPlot
+                    width={width}
+                    rows={chartData}
+                    enabledRides={enabledRides}
+                    colorOf={colorOf}
+                    chartLabels={chartLabels}
+                    focusedId={focusedId}
+                    mode={mode}
+                    tz={tz}
+                    hours={hours}
                   />
-                ))}
-                {enabledRides.map((r) => {
-                  const isFocused = r.id === focusedId;
-                  const dim = focusedId != null && !isFocused;
-                  return (
-                    <Line
-                      key={r.id}
-                      dataKey={String(r.id)}
-                      name={String(r.id)}
-                      type="monotone"
-                      stroke={colorOf(r.id)}
-                      strokeWidth={isFocused ? 2.75 : 1.75}
-                      strokeOpacity={dim ? 0.35 : 1}
-                      dot={false}
-                      activeDot={{ r: isFocused ? 4 : 3 }}
-                      isAnimationActive={false}
-                      connectNulls
-                    />
-                  );
-                })}
-                {/* Whole-park average always sits on top of the ride series. */}
-                <Line
-                  dataKey={AVG_KEY}
-                  name={AVG_KEY}
-                  type="monotone"
-                  stroke="var(--primary)"
-                  strokeWidth={2.75}
-                  strokeDasharray="5 4"
-                  dot={false}
-                  activeDot={{ r: 4 }}
-                  isAnimationActive={false}
-                  connectNulls
-                />
-              </LineChart>
-            </ChartContainer>
+                )
+              }
+            </ParentSizeWidth>
 
             {/* Ride legend — always present below the chart, wrapping as chips
                 across the full card width at every size. */}
@@ -613,9 +924,6 @@ export function ParkWaitChart({
               <div
                 className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-x-none"
                 style={{
-                  // Fade list rows into the header at the top edge, but keep a
-                  // solid strip over the scrollbar gutter (right) so the bar
-                  // stays crisp instead of fading with the content.
                   maskImage:
                     "linear-gradient(to bottom, transparent, #000 20px), linear-gradient(#000, #000)",
                   maskSize: "calc(100% - 12px) 100%, 12px 100%",
@@ -642,5 +950,26 @@ export function ParkWaitChart({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/** Width-only measuring wrapper (the plot fixes its own height). */
+function ParentSizeWidth({ children }: { children: (width: number) => React.ReactNode }) {
+  const ref = React.useRef<HTMLDivElement | null>(null);
+  const [width, setWidth] = React.useState(0);
+  React.useEffect(() => {
+    if (!ref.current) return;
+    const el = ref.current;
+    const ro = new ResizeObserver(([entry]) => {
+      if (entry) setWidth(entry.contentRect.width);
+    });
+    ro.observe(el);
+    setWidth(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div ref={ref} className="w-full">
+      {children(width)}
+    </div>
   );
 }

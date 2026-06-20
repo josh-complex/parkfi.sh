@@ -17,7 +17,7 @@ import { ParkBoardTable } from "./park-board-table.tsx";
 import { ParkStatCards } from "./park-stat-cards.tsx";
 import { useSelection } from "./selection-context.tsx";
 
-// recharts + d3 are heavy and the chart isn't crawler content (the same numbers
+// visx + d3 are heavy and the chart isn't crawler content (the same numbers
 // live in the SSR'd board table), so split it out of the critical park-page
 // chunk and stream it in after first paint.
 const ParkWaitChart = lazyWithReload(
@@ -25,7 +25,7 @@ const ParkWaitChart = lazyWithReload(
   "park-wait-chart",
 );
 
-// The analytics grid is recharts-heavy and lives below the fold, so split it out
+// The analytics grid is chart-heavy and lives below the fold, so split it out
 // of the critical park-page chunk and stream it in after the board renders.
 const ParkAnalytics = lazyWithReload(
   () => import("./park-analytics.tsx").then((m) => ({ default: m.ParkAnalytics })),
@@ -114,7 +114,7 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
             slot — the live map morphs in from the overview hero. */}
         {/* `[&>*]:min-w-0` makes the two tracks `minmax(0,1fr)` instead of
             `minmax(auto,1fr)`: without it the chart card's intrinsic min-content
-            (recharts container + the header toolbar) blows the column past 1fr
+            (chart container + the header toolbar) blows the column past 1fr
             and overflows the content card at lg+. */}
         <div className="grid items-stretch gap-4 lg:grid-cols-2 lg:[&>*]:min-w-0">
           {/* Card-like surface to match the chart container, but no drop shadow:

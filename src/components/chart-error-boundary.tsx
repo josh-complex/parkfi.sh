@@ -3,12 +3,11 @@
 import * as React from "react";
 
 /**
- * Contains a render/commit crash in a heavy client-only widget (the recharts
+ * Contains a render/commit crash in a heavy client-only widget (the visx
  * charts) so a failure there can't abort the whole page. React forwards
- * commit-phase errors (e.g. a recharts `removeChild` on null) to the nearest
- * boundary via `captureCommitPhaseError`, so wrapping each chart keeps the rest
- * of the dashboard interactive. `label` tags the console log so we can tell
- * which chart failed in production.
+ * commit-phase errors to the nearest boundary via `captureCommitPhaseError`, so
+ * wrapping each chart keeps the rest of the dashboard interactive. `label` tags
+ * the console log so we can tell which chart failed in production.
  */
 export class ChartErrorBoundary extends React.Component<
   { label: string; fallback: React.ReactNode; children: React.ReactNode },

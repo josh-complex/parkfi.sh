@@ -939,35 +939,85 @@ export const parksRouter = {
     const park = meta.rows[0];
     const empty = {
       timezone: park?.timezone ?? "UTC",
-      activity: [] as Array<{ bucket: string; rides: number; avgWait: number | null }>,
+      activity: [] as Array<{
+        bucket: string;
+        rides: number;
+        avgWait: number | null;
+        closed: boolean;
+      }>,
       heatmap: [] as Array<{ date: string; hour: number; avgWait: number }>,
       byLand: [] as Array<{ land: string; avgWait: number; peak: number; rides: number }>,
-      rhythm: [] as Array<{ hour: number; avgWait: number }>,
+      rhythm: [] as Array<{ hour: number; avgWait: number; kind: "attraction" | "character" }>,
       scatter: [] as Array<{
         id: number;
         name: string;
+        kind: "attraction" | "character";
         avgWait: number;
         volatility: number;
         peak: number;
         samples: number;
       }>,
-      treemap: [] as Array<{ id: number; name: string; total: number; avgWait: number }>,
+      treemap: [] as Array<{
+        id: number;
+        name: string;
+        kind: "attraction" | "character";
+        total: number;
+        avgWait: number;
+      }>,
     };
     if (!park) return empty;
     const pid = Number(park.id);
     const tz = park.timezone;
 
     const [activity, heatmap, byLand, rhythm, scatter, treemap] = await Promise.all([
-      // 1) Distinct rides reporting + avg wait per hour over 7 days. The count
-      // falls to zero overnight, so the area doubles as an open/closed rhythm.
-      db.execute<{ bucket: string; rides: number; avg_wait: number | null }>(sql`
-        SELECT time_bucket('1 hour'::interval, q.observed_at) AS bucket,
-               count(DISTINCT q.attraction_id) AS rides,
-               avg(q.wait_min)::int AS avg_wait
-        FROM queue_obs q JOIN attractions a ON a.id = q.attraction_id
-        WHERE a.park_id = ${pid} AND q.queue_type = 1
-          AND q.observed_at >= now() - INTERVAL '7 days'
-        GROUP BY bucket ORDER BY bucket
+      // 1) Distinct rides reporting + avg wait per hour over 7 days, projected
+      // onto a continuous hourly spine carrying a per-bucket `closed` flag from
+      // the operating calendar — same construction as `parkHistory`'s spine — so
+      // the client can sink closed (overnight) buckets to 0 instead of bridging
+      // them, matching the main wait chart. The upstream feed keeps re-posting
+      // waits overnight, so without the calendar gate the area would smoothly
+      // bridge the closure rather than dropping to the baseline.
+      db.execute<{ bucket: string; rides: number; avg_wait: number | null; closed: boolean }>(sql`
+        WITH spine AS (
+          SELECT generate_series(
+            time_bucket('1 hour'::interval, now() - INTERVAL '7 days'),
+            time_bucket('1 hour'::interval, now()),
+            '1 hour'::interval
+          ) AS bucket
+        ),
+        sched AS (
+          SELECT DISTINCT ON (service_date, opening_time) opening_time, closing_time
+          FROM park_schedule
+          WHERE park_id = ${pid}
+            AND type IN ${OPEN_SCHEDULE_TYPES}
+            AND closing_time IS NOT NULL
+          ORDER BY service_date, opening_time, snapshot_date DESC
+        ),
+        span AS (SELECT min(opening_time) AS lo, max(closing_time) AS hi FROM sched),
+        obs AS (
+          SELECT time_bucket('1 hour'::interval, q.observed_at) AS bucket,
+                 count(DISTINCT q.attraction_id) AS rides,
+                 avg(q.wait_min)::int AS avg_wait
+          FROM queue_obs q JOIN attractions a ON a.id = q.attraction_id
+          WHERE a.park_id = ${pid} AND q.queue_type = 1
+            AND q.observed_at >= now() - INTERVAL '7 days'
+          GROUP BY bucket
+        )
+        SELECT s.bucket,
+               coalesce(o.rides, 0) AS rides,
+               o.avg_wait,
+               (
+                 (SELECT lo FROM span) IS NOT NULL
+                 AND s.bucket >= (SELECT lo FROM span)
+                 AND s.bucket <  (SELECT hi FROM span)
+                 AND NOT EXISTS (
+                   SELECT 1 FROM sched w
+                   WHERE s.bucket >= w.opening_time AND s.bucket < w.closing_time
+                 )
+               ) AS closed
+        FROM spine s
+        LEFT JOIN obs o ON o.bucket = s.bucket
+        ORDER BY s.bucket
       `),
       // 2) Crowd calendar: avg standby by local date x hour-of-day over 14 days.
       db.execute<{ d: string; h: number; avg_wait: number }>(sql`
@@ -993,48 +1043,55 @@ export const parksRouter = {
           AND q.observed_at >= now() - INTERVAL '7 days'
         GROUP BY m.land ORDER BY avg_wait DESC
       `),
-      // 4) Typical daily rhythm: avg standby by local hour-of-day (14 days).
-      db.execute<{ h: number; avg_wait: number }>(sql`
+      // 4) Typical daily rhythm: avg standby by local hour-of-day (14 days),
+      // split into character meet-and-greets vs. rides — the two have very
+      // different shapes, so the chart toggles between them.
+      db.execute<{ h: number; kind: "attraction" | "character"; avg_wait: number }>(sql`
         SELECT extract(hour FROM q.observed_at AT TIME ZONE ${tz})::int AS h,
+               CASE WHEN a.category = 'character' THEN 'character' ELSE 'attraction' END AS kind,
                avg(q.wait_min)::int AS avg_wait
         FROM queue_obs q JOIN attractions a ON a.id = q.attraction_id
         WHERE a.park_id = ${pid} AND q.queue_type = 1 AND q.wait_min IS NOT NULL
+          AND a.category IS NOT NULL
           AND q.observed_at >= now() - INTERVAL '14 days'
-        GROUP BY h ORDER BY h
+        GROUP BY h, kind ORDER BY h
       `),
       // 5) Per-ride "busy vs. volatile" (7 days): mean wait vs. the spread of
       // waits (population stddev), with peak for point sizing.
       db.execute<{
         id: string;
         name: string;
+        kind: "attraction" | "character";
         avg_wait: number;
         volatility: number;
         peak: number;
         samples: number;
       }>(sql`
         SELECT a.id, a.name,
+               CASE WHEN a.category = 'character' THEN 'character' ELSE 'attraction' END AS kind,
                avg(q.wait_min)::numeric(10,1) AS avg_wait,
                coalesce(stddev_pop(q.wait_min), 0)::numeric(10,1) AS volatility,
                max(q.wait_min) AS peak,
                count(*) AS samples
         FROM queue_obs q JOIN attractions a ON a.id = q.attraction_id
         WHERE a.park_id = ${pid} AND q.queue_type = 1 AND q.wait_min IS NOT NULL
-          AND a.active = true
+          AND a.active = true AND a.category IS NOT NULL
           AND q.observed_at >= now() - INTERVAL '7 days'
         GROUP BY a.id, a.name HAVING count(*) > 5
         ORDER BY avg_wait DESC
       `),
       // 6) Total queue burden per ride (7 days): summed standby minutes, which
       // sizes a treemap by how much of the park's waiting each ride accounts for.
-      db.execute<{ id: string; name: string; total: number; avg_wait: number }>(sql`
+      db.execute<{ id: string; name: string; kind: string; total: number; avg_wait: number }>(sql`
         SELECT a.id, a.name,
+               CASE WHEN a.category = 'character' THEN 'character' ELSE 'attraction' END AS kind,
                sum(q.wait_min)::int AS total,
                avg(q.wait_min)::int AS avg_wait
         FROM queue_obs q JOIN attractions a ON a.id = q.attraction_id
         WHERE a.park_id = ${pid} AND q.queue_type = 1 AND q.wait_min IS NOT NULL
-          AND a.active = true
+          AND a.active = true AND a.category IS NOT NULL
           AND q.observed_at >= now() - INTERVAL '7 days'
-        GROUP BY a.id, a.name HAVING sum(q.wait_min) > 0
+        GROUP BY a.id, a.name, a.category HAVING sum(q.wait_min) > 0
         ORDER BY total DESC
       `),
     ]);
@@ -1045,6 +1102,7 @@ export const parksRouter = {
         bucket: r.bucket,
         rides: Number(r.rides),
         avgWait: r.avg_wait,
+        closed: r.closed,
       })),
       heatmap: heatmap.rows.map((r) => ({
         date: r.d,
@@ -1057,10 +1115,15 @@ export const parksRouter = {
         peak: Number(r.peak),
         rides: Number(r.rides),
       })),
-      rhythm: rhythm.rows.map((r) => ({ hour: Number(r.h), avgWait: Number(r.avg_wait) })),
+      rhythm: rhythm.rows.map((r) => ({
+        hour: Number(r.h),
+        avgWait: Number(r.avg_wait),
+        kind: r.kind,
+      })),
       scatter: scatter.rows.map((r) => ({
         id: Number(r.id),
         name: r.name,
+        kind: r.kind,
         avgWait: Number(r.avg_wait),
         volatility: Number(r.volatility),
         peak: Number(r.peak),
@@ -1069,6 +1132,7 @@ export const parksRouter = {
       treemap: treemap.rows.map((r) => ({
         id: Number(r.id),
         name: r.name,
+        kind: r.kind === "character" ? ("character" as const) : ("attraction" as const),
         total: Number(r.total),
         avgWait: Number(r.avg_wait),
       })),

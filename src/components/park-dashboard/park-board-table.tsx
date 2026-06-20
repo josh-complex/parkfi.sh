@@ -373,20 +373,19 @@ export function ParkBoardTable({
   });
   const sparkByRide = React.useMemo(() => {
     const points = sparkQ.data?.points ?? [];
-    const m = new Map<number, Array<number | null>>();
+    // Park-closed flags are shared across every ride (calendar is park-level);
+    // the Sparkline sinks those buckets to the baseline and bridges true mid-day
+    // gaps, so the line stays continuous and never breaks.
+    const closed = points.map((p) => Boolean(p.closed));
+    const m = new Map<number, { values: Array<number | null>; closed: Array<boolean> }>();
     for (const ride of sparkQ.data?.rides ?? []) {
-      // Mirror the main chart: when the calendar says the park is closed, floor
-      // the point to 0 (so the trend dips to the baseline overnight rather than
-      // hiding the closure); otherwise use the reading, or null for a true gap so
-      // the sparkline breaks across it instead of bridging a phantom value.
-      m.set(
-        ride.id,
-        points.map((p) => {
-          if (p.closed) return 0;
+      m.set(ride.id, {
+        values: points.map((p) => {
           const v = p[String(ride.id)];
           return typeof v === "number" ? v : null;
         }),
-      );
+        closed,
+      });
     }
     return m;
   }, [sparkQ.data]);
@@ -460,7 +459,11 @@ export function ParkBoardTable({
           const series = sparkByRide.get(row.original.id);
           const down = row.original.status === "DOWN" || row.original.status === "REFURBISHMENT";
           return (
-            <Sparkline data={series ?? []} color={down ? "var(--destructive)" : "var(--primary)"} />
+            <Sparkline
+              data={series?.values ?? []}
+              closed={series?.closed}
+              color={down ? "var(--destructive)" : "var(--primary)"}
+            />
           );
         },
       },
@@ -731,7 +734,7 @@ function MobileCardList({
   parkSlug: string | null;
   operatorSlug: string | null | undefined;
   timezone: string | null | undefined;
-  sparkByRide: Map<number, Array<number | null>>;
+  sparkByRide: Map<number, { values: Array<number | null>; closed: Array<boolean> }>;
   alertByAttraction: Map<number, RideAlertEntry>;
   loggedIn: boolean;
   singleRiderIds: Set<number>;
@@ -768,7 +771,8 @@ function MobileCardList({
             </div>
             <div className="flex items-center justify-between gap-3">
               <Sparkline
-                data={sparkByRide.get(item.id) ?? []}
+                data={sparkByRide.get(item.id)?.values ?? []}
+                closed={sparkByRide.get(item.id)?.closed}
                 width={120}
                 height={26}
                 color={down ? "var(--destructive)" : "var(--primary)"}
