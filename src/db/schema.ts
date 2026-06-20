@@ -1586,6 +1586,30 @@ export const mark = pgTable(
   ],
 );
 
+/**
+ * Resolved Faded battles (M4a). Append-only history feeding the logbook (M6)
+ * and economy tuning. Plain table for now; promotable to a Timescale hypertable
+ * later if volume warrants.
+ */
+export const encounterLog = pgTable(
+  "encounter_log",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    userId: text("user_id").references(() => user.id),
+    markId: bigint("mark_id", { mode: "number" }).references(() => mark.id),
+    parkId: bigint("park_id", { mode: "number" }).references(() => parks.id),
+    attractionId: bigint("attraction_id", { mode: "number" }).references(() => attractions.id),
+    fadedType: text("faded_type").references(() => refFadedType.code),
+    outcome: text("outcome").notNull(),
+    liveStateSnapshot: jsonb("live_state_snapshot").$type<LiveStateSnapshot>(),
+    ts: timestamp("ts", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("encounter_log_user_ts_idx").on(t.userId, t.ts),
+    index("encounter_log_mark_idx").on(t.markId),
+  ],
+);
+
 /** Reactions on a mark — found / upvote / report (moderation + flywheel). */
 export const markReaction = pgTable(
   "mark_reaction",

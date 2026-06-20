@@ -38,6 +38,7 @@
     "backfill:qt": "bun scripts/backfill-queue-times.ts",
     "living:seed-realms": "bun scripts/seed-realms.ts",
     "living:smoke": "bun scripts/living-smoke.ts",
+    "living:spawn-demo": "bun scripts/living-spawn-demo.ts",
     "debug:universal": "bun services/cron-tickets/debug-universal.ts",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",

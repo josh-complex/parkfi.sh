@@ -8,6 +8,7 @@ import { useTheme } from "next-themes";
 import { authClient } from "#/lib/auth-client.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { ORLANDO_CENTER, ORLANDO_ZOOM, escapeHtml } from "#/components/park-map/shared.tsx";
+import { BattlePanel } from "#/components/living/battle-panel.tsx";
 
 import "maplibre-gl/dist/maplibre-gl.css";
 
@@ -59,6 +60,7 @@ export function PlayMap({ parkSlug }: PlayMapProps) {
   const markersRef = React.useRef<maplibregl.Marker[]>([]);
   const [dropAt, setDropAt] = React.useState<{ lat: number; lng: number } | null>(null);
   const [note, setNote] = React.useState("");
+  const [battleMarkId, setBattleMarkId] = React.useState<number | null>(null);
 
   const parksQ = useQuery(trpc.parks.list.queryOptions());
   const park = parksQ.data?.find((p) => p.slug === parkSlug);
@@ -101,16 +103,7 @@ export function PlayMap({ parkSlug }: PlayMapProps) {
     // The GL canvas can mount before the container is laid out (it renders blank
     // at 0×0 with the overlays still visible). Resize on load and whenever the
     // container's box changes so the basemap actually paints.
-    map.on("load", () => {
-      map.resize();
-      const c = container.getBoundingClientRect();
-      console.log(
-        "[wayfarer map] loaded; container",
-        Math.round(c.width),
-        "x",
-        Math.round(c.height),
-      );
-    });
+    map.on("load", () => map.resize());
     map.on("error", (e) => console.error("[wayfarer map] error:", e?.error ?? e));
     const ro = new ResizeObserver(() => map.resize());
     ro.observe(container);
@@ -142,42 +135,43 @@ export function PlayMap({ parkSlug }: PlayMapProps) {
     for (const mk of marksQ.data ?? []) {
       if (mk.latitude == null || mk.longitude == null) continue;
       const kind = mk.isSystem ? "dimming" : "discovery";
-      const note = (mk.payload as { note?: string } | null)?.note;
-      const title = mk.isSystem
-        ? `The Dimming — ${escapeHtml(mk.attractionName ?? "a ride is down")}`
-        : "Discovery";
-      const body = mk.isSystem
-        ? `A ride went down${mk.liveState?.standbyMin != null ? ` (was ${mk.liveState.standbyMin}m)` : ""}.`
-        : escapeHtml(note ?? "");
-      const popup = new maplibregl.Popup({ offset: 14 }).setHTML(
-        `<div style="font:14px system-ui;max-width:220px">
-           <strong>${title}</strong>
-           <div style="margin-top:4px;color:#555">${body}</div>
-           ${
-             !mk.isSystem && loggedIn
-               ? `<div style="margin-top:8px;display:flex;gap:8px">
-                    <button data-react="found" data-id="${mk.id}">Found it (${mk.findCount})</button>
-                    <button data-react="upvote" data-id="${mk.id}">▲ (${mk.upvoteCount})</button>
-                    <button data-react="report" data-id="${mk.id}">Report</button>
-                  </div>`
-               : ""
-           }
-         </div>`,
-      );
-      popup.on("open", () => {
-        const root = popup.getElement();
-        root?.querySelectorAll<HTMLButtonElement>("button[data-react]").forEach((btn) => {
-          btn.onclick = () =>
-            react.mutate({
-              markId: Number(btn.dataset.id),
-              kind: btn.dataset.react as "found" | "upvote" | "report",
-            });
+      const el = markerEl(kind);
+      const marker = new maplibregl.Marker({ element: el }).setLngLat([mk.longitude, mk.latitude]);
+
+      if (mk.isSystem) {
+        // A Dimming spawn — tapping it starts the battle (no popup).
+        el.addEventListener("click", () => setBattleMarkId(mk.id));
+      } else {
+        // A discovery pin — popup with the note + react buttons.
+        const note = (mk.payload as { note?: string } | null)?.note;
+        const popup = new maplibregl.Popup({ offset: 14 }).setHTML(
+          `<div style="font:14px system-ui;max-width:220px">
+             <strong>Discovery</strong>
+             <div style="margin-top:4px;color:#555">${escapeHtml(note ?? "")}</div>
+             ${
+               loggedIn
+                 ? `<div style="margin-top:8px;display:flex;gap:8px">
+                      <button data-react="found" data-id="${mk.id}">Found it (${mk.findCount})</button>
+                      <button data-react="upvote" data-id="${mk.id}">▲ (${mk.upvoteCount})</button>
+                      <button data-react="report" data-id="${mk.id}">Report</button>
+                    </div>`
+                 : ""
+             }
+           </div>`,
+        );
+        popup.on("open", () => {
+          const root = popup.getElement();
+          root?.querySelectorAll<HTMLButtonElement>("button[data-react]").forEach((btn) => {
+            btn.onclick = () =>
+              react.mutate({
+                markId: Number(btn.dataset.id),
+                kind: btn.dataset.react as "found" | "upvote" | "report",
+              });
+          });
         });
-      });
-      const marker = new maplibregl.Marker({ element: markerEl(kind) })
-        .setLngLat([mk.longitude, mk.latitude])
-        .setPopup(popup)
-        .addTo(map);
+        marker.setPopup(popup);
+      }
+      marker.addTo(map);
       markersRef.current.push(marker);
     }
   }, [marksQ.data, loggedIn, react]);
@@ -205,8 +199,16 @@ export function PlayMap({ parkSlug }: PlayMapProps) {
         </div>
       </div>
 
-      {/* Drop-a-pin composer */}
-      {dropAt ? (
+      {/* Battle — tapping a Dimming spawn. Takes over the bottom area. */}
+      {battleMarkId != null ? (
+        <BattlePanel
+          markId={battleMarkId}
+          onClose={() => setBattleMarkId(null)}
+          onResolved={() =>
+            void qc.invalidateQueries({ queryKey: trpc.living.marks.queryKey({ parkSlug }) })
+          }
+        />
+      ) : dropAt ? (
         <div className="bg-background absolute bottom-3 left-1/2 w-[min(92%,420px)] -translate-x-1/2 rounded-lg border p-3 shadow-lg">
           <div className="mb-2 text-sm font-medium">Leave a discovery here</div>
           <textarea

@@ -15,12 +15,36 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "#/db/index.ts";
-import { MarkReactionKind, MarkState, MarkType } from "#/server/living/codes.ts";
+import { fadedSpec } from "#/server/living/battle.ts";
+import { FadedType, MarkReactionKind, MarkState, MarkType } from "#/server/living/codes.ts";
 import { pointInPolygon, type LngLat } from "#/server/living/geofence.ts";
 
 import { protectedProcedure, publicProcedure } from "../init.ts";
 
+import type { FadedTypeCode } from "#/server/living/codes.ts";
 import type { GeoPolygon, LiveStateSnapshot } from "#/db/schema.ts";
+
+/** An active system encounter mark, loaded for battle start/resolve. */
+type EncounterMarkRow = {
+  id: number;
+  park_id: number;
+  attraction_id: number | null;
+  payload: { fadedType?: string; rarity?: number } | null;
+  live_state_snapshot: LiveStateSnapshot | null;
+};
+
+async function activeEncounterMark(markId: number): Promise<EncounterMarkRow | null> {
+  const r = await db.execute<EncounterMarkRow>(sql`
+    SELECT id, park_id, attraction_id, payload, live_state_snapshot
+    FROM mark
+    WHERE id = ${markId}
+      AND type = ${MarkType.ENCOUNTER}
+      AND is_system = true
+      AND state = ${MarkState.ACTIVE}
+    LIMIT 1
+  `);
+  return r.rows[0] ?? null;
+}
 
 /** Max discovery marks a user may create per rolling window (anti-spam). */
 const MAX_DISCOVERY_PER_HOUR = 20;
@@ -203,5 +227,52 @@ export const livingRouter = {
         `);
       }
       return { ok: true, counted: true };
+    }),
+
+  /**
+   * Begin a battle against a Dimming spawn. Returns the deterministic Faded spec
+   * the client plays out. Server-derived from the mark's payload so the client
+   * can't pick an easier enemy.
+   */
+  startEncounter: protectedProcedure
+    .input(z.object({ markId: z.number().int().positive() }))
+    .mutation(async ({ input }) => {
+      const mk = await activeEncounterMark(input.markId);
+      if (!mk) throw new TRPCError({ code: "NOT_FOUND", message: "That Dimming has cleared." });
+      const fadedType = (mk.payload?.fadedType as FadedTypeCode) ?? FadedType.SHADE;
+      const rarity = Number(mk.payload?.rarity ?? 1);
+      return { markId: mk.id, ...fadedSpec(fadedType, rarity) };
+    }),
+
+  /**
+   * Record a battle outcome. On a win the spawn is sealed (`claimed`) so it
+   * leaves the map. Server-authoritative over mark state; full anti-cheat
+   * (verifying the fight was real) is M5.
+   */
+  resolveEncounter: protectedProcedure
+    .input(
+      z.object({
+        markId: z.number().int().positive(),
+        outcome: z.enum(["win", "loss", "flee"]),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const mk = await activeEncounterMark(input.markId);
+      if (!mk) return { ok: true, alreadyResolved: true };
+
+      const fadedType = (mk.payload?.fadedType as FadedTypeCode) ?? FadedType.SHADE;
+      await db.execute(sql`
+        INSERT INTO encounter_log (user_id, mark_id, park_id, attraction_id, faded_type, outcome, live_state_snapshot)
+        VALUES (${ctx.userId}, ${mk.id}, ${mk.park_id}, ${mk.attraction_id}, ${fadedType},
+                ${input.outcome}, ${JSON.stringify(mk.live_state_snapshot)}::jsonb)
+      `);
+
+      if (input.outcome === "win") {
+        await db.execute(sql`
+          UPDATE mark SET state = ${MarkState.CLAIMED}
+          WHERE id = ${mk.id} AND state = ${MarkState.ACTIVE}
+        `);
+      }
+      return { ok: true, outcome: input.outcome };
     }),
 } satisfies TRPCRouterRecord;
