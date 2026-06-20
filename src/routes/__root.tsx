@@ -73,54 +73,6 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
   shellComponent: RootDocument,
 });
 
-// TEMP hydration diagnostic v2 — remove once the prod `removeChild` crash is
-// pinned down. Captures, ~6s after load: (1) SSR text nodes the client removed
-// or changed; (2) the first uncaught error (message + top stack frames);
-// (3) any removeChild/insertBefore call whose child.parentNode !== the parent
-// it's being removed from / inserted into (the DOM-corruption that precedes the
-// null-parent crash), with a stack; (4) React's console.error hydration
-// warnings; (5) whether the singleton map `host` was reparented out of its
-// off-screen parking div, and when — to test the map-stage reparent theory.
-// Results also on window.__HYDR2__.
-const HYDRATION_PROBE = `(function(){try{
-  var T0=(window.performance&&performance.now)?performance.now():0;
-  function ms(){return Math.round(((window.performance&&performance.now)?performance.now():0)-T0);}
-  function desc(el){if(!el)return 'null';if(el.nodeType===3)return '#text:'+String(el.nodeValue).slice(0,30);if(el.nodeType!==1)return 'node('+el.nodeType+')';return el.tagName+(el.id?'#'+el.id:'')+'.'+String(el.getAttribute&&el.getAttribute('class')||'').slice(0,46);}
-
-  // (1) snapshot SSR text nodes
-  var snap=[];var w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);var n;
-  while(n=w.nextNode()){var t=n.nodeValue;if(t&&t.trim()){var pe=n.parentElement;snap.push([n,t,pe?desc(pe):'']);}}
-
-  // locate the map host (child of the aria-hidden, size-0 parking div)
-  var park=null,host=null;
-  try{var hid=document.querySelectorAll('div[aria-hidden="true"]');for(var i=0;i<hid.length;i++){var c=getComputedStyle(hid[i]);if((hid[i].className||'').indexOf('size-0')>=0||(c.width==='0px'&&c.position==='fixed')){park=hid[i];host=hid[i].firstElementChild;break;}}}catch(e){}
-  var hostMoves=[];
-
-  // (4) console.error
-  var cerrs=[];var ce=console.error;console.error=function(){try{cerrs.push({at:ms(),m:Array.from(arguments).map(function(a){return (a&&a.message)||String(a)}).join(' | ').slice(0,300)})}catch(e){}return ce.apply(console,arguments)};
-
-  // (2) uncaught errors
-  var thrown=[];window.addEventListener('error',function(ev){try{thrown.push({at:ms(),msg:String(ev.message),stack:String((ev.error&&ev.error.stack)||'').split('\\n').slice(0,5).join(' << ')})}catch(e){}},true);
-
-  // (3) patch removeChild/insertBefore for parent/child mismatches
-  var domErrs=[];
-  ['removeChild','insertBefore'].forEach(function(fn){var orig=Node.prototype[fn];Node.prototype[fn]=function(child){try{if(child&&child.nodeType===1&&child.parentNode!==this){domErrs.push({at:ms(),op:fn,parent:desc(this),child:desc(child),childRealParent:desc(child&&child.parentNode),stack:String(new Error().stack||'').split('\\n').slice(2,6).join(' << ')});}}catch(e){}return orig.apply(this,arguments);};});
-
-  // (5) watch the map host move
-  if(host){try{var mo=new MutationObserver(function(muts){muts.forEach(function(m){if(m.type==='childList'){for(var k=0;k<m.removedNodes.length;k++){if(m.removedNodes[k]===host)hostMoves.push({at:ms(),ev:'removed-from',parent:desc(m.target)});}for(var j=0;j<m.addedNodes.length;j++){if(m.addedNodes[j]===host)hostMoves.push({at:ms(),ev:'added-to',parent:desc(m.target)});}}});});mo.observe(document.body,{childList:true,subtree:true});}catch(e){}}
-
-  setTimeout(function(){
-    var removed=[],changed=[];
-    for(var i2=0;i2<snap.length;i2++){var node=snap[i2][0],was=snap[i2][1],where=snap[i2][2];
-      if(!node.isConnected){removed.push({server:was,where:where});}
-      else if(node.nodeValue!==was){changed.push({server:was,client:node.nodeValue,where:where});}}
-    var out={removedCount:removed.length,changedCount:changed.length,removed:removed.slice(0,20),
-      thrown:thrown.slice(0,8),domErrs:domErrs.slice(0,15),consoleErrs:cerrs.slice(0,8),
-      mapHostFound:!!host,hostConnected:host?host.isConnected:null,hostParentNow:host?desc(host.parentNode):null,hostMoves:hostMoves.slice(0,10)};
-    window.__HYDR2__=out;console.log('[HYDR2]'+JSON.stringify(out));
-  },6000);
-}catch(e){console.log('[HYDR2-ERR]'+e)}})();`;
-
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
@@ -156,8 +108,6 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         </PostHogProvider>
         <PWARegister />
         <Scripts />
-        {/* TEMP hydration diagnostic v2 — remove once the prod crash is found. */}
-        <script dangerouslySetInnerHTML={{ __html: HYDRATION_PROBE }} />
       </body>
     </html>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 
 import { useSelection } from "#/components/park-dashboard/selection-context.tsx";
 import { lazyWithReload } from "#/lib/lazy-with-reload.tsx";
@@ -154,9 +155,27 @@ export function MapStageProvider({
   children: React.ReactNode;
 }) {
   const { selected, setSelected } = useSelection();
-  const hostRef = React.useRef<HTMLDivElement>(null);
+  // The map host is a plain DOM node created imperatively (client-only), NOT a
+  // React-rendered element. We then `appendChild` it between the parking div and
+  // whichever <MapSlot> claims it. If React owned this node in its tree, moving
+  // it by hand would desync the fiber tree from the DOM and the next commit that
+  // touched the region would call `removeChild` on a null parent and crash the
+  // page (the prod park-page hydration bug). Rendering the map *into* `host` via
+  // a portal keeps React treating it as an opaque container, so moving it is safe.
+  const [host] = React.useState<HTMLDivElement | null>(() => {
+    if (typeof document === "undefined") return null;
+    const el = document.createElement("div");
+    el.className = "size-full overflow-hidden";
+    return el;
+  });
   const parkRef = React.useRef<HTMLDivElement>(null);
   const mapRef = React.useRef<MapHandle | null>(null);
+
+  // Park the host in its off-screen home on mount, unless a <MapSlot>'s layout
+  // effect (which fires first, child-before-parent) already claimed it.
+  React.useLayoutEffect(() => {
+    if (host && parkRef.current && host.parentNode == null) parkRef.current.appendChild(host);
+  }, [host]);
   // Pick the renderer once on the client: MapLibre (WebGL) when available, the
   // Leaflet DOM/raster renderer otherwise — so a WebGL-disabled browser degrades
   // gracefully instead of crashing. `null` until detected, so SSR and the first
@@ -180,42 +199,48 @@ export function MapStageProvider({
     mapRef.current = m;
   }, []);
 
-  const attach = React.useCallback((slot: HTMLElement) => {
-    const host = hostRef.current;
-    if (!host) return;
-    slotRef.current = slot;
-    setAttached(true);
-    const first = prevRectRef.current;
-    prevRectRef.current = null;
+  const attach = React.useCallback(
+    (slot: HTMLElement) => {
+      if (!host) return;
+      slotRef.current = slot;
+      setAttached(true);
+      const first = prevRectRef.current;
+      prevRectRef.current = null;
 
-    slot.appendChild(host);
-    const last = host.getBoundingClientRect();
-    const resize = () => mapRef.current?.resize();
+      slot.appendChild(host);
+      const last = host.getBoundingClientRect();
+      const resize = () => mapRef.current?.resize();
 
-    if (first && first.width > 4 && first.height > 4 && last.width > 4 && last.height > 4) {
-      morph(host, first, slot, resize);
-    } else {
-      resize();
-    }
+      if (first && first.width > 4 && first.height > 4 && last.width > 4 && last.height > 4) {
+        morph(host, first, slot, resize);
+      } else {
+        resize();
+      }
 
-    return () => {
-      if (slotRef.current !== slot) return;
-      // Remember where we are so the next slot can morph from here, then tuck
-      // the map into its hidden parking spot until the next slot claims it.
-      prevRectRef.current = host.getBoundingClientRect();
-      parkRef.current?.appendChild(host);
-      slotRef.current = null;
-      setAttached(false);
-    };
-  }, []);
+      return () => {
+        if (slotRef.current !== slot) return;
+        // Remember where we are so the next slot can morph from here, then tuck
+        // the map into its hidden parking spot until the next slot claims it.
+        prevRectRef.current = host.getBoundingClientRect();
+        parkRef.current?.appendChild(host);
+        slotRef.current = null;
+        setAttached(false);
+      };
+    },
+    [host],
+  );
 
   const value = React.useMemo(() => ({ attach }), [attach]);
 
   return (
     <MapStageContext.Provider value={value}>
-      {/* Off-screen home for the singleton map whenever no slot owns it. */}
-      <div ref={parkRef} className="pointer-events-none fixed -z-10 size-0 opacity-0" aria-hidden>
-        <div ref={hostRef} className="size-full overflow-hidden">
+      {/* Off-screen home for the singleton map whenever no slot owns it. The
+          host node itself is created imperatively and lives in `host` — it's
+          never a React child, so React never tries to move/remove it (see the
+          `host` state above). The map renders *into* it via the portal below. */}
+      <div ref={parkRef} className="pointer-events-none fixed -z-10 size-0 opacity-0" aria-hidden />
+      {host &&
+        createPortal(
           <React.Suspense fallback={null}>
             {engine === "gl" && (
               <ParkMap
@@ -235,9 +260,9 @@ export function MapStageProvider({
                 attached={attached}
               />
             )}
-          </React.Suspense>
-        </div>
-      </div>
+          </React.Suspense>,
+          host,
+        )}
       {children}
     </MapStageContext.Provider>
   );
