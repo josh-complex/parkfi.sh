@@ -14,9 +14,9 @@ export const Route = createFileRoute("/_dash/")({
   },
   head: () =>
     seo({
-      title: "Live Park Map — Theme Park Wait Times | ParkFi",
+      title: "Live Theme Park Wait Times — Disney World & Universal Orlando | ParkFi",
       description:
-        "Explore an interactive map of Walt Disney World and Universal Orlando with live wait times, ride status, and resort context updated in real time.",
+        "Track live theme park wait times, ride status, and Lightning Lane availability across Walt Disney World and Universal Orlando on one interactive map, updated in real time.",
       path: "/",
     }),
 });
