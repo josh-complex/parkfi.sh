@@ -7,6 +7,7 @@ import { useTRPC } from "#/integrations/trpc/react.ts";
 
 import { MapSlot } from "#/components/park-map/map-stage.tsx";
 import { NotificationPrompt } from "#/components/notifications/notification-prompt.tsx";
+import { ChartErrorBoundary } from "#/components/chart-error-boundary.tsx";
 import { lazyWithReload } from "#/lib/lazy-with-reload.tsx";
 import { useHydrated } from "#/lib/use-hydrated.ts";
 
@@ -129,17 +130,26 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
               chart then mounts cleanly after hydration. It isn't crawler content
               — the same numbers ship in the SSR'd board table below. */}
           {hydrated ? (
-            <React.Suspense
+            <ChartErrorBoundary
+              label="wait-chart"
               fallback={
-                <Skeleton className="h-[320px] w-full rounded-2xl lg:h-auto lg:min-h-[460px]" />
+                <div className="flex h-[320px] w-full items-center justify-center rounded-2xl border text-sm text-muted-foreground lg:h-auto lg:min-h-[460px]">
+                  Chart unavailable
+                </div>
               }
             >
-              <ParkWaitChart
-                parkSlug={activeSlug ?? null}
-                focusedId={selected?.id ?? null}
-                operatorSlug={operatorSlug}
-              />
-            </React.Suspense>
+              <React.Suspense
+                fallback={
+                  <Skeleton className="h-[320px] w-full rounded-2xl lg:h-auto lg:min-h-[460px]" />
+                }
+              >
+                <ParkWaitChart
+                  parkSlug={activeSlug ?? null}
+                  focusedId={selected?.id ?? null}
+                  operatorSlug={operatorSlug}
+                />
+              </React.Suspense>
+            </ChartErrorBoundary>
           ) : (
             <Skeleton className="h-[320px] w-full rounded-2xl lg:h-auto lg:min-h-[460px]" />
           )}
@@ -162,9 +172,18 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
         {/* Same hazard as the chart above: a server-rendered `React.lazy`
             boundary whose chunk isn't ready at hydration. Keep it client-only. */}
         {hydrated ? (
-          <React.Suspense fallback={<Skeleton className="h-[640px] w-full rounded-2xl" />}>
-            <ParkAnalytics parkSlug={activeSlug ?? null} />
-          </React.Suspense>
+          <ChartErrorBoundary
+            label="analytics"
+            fallback={
+              <div className="flex h-[200px] w-full items-center justify-center rounded-2xl border text-sm text-muted-foreground">
+                Analytics unavailable
+              </div>
+            }
+          >
+            <React.Suspense fallback={<Skeleton className="h-[640px] w-full rounded-2xl" />}>
+              <ParkAnalytics parkSlug={activeSlug ?? null} />
+            </React.Suspense>
+          </ChartErrorBoundary>
         ) : (
           <Skeleton className="h-[640px] w-full rounded-2xl" />
         )}
