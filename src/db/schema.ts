@@ -1479,3 +1479,125 @@ export const pinScan = pgTable(
     index("pin_scan_user_created_idx").on(t.userId, t.createdAt.desc()),
   ],
 );
+
+// ===========================================================================
+// Living Layer (M1 + M2) — in-park location/AR game foundation.
+//
+// SAFETY: these are NEW, ADDITIVE tables. Nothing in the existing application
+// reads or writes them, so their presence cannot change current behavior. The
+// systems that use them are dark until the worker runs with LIVING_ENABLED=1
+// and the UI is gated behind the PostHog `living-layer` feature flag.
+// Design: docs/plans/living-layer/ (10-data-model.md for the full rationale).
+// ===========================================================================
+
+/** Mark kinds — the polymorphic `mark.type` discriminator. */
+export const refMarkType = pgTable("ref_mark_type", {
+  code: text("code").primaryKey(),
+  label: text("label").notNull(),
+});
+
+/** Mark lifecycle state — bloom | active | decaying | faded | claimed. */
+export const refMarkState = pgTable("ref_mark_state", {
+  code: text("code").primaryKey(),
+  label: text("label").notNull(),
+});
+
+/** Faded (enemy) archetypes, referenced by encounter payloads. */
+export const refFadedType = pgTable("ref_faded_type", {
+  code: text("code").primaryKey(),
+  label: text("label").notNull(),
+  element: text("element"),
+});
+
+/**
+ * Realm — promotes "land" (today only `attraction_meta.land`) to a first-class
+ * geofenced entity, used for party-gating and Realm-tier geofences. `boundary`
+ * is seeded from the convex hull of the land's attraction coordinates by
+ * `seedRealmsForPark` (filter `category IS NOT NULL` to drop ghost-dup rows).
+ */
+export const realm = pgTable(
+  "realm",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    parkId: bigint("park_id", { mode: "number" })
+      .notNull()
+      .references(() => parks.id),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    boundary: jsonb("boundary").$type<GeoPolygon>(),
+    element: text("element"),
+    themeColor: text("theme_color"),
+  },
+  (t) => [uniqueIndex("realm_park_slug_idx").on(t.parkId, t.slug)],
+);
+
+/** A snapshot of live park state captured when a mark was created. */
+export type LiveStateSnapshot = {
+  standbyMin?: number | null;
+  status?: string | null;
+  crowdIndex?: number | null;
+  weather?: string | null;
+  capturedAt: string;
+};
+
+/** Typed per `mark.type` at the edge; stored loosely as jsonb. */
+export type MarkPayload = Record<string, unknown>;
+
+/**
+ * Mark — THE atomic unit of the Living Layer. Every geo-anchored thing
+ * (discovery pins, collectibles, the live "Dimming", encounters, companions,
+ * memories) is a row here; `type` selects the shape of `payload`. See
+ * docs/plans/living-layer/03-marks-and-discovery.md.
+ */
+export const mark = pgTable(
+  "mark",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    type: text("type")
+      .notNull()
+      .references(() => refMarkType.code),
+    authorUserId: text("author_user_id").references(() => user.id),
+    isSystem: boolean("is_system").notNull().default(false),
+    parkId: bigint("park_id", { mode: "number" })
+      .notNull()
+      .references(() => parks.id),
+    realmId: bigint("realm_id", { mode: "number" }).references(() => realm.id),
+    attractionId: bigint("attraction_id", { mode: "number" }).references(() => attractions.id),
+    latitude: doublePrecision("latitude"),
+    longitude: doublePrecision("longitude"),
+    anchorKey: text("anchor_key"),
+    payload: jsonb("payload").$type<MarkPayload>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    liveStateSnapshot: jsonb("live_state_snapshot").$type<LiveStateSnapshot>(),
+    state: text("state")
+      .notNull()
+      .default("active")
+      .references(() => refMarkState.code),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    findCount: integer("find_count").notNull().default(0),
+    upvoteCount: integer("upvote_count").notNull().default(0),
+    reportCount: integer("report_count").notNull().default(0),
+  },
+  (t) => [
+    index("mark_park_state_idx").on(t.parkId, t.state),
+    index("mark_realm_type_idx").on(t.realmId, t.type),
+    index("mark_attraction_idx").on(t.attractionId),
+    index("mark_expires_idx").on(t.expiresAt),
+  ],
+);
+
+/** Reactions on a mark — found / upvote / report (moderation + flywheel). */
+export const markReaction = pgTable(
+  "mark_reaction",
+  {
+    markId: bigint("mark_id", { mode: "number" })
+      .notNull()
+      .references(() => mark.id),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id),
+    kind: text("kind").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.markId, t.userId, t.kind] })],
+);

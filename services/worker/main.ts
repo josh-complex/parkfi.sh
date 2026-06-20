@@ -13,6 +13,7 @@ loadEnv({ path: [".env.local", ".env"] });
 import { createServer } from "node:http";
 
 import { config } from "#/server/parks/config.ts";
+import { LIVING_ENABLED } from "#/server/living/config.ts";
 import { evaluateAlerts } from "#/server/notifications/alerts.ts";
 import { activeParkIds, ingestPark } from "#/server/parks/ingest.ts";
 
@@ -73,10 +74,25 @@ async function tick(): Promise<void> {
       console.error("[alerts] eval failed:", err);
     }
 
+    // Living Layer (M2) — reconcile the Dimming game layer to the live park
+    // state we just ingested. OFF by default (LIVING_ENABLED), level-triggered
+    // (reads current state, writes only `mark`), and isolated so it can never
+    // affect ingestion or alerts. No-op unless explicitly enabled.
+    let dimming = "";
+    if (LIVING_ENABLED) {
+      try {
+        const { reconcileDimming } = await import("#/server/living/dimming.ts");
+        const r = await reconcileDimming();
+        dimming = ` dimming(+${r.spawned}/-${r.expired})`;
+      } catch (err) {
+        console.error("[living] dimming reconcile failed:", err);
+      }
+    }
+
     lastTickOk = Date.now();
     const ms = lastTickOk - started;
     console.log(
-      `[tick] parks=${parkIds.length} entities=${entities} statusΔ=${statusChanges} queueRows=${queueRows} alerts=${alertsFired} degraded=${degraded} errors=${errors} ${ms}ms`,
+      `[tick] parks=${parkIds.length} entities=${entities} statusΔ=${statusChanges} queueRows=${queueRows} alerts=${alertsFired} degraded=${degraded} errors=${errors}${dimming} ${ms}ms`,
     );
   } catch (err) {
     console.error("[tick] failed:", err);

@@ -3,6 +3,8 @@ import { blogRouter } from "./routers/blog.ts";
 import { diningRouter } from "./routers/dining.ts";
 import { diningAlertsRouter } from "./routers/diningAlerts.ts";
 import { forecastRouter } from "./routers/forecast.ts";
+import { livingRouter } from "./routers/living.ts";
+import { livingDevRouter } from "./routers/livingDev.ts";
 import { notificationsRouter } from "./routers/notifications.ts";
 import { parksRouter } from "./routers/parks.ts";
 import { pinCatalogRouter } from "./routers/pinCatalog.ts";
@@ -33,5 +35,11 @@ export const trpcRouter = createTRPCRouter({
   pinIdentify: pinIdentifyRouter,
   pinCollection: pinCollectionRouter,
   pinTrade: pinTradeRouter,
+  // Living Layer (M3) — public read + discovery-pin loop. Inert for the UI
+  // until the PostHog `living-layer` flag is on (no existing page calls it).
+  living: livingRouter,
+  // Living Layer (M0) — dev/armchair-mode only; every procedure is gated by
+  // LIVING_DEV and is inert in production. Adds no live surface.
+  livingDev: livingDevRouter,
 });
 export type TRPCRouter = typeof trpcRouter;
