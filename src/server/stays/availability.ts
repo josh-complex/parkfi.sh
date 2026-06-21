@@ -79,7 +79,9 @@ export function buildRequestBody(params: ResortSearchParams): Record<string, unk
     partyMix: {
       adultCount: params.adults,
       childCount: params.children,
-      nonAdultAges: params.childAges,
+      // Disney expects each non-adult age as an object ({age}); a bare number
+      // array 500s, and an absent list 400s when childCount > 0.
+      nonAdultAges: params.childAges.map((age) => ({ age })),
     },
     accessible: params.accessible,
     region: "us",
