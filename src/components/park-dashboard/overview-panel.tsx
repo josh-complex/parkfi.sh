@@ -187,7 +187,7 @@ export function OverviewPanel() {
                       className={cn(
                         "group flex items-start justify-between gap-3 rounded-md px-2 py-1.5 text-sm",
                         "transition-colors hover:bg-primary hover:text-primary-foreground",
-                        closed && "opacity-60",
+                        closed && "opacity-60 hover:opacity-100",
                       )}
                     >
                       <span className="min-w-0 font-medium leading-snug">{p.name}</span>
