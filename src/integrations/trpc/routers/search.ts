@@ -64,11 +64,20 @@ export const searchRouter = {
         cuisine: string | null;
         price_range: string | null;
         image_url: string | null;
+        character_dining: boolean;
+        dinner_show: boolean;
+        dining_package: boolean;
+        requires_park_ticket: boolean;
       }>(sql`
-        SELECT facility_id, name, park_resort, cuisine, price_range, image_url
-        FROM restaurant_dim
-        WHERE priority = true AND active = true
-        ORDER BY name
+        SELECT r.facility_id, r.name, r.park_resort, r.cuisine, r.price_range, r.image_url,
+               r.character_dining,
+               (r.entity_type = 'dinner-show') AS dinner_show,
+               r.dining_package,
+               (dl.location_type IN ('theme-park', 'water-park')) AS requires_park_ticket
+        FROM restaurant_dim r
+        LEFT JOIN dining_location dl ON split_part(dl.id, ';', 1) = r.park_resort_id
+        WHERE r.priority = true AND r.active = true
+        ORDER BY r.name
       `),
       db.execute<{
         id: string;
@@ -146,6 +155,10 @@ export const searchRouter = {
         cuisine: d.cuisine,
         priceRange: d.price_range,
         imageUrl: d.image_url,
+        characterDining: d.character_dining,
+        dinnerShow: d.dinner_show,
+        diningPackage: d.dining_package,
+        requiresParkTicket: d.requires_park_ticket ?? false,
       })),
       blogPosts: blogPosts.rows.map((b) => ({
         type: "blog" as const,

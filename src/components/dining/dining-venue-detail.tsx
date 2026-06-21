@@ -42,6 +42,7 @@ function VenueBadges({
     requiresParkTicket: boolean;
     characterDining: boolean;
     dinnerShow: boolean;
+    diningPackage: boolean;
     fineDining: boolean;
     walkupWaitList: boolean;
     mobileOrder: boolean;
@@ -64,9 +65,12 @@ function VenueBadges({
           {venue.priceRange}
         </Badge>
       )}
-      {venue.requiresParkTicket && <Badge variant="secondary">Park ticket</Badge>}
+      {venue.requiresParkTicket && (
+        <Badge className="bg-yellow-400 text-black hover:bg-yellow-400">Needs Park Entry</Badge>
+      )}
       {venue.characterDining && <Badge variant="secondary">Characters</Badge>}
       {venue.dinnerShow && <Badge variant="secondary">Dinner show</Badge>}
+      {venue.diningPackage && <Badge variant="secondary">Package</Badge>}
       {venue.fineDining && <Badge variant="secondary">Signature</Badge>}
       {venue.walkupWaitList && <Badge variant="secondary">Walk-up list</Badge>}
       {venue.mobileOrder && <Badge variant="secondary">Mobile order</Badge>}

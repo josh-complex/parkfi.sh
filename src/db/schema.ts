@@ -513,6 +513,10 @@ export const restaurantDim = pgTable("restaurant_dim", {
   mobileOrder: boolean("mobile_order").notNull().default(false),
   characterDining: boolean("character_dining").notNull().default(false),
   fineDining: boolean("fine_dining").notNull().default(false),
+  // Dining package / dining-event: fireworks dessert parties, Fantasmic! &
+  // fireworks dining packages, festival concert packages. Derived from the
+  // finder `tableService` "dine-events" / "dessert-events" tags.
+  diningPackage: boolean("dining_package").notNull().default(false),
   annualPassDiscount: boolean("annual_pass_discount").notNull().default(false),
   disneyVisaDiscount: boolean("disney_visa_discount").notNull().default(false),
   tripAdvisorAward: boolean("trip_advisor_award").notNull().default(false),
@@ -1608,6 +1612,56 @@ export const encounterLog = pgTable(
     index("encounter_log_user_ts_idx").on(t.userId, t.ts),
     index("encounter_log_mark_idx").on(t.markId),
   ],
+);
+
+/** Per-user game profile (M5). 1:1 with `user`; created on first progression. */
+export const warden = pgTable("warden", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => user.id),
+  displayName: text("display_name"),
+  rank: integer("rank").notNull().default(1),
+  xp: integer("xp").notNull().default(0),
+  homeParkId: bigint("home_park_id", { mode: "number" }).references(() => parks.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Companion catalog (M5) — recruitable allies bound to a realm + a signature ride. */
+export type CompanionStats = { hp?: number; atk?: number; def?: number; spd?: number };
+
+export const companion = pgTable(
+  "companion",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    homeRealmId: bigint("home_realm_id", { mode: "number" }).references(() => realm.id),
+    signatureAttractionId: bigint("signature_attraction_id", { mode: "number" }).references(
+      () => attractions.id,
+    ),
+    name: text("name").notNull(),
+    slug: text("slug").notNull().unique(),
+    element: text("element"),
+    role: text("role"),
+    baseStats: jsonb("base_stats").$type<CompanionStats>().notNull().default({}),
+    imageR2Key: text("image_r2_key"),
+  },
+  (t) => [index("companion_home_realm_idx").on(t.homeRealmId)],
+);
+
+/** A user's recruited roster (M5). */
+export const wardenCompanion = pgTable(
+  "warden_companion",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id),
+    companionId: bigint("companion_id", { mode: "number" })
+      .notNull()
+      .references(() => companion.id),
+    level: integer("level").notNull().default(1),
+    xp: integer("xp").notNull().default(0),
+    recruitedAt: timestamp("recruited_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.companionId] })],
 );
 
 /** Reactions on a mark — found / upvote / report (moderation + flywheel). */

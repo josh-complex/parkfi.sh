@@ -74,6 +74,9 @@ type Item = {
   title: string;
   subtitle?: string | null;
   image?: string | null;
+  // Small capability chips under the subtitle (e.g. dining: Park ticket,
+  // Characters, Dinner show, Package).
+  tags?: Array<string>;
   // Trailing price badge. `ticket` adds a ticket icon above the figure (parks).
   price?: string | null;
   priceKind?: "ticket";
@@ -223,6 +226,12 @@ export function OmniSearch({ variant = "bar" }: { variant?: "bar" | "icon" } = {
           title: d.name,
           subtitle: [d.cuisine, d.parkName, d.priceRange].filter(Boolean).join(" · "),
           image: d.imageUrl,
+          tags: [
+            d.requiresParkTicket && "Needs Park Entry",
+            d.characterDining && "Characters",
+            d.dinnerShow && "Dinner show",
+            d.diningPackage && "Package",
+          ].filter((t): t is string => Boolean(t)),
           onSelect: go(() => navigate({ to: "/dining/$facilityId", params: { facilityId: d.id } })),
         })),
       ...(menuQ.data ?? []).map<Item>((mi) => ({
@@ -574,6 +583,23 @@ function ResultRow({
         <span className="block truncate text-sm font-medium text-foreground">{item.title}</span>
         {item.subtitle && (
           <span className="block truncate text-xs text-muted-foreground">{item.subtitle}</span>
+        )}
+        {item.tags && item.tags.length > 0 && (
+          <span className="mt-1 flex flex-wrap gap-1">
+            {item.tags.map((tag) => (
+              <span
+                key={tag}
+                className={cn(
+                  "rounded px-1.5 py-0.5 text-[10px] leading-none",
+                  tag === "Needs Park Entry"
+                    ? "bg-yellow-400 text-black"
+                    : "bg-muted text-muted-foreground",
+                )}
+              >
+                {tag}
+              </span>
+            ))}
+          </span>
         )}
       </span>
       {item.price && (

@@ -32,6 +32,7 @@ export interface Restaurant {
   mobileOrder: boolean;
   characterDining: boolean;
   fineDining: boolean;
+  diningPackage: boolean;
   annualPassDiscount: boolean;
   disneyVisaDiscount: boolean;
   diningPlanQs: boolean;
@@ -43,9 +44,12 @@ export interface Restaurant {
 
 /** Catalog-attribute toggles. Selecting several narrows to venues with ALL of them. */
 export type FeatureKey =
+  | "parkTicket"
+  | "character"
+  | "show"
+  | "package"
   | "walkup"
   | "mobile"
-  | "character"
   | "fine"
   | "annualPass"
   | "disneyVisa"
@@ -57,9 +61,12 @@ export const FEATURE_FILTERS: Array<{
   label: string;
   has: (r: Restaurant) => boolean;
 }> = [
+  { key: "parkTicket", label: "Needs Park Entry", has: (r) => r.requiresParkTicket },
+  { key: "character", label: "Character dining", has: (r) => r.characterDining },
+  { key: "show", label: "Dinner show", has: (r) => r.dinnerShow },
+  { key: "package", label: "Dining package", has: (r) => r.diningPackage },
   { key: "walkup", label: "No reservation needed", has: (r) => r.walkupWaitList },
   { key: "mobile", label: "Mobile order", has: (r) => r.mobileOrder },
-  { key: "character", label: "Character dining", has: (r) => r.characterDining },
   { key: "fine", label: "Signature dining", has: (r) => r.fineDining },
   { key: "annualPass", label: "Passholder discount", has: (r) => r.annualPassDiscount },
   { key: "disneyVisa", label: "Disney Visa", has: (r) => r.disneyVisaDiscount },

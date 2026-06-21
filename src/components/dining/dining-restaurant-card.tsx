@@ -73,8 +73,8 @@ function RestaurantTagBadges({ restaurant }: { restaurant: Restaurant }) {
   return (
     <>
       {restaurant.requiresParkTicket && (
-        <Badge className="bg-black/60 text-white text-xs font-normal border-0 shadow-none backdrop-blur-sm">
-          Park ticket
+        <Badge className="bg-yellow-400 text-black text-xs font-normal border-0 shadow-none">
+          Needs Park Entry
         </Badge>
       )}
       {restaurant.characterDining && (
@@ -85,6 +85,11 @@ function RestaurantTagBadges({ restaurant }: { restaurant: Restaurant }) {
       {restaurant.dinnerShow && (
         <Badge className="bg-black/60 text-white text-xs font-normal border-0 shadow-none backdrop-blur-sm">
           Dinner show
+        </Badge>
+      )}
+      {restaurant.diningPackage && (
+        <Badge className="bg-black/60 text-white text-xs font-normal border-0 shadow-none backdrop-blur-sm">
+          Package
         </Badge>
       )}
       {restaurant.fineDining && (
@@ -125,6 +130,7 @@ export function RestaurantCard({
     restaurant.requiresParkTicket ||
     restaurant.characterDining ||
     restaurant.dinnerShow ||
+    restaurant.diningPackage ||
     restaurant.fineDining;
 
   return (

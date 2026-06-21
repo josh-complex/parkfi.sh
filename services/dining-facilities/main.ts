@@ -358,6 +358,7 @@ async function main() {
           mobileOrder: sql`excluded.mobile_order`,
           characterDining: sql`excluded.character_dining`,
           fineDining: sql`excluded.fine_dining`,
+          diningPackage: sql`excluded.dining_package`,
           annualPassDiscount: sql`excluded.annual_pass_discount`,
           disneyVisaDiscount: sql`excluded.disney_visa_discount`,
           tripAdvisorAward: sql`excluded.trip_advisor_award`,

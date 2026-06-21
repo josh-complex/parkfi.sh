@@ -22,6 +22,7 @@ export const diningRouter = {
       mobile_order: boolean;
       character_dining: boolean;
       fine_dining: boolean;
+      dining_package: boolean;
       annual_pass_discount: boolean;
       disney_visa_discount: boolean;
       dining_plan_qs: boolean;
@@ -33,13 +34,14 @@ export const diningRouter = {
       SELECT r.facility_id, r.name, r.cuisine, r.experience_type, r.price_range, r.park_resort,
              r.image_url, r.detail_url, r.source,
              r.walkup_wait_list, r.mobile_order, r.character_dining, r.fine_dining,
+             r.dining_package,
              r.annual_pass_discount, r.disney_visa_discount, r.dining_plan_qs, r.dining_plan_ts,
              (m.facility_id IS NOT NULL AND m.item_count > 0) AS has_menu,
              r.entity_type,
              dl.location_type
       FROM restaurant_dim r
       LEFT JOIN dining_menu_snapshot m ON m.facility_id = r.facility_id
-      LEFT JOIN dining_location dl ON dl.id = r.park_resort_id
+      LEFT JOIN dining_location dl ON split_part(dl.id, ';', 1) = r.park_resort_id
       WHERE r.priority = true AND r.active = true AND r.bookable = true
       ORDER BY r.park_resort NULLS LAST, r.name
     `);
@@ -57,6 +59,7 @@ export const diningRouter = {
       mobileOrder: r.mobile_order,
       characterDining: r.character_dining,
       fineDining: r.fine_dining,
+      diningPackage: r.dining_package,
       annualPassDiscount: r.annual_pass_discount,
       disneyVisaDiscount: r.disney_visa_discount,
       diningPlanQs: r.dining_plan_qs,
@@ -87,6 +90,7 @@ export const diningRouter = {
       entity_type: string;
       character_dining: boolean;
       fine_dining: boolean;
+      dining_package: boolean;
       walkup_wait_list: boolean;
       mobile_order: boolean;
       annual_pass_discount: boolean;
@@ -110,7 +114,7 @@ export const diningRouter = {
     }>(sql`
       SELECT r.facility_id, r.name, r.cuisine, r.experience_type, r.price_range, r.park_resort,
              r.image_url, r.detail_url, r.url_friendly_id, r.entity_type,
-             r.character_dining, r.fine_dining,
+             r.character_dining, r.fine_dining, r.dining_package,
              r.walkup_wait_list, r.mobile_order,
              r.annual_pass_discount, r.disney_visa_discount, r.trip_advisor_award,
              r.dining_plan_qs, r.dining_plan_ts,
@@ -122,7 +126,7 @@ export const diningRouter = {
              dl.location_type
       FROM restaurant_dim r
       LEFT JOIN dining_menu_snapshot m ON m.facility_id = r.facility_id
-      LEFT JOIN dining_location dl ON dl.id = r.park_resort_id
+      LEFT JOIN dining_location dl ON split_part(dl.id, ';', 1) = r.park_resort_id
       WHERE r.facility_id = ${input.facilityId} AND r.active = true
       LIMIT 1
     `);
@@ -141,6 +145,7 @@ export const diningRouter = {
       dinnerShow: r.entity_type === "dinner-show",
       characterDining: r.character_dining,
       fineDining: r.fine_dining,
+      diningPackage: r.dining_package,
       walkupWaitList: r.walkup_wait_list,
       mobileOrder: r.mobile_order,
       annualPassDiscount: r.annual_pass_discount,
@@ -463,9 +468,9 @@ export const diningRouter = {
       }),
     )
     .query(async ({ input }) => {
-      const facilityFilter = input.facilityId
-        ? sql`AND d.facility_id = ${input.facilityId}`
-        : sql``;
+      // Injected into the `latest_ts` CTE, which selects `FROM dining_obs`
+      // unaliased — so the column must be unqualified (no `d.` prefix).
+      const facilityFilter = input.facilityId ? sql`AND facility_id = ${input.facilityId}` : sql``;
 
       const result = await db.execute<{
         facility_id: string;

@@ -52,6 +52,9 @@ export interface DiningCatalogRow {
   mobileOrder: boolean;
   characterDining: boolean;
   fineDining: boolean;
+  // Dining package / dining-event (dessert parties, Fantasmic!/fireworks dining
+  // packages, festival concert packages) — derived from the tableService tags.
+  diningPackage: boolean;
   annualPassDiscount: boolean;
   disneyVisaDiscount: boolean;
   tripAdvisorAward: boolean;
@@ -133,6 +136,7 @@ function toRow(entity: DisneyDiningEntity): DiningCatalogRow {
     mobileOrder: features.includes("mobile-orders"),
     characterDining: tableService.includes("character-dining"),
     fineDining: tableService.includes("fine-signature-dining"),
+    diningPackage: tableService.includes("dine-events") || tableService.includes("dessert-events"),
     annualPassDiscount: (facets.annualPass ?? []).length > 0,
     disneyVisaDiscount: discounts.some((d) => d.startsWith("disney-visa")),
     tripAdvisorAward: (facets.restaurantAttributes ?? []).includes("trip-advisor-excellence-award"),
