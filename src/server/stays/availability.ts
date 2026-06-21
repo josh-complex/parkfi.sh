@@ -8,7 +8,7 @@
  * Calling it server-side (rather than from the browser) sidesteps CORS and lets
  * us keep the `personalizationId` and Florida-resident postal trick in one place.
  */
-import { and, eq, max } from "drizzle-orm";
+import { and, asc, eq, max } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
 import { stayObs, stayQuery } from "#/db/schema.ts";
@@ -297,6 +297,49 @@ export async function upsertStayQuery(
         postalCode: params.postalCode ?? null,
       },
     });
+}
+
+export interface StayPricePoint {
+  /** Observation time, epoch ms. */
+  observedAt: number;
+  /** Nightly rate (USD) at this tick, or null when it was unavailable. */
+  pricePerNight: number | null;
+  available: boolean;
+}
+
+/**
+ * Every observed price/availability tick for one resort at a fixed (dates,
+ * party) tuple, oldest first — the "is now a good time to book?" trend. The
+ * filter is a strict prefix of `stay_obs`'s PK
+ * (resort_id, check_in, check_out, party_key, observed_at), so this is an
+ * index range scan that already returns rows in `observed_at` order.
+ */
+export async function readStayPriceHistory(
+  resortId: string,
+  params: ResortSearchParams,
+  partyKey: string,
+): Promise<Array<StayPricePoint>> {
+  const rows = await db
+    .select({
+      observedAt: stayObs.observedAt,
+      pricePerNight: stayObs.pricePerNight,
+      available: stayObs.available,
+    })
+    .from(stayObs)
+    .where(
+      and(
+        eq(stayObs.resortId, resortId),
+        eq(stayObs.checkIn, params.checkInDate),
+        eq(stayObs.checkOut, params.checkOutDate),
+        eq(stayObs.partyKey, partyKey),
+      ),
+    )
+    .orderBy(asc(stayObs.observedAt));
+  return rows.map((r) => ({
+    observedAt: r.observedAt.getTime(),
+    pricePerNight: r.pricePerNight,
+    available: r.available,
+  }));
 }
 
 /** Rebuild the search params from a stored `stay_query` row (for the sweep). */

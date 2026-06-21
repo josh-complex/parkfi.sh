@@ -8,6 +8,7 @@ import { type DateRange } from "react-day-picker";
 import { ArrowLeftIcon, CalendarIcon, ExternalLinkIcon } from "lucide-react";
 
 import { LocationMap } from "#/components/maps/location-map.tsx";
+import { ResortPriceChart } from "#/components/stays/resort-price-chart.tsx";
 import { StayAlertButton } from "#/components/stays/stay-alert-button.tsx";
 import { reasonLabel, TIER_LABEL, TIER_META } from "#/components/stays/stays-filters.ts";
 import { Badge } from "#/components/ui/badge.tsx";
@@ -30,6 +31,7 @@ import { authClient } from "#/lib/auth-client.ts";
 import { cn } from "#/lib/utils.ts";
 import { RESORT_CATALOG } from "#/server/stays/resort-catalog.generated.ts";
 import { resortCoords } from "#/server/stays/resort-coords.ts";
+import { landmarkDistances } from "#/server/stays/wdw-landmarks.ts";
 
 /** Resort hotels are a static catalog; resolve by slug for the detail page. */
 const RESORT_BY_SLUG = new Map(RESORT_CATALOG.map((r) => [r.slug, r]));
@@ -52,6 +54,9 @@ function rangeLabel(range: DateRange | undefined): string {
 const ADULT_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 const KID_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
+/** Disney requires an age per child; default to the common rack bucket. */
+const DEFAULT_CHILD_AGE = 10;
+
 interface SearchState {
   range: DateRange;
   adults: number;
@@ -63,6 +68,32 @@ interface SearchState {
 type CatalogResort = NonNullable<ReturnType<typeof resortBySlug>>;
 
 /**
+ * A sensible default stay so the card opens with a live quote instead of an
+ * empty form: the upcoming Friday, two nights, two adults. Computed lazily on
+ * the client (see the seeding effect) so SSR and the browser can't disagree on
+ * "today" and trip a hydration mismatch.
+ */
+function defaultStaySearch(): SearchState {
+  const from = new Date();
+  from.setHours(0, 0, 0, 0);
+  const daysUntilFri = (((5 - from.getDay()) % 7) + 7) % 7 || 7;
+  from.setDate(from.getDate() + daysUntilFri);
+  const to = new Date(from);
+  to.setDate(to.getDate() + 2);
+  return { range: { from, to }, adults: 2, children: 0, floridaResident: false, accessible: false };
+}
+
+function partyLabel(adults: number, children: number): string {
+  const a = `${adults} adult${adults === 1 ? "" : "s"}`;
+  return children > 0 ? `${a} · ${children} kid${children === 1 ? "" : "s"}` : a;
+}
+
+/** Disney's per-child age list for a party (each kid defaults to the rack bucket). */
+function childAgesFor(children: number): Array<number> {
+  return Array.from({ length: children }, () => DEFAULT_CHILD_AGE);
+}
+
+/**
  * Inline availability search for a single resort. Mirrors the simple, compact
  * control style of the dining detail page (plain field controls — the fancy
  * "core search" pill is reserved for the `/stays` and `/dining` boards). Reuses
@@ -70,38 +101,56 @@ type CatalogResort = NonNullable<ReturnType<typeof resortBySlug>>;
  * response to this resort's id, and shows its nightly rate / sold-out status plus
  * an "alert me" bell for the committed search.
  */
-function ResortAvailability({ resort }: { resort: CatalogResort }) {
+function ResortAvailability({
+  resort,
+  committed,
+  onCommit,
+}: {
+  resort: CatalogResort;
+  /** The committed search (null until the parent's default lands after mount). */
+  committed: SearchState | null;
+  onCommit: (s: SearchState) => void;
+}) {
   const trpc = useTRPC();
   const isMobile = useIsMobile();
   const { data: session } = authClient.useSession();
 
-  const [range, setRange] = React.useState<DateRange | undefined>();
-  const [adults, setAdults] = React.useState(2);
-  const [children, setChildren] = React.useState(0);
-  const [floridaResident, setFloridaResident] = React.useState(false);
-  const [accessible, setAccessible] = React.useState(false);
-  const [search, setSearch] = React.useState<SearchState | null>(null);
+  // Draft controls. Seeded from `committed` so the prefilled default (and any
+  // toggle re-commit) shows up in the fields.
+  const [range, setRange] = React.useState<DateRange | undefined>(committed?.range);
+  const [adults, setAdults] = React.useState(committed?.adults ?? 2);
+  const [children, setChildren] = React.useState(committed?.children ?? 0);
+  const [floridaResident, setFloridaResident] = React.useState(committed?.floridaResident ?? false);
+  const [accessible, setAccessible] = React.useState(committed?.accessible ?? false);
   const [datesOpen, setDatesOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!committed) return;
+    setRange(committed.range);
+    setAdults(committed.adults);
+    setChildren(committed.children);
+    setFloridaResident(committed.floridaResident);
+    setAccessible(committed.accessible);
+  }, [committed]);
 
   const today = React.useMemo(() => new Date(), []);
 
   const availabilityQ = useQuery({
     ...trpc.stays.availability.queryOptions({
-      checkInDate: search ? iso(search.range.from!) : "",
-      checkOutDate: search ? iso(search.range.to!) : "",
-      adults: search?.adults ?? 2,
-      children: search?.children ?? 0,
-      // Disney requires an age per child; default to 10 (the common rack bucket).
-      childAges: search ? Array.from({ length: search.children }, () => 10) : [],
-      accessible: search?.accessible ?? false,
-      floridaResident: search?.floridaResident ?? false,
+      checkInDate: committed ? iso(committed.range.from!) : "",
+      checkOutDate: committed ? iso(committed.range.to!) : "",
+      adults: committed?.adults ?? 2,
+      children: committed?.children ?? 0,
+      childAges: committed ? childAgesFor(committed.children) : [],
+      accessible: committed?.accessible ?? false,
+      floridaResident: committed?.floridaResident ?? false,
     }),
-    enabled: !!search,
+    enabled: !!committed,
   });
 
   const nights =
-    search?.range.from && search.range.to
-      ? differenceInCalendarDays(search.range.to, search.range.from)
+    committed?.range.from && committed.range.to
+      ? differenceInCalendarDays(committed.range.to, committed.range.from)
       : 0;
 
   const submit = React.useCallback(() => {
@@ -109,10 +158,17 @@ function ResortAvailability({ resort }: { resort: CatalogResort }) {
       setDatesOpen(true);
       return;
     }
-    setSearch({ range, adults, children, floridaResident, accessible });
-  }, [range, adults, children, floridaResident, accessible]);
+    onCommit({
+      range: { from: range.from, to: range.to },
+      adults,
+      children,
+      floridaResident,
+      accessible,
+    });
+  }, [range, adults, children, floridaResident, accessible, onCommit]);
 
   const offer = availabilityQ.data?.offers.find((o) => o.id === resort.id);
+  const fresh = availabilityQ.data ? !availabilityQ.data.cached : false;
 
   return (
     <section className="flex flex-col gap-4 rounded-2xl border bg-card p-4 sm:p-5">
@@ -124,13 +180,13 @@ function ResortAvailability({ resort }: { resort: CatalogResort }) {
           tier={resort.tier}
           area={resort.area}
           dims={{
-            checkInDate: search?.range.from ? iso(search.range.from) : "",
-            checkOutDate: search?.range.to ? iso(search.range.to) : "",
-            adults: search?.adults ?? adults,
-            children: search?.children ?? children,
-            childAges: Array.from({ length: search?.children ?? children }, () => 10),
-            accessible: search?.accessible ?? accessible,
-            floridaResident: search?.floridaResident ?? floridaResident,
+            checkInDate: committed?.range.from ? iso(committed.range.from) : "",
+            checkOutDate: committed?.range.to ? iso(committed.range.to) : "",
+            adults: committed?.adults ?? adults,
+            children: committed?.children ?? children,
+            childAges: childAgesFor(committed?.children ?? children),
+            accessible: committed?.accessible ?? accessible,
+            floridaResident: committed?.floridaResident ?? floridaResident,
           }}
           loggedIn={!!session?.user}
         />
@@ -219,7 +275,7 @@ function ResortAvailability({ resort }: { resort: CatalogResort }) {
             checked={floridaResident}
             onCheckedChange={(v) => {
               setFloridaResident(v);
-              setSearch((s) => (s ? { ...s, floridaResident: v } : s));
+              if (committed) onCommit({ ...committed, floridaResident: v });
             }}
           />
           <Label htmlFor="resort-fl" className="text-sm font-normal whitespace-nowrap">
@@ -233,7 +289,7 @@ function ResortAvailability({ resort }: { resort: CatalogResort }) {
             checked={accessible}
             onCheckedChange={(v) => {
               setAccessible(v);
-              setSearch((s) => (s ? { ...s, accessible: v } : s));
+              if (committed) onCommit({ ...committed, accessible: v });
             }}
           />
           <Label htmlFor="resort-access" className="text-sm font-normal whitespace-nowrap">
@@ -243,27 +299,32 @@ function ResortAvailability({ resort }: { resort: CatalogResort }) {
       </div>
 
       {/* Result for this resort. */}
-      {search && (
+      {committed && (
         <div className="border-t pt-4">
           {availabilityQ.isLoading ? (
-            <Skeleton className="h-6 w-56" />
+            <Skeleton className="h-10 w-60" />
           ) : availabilityQ.isError ? (
             <p className="text-sm text-muted-foreground">
               We couldn&apos;t pull live rates just now — please try again.
             </p>
           ) : offer?.available && offer.pricePerNight != null ? (
-            <p className="text-sm">
-              <span className="text-muted-foreground">From </span>
-              <span className="text-lg font-semibold">
-                ${offer.pricePerNight.toLocaleString()}
-              </span>{" "}
-              <span className="text-muted-foreground">
-                / night
-                {nights > 0
-                  ? ` · $${(offer.pricePerNight * nights).toLocaleString()} for ${nights} night${nights === 1 ? "" : "s"}`
-                  : ""}
-              </span>
-            </p>
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div className="flex flex-col gap-0.5">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-3xl font-bold tracking-tight tabular-nums">
+                    ${offer.pricePerNight.toLocaleString()}
+                  </span>
+                  <span className="text-sm text-muted-foreground">/ night</span>
+                </div>
+                {nights > 0 && (
+                  <span className="text-sm text-muted-foreground tabular-nums">
+                    ${(offer.pricePerNight * nights).toLocaleString()} total · {nights} night
+                    {nights === 1 ? "" : "s"}
+                  </span>
+                )}
+              </div>
+              <FreshnessChip fresh={fresh} />
+            </div>
           ) : (
             <p className="text-sm text-muted-foreground">
               {reasonLabel(offer?.reasonCode ?? null)} for these dates. Set an alert above and
@@ -273,6 +334,18 @@ function ResortAvailability({ resort }: { resort: CatalogResort }) {
         </div>
       )}
     </section>
+  );
+}
+
+/** A small "how current is this quote?" indicator beside the price. */
+function FreshnessChip({ fresh }: { fresh: boolean }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs text-muted-foreground">
+      <span
+        className={cn("size-1.5 rounded-full", fresh ? "bg-emerald-500" : "bg-muted-foreground/40")}
+      />
+      {fresh ? "Live rate" : "Recently checked"}
+    </span>
   );
 }
 
@@ -302,6 +375,37 @@ export function ResortDetail({ slug }: { slug: string }) {
 
   const blurb = TIER_META.find((t) => t.key === resort.tier)?.blurb ?? null;
   const coords = resortCoords(resort.slug);
+
+  // Committed search shared by the availability card and the price-trend chart.
+  // Seeded with a sensible default on the client only (SSR/client `new Date()`
+  // would otherwise disagree), so the page opens with a live quote + trend.
+  const [search, setSearch] = React.useState<SearchState | null>(null);
+  React.useEffect(() => {
+    setSearch((prev) => prev ?? defaultStaySearch());
+  }, []);
+
+  const nearby = React.useMemo(() => (coords ? landmarkDistances(coords) : []), [coords]);
+  const parkMarkers = React.useMemo(
+    () => nearby.map((l) => ({ latitude: l.lat, longitude: l.lng, label: l.short })),
+    [nearby],
+  );
+
+  const historyParams =
+    search?.range.from && search.range.to
+      ? {
+          resortId: resort.id,
+          checkInDate: iso(search.range.from),
+          checkOutDate: iso(search.range.to),
+          adults: search.adults,
+          children: search.children,
+          childAges: childAgesFor(search.children),
+          accessible: search.accessible,
+          floridaResident: search.floridaResident,
+        }
+      : null;
+  const nightsLabel = search
+    ? `${rangeLabel(search.range)} · ${partyLabel(search.adults, search.children)}`
+    : "";
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-6 lg:px-6">
@@ -344,7 +448,7 @@ export function ResortDetail({ slug }: { slug: string }) {
         {blurb && <p className="text-muted-foreground">{blurb}</p>}
       </header>
 
-      <ResortAvailability resort={resort} />
+      <ResortAvailability resort={resort} committed={search} onCommit={setSearch} />
 
       {coords && (
         <section className="flex flex-col gap-3">
@@ -353,11 +457,33 @@ export function ResortDetail({ slug }: { slug: string }) {
             latitude={coords[0]}
             longitude={coords[1]}
             label={resort.name}
-            zoom={16}
+            markers={parkMarkers}
             caption={`Approximate location${resort.area ? ` · ${resort.area}` : ""}`}
             className="h-56 w-full overflow-hidden rounded-2xl border sm:h-72"
           />
+          {nearby.some((l) => l.kind === "park") && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-medium text-muted-foreground">Distance to parks</span>
+              {nearby
+                .filter((l) => l.kind === "park")
+                .map((l) => (
+                  <span
+                    key={l.short}
+                    className="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-xs"
+                  >
+                    <span className="font-medium">{l.short}</span>
+                    <span className="text-muted-foreground tabular-nums">
+                      {l.miles.toFixed(1)} mi
+                    </span>
+                  </span>
+                ))}
+            </div>
+          )}
         </section>
+      )}
+
+      {historyParams && (
+        <ResortPriceChart params={historyParams} enabled nightsLabel={nightsLabel} />
       )}
 
       <div className="flex flex-wrap items-center gap-3 text-sm">

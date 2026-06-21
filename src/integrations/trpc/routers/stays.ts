@@ -5,6 +5,7 @@ import {
   buildPartyKey,
   fetchResortAvailability,
   readStayObs,
+  readStayPriceHistory,
   upsertStayQuery,
   writeStayObs,
 } from "#/server/stays/availability.ts";
@@ -14,6 +15,21 @@ import { publicProcedure } from "../init.ts";
 import type { TRPCRouterRecord } from "@trpc/server";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD");
+
+/** The (dates, party) search dims shared by `availability` and `priceHistory`. */
+const stayDims = {
+  checkInDate: isoDate,
+  checkOutDate: isoDate,
+  adults: z.number().int().min(1).max(10).default(2),
+  children: z.number().int().min(0).max(10).default(0),
+  childAges: z.array(z.number().int().min(0).max(17)).max(10).default([]),
+  accessible: z.boolean().default(false),
+  floridaResident: z.boolean().default(false),
+  postalCode: z
+    .string()
+    .regex(/^\d{5}$/, "expected a 5-digit ZIP")
+    .optional(),
+} as const;
 
 export const staysRouter = {
   /**
@@ -30,40 +46,38 @@ export const staysRouter = {
    * serves from). Either way we bump `stay_query.last_requested_at` so the sweep
    * keeps this tuple warm.
    */
-  availability: publicProcedure
-    .input(
-      z.object({
-        checkInDate: isoDate,
-        checkOutDate: isoDate,
-        adults: z.number().int().min(1).max(10).default(2),
-        children: z.number().int().min(0).max(10).default(0),
-        childAges: z.array(z.number().int().min(0).max(17)).max(10).default([]),
-        accessible: z.boolean().default(false),
-        floridaResident: z.boolean().default(false),
-        postalCode: z
-          .string()
-          .regex(/^\d{5}$/, "expected a 5-digit ZIP")
-          .optional(),
-      }),
-    )
+  availability: publicProcedure.input(z.object(stayDims)).query(async ({ input }) => {
+    const partyKey = buildPartyKey(input);
+    const cached = await readStayObs(input, partyKey, config.staysCacheTtlMs);
+    let offers = cached;
+    if (!offers) {
+      offers = await fetchResortAvailability(input, AbortSignal.timeout(config.fetchTimeoutMs));
+      await writeStayObs(input, partyKey, offers);
+    }
+    // Record demand so the sweeper keeps this tuple warm (best-effort: a cache
+    // bookkeeping failure must not fail an otherwise-good availability read).
+    await upsertStayQuery(input, partyKey).catch((err) => {
+      console.error("[stays] upsertStayQuery failed:", err);
+    });
+    return {
+      checkInDate: input.checkInDate,
+      checkOutDate: input.checkOutDate,
+      offers,
+      cached: cached != null,
+    };
+  }),
+
+  /**
+   * Observed nightly-rate history for one resort at a fixed (dates, party)
+   * tuple — every `stay_obs` tick the sweep has recorded, oldest first. Powers
+   * the "is now a good time to book?" trend on the resort detail page. Pure read
+   * of cached observations (no live Disney call), so it's cheap to poll.
+   */
+  priceHistory: publicProcedure
+    .input(z.object({ resortId: z.string().min(1), ...stayDims }))
     .query(async ({ input }) => {
       const partyKey = buildPartyKey(input);
-      const cached = await readStayObs(input, partyKey, config.staysCacheTtlMs);
-      let offers = cached;
-      if (!offers) {
-        offers = await fetchResortAvailability(input, AbortSignal.timeout(config.fetchTimeoutMs));
-        await writeStayObs(input, partyKey, offers);
-      }
-      // Record demand so the sweeper keeps this tuple warm (best-effort: a cache
-      // bookkeeping failure must not fail an otherwise-good availability read).
-      await upsertStayQuery(input, partyKey).catch((err) => {
-        console.error("[stays] upsertStayQuery failed:", err);
-      });
-      return {
-        checkInDate: input.checkInDate,
-        checkOutDate: input.checkOutDate,
-        offers,
-        cached: cached != null,
-      };
+      const points = await readStayPriceHistory(input.resortId, input, partyKey);
+      return { points };
     }),
 } satisfies TRPCRouterRecord;
