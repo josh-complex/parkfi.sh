@@ -146,6 +146,7 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
                 <ParkWaitChart
                   parkSlug={activeSlug ?? null}
                   focusedId={selected?.id ?? null}
+                  onClearFocus={() => setSelected(null)}
                   operatorSlug={operatorSlug}
                 />
               </React.Suspense>

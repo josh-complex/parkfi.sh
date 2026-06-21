@@ -329,7 +329,6 @@ export function ParkBoardTable({
   className?: string;
 }) {
   const [filter, setFilter] = React.useState<StatusFilter>("ALL");
-  const [linesOnly, setLinesOnly] = React.useState(true);
   const [sorting, setSorting] = React.useState<SortingState>(SORT_STATE["standby-desc"]);
   const isMobile = useIsMobile();
   // The sparkline history query is NOT awaited in the route loader, so under
@@ -422,8 +421,8 @@ export function ParkBoardTable({
     return { rides, singleRiderIds };
   }, [allRides]);
 
-  // "Lines only" filters by standby capability — a Disney concept. Universal's
-  // per-ride line is the free Virtual Line, so the toggle is hidden there.
+  // The board shows only rides with a standby line — a Disney concept. Universal's
+  // per-ride line is the free Virtual Line, so every ride qualifies there.
   const lineFilter = React.useMemo(
     () => !isUniversal(operatorSlug) && rides.some((r) => r.supportsQueueTypes.includes(1)),
     [rides, operatorSlug],
@@ -432,13 +431,12 @@ export function ParkBoardTable({
   // Status / lines-only filtering happens before the table so the row count and
   // sort apply to the visible set; sorting itself is owned by the table.
   const data = React.useMemo(() => {
-    const lineFiltered =
-      linesOnly && lineFilter ? rides.filter((r) => r.supportsQueueTypes.includes(1)) : rides;
+    const lineFiltered = lineFilter ? rides.filter((r) => r.supportsQueueTypes.includes(1)) : rides;
     if (filter === "ALL") return lineFiltered;
     if (filter === "CLOSED")
       return lineFiltered.filter((r) => r.status === "CLOSED" || r.status == null);
     return lineFiltered.filter((r) => r.status === filter);
-  }, [rides, filter, linesOnly, lineFilter]);
+  }, [rides, filter, lineFilter]);
 
   const columns = React.useMemo<Array<ColumnDef<BoardItem>>>(
     () => [
@@ -578,15 +576,6 @@ export function ParkBoardTable({
         {/* Desktop controls live in the header; mobile gets a FAB (below). */}
         <CardAction className="hidden md:block">
           <div className="flex items-center gap-2">
-            {lineFilter && (
-              <Button
-                variant={linesOnly ? "default" : "outline"}
-                size="sm"
-                onClick={() => setLinesOnly((v) => !v)}
-              >
-                Lines only
-              </Button>
-            )}
             <Select
               value={filter}
               onValueChange={(v) => v && setFilter(v as StatusFilter)}
@@ -707,9 +696,6 @@ export function ParkBoardTable({
           onSortKey={(k) => setSorting(SORT_STATE[k])}
           filter={filter}
           onFilter={setFilter}
-          linesOnly={linesOnly}
-          onLinesOnly={setLinesOnly}
-          hasLineRides={lineFilter}
         />
       )}
     </Card>
@@ -813,19 +799,13 @@ function MobileControls({
   onSortKey,
   filter,
   onFilter,
-  linesOnly,
-  onLinesOnly,
-  hasLineRides,
 }: {
   sortKey: SortKey;
   onSortKey: (k: SortKey) => void;
   filter: StatusFilter;
   onFilter: (f: StatusFilter) => void;
-  linesOnly: boolean;
-  onLinesOnly: (v: boolean) => void;
-  hasLineRides: boolean;
 }) {
-  const filterActive = filter !== "ALL" || (hasLineRides && linesOnly);
+  const filterActive = filter !== "ALL";
   return (
     <div
       className="fixed left-1/2 z-40 -translate-x-1/2 md:hidden"
@@ -875,21 +855,9 @@ function MobileControls({
           <DrawerContent>
             <DrawerHeader>
               <DrawerTitle>Filter rides</DrawerTitle>
-              <DrawerDescription>Narrow the board by status and line type.</DrawerDescription>
+              <DrawerDescription>Narrow the board by status.</DrawerDescription>
             </DrawerHeader>
             <div className="flex flex-col gap-4 px-4 pb-4">
-              {hasLineRides && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Rides with lines only</span>
-                  <Button
-                    variant={linesOnly ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => onLinesOnly(!linesOnly)}
-                  >
-                    {linesOnly ? "On" : "Off"}
-                  </Button>
-                </div>
-              )}
               <div className="flex flex-col gap-1">
                 <span className="text-muted-foreground text-xs font-medium uppercase">Status</span>
                 {(Object.keys(FILTER_LABELS) as Array<StatusFilter>).map((key) => (

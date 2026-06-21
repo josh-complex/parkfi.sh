@@ -120,12 +120,15 @@ export function ParkMapLeaflet({
   activeSlug,
   selectedId,
   onSelectAttraction,
+  onDeselect,
   onMapRef,
   attached = true,
 }: {
   activeSlug: string | null;
   selectedId?: number | null;
   onSelectAttraction?: (item: { id: number; name: string }) => void;
+  /** Clicking the empty map clears the current selection. */
+  onDeselect?: () => void;
   onMapRef?: (map: MapHandle | null) => void;
   /** True only while the map is lent to a visible slot. Camera flies are gated
    *  on it — flying into a 0×0 parked container yields NaN LatLngs and throws. */
@@ -152,6 +155,8 @@ export function ParkMapLeaflet({
   const boundaryRef = React.useRef<L.GeoJSON | null>(null);
   const onSelectRef = React.useRef(onSelectAttraction);
   onSelectRef.current = onSelectAttraction;
+  const onDeselectRef = React.useRef(onDeselect);
+  onDeselectRef.current = onDeselect;
   const selectedIdRef = React.useRef(selectedId);
   selectedIdRef.current = selectedId;
 
@@ -346,7 +351,13 @@ export function ParkMapLeaflet({
 
     layer.setItems(items);
     layer.refresh();
-    const onMapClick = () => layer.unspiderfy();
+    // Click on empty map collapses any open spider and clears the selection
+    // (marker clicks stopPropagation, so this only fires on the bare map).
+    const onMapClick = () => {
+      layer.unspiderfy();
+      popupRef.current?.remove();
+      onDeselectRef.current?.();
+    };
     map.on("move zoom", scheduleRefresh);
     map.on("click", onMapClick);
     return () => {

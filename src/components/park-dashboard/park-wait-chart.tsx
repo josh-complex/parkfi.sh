@@ -643,11 +643,13 @@ export function ParkWaitChart({
   parkSlug,
   operatorSlug,
   focusedId,
+  onClearFocus,
   className,
 }: {
   parkSlug: string | null;
   operatorSlug?: string | null;
   focusedId: number | null;
+  onClearFocus?: () => void;
   className?: string;
 }) {
   const trpc = useTRPC();
@@ -779,30 +781,37 @@ export function ParkWaitChart({
     return m;
   }, [rides]);
 
-  // Which ride series are drawn alongside the park lines. Starts empty so the
-  // chart opens on just the park-average line; the viewer opts rides in from the
-  // legend (or by picking one on the board/map). Resets when the roster changes.
+  // The viewer's comparison set — the rides explicitly toggled on from the
+  // legend. Starts empty so the chart opens on just the park-average line, and
+  // resets when the roster changes.
   const [enabled, setEnabled] = React.useState<Set<number>>(() => new Set());
   React.useEffect(() => {
     setEnabled(new Set());
   }, [ridesKey]);
 
-  // Picking a ride on the board/map lights up its series.
-  React.useEffect(() => {
-    if (focusedId == null) return;
-    setEnabled((prev) => (prev.has(focusedId) ? prev : new Set(prev).add(focusedId)));
-  }, [focusedId]);
+  // Picking a ride on the map/board "solos" it: the chart shows only that ride,
+  // overriding the comparison set without mutating it. Clicking away clears the
+  // pick (focusedId → null) and the chart swaps back to the comparison set.
+  const displayedIds = focusedId != null ? new Set<number>([focusedId]) : enabled;
 
-  const toggle = (id: number) =>
-    setEnabled((prev) => {
-      const next = new Set(prev);
+  // Toggling from the legend builds a comparison: it releases any solo pick and
+  // bases the new set on what's currently drawn, so the checkbox the viewer
+  // clicks acts on the series they actually see.
+  const toggle = (id: number) => {
+    setEnabled(() => {
+      const next = new Set(displayedIds);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+    onClearFocus?.();
+  };
 
-  const allEnabled = rides.length > 0 && rides.every((r) => enabled.has(r.id));
-  const toggleAll = () => setEnabled(allEnabled ? new Set() : new Set(rides.map((r) => r.id)));
+  const allEnabled = rides.length > 0 && rides.every((r) => displayedIds.has(r.id));
+  const toggleAll = () => {
+    onClearFocus?.();
+    setEnabled(allEnabled ? new Set() : new Set(rides.map((r) => r.id)));
+  };
 
   // Pin axis/tooltip formatting to the park's timezone. This chart can render
   // during SSR, so a bare `toLocaleTimeString` would read UTC on the server and
@@ -814,7 +823,7 @@ export function ParkWaitChart({
     mode === "price" ? "price" : mode === "availability" ? "availability" : "standby wait";
   const description = `Whole-park average ${metricNoun}`;
 
-  const enabledRides = rides.filter((r) => enabled.has(r.id));
+  const enabledRides = rides.filter((r) => displayedIds.has(r.id));
   const hasData = chartData.length > 0 && rides.length > 0;
 
   return (
@@ -826,7 +835,7 @@ export function ParkWaitChart({
           </CardTitle>
           <CardDescription className="truncate">{description}</CardDescription>
         </div>
-        <CardAction className="flex flex-wrap justify-end gap-2">
+        <CardAction className="flex flex-wrap items-center justify-end gap-2">
           <Select
             value={queueType}
             onValueChange={(v) => v && setQueueType(v)}
@@ -938,7 +947,7 @@ export function ParkWaitChart({
               >
                 <RideLegend
                   rides={rides}
-                  enabled={enabled}
+                  enabled={displayedIds}
                   colorOf={colorOf}
                   trendOf={(id) => trendOf.get(id) ?? "flat"}
                   toggle={toggle}

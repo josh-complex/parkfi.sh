@@ -247,6 +247,7 @@ export function MapStageProvider({
                 activeSlug={activeSlug}
                 selectedId={selected?.id ?? null}
                 onSelectAttraction={setSelected}
+                onDeselect={() => setSelected(null)}
                 onMapRef={onMapRef}
                 attached={attached}
               />
@@ -256,6 +257,7 @@ export function MapStageProvider({
                 activeSlug={activeSlug}
                 selectedId={selected?.id ?? null}
                 onSelectAttraction={setSelected}
+                onDeselect={() => setSelected(null)}
                 onMapRef={onMapRef}
                 attached={attached}
               />

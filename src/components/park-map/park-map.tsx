@@ -137,6 +137,7 @@ export function ParkMap({
   activeSlug,
   selectedId,
   onSelectAttraction,
+  onDeselect,
   onMapRef,
   attached = true,
 }: {
@@ -145,6 +146,8 @@ export function ParkMap({
   selectedId?: number | null;
   /** Clicking an attraction marker selects it (drives the wait chart). */
   onSelectAttraction?: (item: { id: number; name: string }) => void;
+  /** Clicking the empty map clears the current selection. */
+  onDeselect?: () => void;
   /** Exposes a resize handle so the stage can re-fit the canvas mid-morph. */
   onMapRef?: (map: MapHandle | null) => void;
   /** True only while the map is lent to a visible slot. The camera fly is gated
@@ -178,6 +181,8 @@ export function ParkMap({
   // doesn't rebuild every render or on each selection change.
   const onSelectRef = React.useRef(onSelectAttraction);
   onSelectRef.current = onSelectAttraction;
+  const onDeselectRef = React.useRef(onDeselect);
+  onDeselectRef.current = onDeselect;
   const selectedIdRef = React.useRef(selectedId);
   selectedIdRef.current = selectedId;
 
@@ -393,8 +398,13 @@ export function ParkMap({
 
     layer.setItems(items);
     layer.refresh();
-    // Click on empty map collapses any open spider (marker clicks stopPropagation).
-    const onMapClick = () => layer.unspiderfy();
+    // Click on empty map collapses any open spider and clears the selection
+    // (marker clicks stopPropagation, so this only fires on the bare map).
+    const onMapClick = () => {
+      layer.unspiderfy();
+      popupRef.current?.remove();
+      onDeselectRef.current?.();
+    };
     map.on("move", scheduleRefresh);
     map.on("click", onMapClick);
     return () => {
