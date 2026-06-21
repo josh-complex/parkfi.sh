@@ -20,7 +20,12 @@ import { Calendar } from "#/components/ui/calendar.tsx";
 import { Card, CardDescription, CardHeader, CardTitle } from "#/components/ui/card.tsx";
 import { Empty, EmptyDescription, EmptyTitle } from "#/components/ui/empty.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
-import { ToggleGroup, ToggleGroupItem } from "#/components/ui/toggle-group.tsx";
+import {
+  CoreSearchOption,
+  CoreSearchSegment,
+  useCloseOnScroll,
+  type SegPos,
+} from "#/components/core-search.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { RESORT_DEFAULT_SLUG, UOR_PARKS, WDW_PARKS } from "#/lib/parks.ts";
 import { cn } from "#/lib/utils.ts";
@@ -348,14 +353,42 @@ export function PricingCalendar() {
   const [parkHopper, setParkHopper] = React.useState(false);
   const [ageGroup, setAgeGroup] = React.useState<AgeGroup>("ADULT");
   const [park, setPark] = React.useState<string | null>(null);
+  const [openSeg, setOpenSeg] = React.useState<string | null>(null);
 
-  // Reset park when resort changes since park codes differ between resorts
-  const onResortChange = (next: Resort) => {
-    setResort(next);
-    setPark(null);
+  useCloseOnScroll(openSeg !== null, () => setOpenSeg(null));
+
+  // Picking a park also sets its resort (the resort segment is gone — resort is
+  // inferred from the chosen park). A null code = that resort's "All parks".
+  const selectPark = (nextResort: Resort, code: string | null) => {
+    setResort(nextResort);
+    setPark(code);
+    setOpenSeg(null);
   };
 
   const parks = resort === "WDW" ? WDW_PARKS : UOR_PARKS;
+  const resortLabel = RESORTS.find((r) => r.value === resort)?.label ?? "";
+
+  // Build the visible segment list so pill positions (rounded ends, shared
+  // borders) stay correct as the ticket-type field appears only for WDW.
+  const segKeys = resort === "WDW" ? ["park", "type", "age"] : ["park", "age"];
+  const posOf = (key: string): SegPos =>
+    segKeys[0] === key ? "first" : segKeys[segKeys.length - 1] === key ? "last" : "middle";
+  const parkLabel = park
+    ? (parks.find((p) => p.code === park)?.label ?? "All parks")
+    : `All ${resortLabel} parks`;
+
+  // Default to the busiest park today; applied once, and only if the user
+  // hasn't already touched the picker (a specific park is selected on mount).
+  const busiestQ = useQuery(trpc.forecast.busiestPark.queryOptions({}));
+  const appliedDefault = React.useRef(false);
+  React.useEffect(() => {
+    if (appliedDefault.current || park) return;
+    const b = busiestQ.data;
+    if (!b) return;
+    appliedDefault.current = true;
+    setResort(b.resort);
+    setPark(b.code);
+  }, [busiestQ.data, park]);
 
   const calQ = useQuery(
     trpc.tickets.priceCalendar.queryOptions({
@@ -438,91 +471,118 @@ export function PricingCalendar() {
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-      <div className="flex flex-col gap-2 px-4 sm:flex-row sm:items-end sm:justify-between lg:px-6">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-xl font-semibold tracking-tight">Ticket Pricing</h2>
-          <p className="text-muted-foreground text-sm">
-            Cheapest {productLabel.toLowerCase()} by date — find the cheapest day to go.
-            {lastUpdatedAt && (
-              <span className="ml-2 text-xs">
-                Updated{" "}
-                {(() => {
-                  const diff = Date.now() - new Date(lastUpdatedAt).getTime();
-                  const min = Math.floor(diff / 60_000);
-                  if (min < 1) return "just now";
-                  if (min < 60) return `${min}m ago`;
-                  return `${Math.floor(min / 60)}h ago`;
-                })()}
-              </span>
-            )}
-          </p>
-        </div>
-        <div className="-mx-1 -my-1 min-w-0 overflow-x-auto overflow-y-clip px-1 py-1">
-          <ToggleGroup
-            multiple={false}
-            value={[resort]}
-            onValueChange={(v) => onResortChange((v[0] as Resort) ?? "WDW")}
-            variant="outline"
-            className="w-max *:data-[slot=toggle-group-item]:px-4!"
-          >
-            {RESORTS.map((r) => (
-              <ToggleGroupItem key={r.value} value={r.value}>
-                {r.label}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-        </div>
+      <div className="flex flex-col gap-1 px-4 lg:px-6">
+        <h2 className="text-xl font-semibold tracking-tight">Ticket Pricing</h2>
+        <p className="text-muted-foreground text-sm">
+          Cheapest {productLabel.toLowerCase()} by date — find the cheapest day to go.
+          {lastUpdatedAt && (
+            <span className="ml-2 text-xs">
+              Updated{" "}
+              {(() => {
+                const diff = Date.now() - new Date(lastUpdatedAt).getTime();
+                const min = Math.floor(diff / 60_000);
+                if (min < 1) return "just now";
+                if (min < 60) return `${min}m ago`;
+                return `${Math.floor(min / 60)}h ago`;
+              })()}
+            </span>
+          )}
+        </p>
       </div>
 
-      {/* Filters row — WDW gets ticket-type + age + park; UOR gets age + park */}
-      <div className="flex flex-wrap gap-x-6 gap-y-3 px-4 lg:px-6">
-        {resort === "WDW" && (
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground text-xs font-medium">Ticket type</span>
-            <ToggleGroup
-              multiple={false}
-              value={[parkHopper ? "hopper" : "standard"]}
-              onValueChange={(v) => setParkHopper(v[0] === "hopper")}
-              variant="outline"
-              size="sm"
-            >
-              <ToggleGroupItem value="standard">Standard</ToggleGroupItem>
-              <ToggleGroupItem value="hopper">Park Hopper</ToggleGroupItem>
-            </ToggleGroup>
-          </div>
-        )}
-        <div className="flex items-center gap-2">
-          <span className="text-muted-foreground text-xs font-medium">Age</span>
-          <ToggleGroup
-            multiple={false}
-            value={[ageGroup]}
-            onValueChange={(v) => setAgeGroup((v[0] as AgeGroup) ?? "ADULT")}
-            variant="outline"
-            size="sm"
+      {/* Core-search bar — park (resort inferred) + (WDW) ticket type + age */}
+      <div className="-mx-1 min-w-0 overflow-x-auto overflow-y-clip px-5 py-1 lg:px-7">
+        <div className="flex w-max items-stretch">
+          <CoreSearchSegment
+            pos={posOf("park")}
+            label="Park"
+            value={parkLabel}
+            muted={!park}
+            open={openSeg === "park"}
+            onOpenChange={(o) => setOpenSeg(o ? "park" : null)}
+            align="start"
+            contentClassName="w-72"
           >
-            <ToggleGroupItem value="ADULT">Adult</ToggleGroupItem>
-            <ToggleGroupItem value="CHILD">Child</ToggleGroupItem>
-          </ToggleGroup>
-        </div>
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="text-muted-foreground text-xs font-medium">Park</span>
-          <div className="-mx-1 -my-1 min-w-0 overflow-x-auto overflow-y-clip px-1 py-1">
-            <ToggleGroup
-              multiple={false}
-              value={[park ?? "ALL"]}
-              onValueChange={(v) => setPark(v[0] === "ALL" ? null : (v[0] ?? null))}
-              variant="outline"
-              size="sm"
-              className="w-max"
+            {RESORTS.map((r) => {
+              const groupParks = r.value === "WDW" ? WDW_PARKS : UOR_PARKS;
+              return (
+                <div key={r.value} className="not-first:mt-1">
+                  <p className="text-muted-foreground px-3 pt-2 pb-1 text-xs font-medium">
+                    {r.label}
+                  </p>
+                  <CoreSearchOption
+                    label={`All ${r.label} parks`}
+                    selected={resort === r.value && !park}
+                    onSelect={() => selectPark(r.value, null)}
+                  />
+                  {groupParks.map((p) => (
+                    <CoreSearchOption
+                      key={p.code}
+                      label={p.label}
+                      selected={resort === r.value && park === p.code}
+                      onSelect={() => selectPark(r.value, p.code)}
+                    />
+                  ))}
+                </div>
+              );
+            })}
+          </CoreSearchSegment>
+
+          {resort === "WDW" && (
+            <CoreSearchSegment
+              pos={posOf("type")}
+              label="Ticket type"
+              value={parkHopper ? "Park Hopper" : "Standard"}
+              muted={false}
+              open={openSeg === "type"}
+              onOpenChange={(o) => setOpenSeg(o ? "type" : null)}
+              align="center"
             >
-              <ToggleGroupItem value="ALL">All</ToggleGroupItem>
-              {parks.map((p) => (
-                <ToggleGroupItem key={p.code} value={p.code}>
-                  {p.label}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          </div>
+              <CoreSearchOption
+                label="Standard"
+                selected={!parkHopper}
+                onSelect={() => {
+                  setParkHopper(false);
+                  setOpenSeg(null);
+                }}
+              />
+              <CoreSearchOption
+                label="Park Hopper"
+                selected={parkHopper}
+                onSelect={() => {
+                  setParkHopper(true);
+                  setOpenSeg(null);
+                }}
+              />
+            </CoreSearchSegment>
+          )}
+
+          <CoreSearchSegment
+            pos={posOf("age")}
+            label="Age"
+            value={ageGroup === "ADULT" ? "Adult" : "Child"}
+            muted={false}
+            open={openSeg === "age"}
+            onOpenChange={(o) => setOpenSeg(o ? "age" : null)}
+            align="end"
+          >
+            <CoreSearchOption
+              label="Adult"
+              selected={ageGroup === "ADULT"}
+              onSelect={() => {
+                setAgeGroup("ADULT");
+                setOpenSeg(null);
+              }}
+            />
+            <CoreSearchOption
+              label="Child"
+              selected={ageGroup === "CHILD"}
+              onSelect={() => {
+                setAgeGroup("CHILD");
+                setOpenSeg(null);
+              }}
+            />
+          </CoreSearchSegment>
         </div>
       </div>
 

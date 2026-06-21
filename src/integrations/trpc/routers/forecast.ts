@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "#/db/index.ts";
+import { ALL_PARKS, type ParkEntry } from "#/lib/parks.ts";
 import { heuristicCrowdIndex, loadParkCalendar } from "#/server/forecast/parkCalendar.ts";
 import { publicProcedure } from "../init.ts";
 
@@ -233,6 +234,52 @@ export const forecastRouter = {
       }),
     )
     .query(({ input }) => loadParkCalendar(input.parkSlug, input.startDate, input.endDate)),
+
+  /**
+   * The park with the highest crowd index on a given date (default: today, ET).
+   * Scores every park through `loadParkCalendar` — the same source of truth the
+   * calendar overlay uses — so the picker's default can never drift from the
+   * crowd numbers shown on the page. Used to preselect the pricing-bar park.
+   */
+  busiestPark: publicProcedure
+    .input(
+      z
+        .object({
+          date: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/)
+            .optional(),
+        })
+        .optional(),
+    )
+    .query(async ({ input }) => {
+      const date =
+        input?.date ??
+        new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+      const candidates = ALL_PARKS.filter((p) => p.slug);
+      const scored = await Promise.all(
+        candidates.map(async (p) => {
+          const cal = await loadParkCalendar(p.slug as string, date, date);
+          return { park: p, crowdIndex: cal.days.find((d) => d.date === date)?.crowdIndex ?? null };
+        }),
+      );
+      // Highest crowd index wins; ties resolve to listing order (WDW first).
+      let best: { park: ParkEntry; crowdIndex: number } | null = null;
+      for (const s of scored) {
+        if (s.crowdIndex == null) continue;
+        if (!best || s.crowdIndex > best.crowdIndex)
+          best = { park: s.park, crowdIndex: s.crowdIndex };
+      }
+      const chosen = best?.park ?? candidates[0] ?? null;
+      if (!chosen) return null;
+      return {
+        date,
+        resort: chosen.resort,
+        code: chosen.code,
+        slug: chosen.slug,
+        crowdIndex: best?.crowdIndex ?? null,
+      };
+    }),
 
   /**
    * Accuracy tiles for the active model, per rolling window. Numbers come from

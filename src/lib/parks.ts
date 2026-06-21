@@ -12,6 +12,21 @@ export const UOR_PARKS: Array<{ code: string; label: string; slug: string | null
   { code: "UVB", label: "Volcano Bay", slug: null },
 ];
 
+export type Resort = "WDW" | "UOR";
+
+export interface ParkEntry {
+  code: string;
+  label: string;
+  slug: string | null;
+  resort: Resort;
+}
+
+/** Every park across both resorts, resort-tagged — for the combined park picker. */
+export const ALL_PARKS: Array<ParkEntry> = [
+  ...WDW_PARKS.map((p) => ({ ...p, resort: "WDW" as const })),
+  ...UOR_PARKS.map((p) => ({ ...p, resort: "UOR" as const })),
+];
+
 /** Default park slug to use for resort-level crowd/weather when no park is selected. */
 export const RESORT_DEFAULT_SLUG: Record<string, string> = {
   WDW: "magic-kingdom",

@@ -1,7 +1,8 @@
 import * as React from "react";
-import { SearchIcon } from "lucide-react";
+import { CheckIcon, SearchIcon } from "lucide-react";
 
 import { Button } from "#/components/ui/button.tsx";
+import { Popover, PopoverContent, PopoverTrigger } from "#/components/ui/popover.tsx";
 import { cn } from "#/lib/utils.ts";
 
 export type SegPos = "first" | "middle" | "last";
@@ -79,6 +80,79 @@ export function SegContent({
         {value}
       </span>
     </>
+  );
+}
+
+/** A selectable option row inside a core-search popover. */
+export function CoreSearchOption({
+  label,
+  selected,
+  onSelect,
+}: {
+  label: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "hover:bg-accent hover:text-accent-foreground flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm outline-none transition-colors",
+        selected && "font-medium",
+      )}
+    >
+      <span className="truncate">{label}</span>
+      {selected && <CheckIcon className="size-4 shrink-0" />}
+    </button>
+  );
+}
+
+/**
+ * One core-search field: a toggle-styled trigger that opens its children in a
+ * popover, styled to read as part of the same bar surface.
+ */
+export function CoreSearchSegment({
+  pos,
+  label,
+  value,
+  muted,
+  open,
+  onOpenChange,
+  align = "start",
+  contentClassName,
+  children,
+}: {
+  pos: SegPos;
+  label: string;
+  value: string;
+  muted: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  align?: "start" | "center" | "end";
+  contentClassName?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger
+        render={
+          <button type="button" className={coreSegClass(pos, open)}>
+            <SegContent label={label} value={value} muted={muted} active={open} />
+          </button>
+        }
+      />
+      <PopoverContent
+        align={align}
+        className={cn(
+          "max-h-80 w-64 overflow-y-auto p-1.5",
+          coreSearchPopoverClass,
+          contentClassName,
+        )}
+      >
+        {children}
+      </PopoverContent>
+    </Popover>
   );
 }
 
