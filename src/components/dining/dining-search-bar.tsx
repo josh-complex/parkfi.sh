@@ -290,6 +290,13 @@ export function DiningMobileFAB({ options }: { options: FilterOptions }) {
   const searched = useStore(diningStore, (s) => s.searched);
   const extraCount = useStore(diningStore, (s) => countExtraFilters(s.filters));
 
+  // The Where/Cuisine/Service-level dropdowns are Base UI Selects portaled out of
+  // the React tree. Inside a vaul Drawer they must portal into the drawer's own
+  // node, not document.body — otherwise the popup sits outside the drawer's
+  // pointer scope and a tap only dismisses it instead of committing the choice.
+  const [searchNode, setSearchNode] = React.useState<HTMLElement | null>(null);
+  const [filtersNode, setFiltersNode] = React.useState<HTMLElement | null>(null);
+
   const selectOperator = React.useCallback(
     (op: Operator) => {
       const valid = options.parksByOperator[op];
@@ -331,7 +338,7 @@ export function DiningMobileFAB({ options }: { options: FilterOptions }) {
               {mobileSearchLabel}
             </Button>
           </DrawerTrigger>
-          <DrawerContent>
+          <DrawerContent ref={setSearchNode}>
             <DrawerHeader className="border-b pb-4">
               <DrawerTitle>Search restaurants</DrawerTitle>
               <DrawerDescription>Choose a place, cuisine, and party size.</DrawerDescription>
@@ -352,6 +359,7 @@ export function DiningMobileFAB({ options }: { options: FilterOptions }) {
                   allLabel="All restaurants"
                   options={options.parksByOperator[filters.operator]}
                   ariaLabel="Park or resort"
+                  container={searchNode}
                 />
               </Section>
               <Section label="Cuisine">
@@ -361,6 +369,7 @@ export function DiningMobileFAB({ options }: { options: FilterOptions }) {
                   allLabel="All cuisines"
                   options={options.cuisines}
                   ariaLabel="Cuisine"
+                  container={searchNode}
                 />
               </Section>
               <Section label="Party size">
@@ -426,13 +435,13 @@ export function DiningMobileFAB({ options }: { options: FilterOptions }) {
                   {extraCount > 0 ? <span className="bg-primary size-1.5 rounded-full" /> : null}
                 </Button>
               </DrawerTrigger>
-              <DrawerContent>
+              <DrawerContent ref={setFiltersNode}>
                 <DrawerHeader className="border-b pb-4">
                   <DrawerTitle>Filters</DrawerTitle>
                   <DrawerDescription>Narrow by price, hours, features, and more.</DrawerDescription>
                 </DrawerHeader>
                 <div className="overflow-y-auto px-4">
-                  <ExtendedFilters options={options} />
+                  <ExtendedFilters options={options} container={filtersNode} />
                 </div>
                 <DrawerFooter className="flex-row gap-2">
                   <Button

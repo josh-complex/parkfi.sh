@@ -27,6 +27,7 @@ import {
   type SegPos,
 } from "#/components/core-search.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
+import { formatHourRange } from "#/lib/park-hours.ts";
 import { RESORT_DEFAULT_SLUG, UOR_PARKS, WDW_PARKS } from "#/lib/parks.ts";
 import { cn } from "#/lib/utils.ts";
 import { Button } from "../ui/button";
@@ -53,6 +54,8 @@ interface DayOverlay {
   highF: number | null;
   precipProb: number | null;
   condition: string | null;
+  /** Compact operating-hours range for the day, e.g. "9a–11p"; null when closed/unknown. */
+  hours: string | null;
 }
 
 function localIso(d: Date): string {
@@ -218,6 +221,11 @@ function PriceDayButton({
             <span className="text-[7px] font-medium uppercase tracking-widest text-muted-foreground/55 leading-none">
               {DOW[day.date.getDay()]}
             </span>
+            {overlay?.hours && (
+              <span className="text-[8px] font-semibold tabular-nums leading-none text-foreground/65">
+                {overlay.hours}
+              </span>
+            )}
           </div>
 
           {overlay?.highF != null ? (
@@ -271,6 +279,11 @@ function PriceDayButton({
               <span className="text-[8px] font-medium uppercase tracking-widest text-muted-foreground/60 leading-none">
                 {DOW[day.date.getDay()]}
               </span>
+              {overlay?.hours && (
+                <span className="text-[9px] font-semibold tabular-nums leading-none text-foreground/65">
+                  {overlay.hours}
+                </span>
+              )}
             </div>
 
             <div className="relative z-10 flex flex-col items-end gap-0.75">
@@ -451,19 +464,46 @@ export function PricingCalendar() {
     enabled: !!parkSlug,
   });
 
+  const hoursQ = useQuery({
+    ...trpc.parks.hours.queryOptions({
+      parkSlug: parkSlug ?? "",
+      startDate: startIso,
+      endDate: endIso,
+    }),
+    enabled: !!parkSlug,
+  });
+
   const overlayMap = React.useMemo(() => {
     const m = new Map<string, DayOverlay>();
+    const ensure = (date: string) => {
+      let e = m.get(date);
+      if (!e) {
+        e = {
+          crowdIndex: null,
+          crowdIsEstimate: false,
+          highF: null,
+          precipProb: null,
+          condition: null,
+          hours: null,
+        };
+        m.set(date, e);
+      }
+      return e;
+    };
     for (const d of overlayQ.data?.days ?? []) {
-      m.set(d.date, {
-        crowdIndex: d.crowdIndex,
-        crowdIsEstimate: d.crowdIsEstimate,
-        highF: d.weather?.highF ?? null,
-        precipProb: d.weather?.precipProb ?? null,
-        condition: d.weather?.condition ?? null,
-      });
+      const e = ensure(d.date);
+      e.crowdIndex = d.crowdIndex;
+      e.crowdIsEstimate = d.crowdIsEstimate;
+      e.highF = d.weather?.highF ?? null;
+      e.precipProb = d.weather?.precipProb ?? null;
+      e.condition = d.weather?.condition ?? null;
+    }
+    const tz = hoursQ.data?.timezone ?? "America/New_York";
+    for (const d of hoursQ.data?.days ?? []) {
+      ensure(d.date).hours = formatHourRange(d.open, d.close, tz, true);
     }
     return m;
-  }, [overlayQ.data]);
+  }, [overlayQ.data, hoursQ.data]);
 
   React.useEffect(() => {
     calendarStore.setState(() => ({ priceMap, min: stats?.min, overlayMap }));

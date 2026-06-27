@@ -89,12 +89,17 @@ export function AllSelect({
   allLabel,
   options,
   ariaLabel,
+  container,
 }: {
   value: string;
   onValueChange: (v: string) => void;
   allLabel: string;
   options: Array<string>;
   ariaLabel: string;
+  /** Portal target for the popup. Inside a vaul Drawer this must be the drawer's
+   * own node — a body-portaled popup sits outside the drawer's pointer scope, so
+   * taps land on the overlay and only close the popup without committing. */
+  container?: HTMLElement | null;
 }) {
   const items: Record<string, string> = { ALL: allLabel };
   for (const o of options) items[o] = o;
@@ -103,7 +108,7 @@ export function AllSelect({
       <SelectTrigger size="sm" className="w-full" aria-label={ariaLabel}>
         <SelectValue />
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent container={container}>
         <SelectItem value="ALL">{allLabel}</SelectItem>
         {options.map((o) => (
           <SelectItem key={o} value={o}>
@@ -119,7 +124,14 @@ export function AllSelect({
  * Post-search extended-filter body — every facet the pill doesn't own. Rendered
  * inside the FiltersModal for both mobile and desktop.
  */
-export function ExtendedFilters({ options }: { options: FilterOptions }) {
+export function ExtendedFilters({
+  options,
+  container,
+}: {
+  options: FilterOptions;
+  /** Portal target for the embedded dropdowns — see `AllSelect`. */
+  container?: HTMLElement | null;
+}) {
   const filters = useStore(diningStore, (s) => s.filters);
   const todayOnly = filters.availability === "today";
 
@@ -144,6 +156,7 @@ export function ExtendedFilters({ options }: { options: FilterOptions }) {
             allLabel="Any service level"
             options={options.experiences}
             ariaLabel="Service level"
+            container={container}
           />
         </Section>
       )}

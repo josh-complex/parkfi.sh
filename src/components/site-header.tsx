@@ -92,19 +92,8 @@ export function SiteHeader({
         style={{ paddingTop: "env(safe-area-inset-top)" }}
       >
         <div className="relative px-4 py-2 lg:px-6">
-          {/* Mobile: a diagonal brand-blue sheen behind the search — a lighter
-              tint in the top-left, the base blue through the middle, deepening
-              toward the bottom-right, with a soft highlight by the search. */}
-          {isMobile && !flyoutOpen && (
-            <div
-              aria-hidden
-              className="pointer-events-none absolute inset-0"
-              style={{
-                background:
-                  "radial-gradient(110% 140% at 12% -10%, color-mix(in oklab, var(--sidebar) 64%, white) 0%, transparent 55%), linear-gradient(108deg, color-mix(in oklab, var(--sidebar) 80%, white) 0%, var(--sidebar) 45%, color-mix(in oklab, var(--sidebar) 84%, black) 100%)",
-              }}
-            />
-          )}
+          {/* Mobile keeps the flat `bg-sidebar` blue (no gradient) so the bar
+              reads as one continuous color with the device status bar. */}
           {/* Main header row */}
           <div className="relative flex w-full items-center gap-2">
             {isMobile ? (

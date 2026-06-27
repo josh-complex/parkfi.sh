@@ -14,6 +14,7 @@ import { useHydrated } from "#/lib/use-hydrated.ts";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 
 import { ParkBoardTable } from "./park-board-table.tsx";
+import { ParkHours } from "./park-hours.tsx";
 import { ParkStatCards } from "./park-stat-cards.tsx";
 import { useSelection } from "./selection-context.tsx";
 
@@ -109,6 +110,9 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
           operatorSlug={operatorSlug}
           className="rounded-2xl border shadow-md"
         />
+        {/* Operating hours for today + the days ahead, sourced from the park's
+            schedule feed (same data that gates the open/closed state). */}
+        <ParkHours parkSlug={activeSlug ?? null} />
         {/* Map and wait chart share a row at equal width; the board table spans
             the full column underneath them. The map cell is a shared-layout
             slot — the live map morphs in from the overview hero. */}

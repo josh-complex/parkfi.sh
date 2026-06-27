@@ -340,6 +340,80 @@ export const parksRouter = {
   }),
 
   /**
+   * Operating hours for a park over a date range (defaults to today + the next
+   * 13 days). Reads the latest daily snapshot of `park_schedule` — the same feed
+   * the open/closed gating uses — and groups by service date into a regular
+   * OPERATING window (the earliest open / latest close, so split-operation days
+   * collapse to one envelope) plus any extra windows (Early Entry, Extended
+   * Evening, hard-ticket events). `timestamptz` instants are returned raw; the
+   * client renders them in the park's `timezone` (also returned).
+   */
+  hours: publicProcedure
+    .input(
+      z.object({
+        parkSlug: z.string(),
+        startDate: z.string().optional(),
+        endDate: z.string().optional(),
+      }),
+    )
+    .query(async ({ input }) => {
+      const start = input.startDate ? sql`${input.startDate}::date` : sql`current_date`;
+      const end = input.endDate
+        ? sql`${input.endDate}::date`
+        : sql`current_date + INTERVAL '13 days'`;
+      const result = await db.execute<{
+        timezone: string;
+        service_date: string;
+        type: string;
+        opening_time: string;
+        closing_time: string | null;
+        description: string | null;
+      }>(sql`
+        WITH park AS (SELECT id, timezone FROM parks WHERE slug = ${input.parkSlug})
+        SELECT DISTINCT ON (s.service_date, s.type, s.opening_time)
+               (SELECT timezone FROM park) AS timezone,
+               s.service_date, s.type, s.opening_time, s.closing_time, s.description
+        FROM park_schedule s
+        WHERE s.park_id = (SELECT id FROM park)
+          AND s.service_date >= ${start}
+          AND s.service_date <= ${end}
+        ORDER BY s.service_date, s.type, s.opening_time, s.snapshot_date DESC
+      `);
+
+      type Extra = {
+        type: string;
+        description: string | null;
+        open: string;
+        close: string | null;
+      };
+      const byDate = new Map<
+        string,
+        { open: string | null; close: string | null; extras: Array<Extra> }
+      >();
+      for (const r of result.rows) {
+        const e = byDate.get(r.service_date) ?? { open: null, close: null, extras: [] };
+        if (r.type === "OPERATING") {
+          if (!e.open || r.opening_time < e.open) e.open = r.opening_time;
+          if (r.closing_time && (!e.close || r.closing_time > e.close)) e.close = r.closing_time;
+        } else if (r.type === "EXTRA_HOURS" || r.type === "TICKETED_EVENT") {
+          e.extras.push({
+            type: r.type,
+            description: r.description,
+            open: r.opening_time,
+            close: r.closing_time,
+          });
+        }
+        byDate.set(r.service_date, e);
+      }
+
+      const days = [...byDate.entries()]
+        .map(([date, v]) => ({ date, open: v.open, close: v.close, extras: v.extras }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+      return { timezone: result.rows[0]?.timezone ?? "America/New_York", days };
+    }),
+
+  /**
    * Single attraction detail (`/park/$slug/ride/$rideSlug`). Same per-ride shape
    * as a `board` row — latest carried status + latest STANDBY/LL/return-time
    * `queue_obs` within 24h + queue-type capability + 24-48h historical baseline —
