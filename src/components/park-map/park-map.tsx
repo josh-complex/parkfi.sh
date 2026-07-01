@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import maplibregl from "maplibre-gl";
 import { useTheme } from "next-themes";
 
@@ -20,12 +20,14 @@ import {
   buildParkBadgeEl,
   buildUserLocationEl,
   DECLUTTER_SIZE,
+  getRoamCamera,
   type MapHandle,
   MAP_FLY_MS,
   MORPH_MS,
   openAttractionCard,
   ORLANDO_CENTER,
   ORLANDO_ZOOM,
+  saveRoamCamera,
   waitLabelFor,
   wireHoverLabelFlip,
 } from "./shared.tsx";
@@ -154,6 +156,7 @@ export function ParkMap({
   onRequestDirections,
   roam = false,
   filter,
+  onRoamFocusChange,
 }: {
   activeSlug: string | null;
   /** Currently charted attraction — its marker is highlighted. */
@@ -180,8 +183,12 @@ export function ParkMap({
   roam?: boolean;
   /** Shared ride filter — hides ride markers that don't match. */
   filter?: RideFilter;
+  /** Roam only: reports which park's rides are currently revealed (or null), so
+   *  the stage can offer a "view park details" shortcut. */
+  onRoamFocusChange?: (slug: string | null) => void;
 }) {
   const trpc = useTRPC();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === "dark";
@@ -252,7 +259,8 @@ export function ParkMap({
       zoom: ORLANDO_ZOOM,
       attributionControl: { compact: true },
     });
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+    // No native NavigationControl — our own 3D zoom buttons (in the stage) drive
+    // zoom via the MapHandle below, so the map's controls match the app.
     layerRef.current = new MarkerCluster(
       DECLUTTER_SIZE,
       () => selectedIdRef.current ?? null,
@@ -271,7 +279,11 @@ export function ParkMap({
     );
     map.on("load", () => setReady(true));
     mapRef.current = map;
-    onMapRef?.({ resize: () => map.resize() });
+    onMapRef?.({
+      resize: () => map.resize(),
+      zoomIn: () => map.zoomIn(),
+      zoomOut: () => map.zoomOut(),
+    });
     return () => {
       map.remove();
       mapRef.current = null;
@@ -537,6 +549,13 @@ export function ParkMap({
           onActivate: () => {
             const wasSelected = a.id === selectedIdRef.current;
             onSelectRef.current?.({ id: a.id, name: a.name });
+            // Warm the ride page's data the moment its card opens, so tapping
+            // "More info" navigates instantly instead of blocking on the route
+            // loader's uncached `attraction` fetch (the imperative navigate below
+            // never triggers the router's intent-preload).
+            void queryClient.prefetchQuery(
+              trpc.parks.attraction.queryOptions({ parkSlug: effectiveSlug, rideSlug: a.slug }),
+            );
             cardRef.current?.close();
             if (!containerRef.current) return;
             // Morph the marker's own disc into an info card in place, lifting it
@@ -609,6 +628,8 @@ export function ParkMap({
     roam,
     filter,
     flyToPark,
+    queryClient,
+    trpc,
   ]);
 
   // Free-roam focus watcher: after each pan/zoom, reveal a park's rides once the
@@ -618,8 +639,10 @@ export function ParkMap({
     if (!map || !ready || !roam) return;
     const onMoveEnd = () => {
       const z = map.getZoom();
+      const c = map.getCenter();
+      // Remember the roam camera so returning to `/map` restores this exact view.
+      saveRoamCamera({ center: [c.lng, c.lat], zoom: z });
       if (z >= ROAM_RIDE_ZOOM) {
-        const c = map.getCenter();
         const park = (parksRef.current ?? []).find((p) =>
           pointInPolygon([c.lng, c.lat], p.boundary ?? null),
         );
@@ -652,6 +675,14 @@ export function ParkMap({
       flyToPark(park.slug);
     }
   }, [roam, ready, userLocation, flyToPark]);
+
+  // Report the roam focus (which park's rides are revealed) up to the stage so it
+  // can offer a "view park details" shortcut. Null outside roam / when zoomed out.
+  const onRoamFocusChangeRef = React.useRef(onRoamFocusChange);
+  onRoamFocusChangeRef.current = onRoamFocusChange;
+  React.useEffect(() => {
+    onRoamFocusChangeRef.current?.(roam ? focusSlug : null);
+  }, [focusSlug, roam]);
 
   // Update selection highlight in place (no marker rebuild, so a popup stays open).
   React.useEffect(() => {
@@ -691,6 +722,13 @@ export function ParkMap({
       // no max-bounds — the whole region stays explorable.
       map.setMaxZoom(18);
       map.setMaxBounds(null);
+      // Returning to the map: restore the exact camera the user left (so a round
+      // trip through a ride page doesn't snap back to the all-parks overview).
+      const saved = getRoamCamera();
+      if (saved) {
+        map.jumpTo({ center: saved.center, zoom: saved.zoom });
+        return;
+      }
       const coords = (overview?.parks ?? []).filter(
         (p): p is typeof p & { latitude: number; longitude: number } =>
           p.latitude != null && p.longitude != null,

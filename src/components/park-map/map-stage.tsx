@@ -1,9 +1,16 @@
 "use client";
 
 import * as React from "react";
-import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { LoaderCircleIcon, LocateFixedIcon, XIcon } from "lucide-react";
+import {
+  ArrowUpRightIcon,
+  LoaderCircleIcon,
+  LocateFixedIcon,
+  MinusIcon,
+  PlusIcon,
+  XIcon,
+} from "lucide-react";
 import { createPortal } from "react-dom";
 
 import { useSelection } from "#/components/park-dashboard/selection-context.tsx";
@@ -52,6 +59,19 @@ function useMapStage() {
 // Length of the hero⇄card morph. Snappy, then the camera fly follows (see
 // MORPH_MS in park-map.tsx, kept in lockstep so the fly waits for the box).
 export const MORPH_MS = 420;
+
+/**
+ * The last map-bearing route the user viewed, so a ride page's "back" affordances
+ * (breadcrumb + mobile Map key) return to *where they were on the map* — the
+ * free-roam `/map` (its camera restored by the renderer) or a specific park
+ * dashboard — instead of always dumping them on the park page. Module-scoped so
+ * it outlives the routes that set it; defaults to the `/map` hub.
+ */
+export type LastMapView = { to: "/map" } | { to: "/park/$slug"; params: { slug: string } };
+let lastMapView: LastMapView = { to: "/map" };
+export function getLastMapView(): LastMapView {
+  return lastMapView;
+}
 const INLINE_PROPS = [
   "position",
   "margin",
@@ -179,6 +199,19 @@ export function MapStageProvider({
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const roam = pathname === "/map";
   const parksQ = useQuery(trpc.parks.list.queryOptions());
+
+  // Remember the last map surface the user was on (the roam map, or a park
+  // dashboard) so a ride page's back/Map targets can return there. A ride route
+  // (`/park/$slug/ride/$rideSlug`) is *not* a map surface — skip it.
+  React.useEffect(() => {
+    if (roam) lastMapView = { to: "/map" };
+    else if (pathname.startsWith("/park/") && !pathname.includes("/ride/") && activeSlug)
+      lastMapView = { to: "/park/$slug", params: { slug: activeSlug } };
+  }, [pathname, roam, activeSlug]);
+
+  // Roam only: which park's rides are currently revealed (reported by the active
+  // renderer), so we can float a "view park details" shortcut over the map.
+  const [roamFocusSlug, setRoamFocusSlug] = React.useState<string | null>(null);
   // One geolocation watch for the whole app, owned here so it survives the map
   // moving between routes. Never auto-prompts — the locate button calls locate().
   const geo = useGeolocation({ watch: true });
@@ -372,6 +405,7 @@ export function MapStageProvider({
                   onRequestDirections={requestDirections}
                   roam={roam}
                   filter={filter}
+                  onRoamFocusChange={setRoamFocusSlug}
                 />
               )}
               {engine === "leaflet" && (
@@ -387,9 +421,22 @@ export function MapStageProvider({
                   onRequestDirections={requestDirections}
                   roam={roam}
                   filter={filter}
+                  onRoamFocusChange={setRoamFocusSlug}
                 />
               )}
             </React.Suspense>
+            {attached && engine && roam && roamFocusSlug && (
+              <ParkDetailButton
+                slug={roamFocusSlug}
+                name={parksQ.data?.find((p) => p.slug === roamFocusSlug)?.name ?? null}
+              />
+            )}
+            {attached && engine && (
+              <ZoomControl
+                onZoomIn={() => mapRef.current?.zoomIn()}
+                onZoomOut={() => mapRef.current?.zoomOut()}
+              />
+            )}
             {attached && engine && <LocateButton state={geo.state} onClick={geo.locate} />}
             {attached && engine && roam && (
               <RideFilterButton className="absolute left-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] z-10 md:bottom-3" />
@@ -413,6 +460,45 @@ export function MapStageProvider({
   );
 }
 
+// A round, 3D-embossed map control, matching the app's button language (the same
+// shelf/glare as the bottom nav + core search). Absolutely positioned, so the
+// press "sinks" via translate-y (not the `top` trick the flow buttons use, which
+// would fight the overlay's absolute `top`/`bottom` anchor). Slightly translucent
+// with a blur so it floats cleanly over the map.
+const MAP_CTRL_3D =
+  "btn-3d-outline border-3d shadow-3d pointer-events-auto flex size-10 items-center justify-center bg-background/95 text-foreground backdrop-blur transition-[transform,box-shadow,background-color,color] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-border";
+
+/** Vertical +/- zoom group (top-right of the map, below the floating search bar on
+ *  mobile). Replaces each engine's native zoom control with one connected 3D
+ *  control — a single embossed shelf split by a divider — driving zoom through the
+ *  shared MapHandle. Individual buttons flash their background on press rather than
+ *  sinking, so the group reads as one solid piece. */
+function ZoomControl({ onZoomIn, onZoomOut }: { onZoomIn: () => void; onZoomOut: () => void }) {
+  return (
+    <div className="pointer-events-none absolute right-3 top-[calc(env(safe-area-inset-top)+5.5rem)] z-10 md:top-3">
+      <div className="btn-3d-outline border-3d shadow-3d pointer-events-auto flex flex-col overflow-hidden rounded-2xl bg-background/95 backdrop-blur dark:border-border">
+        <button
+          type="button"
+          onClick={onZoomIn}
+          aria-label="Zoom in"
+          className="flex size-10 items-center justify-center text-foreground transition-colors active:bg-foreground/10"
+        >
+          <PlusIcon className="size-5" />
+        </button>
+        <div className="mx-2 h-px bg-border" />
+        <button
+          type="button"
+          onClick={onZoomOut}
+          aria-label="Zoom out"
+          className="flex size-10 items-center justify-center text-foreground transition-colors active:bg-foreground/10"
+        >
+          <MinusIcon className="size-5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Floating "locate me" control, overlaid on the map (it travels in the portal so
  * it follows the map between routes). Sits clear of the bottom-nav island on
@@ -429,7 +515,8 @@ function LocateButton({ state, onClick }: { state: GeoState; onClick: () => void
       aria-label="Show my location"
       title={off ? "Location unavailable — check permissions" : "Show my location"}
       className={cn(
-        "pointer-events-auto absolute right-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] z-10 flex size-10 items-center justify-center rounded-full border border-black/10 bg-background text-foreground shadow-md transition active:scale-95 md:bottom-3",
+        MAP_CTRL_3D,
+        "absolute right-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] z-10 rounded-full md:bottom-3",
         active && "text-blue-600",
         off && "text-muted-foreground",
       )}
@@ -440,6 +527,26 @@ function LocateButton({ state, onClick }: { state: GeoState; onClick: () => void
         <LocateFixedIcon className="size-5" />
       )}
     </button>
+  );
+}
+
+/**
+ * Free-roam shortcut into the focused park's dashboard. Appears (traveling in the
+ * portal with the map) only when the roam map is zoomed into a park and showing
+ * its rides — a left-aligned 3D pill tucked just under the floating search bar
+ * (mirroring how the filter button hugs the bottom nav). Tapping it opens the full
+ * `/park/$slug` page; the press sinks via translate-y.
+ */
+function ParkDetailButton({ slug, name }: { slug: string; name: string | null }) {
+  return (
+    <Link
+      to="/park/$slug"
+      params={{ slug }}
+      className="btn-3d-outline border-3d shadow-3d pointer-events-auto absolute left-3 top-[calc(env(safe-area-inset-top)+5.5rem)] z-10 flex max-w-[70vw] items-center gap-1.5 truncate rounded-full bg-background/95 px-4 py-2 text-sm font-medium text-foreground backdrop-blur transition-[transform,box-shadow] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active md:top-3 dark:border-border"
+    >
+      <span className="truncate">{name ? `${name} details` : "Park details"}</span>
+      <ArrowUpRightIcon className="size-4 shrink-0 text-muted-foreground" />
+    </Link>
   );
 }
 

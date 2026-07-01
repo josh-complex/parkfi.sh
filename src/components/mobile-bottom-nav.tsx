@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Link, useParams, useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { ActivityIcon, BedDoubleIcon, MapIcon, TicketIcon, UtensilsIcon } from "lucide-react";
 
 import { cn } from "#/lib/utils.ts";
@@ -44,53 +44,37 @@ function Seg({
 }
 
 /** The center Map "key": connected to its neighbors but taller (rises above the
- *  row) and on a deeper 3D shelf, filled primary. Context-aware target. */
-function MapButton({ slug, active }: { slug?: string; active: boolean }) {
-  const className = cn(
-    // Same 3px shelf as the side segments (bottoms line up via items-end); its
-    // "bigger" feel is the extra height (rises above the row) + larger icon, not a
-    // deeper shadow. White/outline like the others when idle; only the selected
-    // state fills primary and depresses (sinks 3px onto a flat shelf).
-    "relative top-0 z-20 -ml-px flex flex-1 flex-col items-center justify-center gap-1 rounded-t-2xl border-3d shadow-3d px-2 py-3 text-sm font-medium transition-[top,box-shadow,background-color,color] duration-150 ease-out active:top-[3px] active:shadow-3d-active dark:border-border [&>svg]:size-7",
-    active
-      ? "top-[3px] btn-3d-primary bg-primary text-primary-foreground shadow-3d-active"
-      : "btn-3d-outline bg-background text-foreground",
-  );
-  const inner = (
-    <>
-      <MapIcon />
-      <span>Map</span>
-    </>
-  );
-  return slug ? (
-    <Link
-      to="/park/$slug"
-      params={{ slug }}
-      aria-label="Map"
-      aria-current={active ? "page" : undefined}
-      className={className}
-    >
-      {inner}
-    </Link>
-  ) : (
+ *  row) and on a deeper 3D shelf, filled primary. Always leads to the free-roam
+ *  `/map` hub (which restores the camera the user last left), so from a park or
+ *  ride detail page it takes you back out to the map rather than staying put. */
+function MapButton({ active }: { active: boolean }) {
+  return (
     <Link
       to="/map"
       aria-label="Map"
       aria-current={active ? "page" : undefined}
-      className={className}
+      className={cn(
+        // Same 3px shelf as the side segments (bottoms line up via items-end); its
+        // "bigger" feel is the extra height (rises above the row) + larger icon, not
+        // a deeper shadow. White/outline like the others when idle; only the
+        // selected state fills primary and depresses (sinks 3px onto a flat shelf).
+        "relative top-0 z-20 -ml-px flex flex-1 flex-col items-center justify-center gap-1 rounded-t-2xl border-3d shadow-3d px-2 py-3 text-sm font-medium transition-[top,box-shadow,background-color,color] duration-150 ease-out active:top-[3px] active:shadow-3d-active dark:border-border [&>svg]:size-7",
+        active
+          ? "top-[3px] btn-3d-primary bg-primary text-primary-foreground shadow-3d-active"
+          : "btn-3d-outline bg-background text-foreground",
+      )}
     >
-      {inner}
+      <MapIcon />
+      <span>Map</span>
     </Link>
   );
 }
 
 export function MobileBottomNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const params = useParams({ strict: false }) as { slug?: string };
-  // Only treat `slug` as a park when we're actually on a park route — other
-  // routes (resort/blog/…) also expose a `slug` param that isn't a park.
-  const slug = pathname.startsWith("/park/") ? params.slug : undefined;
-  const mapActive = pathname === "/map" || pathname.startsWith("/park");
+  // Only the free-roam `/map` hub lights the Map key. A park (or ride) detail page
+  // is a drill-down, not the map surface, so it leaves the key unselected.
+  const mapActive = pathname === "/map";
 
   return (
     <nav
@@ -114,7 +98,7 @@ export function MobileBottomNav() {
           icon={<TicketIcon />}
           label="Tickets"
         />
-        <MapButton slug={slug} active={mapActive} />
+        <MapButton active={mapActive} />
         <Seg
           to="/dining"
           active={pathname.startsWith("/dining")}

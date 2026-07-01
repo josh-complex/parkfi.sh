@@ -91,20 +91,18 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             <FaviconSync />
             <TooltipProvider>
               {children}
-              {false && (
-                <TanStackDevtools
-                  config={{
-                    position: "bottom-right",
-                  }}
-                  plugins={[
-                    {
-                      name: "Tanstack Router",
-                      render: <TanStackRouterDevtoolsPanel />,
-                    },
-                    TanStackQueryDevtools,
-                  ]}
-                />
-              )}
+              <TanStackDevtools
+                config={{
+                  triggerHidden: true,
+                }}
+                plugins={[
+                  {
+                    name: "Tanstack Router",
+                    render: <TanStackRouterDevtoolsPanel />,
+                  },
+                  TanStackQueryDevtools,
+                ]}
+              />
             </TooltipProvider>
           </ThemeProvider>
         </PostHogProvider>

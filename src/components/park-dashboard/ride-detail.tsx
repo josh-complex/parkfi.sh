@@ -5,6 +5,7 @@ import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeftIcon, ExternalLinkIcon } from "lucide-react";
 
+import { getLastMapView } from "#/components/park-map/map-stage.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Card, CardContent } from "#/components/ui/card.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
@@ -90,17 +91,25 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
   const subtitleParts = [ride.park.name, ride.meta?.land].filter(Boolean);
   const status = ride.status ?? "UNKNOWN";
 
+  // Return to wherever the user last was on the map (the free-roam map at its
+  // remembered camera, or a park dashboard) rather than always the park page.
+  const back = getLastMapView();
+  const backClass = "inline-flex items-center gap-1.5 hover:underline";
+
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-6 lg:px-6">
       <nav className="text-sm text-muted-foreground">
-        <Link
-          to="/park/$slug"
-          params={{ slug: parkSlug }}
-          className="inline-flex items-center gap-1.5 hover:underline"
-        >
-          <ArrowLeftIcon className="size-3.5" />
-          {ride.park.name}
-        </Link>
+        {back.to === "/map" ? (
+          <Link to="/map" className={backClass}>
+            <ArrowLeftIcon className="size-3.5" />
+            {ride.park.name}
+          </Link>
+        ) : (
+          <Link to="/park/$slug" params={back.params} className={backClass}>
+            <ArrowLeftIcon className="size-3.5" />
+            {ride.park.name}
+          </Link>
+        )}
       </nav>
 
       <header className="flex flex-col gap-4">

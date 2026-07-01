@@ -31,9 +31,27 @@ import type { BoardItem } from "#/components/park-dashboard/types.ts";
 import type { GeoPolygon } from "#/db/schema.ts";
 import type { Feature, FeatureCollection, MultiPolygon, Polygon } from "geojson";
 
-/** A renderer handle the map stage can poke to keep the canvas sized during the
- *  layout morph — the only capability the stage needs from either engine. */
-export type MapHandle = { resize: () => void };
+/** A renderer handle the map stage pokes: keep the canvas sized during the layout
+ *  morph, and drive zoom from our own overlay controls (the engine's native
+ *  +/- are hidden in favour of 3D buttons that match the app). */
+export type MapHandle = { resize: () => void; zoomIn: () => void; zoomOut: () => void };
+
+/**
+ * Last free-roam camera (center `[lng,lat]` + zoom), remembered across
+ * navigations so returning to `/map` restores the exact view the user left
+ * instead of re-fitting all parks (which read as a jarring zoom-out). Module-
+ * scoped so it survives the singleton map being lent to other routes; shared by
+ * both renderers (only one engine is live per session). Null until the user has
+ * moved the roam map at least once — the first entry still frames all parks.
+ */
+export type RoamCamera = { center: [number, number]; zoom: number };
+let roamCamera: RoamCamera | null = null;
+export function saveRoamCamera(camera: RoamCamera): void {
+  roamCamera = camera;
+}
+export function getRoamCamera(): RoamCamera | null {
+  return roamCamera;
+}
 
 // Orlando theme-park area — fallback view before park coords load (covers WDW +
 // Universal Orlando). Stored as [lng, lat] (MapLibre order); Leaflet flips it.
@@ -297,9 +315,14 @@ export function openAttractionCard(opts: {
   const wrapClass = wrap.className;
   const fillStyle = fill?.getAttribute("style") ?? "";
   const ringColor = fill?.style.getPropertyValue("--tw-ring-color").trim() || "transparent";
-  // Hide any badges riding on the disc (wait pill / "+N") while it's the card.
-  const badges = Array.from(wrap.children).filter((c): c is HTMLElement => c !== fill);
-  for (const b of badges) b.classList.add("hidden");
+  // Hide any badges riding on the disc (wait pill / "+N") while it's the card,
+  // remembering each one's prior visibility. A "+N" cluster chip that was already
+  // hidden (this marker isn't a cluster head) must stay hidden on restore — else it
+  // pops back as a phantom "+1" grouping when the card collapses.
+  const badges = Array.from(wrap.children)
+    .filter((c): c is HTMLElement => c !== fill)
+    .map((el) => ({ el, wasHidden: el.classList.contains("hidden") }));
+  for (const b of badges) b.el.classList.add("hidden");
 
   // The details body, injected *inside* the wrap below the photo. Fixed to the
   // card width so its wrapped height is correct even while the wrap is still a
@@ -430,6 +453,9 @@ export function openAttractionCard(opts: {
     });
     if (fill) fill.style.height = `${size}px`;
     card.style.opacity = "0";
+    // Fade the close button out fast (its open transition carried a 140ms delay
+    // that otherwise left it hanging in mid-air after the card had collapsed away).
+    closeBtn.style.transition = "opacity 120ms ease";
     closeBtn.style.opacity = "0";
     window.setTimeout(() => {
       card.remove();
@@ -439,7 +465,7 @@ export function openAttractionCard(opts: {
       wrap.className = wrapClass;
       wrap.setAttribute("style", wrapStyle);
       if (fill) fill.setAttribute("style", fillStyle);
-      for (const b of badges) b.classList.remove("hidden");
+      for (const b of badges) b.el.classList.toggle("hidden", b.wasHidden);
       detail.removeAttribute("data-card-open");
       detail.style.width = "";
       detail.style.height = "";
