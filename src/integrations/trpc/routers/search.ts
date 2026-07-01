@@ -16,6 +16,96 @@ const SLUG_TO_CODE = new Map<string, string>(
 );
 
 /**
+ * Parks with today's "from" admission price. Small (≈10 rows) and shared by the
+ * lean `defaults` query and the full `index`, so the pre-search view can load
+ * this alone without dragging in the thousands of attraction/dining rows.
+ */
+async function fetchParks() {
+  const [parks, ticketPrices] = await Promise.all([
+    db.execute<{
+      id: string;
+      name: string;
+      slug: string;
+      resort_name: string | null;
+      image_url: string | null;
+    }>(sql`
+      SELECT p.id, p.name, p.slug, p.image_url, r.name AS resort_name
+      FROM parks p
+      LEFT JOIN resorts r ON r.id = p.resort_id
+      WHERE p.active = true
+      ORDER BY p.name
+    `),
+    // Today's cheapest single-park, 1-day adult admission per park code. WDW
+    // date-prices admission (latest snapshot for today's service_date);
+    // Universal's 1-day admission is a flat list price with no per-date feed,
+    // so we COALESCE down to `list_price_cents`. Express is excluded — it's an
+    // add-on, not admission.
+    db.execute<{ code: string; price_cents: number }>(sql`
+      WITH adm AS (
+        SELECT d.sku, unnest(d.park_scope) AS code, d.list_price_cents
+        FROM product_dim d
+        WHERE d.duration_days = 1 AND d.age_group = 'ADULT'
+          AND d.residency = 'STD' AND d.park_to_park = false
+          AND d.family <> 'EXPRESS' AND d.active = true
+      ),
+      today AS (
+        SELECT DISTINCT ON (sp.sku) sp.sku, sp.price_cents
+        FROM sku_price_obs sp
+        WHERE sp.service_date = current_date
+        ORDER BY sp.sku, sp.observed_at DESC
+      )
+      SELECT a.code, min(COALESCE(t.price_cents, a.list_price_cents)) AS price_cents
+      FROM adm a
+      LEFT JOIN today t ON t.sku = a.sku
+      WHERE COALESCE(t.price_cents, a.list_price_cents) IS NOT NULL
+      GROUP BY a.code
+    `),
+  ]);
+
+  const priceByCode = new Map(ticketPrices.rows.map((r) => [r.code, Number(r.price_cents)]));
+
+  return parks.rows.map((p) => {
+    const code = SLUG_TO_CODE.get(p.slug);
+    const cents = code ? priceByCode.get(code) : undefined;
+    return {
+      type: "park" as const,
+      id: p.id,
+      name: p.name,
+      slug: p.slug,
+      resortName: p.resort_name,
+      imageUrl: p.image_url,
+      // today's "from" admission price, in cents (null when unpriced)
+      ticketPriceCents: cents ?? null,
+    };
+  });
+}
+
+/** Newest published posts, capped when `limit` is given (pre-search default). */
+async function fetchLatestPosts(limit?: number) {
+  const blogPosts = await db.execute<{
+    id: string;
+    slug: string;
+    title: string;
+    dek: string;
+    hero_image_url: string | null;
+  }>(sql`
+    SELECT id, slug, title, dek, hero_image_url
+    FROM blog_post
+    WHERE status = 'published'
+    ORDER BY published_at DESC NULLS LAST
+    ${limit == null ? sql`` : sql`LIMIT ${limit}`}
+  `);
+  return blogPosts.rows.map((b) => ({
+    type: "blog" as const,
+    id: b.id,
+    title: b.title,
+    slug: b.slug,
+    dek: b.dek,
+    imageUrl: b.hero_image_url,
+  }));
+}
+
+/**
  * The omni-search is a "canned" index: the searchable corpus (parks,
  * attractions, priority dining, published posts) is small and slow-changing, so
  * we ship it to the client once and filter in-memory there. That keeps typing
@@ -24,21 +114,19 @@ const SLUG_TO_CODE = new Map<string, string>(
  * for a rich result list. See `OmniSearch` for the client-side matching.
  */
 export const searchRouter = {
+  /**
+   * Lean pre-search set: just the handful of parks + latest posts the drawer
+   * shows before the user types. Loads fast so the drawer opens instantly, while
+   * the heavy `index` loads lazily once the user actually searches.
+   */
+  defaults: publicProcedure.query(async () => {
+    const [parks, blogPosts] = await Promise.all([fetchParks(), fetchLatestPosts(6)]);
+    return { parks, blogPosts };
+  }),
+
   index: publicProcedure.query(async () => {
-    const [parks, attractions, dining, blogPosts, ticketPrices] = await Promise.all([
-      db.execute<{
-        id: string;
-        name: string;
-        slug: string;
-        resort_name: string | null;
-        image_url: string | null;
-      }>(sql`
-        SELECT p.id, p.name, p.slug, p.image_url, r.name AS resort_name
-        FROM parks p
-        LEFT JOIN resorts r ON r.id = p.resort_id
-        WHERE p.active = true
-        ORDER BY p.name
-      `),
+    const [parks, attractions, dining, blogPosts] = await Promise.all([
+      fetchParks(),
       db.execute<{
         id: string;
         name: string;
@@ -79,62 +167,11 @@ export const searchRouter = {
         WHERE r.priority = true AND r.active = true
         ORDER BY r.name
       `),
-      db.execute<{
-        id: string;
-        slug: string;
-        title: string;
-        dek: string;
-        hero_image_url: string | null;
-      }>(sql`
-        SELECT id, slug, title, dek, hero_image_url
-        FROM blog_post
-        WHERE status = 'published'
-        ORDER BY published_at DESC NULLS LAST
-      `),
-      // Today's cheapest single-park, 1-day adult admission per park code. WDW
-      // date-prices admission (latest snapshot for today's service_date);
-      // Universal's 1-day admission is a flat list price with no per-date feed,
-      // so we COALESCE down to `list_price_cents`. Express is excluded — it's an
-      // add-on, not admission.
-      db.execute<{ code: string; price_cents: number }>(sql`
-        WITH adm AS (
-          SELECT d.sku, unnest(d.park_scope) AS code, d.list_price_cents
-          FROM product_dim d
-          WHERE d.duration_days = 1 AND d.age_group = 'ADULT'
-            AND d.residency = 'STD' AND d.park_to_park = false
-            AND d.family <> 'EXPRESS' AND d.active = true
-        ),
-        today AS (
-          SELECT DISTINCT ON (sp.sku) sp.sku, sp.price_cents
-          FROM sku_price_obs sp
-          WHERE sp.service_date = current_date
-          ORDER BY sp.sku, sp.observed_at DESC
-        )
-        SELECT a.code, min(COALESCE(t.price_cents, a.list_price_cents)) AS price_cents
-        FROM adm a
-        LEFT JOIN today t ON t.sku = a.sku
-        WHERE COALESCE(t.price_cents, a.list_price_cents) IS NOT NULL
-        GROUP BY a.code
-      `),
+      fetchLatestPosts(),
     ]);
 
-    const priceByCode = new Map(ticketPrices.rows.map((r) => [r.code, Number(r.price_cents)]));
-
     return {
-      parks: parks.rows.map((p) => {
-        const code = SLUG_TO_CODE.get(p.slug);
-        const cents = code ? priceByCode.get(code) : undefined;
-        return {
-          type: "park" as const,
-          id: p.id,
-          name: p.name,
-          slug: p.slug,
-          resortName: p.resort_name,
-          imageUrl: p.image_url,
-          // today's "from" admission price, in cents (null when unpriced)
-          ticketPriceCents: cents ?? null,
-        };
-      }),
+      parks,
       attractions: attractions.rows.map((a) => ({
         type: "attraction" as const,
         id: a.id,
@@ -160,14 +197,7 @@ export const searchRouter = {
         diningPackage: d.dining_package,
         requiresParkTicket: d.requires_park_ticket ?? false,
       })),
-      blogPosts: blogPosts.rows.map((b) => ({
-        type: "blog" as const,
-        id: b.id,
-        title: b.title,
-        slug: b.slug,
-        dek: b.dek,
-        imageUrl: b.hero_image_url,
-      })),
+      blogPosts,
       // Resort hotels are a static catalog (the `/stays` browse set), so they
       // ship straight from `RESORT_CATALOG` rather than a DB query — they land
       // on `/resort/$slug`.

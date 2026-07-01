@@ -4,9 +4,3 @@
   background: transparent;
   border: none;
 }
-
-/* The attraction popup body is self-styled (white card with dark text); trim
-   Leaflet's default chrome so it matches the MapLibre popup. */
-.parkfi-popup .leaflet-popup-content {
-  margin: 10px 12px;
-}

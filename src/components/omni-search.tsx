@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "motion/react";
 import { createPortal } from "react-dom";
 import {
@@ -18,6 +18,7 @@ import { slugifyMenuItem } from "#/components/dining/menu-content.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { buttonVariants } from "#/components/ui/button.tsx";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "#/components/ui/drawer.tsx";
+import { MorphingText } from "#/components/ui/morphing-text.tsx";
 import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { cn } from "#/lib/utils.ts";
 
@@ -89,7 +90,17 @@ type Item = {
  * (e.g. for the blog masthead) that opens the very same palette — it skips the
  * morph and the palette simply animates in.
  */
-export function OmniSearch({ variant = "bar" }: { variant?: "bar" | "icon" } = {}) {
+export function OmniSearch({
+  variant = "bar",
+  placeholderTexts,
+  className,
+}: {
+  variant?: "bar" | "icon" | "inline";
+  /** When set (inline variant), the placeholder morphs through these strings. */
+  placeholderTexts?: Array<string>;
+  /** Extra classes for the trigger (inline variant). */
+  className?: string;
+} = {}) {
   const [open, setOpen] = React.useState(false);
   // Per-instance so the palette's shared-layout morph connects to *this*
   // trigger. A module-level constant would make every OmniSearch on the page
@@ -109,13 +120,45 @@ export function OmniSearch({ variant = "bar" }: { variant?: "bar" | "icon" } = {
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => setMounted(true), []);
 
-  // The full corpus is fetched once on first open and cached; filtering happens
-  // in-memory so typing never hits the network.
+  const hasQuery = query.trim().length > 0;
+
+  // Lean pre-search set (a few parks + latest posts) drives the empty-state view.
+  // It's cheap, so the drawer opens instantly instead of waiting on the full
+  // corpus.
+  const defaultsQ = useQuery({
+    ...trpc.search.defaults.queryOptions(),
+    enabled: open,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // The full corpus is fetched on open (see the warm-up effect below) so it's
+  // ready by the time the user types; then cached and filtered in-memory so
+  // subsequent keystrokes never hit the network.
   const indexQ = useQuery({
     ...trpc.search.index.queryOptions(),
     enabled: open,
     staleTime: 5 * 60 * 1000,
   });
+
+  const queryClient = useQueryClient();
+
+  // Prefetch the lean default set during idle time after mount, so even the very
+  // first open renders its parks + posts instantly. React Query dedupes by key,
+  // so multiple OmniSearch instances on a page only trigger one fetch.
+  React.useEffect(() => {
+    const warm = () =>
+      void queryClient.prefetchQuery({
+        ...trpc.search.defaults.queryOptions(),
+        staleTime: 5 * 60 * 1000,
+      });
+    const ric = window.requestIdleCallback;
+    if (ric) {
+      const id = ric(warm, { timeout: 2000 });
+      return () => window.cancelIdleCallback?.(id);
+    }
+    const t = setTimeout(warm, 200);
+    return () => clearTimeout(t);
+  }, [queryClient, trpc]);
 
   // Menu items don't ship in the canned index (too many, change too often), so
   // they're searched on the server. Debounce the query so typing doesn't fire a
@@ -153,8 +196,6 @@ export function OmniSearch({ variant = "bar" }: { variant?: "bar" | "icon" } = {
   }, []);
 
   const items = React.useMemo<Item[]>(() => {
-    const data = indexQ.data;
-    if (!data) return [];
     const q = query.trim().toLowerCase();
     const go = (to: () => void) => () => {
       to();
@@ -164,8 +205,11 @@ export function OmniSearch({ variant = "bar" }: { variant?: "bar" | "icon" } = {
     const parkPrice = (cents: number | null | undefined): Pick<Item, "price" | "priceKind"> =>
       cents == null ? {} : { price: formatPrice(cents / 100, "USD"), priceKind: "ticket" };
 
-    // Empty query → a useful default: jump straight to a park, plus latest reads.
+    // Empty query → a useful default (from the lean `defaults` query): jump
+    // straight to a park, plus latest reads.
     if (!q) {
+      const data = defaultsQ.data;
+      if (!data) return [];
       return [
         ...data.parks.slice(0, LIMITS.Parks).map<Item>((p) => ({
           key: `park-${p.id}`,
@@ -187,6 +231,8 @@ export function OmniSearch({ variant = "bar" }: { variant?: "bar" | "icon" } = {
       ];
     }
 
+    const data = indexQ.data;
+    if (!data) return [];
     const m = (s: string | null | undefined) => !!s && s.toLowerCase().includes(q);
     return [
       ...data.parks
@@ -272,7 +318,7 @@ export function OmniSearch({ variant = "bar" }: { variant?: "bar" | "icon" } = {
           onSelect: go(() => navigate({ to: "/blog/$slug", params: { slug: b.slug } })),
         })),
     ];
-  }, [indexQ.data, menuQ.data, query, navigate, close]);
+  }, [defaultsQ.data, indexQ.data, menuQ.data, query, navigate, close]);
 
   // Keep the highlight valid as the result set changes under the cursor.
   React.useEffect(() => {
@@ -298,11 +344,45 @@ export function OmniSearch({ variant = "bar" }: { variant?: "bar" | "icon" } = {
       ?.scrollIntoView({ block: "nearest" });
   }, [active]);
 
-  const showLoading = open && indexQ.isLoading;
+  // Show the spinner for whichever query backs the current view.
+  const showLoading = open && (hasQuery ? indexQ.isLoading : defaultsQ.isLoading);
 
   return (
     <>
-      {variant === "icon" ? (
+      {variant === "inline" ? (
+        // Bare, transparent trigger meant to sit inside a custom inset bar (the
+        // mobile header). No own border/3D — the wrapper supplies the inset look —
+        // and it never fades on open, so the bar stays put while the drawer is up.
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label="Search parks, rides, dining…"
+          className={cn(
+            // Icon stays left (in flow); the placeholder text centers in the space
+            // after it — which runs right up to the avatar — so it reads centered
+            // between the icon and the avatar.
+            "flex h-full min-w-0 flex-1 items-center gap-2 bg-transparent text-[15px] leading-6 font-normal text-muted-foreground outline-none",
+            className,
+          )}
+        >
+          <SearchIcon className="size-5 shrink-0" />
+          {placeholderTexts && placeholderTexts.length > 0 ? (
+            // Morphing subject, centered in the space after the icon.
+            <span className="flex min-w-0 flex-1 items-center justify-center">
+              <MorphingText
+                texts={placeholderTexts}
+                smooth
+                fit
+                morphDuration={0.7}
+                pauseDuration={2}
+                className="h-6 text-[15px] leading-6 font-normal"
+              />
+            </span>
+          ) : (
+            <span className="flex-1 truncate text-center">Search parks, rides…</span>
+          )}
+        </button>
+      ) : variant === "icon" ? (
         // Same 3D outline surface as the bar, collapsed to a circle. Carries the
         // shared `layoutId` so the palette morphs out of *this* button.
         <motion.button
@@ -343,7 +423,7 @@ export function OmniSearch({ variant = "bar" }: { variant?: "bar" | "icon" } = {
           style={{ borderRadius: RADIUS, opacity: 1 }}
           className={cn(
             buttonVariants({ variant: "outline" }),
-            "w-full justify-start gap-2 px-3 font-normal text-muted-foreground md:max-w-xs",
+            "h-12 w-full justify-start gap-2 px-4 text-[15px] font-normal text-muted-foreground md:h-10 md:max-w-xs md:px-3 md:text-sm",
           )}
         >
           <SearchIcon className="size-4 shrink-0" />

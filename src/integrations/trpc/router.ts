@@ -12,6 +12,7 @@ import { pinCollectionRouter } from "./routers/pinCollection.ts";
 import { pinIdentifyRouter } from "./routers/pinIdentify.ts";
 import { pinTradeRouter } from "./routers/pinTrade.ts";
 import { rideAlertsRouter } from "./routers/rideAlerts.ts";
+import { routingRouter } from "./routers/routing.ts";
 import { searchRouter } from "./routers/search.ts";
 import { stayAlertsRouter } from "./routers/stayAlerts.ts";
 import { staysRouter } from "./routers/stays.ts";
@@ -26,6 +27,7 @@ export const trpcRouter = createTRPCRouter({
   stays: staysRouter,
   notifications: notificationsRouter,
   rideAlerts: rideAlertsRouter,
+  routing: routingRouter,
   stayAlerts: stayAlertsRouter,
   diningAlerts: diningAlertsRouter,
   uploads: uploadsRouter,

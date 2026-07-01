@@ -340,6 +340,104 @@ export const parksRouter = {
   }),
 
   /**
+   * Every active ride across all parks with its live status + standby wait + the
+   * fields the unified Waits list filters on (category, land, height requirement,
+   * thumbnail) and its park/operator context. Mirrors `board`'s per-park schedule
+   * gating (a calendar-closed park's rides are reported CLOSED / wait null) but
+   * cross-park. Ghost duplicate rows (null category) are dropped.
+   */
+  allRides: publicProcedure.query(async () => {
+    const result = await db.execute<{
+      id: string;
+      name: string;
+      slug: string;
+      category: string | null;
+      status: number | null;
+      standby_wait: number | null;
+      latitude: number | null;
+      longitude: number | null;
+      park_slug: string;
+      park_name: string;
+      operator_slug: string | null;
+      operator_name: string | null;
+      meta_land: string | null;
+      meta_height_requirement: string | null;
+      meta_image_thumb_url: string | null;
+      meta_image_hero_url: string | null;
+      meta_image_alt: string | null;
+      is_open: boolean | null;
+      has_schedule: boolean;
+    }>(sql`
+      WITH latest_standby AS (
+        SELECT DISTINCT ON (q.attraction_id) q.attraction_id, q.wait_min
+        FROM queue_obs q
+        WHERE q.queue_type = 1 AND q.observed_at >= now() - INTERVAL '24 hours'
+        ORDER BY q.attraction_id, q.observed_at DESC
+      ),
+      latest_status AS (
+        SELECT DISTINCT ON (s.attraction_id) s.attraction_id, s.status
+        FROM attraction_status_obs s
+        ORDER BY s.attraction_id, s.observed_at DESC
+      ),
+      sched AS (
+        SELECT DISTINCT ON (park_id, service_date, opening_time)
+               park_id, opening_time, closing_time
+        FROM park_schedule
+        WHERE type IN ${OPEN_SCHEDULE_TYPES} AND closing_time IS NOT NULL
+        ORDER BY park_id, service_date, opening_time, snapshot_date DESC
+      ),
+      park_open AS (
+        SELECT p.id AS park_id,
+               bool_or(s.opening_time <= now() AND now() < s.closing_time) AS is_open,
+               count(s.opening_time) > 0 AS has_schedule
+        FROM parks p
+        LEFT JOIN sched s ON s.park_id = p.id
+        GROUP BY p.id
+      )
+      SELECT a.id, a.name, a.slug, a.category, a.latitude, a.longitude,
+             ls.status, lsb.wait_min AS standby_wait,
+             p.slug AS park_slug, p.name AS park_name,
+             o.slug AS operator_slug, o.name AS operator_name,
+             m.land AS meta_land, m.height_requirement AS meta_height_requirement,
+             m.image_thumb_url AS meta_image_thumb_url,
+             m.image_hero_url AS meta_image_hero_url,
+             m.image_alt AS meta_image_alt,
+             po.is_open, coalesce(po.has_schedule, false) AS has_schedule
+      FROM attractions a
+      JOIN parks p ON p.id = a.park_id AND p.active = true
+      LEFT JOIN operators o ON o.id = p.operator_id
+      LEFT JOIN latest_status ls ON ls.attraction_id = a.id
+      LEFT JOIN latest_standby lsb ON lsb.attraction_id = a.id
+      LEFT JOIN attraction_meta m ON m.attraction_id = a.id
+      LEFT JOIN park_open po ON po.park_id = p.id
+      WHERE a.active = true AND a.entity_type = 'ATTRACTION' AND a.category IS NOT NULL
+      ORDER BY p.name, a.name
+    `);
+    return result.rows.map((r) => {
+      const knownClosed = Boolean(r.has_schedule) && r.is_open === false;
+      return {
+        id: Number(r.id),
+        name: r.name,
+        slug: r.slug,
+        category: r.category,
+        status: knownClosed ? "CLOSED" : code(STATUS_CODE, r.status),
+        standbyWait: knownClosed ? null : r.standby_wait,
+        latitude: r.latitude,
+        longitude: r.longitude,
+        parkSlug: r.park_slug,
+        parkName: r.park_name,
+        operatorSlug: r.operator_slug,
+        operatorName: r.operator_name,
+        land: r.meta_land,
+        heightRequirement: r.meta_height_requirement,
+        imageThumbUrl: r.meta_image_thumb_url,
+        imageHeroUrl: r.meta_image_hero_url,
+        imageAlt: r.meta_image_alt,
+      };
+    });
+  }),
+
+  /**
    * Operating hours for a park over a date range (defaults to today + the next
    * 13 days). Reads the latest daily snapshot of `park_schedule` — the same feed
    * the open/closed gating uses — and groups by service date into a regular

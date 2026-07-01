@@ -1,0 +1,84 @@
+import * as React from "react";
+
+/**
+ * Shared ride filter — one source of truth for the map (which ride markers show)
+ * and the Waits list. Held in a context mounted at the dashboard shell so both
+ * surfaces and the filter drawer stay in lockstep.
+ */
+export interface RideFilter {
+  /** Selected categories; empty set = all categories. */
+  categories: Set<string>;
+  /** Only rides currently OPERATING. */
+  openOnly: boolean;
+  /** Only rides whose standby wait is at/below this (minutes); null = no cap. */
+  maxWait: number | null;
+  /** Only rides with no height requirement (ride-anything-with-the-kids). */
+  noHeightReq: boolean;
+}
+
+export const EMPTY_RIDE_FILTER: RideFilter = {
+  categories: new Set(),
+  openOnly: false,
+  maxWait: null,
+  noHeightReq: false,
+};
+
+/** Selectable categories (matches the marker icon set in park-map/shared.tsx). */
+export const RIDE_CATEGORIES: ReadonlyArray<{ key: string; label: string }> = [
+  { key: "thrill", label: "Thrill" },
+  { key: "attraction", label: "Rides" },
+  { key: "water", label: "Water" },
+  { key: "show", label: "Shows" },
+  { key: "character", label: "Characters" },
+  { key: "dine", label: "Dining" },
+  { key: "shop", label: "Shops" },
+];
+
+/** The standby thresholds offered by the "max wait" control. */
+export const MAX_WAIT_OPTIONS: ReadonlyArray<number> = [15, 30, 45, 60];
+
+export function rideFilterActive(f: RideFilter): boolean {
+  return f.categories.size > 0 || f.openOnly || f.maxWait != null || f.noHeightReq;
+}
+
+export function rideFilterCount(f: RideFilter): number {
+  return (
+    f.categories.size + (f.openOnly ? 1 : 0) + (f.maxWait != null ? 1 : 0) + (f.noHeightReq ? 1 : 0)
+  );
+}
+
+/** Does a ride pass the filter? Fields are normalized so both the map's
+ *  `BoardItem` (meta.heightRequirement) and the Waits list's flat row work. */
+export function rideMatchesFilter(
+  r: {
+    category: string | null;
+    status: string | null;
+    standbyWait: number | null;
+    heightRequirement: string | null;
+  },
+  f: RideFilter,
+): boolean {
+  if (f.categories.size > 0 && (r.category == null || !f.categories.has(r.category))) return false;
+  if (f.openOnly && r.status !== "OPERATING") return false;
+  if (f.maxWait != null && (r.standbyWait == null || r.standbyWait > f.maxWait)) return false;
+  if (f.noHeightReq && r.heightRequirement != null) return false;
+  return true;
+}
+
+type RideFilterCtx = {
+  filter: RideFilter;
+  setFilter: React.Dispatch<React.SetStateAction<RideFilter>>;
+};
+const RideFilterContext = React.createContext<RideFilterCtx | null>(null);
+
+export function RideFilterProvider({ children }: { children: React.ReactNode }) {
+  const [filter, setFilter] = React.useState<RideFilter>(EMPTY_RIDE_FILTER);
+  const value = React.useMemo(() => ({ filter, setFilter }), [filter]);
+  return <RideFilterContext.Provider value={value}>{children}</RideFilterContext.Provider>;
+}
+
+export function useRideFilter(): RideFilterCtx {
+  const ctx = React.useContext(RideFilterContext);
+  if (!ctx) throw new Error("useRideFilter must be used within a RideFilterProvider");
+  return ctx;
+}

@@ -371,3 +371,13 @@
   --btn-glare: oklch(1 0 0 / 0.08);
   --btn-glare-hover: oklch(1 0 0 / 0.18);
 }
+
+/* On the fullscreen mobile map (`/map`), the top bar floats transparently over
+ * the map, so drop the engine zoom controls below it (both MapLibre and Leaflet)
+ * to clear the search bar + account button. Desktop keeps them at the top. */
+@media (max-width: 767px) {
+  .roam-map .maplibregl-ctrl-top-right,
+  .roam-map .leaflet-top.leaflet-right {
+    margin-top: calc(env(safe-area-inset-top) + 4.5rem);
+  }
+}

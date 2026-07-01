@@ -33,6 +33,7 @@ import { Route as PinsPinIdRouteImport } from './routes/pins_.$pinId'
 import { Route as DiningFacilityIdRouteImport } from './routes/dining_.$facilityId'
 import { Route as BlogRssDotxmlRouteImport } from './routes/blog/rss[.]xml'
 import { Route as BlogSlugRouteImport } from './routes/blog/$slug'
+import { Route as DashMapRouteImport } from './routes/_dash/map'
 import { Route as DashAlertsRouteImport } from './routes/_dash/alerts'
 import { Route as DashAccountRouteImport } from './routes/_dash/account'
 import { Route as DashAccountIndexRouteImport } from './routes/_dash/account/index'
@@ -170,6 +171,11 @@ const BlogSlugRoute = BlogSlugRouteImport.update({
   path: '/blog/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashMapRoute = DashMapRouteImport.update({
+  id: '/map',
+  path: '/map',
+  getParentRoute: () => DashRoute,
+} as any)
 const DashAlertsRoute = DashAlertsRouteImport.update({
   id: '/alerts',
   path: '/alerts',
@@ -274,6 +280,7 @@ export interface FileRoutesByFullPath {
   '/welcome': typeof WelcomeRoute
   '/account': typeof DashAccountRouteWithChildren
   '/alerts': typeof DashAlertsRoute
+  '/map': typeof DashMapRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/blog/rss.xml': typeof BlogRssDotxmlRoute
   '/dining/$facilityId': typeof DiningFacilityIdRoute
@@ -314,6 +321,7 @@ export interface FileRoutesByTo {
   '/unsubscribe': typeof UnsubscribeRoute
   '/welcome': typeof WelcomeRoute
   '/alerts': typeof DashAlertsRoute
+  '/map': typeof DashMapRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/blog/rss.xml': typeof BlogRssDotxmlRoute
   '/dining/$facilityId': typeof DiningFacilityIdRoute
@@ -358,6 +366,7 @@ export interface FileRoutesById {
   '/welcome': typeof WelcomeRoute
   '/_dash/account': typeof DashAccountRouteWithChildren
   '/_dash/alerts': typeof DashAlertsRoute
+  '/_dash/map': typeof DashMapRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/blog/rss.xml': typeof BlogRssDotxmlRoute
   '/dining_/$facilityId': typeof DiningFacilityIdRoute
@@ -403,6 +412,7 @@ export interface FileRouteTypes {
     | '/welcome'
     | '/account'
     | '/alerts'
+    | '/map'
     | '/blog/$slug'
     | '/blog/rss.xml'
     | '/dining/$facilityId'
@@ -443,6 +453,7 @@ export interface FileRouteTypes {
     | '/unsubscribe'
     | '/welcome'
     | '/alerts'
+    | '/map'
     | '/blog/$slug'
     | '/blog/rss.xml'
     | '/dining/$facilityId'
@@ -486,6 +497,7 @@ export interface FileRouteTypes {
     | '/welcome'
     | '/_dash/account'
     | '/_dash/alerts'
+    | '/_dash/map'
     | '/blog/$slug'
     | '/blog/rss.xml'
     | '/dining_/$facilityId'
@@ -718,6 +730,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BlogSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_dash/map': {
+      id: '/_dash/map'
+      path: '/map'
+      fullPath: '/map'
+      preLoaderRoute: typeof DashMapRouteImport
+      parentRoute: typeof DashRoute
+    }
     '/_dash/alerts': {
       id: '/_dash/alerts'
       path: '/alerts'
@@ -863,6 +882,7 @@ const DashAccountRouteWithChildren = DashAccountRoute._addFileChildren(
 interface DashRouteChildren {
   DashAccountRoute: typeof DashAccountRouteWithChildren
   DashAlertsRoute: typeof DashAlertsRoute
+  DashMapRoute: typeof DashMapRoute
   DashIndexRoute: typeof DashIndexRoute
   DashAdminBlogRoute: typeof DashAdminBlogRoute
   DashParkSlugRoute: typeof DashParkSlugRoute
@@ -872,6 +892,7 @@ interface DashRouteChildren {
 const DashRouteChildren: DashRouteChildren = {
   DashAccountRoute: DashAccountRouteWithChildren,
   DashAlertsRoute: DashAlertsRoute,
+  DashMapRoute: DashMapRoute,
   DashIndexRoute: DashIndexRoute,
   DashAdminBlogRoute: DashAdminBlogRoute,
   DashParkSlugRoute: DashParkSlugRoute,

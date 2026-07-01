@@ -24,6 +24,7 @@ import {
   TreesIcon,
   UtensilsIcon,
   WavesIcon,
+  XIcon,
 } from "lucide-react";
 
 import type { BoardItem } from "#/components/park-dashboard/types.ts";
@@ -49,9 +50,11 @@ export const MORPH_MS = 420;
 
 // Square (px) reserved around a full attraction marker for collision avoidance.
 // Two markers whose projected centers fall within this on both axes can't both
-// stay expanded; the lower-priority one collapses to a dot. Sized to the resting
-// photo disc (size-9 = 36px) plus a hair of breathing room.
-export const DECLUTTER_SIZE = 40;
+// stay expanded; the lower-priority one is absorbed into the anchor's "+N"
+// cluster (a tap on which zooms in). Kept close to the photo disc (44px) so
+// markers only group once they'd actually overlap — less aggressive grouping,
+// more individual pins visible.
+export const DECLUTTER_SIZE = 52;
 
 // Ring highlight layered onto the selected attraction marker (no scale — the
 // charted ride shouldn't balloon). Applied to the inner element, not the marker
@@ -61,10 +64,14 @@ const SELECTED_CLASSES = ["ring-2", "ring-primary", "ring-offset-1"];
 /**
  * Mark a marker selected/deselected: ring highlight on, and its hover label
  * suppressed (the charted ride is already identified — no need to expand it).
+ * While a marker's card is expanded (`data-card-open`) the ring is suppressed —
+ * the card itself is the selection indicator, and the disc has flown up into the
+ * card header, so a ring around the empty footprint would just float untethered.
  */
 export function applySelected(detail: HTMLElement, on: boolean): void {
-  for (const c of SELECTED_CLASSES) detail.classList.toggle(c, on);
-  detail.querySelector<HTMLElement>("[data-label]")?.classList.toggle("hidden", on);
+  const open = detail.hasAttribute("data-card-open");
+  for (const c of SELECTED_CLASSES) detail.classList.toggle(c, on && !open);
+  detail.querySelector<HTMLElement>("[data-label]")?.classList.toggle("hidden", on || open);
 }
 
 /** Escape user-facing strings before injecting into marker/popup innerHTML. */
@@ -183,27 +190,23 @@ export function attractionPriority(a: BoardItem): number {
 }
 
 /**
- * Build the attraction popup body. Disney rides carry rich `meta` (hero image,
- * tags, height/land); Universal (and un-enriched rows) degrade to just the name +
- * live wait line — no broken image. Both engines' popups have a white background,
- * so fixed dark text (theme tokens would vanish in dark mode). The "More info"
- * link points at our own ride page (`rideHref`); the renderer intercepts its
- * click (marked `data-spa`) for client-side navigation.
+ * Build the *body* of the expanded attraction card — everything below the photo
+ * header (which is the marker's own disc, flown up by `openAttractionCard`, so
+ * there's no separate hero image here). Disney rides carry rich `meta` (tags,
+ * height/land); Universal (and un-enriched rows) degrade to just the name + live
+ * wait line. The card lives in our themed DOM (not a white map popup), so it uses
+ * theme tokens and reads correctly in dark mode. The "More info" link points at
+ * our own ride page (`rideHref`); the renderer intercepts its click (`data-spa`)
+ * for client-side navigation.
  */
-export function attractionPopupHtml(a: BoardItem, waitLabel: string, rideHref: string): string {
+export function attractionCardBodyHtml(a: BoardItem, waitLabel: string, rideHref: string): string {
   const meta = a.meta;
-  const hero =
-    (meta?.imageHeroUrl ?? meta?.imageThumbUrl)
-      ? `<img src="${escapeHtml((meta?.imageHeroUrl ?? meta?.imageThumbUrl)!)}" alt="${escapeHtml(
-          meta?.imageAlt ?? a.name,
-        )}" class="mb-1.5 h-24 w-full rounded object-cover" loading="lazy" />`
-      : "";
   const tags =
     meta?.tags && meta.tags.length > 0
-      ? `<div class="mt-1 flex flex-wrap gap-1">${meta.tags
+      ? `<div class="mt-1.5 flex flex-wrap gap-1">${meta.tags
           .map(
             (t) =>
-              `<span class="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600">${escapeHtml(
+              `<span class="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">${escapeHtml(
                 t,
               )}</span>`,
           )
@@ -214,26 +217,252 @@ export function attractionPopupHtml(a: BoardItem, waitLabel: string, rideHref: s
     .filter(Boolean)
     .map(
       (bit, i) =>
-        `<div class="${i === 0 ? "mt-1 " : ""}text-[11px] text-neutral-500">${escapeHtml(bit as string)}</div>`,
+        `<div class="${i === 0 ? "mt-1.5 " : ""}text-[11px] text-muted-foreground">${escapeHtml(bit as string)}</div>`,
     )
     .join("");
+  // "Directions" routes from the user's location to this attraction; the renderer
+  // intercepts the click (marked `data-directions`) and reads the destination from
+  // the data attributes. Only shown when we have coordinates to route to.
+  const directions =
+    a.latitude != null && a.longitude != null
+      ? `<button type="button" data-directions data-lng="${a.longitude}" data-lat="${a.latitude}" class="inline-flex items-center gap-1 rounded-full bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white transition hover:bg-blue-700 active:scale-95">Directions</button>`
+      : "";
   const moreInfo = `<a href="${escapeHtml(
     rideHref,
-  )}" data-spa class="mt-1.5 inline-block text-[11px] font-medium text-blue-600 hover:underline">More info →</a>`;
-  return `<div class="w-44 px-0.5">${hero}<div class="text-xs font-semibold text-neutral-900">${escapeHtml(
+  )}" data-spa class="text-[11px] font-medium text-blue-600 hover:underline">More info →</a>`;
+  const actions = `<div class="mt-2.5 flex items-center gap-2">${directions}${moreInfo}</div>`;
+  return `<div class="text-[13px] font-semibold leading-tight text-card-foreground">${escapeHtml(
     a.name,
-  )}</div><div class="text-[11px] text-neutral-500">${waitLabel}</div>${tags}${detail}${moreInfo}</div>`;
+  )}</div><div class="mt-0.5 text-[11px] text-muted-foreground">${escapeHtml(
+    waitLabel,
+  )}</div>${tags}${detail}${actions}`;
+}
+
+// Expanded-card geometry (px). The disc grows in place into a CARD_W-wide photo
+// header of CARD_HEADER_H tall; the body unfolds below it.
+const CARD_W = 224;
+const CARD_HEADER_H = 116;
+const CARD_RADIUS = 16; // matches the card's rounded-2xl (1rem)
+// Morph duration (ms): the disc→card container grow + body/close fade.
+const CARD_MS = 360;
+const CARD_EASE = "cubic-bezier(.16,1,.3,1)"; // smooth ease-out, no overshoot
+
+/** The single card currently expanded (across both engines), so opening one — or
+ *  any other interaction — collapses the previous first. */
+let openCard: { close: () => void } | null = null;
+
+/**
+ * Expand a tapped attraction marker into an info card as a true **container
+ * morph**: the marker's own disc wrapper (`detail`'s first child) *becomes* the
+ * card. It's a single `overflow:hidden` box that grows in place — its center stays
+ * on the ground point — from a 52px circle into the full rounded rectangle, while
+ * its border-radius eases from a full circle to the card's corner. Because there
+ * is exactly one clipping container, there is exactly one radius: the photo (top)
+ * and the details (below) live *inside* it and are clipped to the same rounded
+ * shape throughout, so the rounding never looks inconsistent mid-flight. The disc
+ * colour ring cross-fades into the card's drop shadow via one animated box-shadow.
+ *
+ * Engine-agnostic: it only touches the marker's `detail` element (which both
+ * renderers position) and reads the map `container` to keep the card on-screen.
+ * The returned `card` (the details body) is where the renderer wires the
+ * `data-spa` / `data-directions` clicks; `close()` reverses the morph.
+ */
+export function openAttractionCard(opts: {
+  detail: HTMLElement;
+  container: HTMLElement;
+  bodyHtml: string;
+  /** Was this marker already ring-selected before we opened? Restored on close. */
+  wasSelected: boolean;
+  /** Fired once when the card begins closing — e.g. to drop the marker's z-lift. */
+  onClose?: () => void;
+}): { card: HTMLElement; close: () => void } {
+  openCard?.close();
+
+  const { detail, container, bodyHtml, wasSelected, onClose } = opts;
+  const wrap = detail.firstElementChild as HTMLElement; // the disc wrapper → the card
+  const fill = wrap.querySelector<HTMLElement>("[data-face-fill]"); // photo / icon face
+  const label = detail.querySelector<HTMLElement>("[data-label]");
+  const size = wrap.offsetWidth || 52;
+
+  // Suppress the selection ring while open (see applySelected) and lock the detail
+  // box so the wrap going position:absolute doesn't collapse it (which would
+  // un-center the marker from its point).
+  detail.setAttribute("data-card-open", "");
+  for (const c of SELECTED_CLASSES) detail.classList.remove(c);
+  detail.style.width = `${size}px`;
+  detail.style.height = `${size}px`;
+
+  // Snapshot the disc's resting look so close() can restore it verbatim.
+  const wrapStyle = wrap.getAttribute("style") ?? "";
+  const wrapClass = wrap.className;
+  const fillStyle = fill?.getAttribute("style") ?? "";
+  const ringColor = fill?.style.getPropertyValue("--tw-ring-color").trim() || "transparent";
+  // Hide any badges riding on the disc (wait pill / "+N") while it's the card.
+  const badges = Array.from(wrap.children).filter((c): c is HTMLElement => c !== fill);
+  for (const b of badges) b.classList.add("hidden");
+
+  // The details body, injected *inside* the wrap below the photo. Fixed to the
+  // card width so its wrapped height is correct even while the wrap is still a
+  // circle (it's clipped away below the fold until the card is tall enough).
+  const card = document.createElement("div");
+  card.className = "bg-card px-3 pt-2.5 pb-3";
+  card.style.width = `${CARD_W}px`;
+  card.style.opacity = "0";
+  card.style.transition = "opacity 200ms ease 110ms";
+  card.innerHTML = bodyHtml;
+  card.addEventListener("click", (e) => e.stopPropagation());
+  wrap.appendChild(card);
+  const totalH = CARD_HEADER_H + card.offsetHeight;
+
+  // Placement: header centered on the pin (grow in place), clamped on-screen.
+  // Coords are detail-local — detail's box is the disc, its center the pin.
+  const cRect = container.getBoundingClientRect();
+  const dRect = detail.getBoundingClientRect();
+  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(v, hi));
+  const topLocal =
+    clamp(
+      dRect.top + size / 2 - CARD_HEADER_H / 2,
+      cRect.top + 8,
+      Math.max(cRect.top + 8, cRect.bottom - 8 - totalH),
+    ) - dRect.top;
+  const leftLocal =
+    clamp(
+      dRect.left + size / 2 - CARD_W / 2,
+      cRect.left + 8,
+      Math.max(cRect.left + 8, cRect.right - 8 - CARD_W),
+    ) - dRect.left;
+
+  // While open, swallow clicks on the card container so they don't bubble to the
+  // marker's own click handler (which would re-fire activate). Removed on close.
+  const stopProp = (e: Event) => e.stopPropagation();
+  wrap.addEventListener("click", stopProp);
+
+  // Close (×), pinned to the header's top-right. A sibling of the wrap (in detail),
+  // so the wrap's overflow-hidden can't clip it.
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.setAttribute("aria-label", "Close");
+  closeBtn.className =
+    "absolute flex size-6 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur transition hover:bg-black/60 active:scale-90";
+  Object.assign(closeBtn.style, {
+    left: `${leftLocal + CARD_W - 30}px`,
+    top: `${topLocal + 6}px`,
+    zIndex: "50",
+    opacity: "0",
+    transition: "opacity 200ms ease 140ms",
+  });
+  closeBtn.innerHTML = renderToStaticMarkup(<XIcon width={14} height={14} strokeWidth={2.5} />);
+  closeBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    close();
+  });
+  detail.append(closeBtn);
+  label?.classList.add("hidden");
+
+  // The one animated box-shadow: disc colour ring → card drop shadow. Kept to three
+  // layers on both ends so it interpolates smoothly (no layer-count mismatch jump).
+  const ringShadow = `0 0 0 3px ${ringColor}, 0 4px 6px -1px rgba(0,0,0,.12), 0 2px 4px -2px rgba(0,0,0,.12)`;
+  const cardShadow = `0 0 0 0px transparent, 0 24px 48px -12px rgba(0,0,0,.28), 0 0 0 0 transparent`;
+
+  // Promote the wrap into the card container, starting *exactly* as the resting
+  // disc (52px circle + colour ring), transition off, so the promotion is invisible.
+  wrap.className = "absolute overflow-hidden";
+  Object.assign(wrap.style, {
+    left: "0px",
+    top: "0px",
+    width: `${size}px`,
+    height: `${size}px`,
+    margin: "0",
+    borderRadius: `${size / 2}px`,
+    boxShadow: ringShadow,
+    zIndex: "40",
+    transition: "none",
+  });
+  // The photo/icon becomes the header: fills the card's width, fixed header height,
+  // no radius of its own (the wrap clips it — that's what keeps the radii single).
+  if (fill) {
+    Object.assign(fill.style, {
+      width: "100%",
+      height: `${size}px`,
+      borderRadius: "0",
+      boxShadow: "none",
+      transition: "none",
+    });
+    if (fill.tagName === "IMG") fill.style.display = "block";
+  }
+  void wrap.offsetWidth; // commit the collapsed start state before animating
+
+  requestAnimationFrame(() => {
+    wrap.style.transition = ["left", "top", "width", "height", "border-radius", "box-shadow"]
+      .map((p) => `${p} ${CARD_MS}ms ${CARD_EASE}`)
+      .join(", ");
+    Object.assign(wrap.style, {
+      left: `${leftLocal}px`,
+      top: `${topLocal}px`,
+      width: `${CARD_W}px`,
+      height: `${totalH}px`,
+      borderRadius: `${CARD_RADIUS}px`,
+      boxShadow: cardShadow,
+    });
+    if (fill) {
+      fill.style.transition = `height ${CARD_MS}ms ${CARD_EASE}`;
+      fill.style.height = `${CARD_HEADER_H}px`;
+    }
+    card.style.opacity = "1";
+    closeBtn.style.opacity = "1";
+  });
+
+  let closed = false;
+  function close() {
+    if (closed) return;
+    closed = true;
+    if (openCard === handle) openCard = null;
+    onClose?.();
+    // Reverse: collapse the container back to the disc; ring, radius, photo height
+    // and body opacity all run back together.
+    Object.assign(wrap.style, {
+      left: "0px",
+      top: "0px",
+      width: `${size}px`,
+      height: `${size}px`,
+      borderRadius: `${size / 2}px`,
+      boxShadow: ringShadow,
+    });
+    if (fill) fill.style.height = `${size}px`;
+    card.style.opacity = "0";
+    closeBtn.style.opacity = "0";
+    window.setTimeout(() => {
+      card.remove();
+      closeBtn.remove();
+      wrap.removeEventListener("click", stopProp);
+      // Restore the disc + detail box to their resting state.
+      wrap.className = wrapClass;
+      wrap.setAttribute("style", wrapStyle);
+      if (fill) fill.setAttribute("style", fillStyle);
+      for (const b of badges) b.classList.remove("hidden");
+      detail.removeAttribute("data-card-open");
+      detail.style.width = "";
+      detail.style.height = "";
+      if (wasSelected) applySelected(detail, true);
+      else label?.classList.remove("hidden");
+    }, CARD_MS);
+  }
+
+  const handle = { close };
+  openCard = handle;
+  return { card, close };
 }
 
 // The wrapper that the cluster controller hides / translates / highlights: a
 // disc-sized box (so the marker's footprint is just the photo, centered on the
 // point) holding the photo plus an absolutely-positioned label that slides out on
-// hover. `will-change-transform` keeps the spiderfy translate smooth.
+// hover. `will-change-transform` keeps the declutter nudge translate smooth.
 const DETAIL_CLASS =
   "relative rounded-full transition-transform duration-200 will-change-transform";
 
-/** A circular photo disc (white-bordered, colour-ringed) or, with no photo, the
- *  fallback icon disc. `badge` is optional overlay HTML (e.g. a ride's wait).
+/** A circular photo disc (colour-ringed) or, with no photo, the fallback icon
+ *  disc. No white border — a thicker colour ring hugs the image so the photo
+ *  fills the whole disc. `badge` is optional overlay HTML (e.g. a ride's wait).
  *  `px` sizes the disc with an explicit square box (not a Tailwind size class)
  *  so it's guaranteed round — a non-square box would render the round-clipped
  *  photo as a wide oval. */
@@ -247,11 +476,13 @@ function discMarkup(opts: {
   badge?: string;
 }): string {
   const ring = `--tw-ring-color:${opts.ring}`;
+  // `data-face-fill` tags the photo/icon face so the card animator can morph it
+  // (border-radius + ring) as the disc flies up into the expanded card header.
   const face = opts.url
-    ? `<img src="${escapeHtml(opts.url)}" alt="${escapeHtml(
+    ? `<img data-face-fill src="${escapeHtml(opts.url)}" alt="${escapeHtml(
         opts.alt,
-      )}" loading="lazy" class="size-full rounded-full border-2 border-white object-cover shadow-md ring-2" style="${ring}" />`
-    : `<span class="flex size-full items-center justify-center rounded-full border-2 border-white text-white shadow-md ring-2" style="background:${opts.bg};${ring}">${opts.fallbackSvg}</span>`;
+      )}" loading="lazy" class="size-full rounded-full object-cover shadow-md ring-[3px]" style="${ring}" />`
+    : `<span data-face-fill class="flex size-full items-center justify-center rounded-full text-white shadow-md ring-[3px]" style="background:${opts.bg};${ring}">${opts.fallbackSvg}</span>`;
   return `<span class="relative block shrink-0" style="width:${opts.px}px;height:${opts.px}px">${face}${opts.badge ?? ""}</span>`;
 }
 
@@ -289,6 +520,18 @@ export function wireHoverLabelFlip(el: HTMLElement, container: HTMLElement): voi
   });
 }
 
+/** The "you are here" marker: a solid blue dot with a soft pulsing halo. Built
+ *  as plain DOM so both engines can drop it on the map like any other marker. */
+export function buildUserLocationEl(): HTMLDivElement {
+  const el = document.createElement("div");
+  el.className = "relative flex size-4 items-center justify-center";
+  el.setAttribute("aria-hidden", "true");
+  el.innerHTML =
+    '<span class="absolute inline-flex size-full animate-ping rounded-full bg-blue-500/40"></span>' +
+    '<span class="relative inline-flex size-3.5 rounded-full border-2 border-white bg-blue-500 shadow-md"></span>';
+  return el;
+}
+
 /**
  * One park badge for the overview map: just the park photo at rest, expanding on
  * hover to reveal the name + live "N open · Ym avg" line. The caller wires the
@@ -315,7 +558,7 @@ export function buildParkBadgeEl(p: {
     fallbackSvg: parkIconSvg(p.slug, p.operatorSlug),
     ring: color,
     bg: color,
-    px: 44,
+    px: 64,
   });
   const subtitle = `${p.operating} open · ${escapeHtml(wait)}`;
   const detail = document.createElement("div");
@@ -358,7 +601,7 @@ export function buildAttractionEl(
     fallbackSvg: categoryIconSvg(a.category),
     ring: color,
     bg: color,
-    px: 36,
+    px: 52,
     badge: waitBadge,
   });
   detail.innerHTML = `${disc}${labelMarkup(a.name, escapeHtml(waitLabelFor(a)))}`;

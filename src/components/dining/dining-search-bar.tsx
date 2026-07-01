@@ -323,7 +323,7 @@ export function DiningMobileFAB({ options }: { options: FilterOptions }) {
   return (
     <div
       className="fixed left-1/2 z-40 -translate-x-1/2 md:hidden"
-      style={{ bottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
+      style={{ bottom: "calc(env(safe-area-inset-bottom) + var(--bottom-nav-height) + 1rem)" }}
     >
       <div className="bg-popover/95 supports-backdrop-filter:backdrop-blur flex items-center gap-1 rounded-full border p-1 shadow-xl">
         {/* Search / edit search */}

@@ -5,6 +5,7 @@ import { AppInset } from "#/components/app-inset.tsx";
 import { AppSidebar } from "#/components/app-sidebar.tsx";
 import { SelectionProvider } from "#/components/park-dashboard/selection-context.tsx";
 import { MapStageProvider } from "#/components/park-map/map-stage.tsx";
+import { RideFilterProvider } from "#/components/rides/ride-filter.tsx";
 import { SiteHeader } from "#/components/site-header.tsx";
 import { SidebarProvider } from "#/components/ui/sidebar.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
@@ -49,9 +50,11 @@ function DashLayout() {
             a <MapSlot>. It never remounts, so moving between the overview hero
             and the park card is a single smooth morph rather than a redraw. */}
         <SelectionProvider>
-          <MapStageProvider activeSlug={activeSlug}>
-            <Outlet />
-          </MapStageProvider>
+          <RideFilterProvider>
+            <MapStageProvider activeSlug={activeSlug}>
+              <Outlet />
+            </MapStageProvider>
+          </RideFilterProvider>
         </SelectionProvider>
       </AppInset>
     </SidebarProvider>

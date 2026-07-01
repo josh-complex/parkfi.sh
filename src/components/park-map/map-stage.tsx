@@ -1,10 +1,19 @@
 "use client";
 
 import * as React from "react";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { LoaderCircleIcon, LocateFixedIcon, XIcon } from "lucide-react";
 import { createPortal } from "react-dom";
 
 import { useSelection } from "#/components/park-dashboard/selection-context.tsx";
+import { RideFilterButton } from "#/components/rides/ride-filter-button.tsx";
+import { useRideFilter } from "#/components/rides/ride-filter.tsx";
+import { useGeolocation, type GeoState } from "#/hooks/use-geolocation.ts";
+import { useTRPC } from "#/integrations/trpc/react.ts";
+import { cn } from "#/lib/utils.ts";
 import { lazyWithReload } from "#/lib/lazy-with-reload.tsx";
+import { distanceMeters, pointInPolygon } from "#/server/living/geofence.ts";
 
 import type { MapHandle } from "./shared.tsx";
 import { hasWebGl } from "./webgl.ts";
@@ -96,7 +105,14 @@ function morph(host: HTMLElement, first: DOMRect, slot: HTMLElement, resize: () 
   Object.assign(host.style, {
     position: "fixed",
     margin: "0",
-    zIndex: "40",
+    // Below the floating chrome — the mobile header is z-30 and the bottom nav
+    // z-40, and on the fullscreen `/map` route the map rests at z-0 *behind*
+    // them (they show it through their transparent areas). Lifting the morph
+    // overlay above the bars (it used to be z-40) covered them for the whole
+    // morph, then dropped back to z-0 — so the chrome blinked out and popped
+    // back in on every return to the map. Staying under the bars keeps them
+    // visible throughout; z-20 is still above page content for the card morph.
+    zIndex: "20",
     left: `${first.left}px`,
     top: `${first.top}px`,
     width: `${first.width}px`,
@@ -155,6 +171,85 @@ export function MapStageProvider({
   children: React.ReactNode;
 }) {
   const { selected, setSelected } = useSelection();
+  const navigate = useNavigate();
+  const trpc = useTRPC();
+  const { filter } = useRideFilter();
+  // The `/map` route is the free-roam map (zoom reveals rides, no navigation);
+  // everywhere else the map is route-driven via `activeSlug`.
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const roam = pathname === "/map";
+  const parksQ = useQuery(trpc.parks.list.queryOptions());
+  // One geolocation watch for the whole app, owned here so it survives the map
+  // moving between routes. Never auto-prompts — the locate button calls locate().
+  const geo = useGeolocation({ watch: true });
+  const userLocation =
+    geo.state.status === "granted"
+      ? { coords: geo.state.coords, accuracy: geo.state.accuracy }
+      : null;
+  // Auto-zoom: the first fix while on the overview jumps into the park the user
+  // is standing in (or nearest within ~2km, for parking lots / esplanades).
+  // Fires once so it never fights the user re-opening the overview.
+  const autoNavigatedRef = React.useRef(false);
+  React.useEffect(() => {
+    // In free-roam the map flies+focuses to the user's park internally (no
+    // navigation), so the route-changing auto-zoom is suppressed there.
+    if (roam) return;
+    if (autoNavigatedRef.current || geo.state.status !== "granted" || activeSlug != null) return;
+    const parks = parksQ.data;
+    if (!parks || parks.length === 0) return;
+    const point = geo.state.coords;
+    let match = parks.find((p) => pointInPolygon(point, p.boundary ?? null));
+    if (!match) {
+      let best = 2000; // metres
+      for (const p of parks) {
+        if (p.latitude == null || p.longitude == null) continue;
+        const d = distanceMeters(point, [p.longitude, p.latitude]);
+        if (d < best) {
+          best = d;
+          match = p;
+        }
+      }
+    }
+    if (match) {
+      autoNavigatedRef.current = true;
+      void navigate({ to: "/park/$slug", params: { slug: match.slug } });
+    }
+  }, [geo.state, activeSlug, parksQ.data, navigate]);
+
+  // Walking directions. A "Directions" tap snapshots the user's location as the
+  // trip origin (so the route doesn't re-fetch/re-frame on every GPS tick) and
+  // routes to the destination via the `routing.route` query. If location isn't
+  // granted yet, we stash the destination and fulfill it once a fix arrives.
+  type Dest = { id: number; name: string; coords: [number, number] };
+  const [pendingDest, setPendingDest] = React.useState<Dest | null>(null);
+  const [trip, setTrip] = React.useState<{ origin: [number, number]; dest: Dest } | null>(null);
+  const requestDirections = React.useCallback(
+    (d: Dest) => {
+      if (geo.state.status === "granted") setTrip({ origin: geo.state.coords, dest: d });
+      else {
+        setPendingDest(d);
+        geo.locate();
+      }
+    },
+    [geo],
+  );
+  React.useEffect(() => {
+    if (geo.state.status === "granted" && pendingDest) {
+      setTrip({ origin: geo.state.coords, dest: pendingDest });
+      setPendingDest(null);
+    }
+  }, [geo.state, pendingDest]);
+  const routeQ = useQuery({
+    ...trpc.routing.route.queryOptions({
+      from: trip?.origin ?? [0, 0],
+      to: trip?.dest.coords ?? [0, 0],
+    }),
+    enabled: trip != null,
+  });
+  const clearTrip = React.useCallback(() => {
+    setTrip(null);
+    setPendingDest(null);
+  }, []);
   // The map host is a plain DOM node created imperatively (client-only), NOT a
   // React-rendered element. We then `appendChild` it between the parking div and
   // whichever <MapSlot> claims it. If React owned this node in its tree, moving
@@ -165,7 +260,9 @@ export function MapStageProvider({
   const [host] = React.useState<HTMLDivElement | null>(() => {
     if (typeof document === "undefined") return null;
     const el = document.createElement("div");
-    el.className = "size-full overflow-hidden";
+    // `relative` so the overlay controls (locate / filter / directions) anchor to
+    // the map area itself, whatever slot it's currently lent to.
+    el.className = "relative size-full overflow-hidden";
     return el;
   });
   const parkRef = React.useRef<HTMLDivElement>(null);
@@ -211,7 +308,26 @@ export function MapStageProvider({
       const last = host.getBoundingClientRect();
       const resize = () => mapRef.current?.resize();
 
-      if (first && first.width > 4 && first.height > 4 && last.width > 4 && last.height > 4) {
+      // Only morph when the map is actually changing box between two visible
+      // slots. If it's landing essentially where it left off — the common case
+      // of returning to the fullscreen map from a slot-less page (Waits, Eats…),
+      // where `first` is a stale near-identical fullscreen rect — a morph would
+      // just be a motionless overlay for MORPH_MS, so skip straight to a resize.
+      const moved =
+        first != null &&
+        (Math.abs(first.left - last.left) > 4 ||
+          Math.abs(first.top - last.top) > 4 ||
+          Math.abs(first.width - last.width) > 4 ||
+          Math.abs(first.height - last.height) > 4);
+
+      if (
+        first != null &&
+        moved &&
+        first.width > 4 &&
+        first.height > 4 &&
+        last.width > 4 &&
+        last.height > 4
+      ) {
         morph(host, first, slot, resize);
       } else {
         resize();
@@ -241,32 +357,154 @@ export function MapStageProvider({
       <div ref={parkRef} className="pointer-events-none fixed -z-10 size-0 opacity-0" aria-hidden />
       {host &&
         createPortal(
-          <React.Suspense fallback={null}>
-            {engine === "gl" && (
-              <ParkMap
-                activeSlug={activeSlug}
-                selectedId={selected?.id ?? null}
-                onSelectAttraction={setSelected}
-                onDeselect={() => setSelected(null)}
-                onMapRef={onMapRef}
-                attached={attached}
+          <>
+            <React.Suspense fallback={null}>
+              {engine === "gl" && (
+                <ParkMap
+                  activeSlug={activeSlug}
+                  selectedId={selected?.id ?? null}
+                  onSelectAttraction={setSelected}
+                  onDeselect={() => setSelected(null)}
+                  onMapRef={onMapRef}
+                  attached={attached}
+                  userLocation={userLocation}
+                  route={routeQ.data?.coordinates ?? null}
+                  onRequestDirections={requestDirections}
+                  roam={roam}
+                  filter={filter}
+                />
+              )}
+              {engine === "leaflet" && (
+                <ParkMapLeaflet
+                  activeSlug={activeSlug}
+                  selectedId={selected?.id ?? null}
+                  onSelectAttraction={setSelected}
+                  onDeselect={() => setSelected(null)}
+                  onMapRef={onMapRef}
+                  attached={attached}
+                  userLocation={userLocation}
+                  route={routeQ.data?.coordinates ?? null}
+                  onRequestDirections={requestDirections}
+                  roam={roam}
+                  filter={filter}
+                />
+              )}
+            </React.Suspense>
+            {attached && engine && <LocateButton state={geo.state} onClick={geo.locate} />}
+            {attached && engine && roam && (
+              <RideFilterButton className="absolute left-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] z-10 md:bottom-3" />
+            )}
+            {attached && trip && (
+              <DirectionsPanel
+                destName={trip.dest.name}
+                geoBlocked={geo.state.status === "denied" || geo.state.status === "unavailable"}
+                loading={routeQ.isFetching && !routeQ.data}
+                error={routeQ.isError}
+                distanceMeters={routeQ.data?.distanceMeters ?? null}
+                durationSeconds={routeQ.data?.durationSeconds ?? null}
+                onClear={clearTrip}
               />
             )}
-            {engine === "leaflet" && (
-              <ParkMapLeaflet
-                activeSlug={activeSlug}
-                selectedId={selected?.id ?? null}
-                onSelectAttraction={setSelected}
-                onDeselect={() => setSelected(null)}
-                onMapRef={onMapRef}
-                attached={attached}
-              />
-            )}
-          </React.Suspense>,
+          </>,
           host,
         )}
       {children}
     </MapStageContext.Provider>
+  );
+}
+
+/**
+ * Floating "locate me" control, overlaid on the map (it travels in the portal so
+ * it follows the map between routes). Sits clear of the bottom-nav island on
+ * mobile and bottom-right on desktop. Tapping it requests/refreshes the fix.
+ */
+function LocateButton({ state, onClick }: { state: GeoState; onClick: () => void }) {
+  const prompting = state.status === "prompting";
+  const active = state.status === "granted";
+  const off = state.status === "denied" || state.status === "unavailable";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Show my location"
+      title={off ? "Location unavailable — check permissions" : "Show my location"}
+      className={cn(
+        "pointer-events-auto absolute right-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] z-10 flex size-10 items-center justify-center rounded-full border border-black/10 bg-background text-foreground shadow-md transition active:scale-95 md:bottom-3",
+        active && "text-blue-600",
+        off && "text-muted-foreground",
+      )}
+    >
+      {prompting ? (
+        <LoaderCircleIcon className="size-5 animate-spin" />
+      ) : (
+        <LocateFixedIcon className="size-5" />
+      )}
+    </button>
+  );
+}
+
+function formatDistance(m: number): string {
+  return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`;
+}
+function formatWalk(s: number): string {
+  return `${Math.max(1, Math.round(s / 60))} min walk`;
+}
+
+/**
+ * Floating directions readout, overlaid at the top of the map (travels in the
+ * portal with the map). Shows the route's distance + walking ETA to the
+ * destination, a loading/permission/error state, and a dismiss button.
+ */
+function DirectionsPanel({
+  destName,
+  geoBlocked,
+  loading,
+  error,
+  distanceMeters,
+  durationSeconds,
+  onClear,
+}: {
+  destName: string;
+  geoBlocked: boolean;
+  loading: boolean;
+  error: boolean;
+  distanceMeters: number | null;
+  durationSeconds: number | null;
+  onClear: () => void;
+}) {
+  let body: React.ReactNode;
+  if (geoBlocked) {
+    body = <span className="text-muted-foreground">Enable location to route to {destName}</span>;
+  } else if (loading) {
+    body = (
+      <span className="flex items-center gap-2">
+        <LoaderCircleIcon className="size-4 animate-spin" />
+        Finding route to {destName}…
+      </span>
+    );
+  } else if (error || distanceMeters == null || durationSeconds == null) {
+    body = <span className="text-muted-foreground">No walking route found to {destName}</span>;
+  } else {
+    body = (
+      <span>
+        <span className="font-semibold">{formatDistance(distanceMeters)}</span>
+        <span className="text-muted-foreground"> · {formatWalk(durationSeconds)} to </span>
+        <span className="font-medium">{destName}</span>
+      </span>
+    );
+  }
+  return (
+    <div className="pointer-events-auto absolute inset-x-3 top-3 z-10 mx-auto flex max-w-md items-center gap-3 rounded-2xl border border-black/10 bg-background/95 px-4 py-2.5 text-sm shadow-lg backdrop-blur">
+      <div className="min-w-0 flex-1 truncate">{body}</div>
+      <button
+        type="button"
+        onClick={onClear}
+        aria-label="Clear route"
+        className="-mr-1 inline-flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-foreground/10 hover:text-foreground active:scale-95"
+      >
+        <XIcon className="size-4" />
+      </button>
+    </div>
   );
 }
 

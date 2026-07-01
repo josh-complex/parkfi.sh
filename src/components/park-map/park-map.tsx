@@ -6,20 +6,24 @@ import { useQuery } from "@tanstack/react-query";
 import maplibregl from "maplibre-gl";
 import { useTheme } from "next-themes";
 
+import { rideMatchesFilter, type RideFilter } from "#/components/rides/ride-filter.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
+import { pointInPolygon } from "#/server/living/geofence.ts";
 
 import { MarkerCluster, type DeclutterItem } from "./declutter.ts";
 import {
   applySelected,
-  attractionPopupHtml,
+  attractionCardBodyHtml,
   attractionPriority,
   boundaryFeatureCollection,
   buildAttractionEl,
   buildParkBadgeEl,
+  buildUserLocationEl,
   DECLUTTER_SIZE,
   type MapHandle,
   MAP_FLY_MS,
   MORPH_MS,
+  openAttractionCard,
   ORLANDO_CENTER,
   ORLANDO_ZOOM,
   waitLabelFor,
@@ -28,47 +32,59 @@ import {
 
 import "maplibre-gl/dist/maplibre-gl.css";
 
+import type { FeatureCollection, LineString } from "geojson";
+
+// MapTiler API key (client-side, domain-restricted — safe to expose via VITE_).
+const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY as string | undefined;
+
 /**
- * Keyless raster basemap, per the app theme:
- *  - **light** → OpenStreetMap "Standard" — the colorful, detailed style with
- *    in-park footpaths and POI icons (what makes Disney/Universal look so rich).
- *  - **dark** → Carto dark, since OSM Standard has no dark variant.
+ * Vector basemap, per the app theme. We use MapTiler's OpenMapTiles-schema GL
+ * styles — vector, not raster, so their labels live in addressable `symbol`
+ * layers we can selectively strip (see `stripLabels`) instead of being baked
+ * into tile pixels:
+ *  - **light** → OpenStreetMap — MapTiler's vector rendition of the classic,
+ *    vivid OSM Standard look (in-park detail, bold labels).
+ *  - **dark** → OpenStreetMap Dark — its dark sibling.
  */
-function basemapStyle(dark: boolean): maplibregl.StyleSpecification {
-  const source: maplibregl.RasterSourceSpecification = dark
-    ? {
-        type: "raster",
-        tiles: ["a", "b", "c", "d"].map(
-          (s) => `https://${s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png`,
-        ),
-        tileSize: 256,
-        attribution:
-          '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
-      }
-    : {
-        type: "raster",
-        tiles: ["a", "b", "c"].map((s) => `https://${s}.tile.openstreetmap.org/{z}/{x}/{y}.png`),
-        tileSize: 256,
-        maxzoom: 19,
-        attribution:
-          '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      };
-  return {
-    version: 8,
-    sources: { base: source },
-    layers: [{ id: "base", type: "raster", source: "base" }],
-  };
+function basemapStyleUrl(dark: boolean): string {
+  const style = dark ? "openstreetmap-dark" : "openstreetmap";
+  return `https://api.maptiler.com/maps/${style}/style.json?key=${MAPTILER_KEY}`;
 }
 
 /**
- * A marker's z-lift, reference-counted so hover and spiderfy don't clobber each
- * other (a marker stays raised while *either* is active). MapLibre markers are
- * positioned siblings with auto z-index, so an explicit z-index wins. Returns the
- * `raise(on)` to hand the cluster controller; also wires hover to the same lift.
+ * Source-layers whose `symbol` label layers we suppress so our own node labels
+ * own the map. We drop POI, building-name / house-number, and place-area
+ * (themed-land / neighborhood) labels, deliberately keeping street names and
+ * water names — those give the map its sense of place.
+ *
+ * Written to span two schemas, since our basemap style is swappable: classic
+ * OpenMapTiles (`poi`, `housenumber`, `place`) and MapTiler's v4 schema
+ * (`poi_food`, `building_number`, `place_label`, …). We match any `poi*`
+ * source-layer by prefix, plus this explicit set for the rest.
+ */
+const HIDDEN_LABEL_SOURCE_LAYERS = new Set([
+  "housenumber",
+  "building_number",
+  "place",
+  "place_label",
+  "island_label",
+  "mountain_peak",
+  "tree",
+]);
+
+/** True for label source-layers we hide (see `HIDDEN_LABEL_SOURCE_LAYERS`). */
+function isHiddenLabelLayer(sourceLayer: string): boolean {
+  return sourceLayer.startsWith("poi") || HIDDEN_LABEL_SOURCE_LAYERS.has(sourceLayer);
+}
+
+/**
+ * A marker's z-lift, reference-counted. MapLibre markers are positioned siblings
+ * with auto z-index, so an explicit z-index wins. Returns the `raise(on)` to hand
+ * the cluster controller; also wires hover to the same lift.
  */
 function makeRaise(el: HTMLElement): (on: boolean) => void {
   let count = 0;
-  // Recompute the marker's resting z from its lift count (spiderfy uses this).
+  // Recompute the marker's resting z from its lift count.
   const applyZ = () => {
     el.style.zIndex = count > 0 ? "1000" : "";
   };
@@ -97,16 +113,9 @@ function makeRaise(el: HTMLElement): (on: boolean) => void {
  *  hover slot, so a new hover can knock the previous one down. */
 let topHover: (() => void) | null = null;
 
-/** Transparent SVG overlay for spiderfy leader lines, stacked under the markers
- *  (which MapLibre appends to the canvas-container after this) but over the map. */
-function makeOverlay(): SVGSVGElement {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("class", "pointer-events-none absolute inset-0 text-foreground/40");
-  svg.style.width = "100%";
-  svg.style.height = "100%";
-  svg.style.overflow = "visible";
-  return svg;
-}
+// Zoom at/above which free-roam reveals a park's rides (and below which it falls
+// back to park badges). Park-bounds fits land around 15–16, comfortably above.
+const ROAM_RIDE_ZOOM = 14;
 
 type ParkBounds = { latMin: number; latMax: number; lngMin: number; lngMax: number };
 
@@ -140,6 +149,11 @@ export function ParkMap({
   onDeselect,
   onMapRef,
   attached = true,
+  userLocation,
+  route,
+  onRequestDirections,
+  roam = false,
+  filter,
 }: {
   activeSlug: string | null;
   /** Currently charted attraction — its marker is highlighted. */
@@ -153,6 +167,19 @@ export function ParkMap({
   /** True only while the map is lent to a visible slot. The camera fly is gated
    *  on it so the fit re-runs when returning from a route with no map. */
   attached?: boolean;
+  /** The user's live position ([lng,lat] + accuracy), drawn as a "you are here"
+   *  dot. Null when location is off/denied. */
+  userLocation?: { coords: [number, number]; accuracy: number } | null;
+  /** Active walking route geometry ([lng,lat] points) to draw, or null. */
+  route?: Array<[number, number]> | null;
+  /** A "Directions" tap in an attraction popup — asks the stage to route here. */
+  onRequestDirections?: (d: { id: number; name: string; coords: [number, number] }) => void;
+  /** Free-roam mode (the `/map` page): the map self-manages which park is in
+   *  focus from the zoom level + viewport (no route navigation). Zooming into a
+   *  park reveals its rides; zooming back out shows park badges again. */
+  roam?: boolean;
+  /** Shared ride filter — hides ride markers that don't match. */
+  filter?: RideFilter;
 }) {
   const trpc = useTRPC();
   const navigate = useNavigate();
@@ -161,19 +188,28 @@ export function ParkMap({
 
   const [mounted, setMounted] = React.useState(false);
   const [ready, setReady] = React.useState(false);
+  // Free-roam focus: which park's rides are revealed, driven by zoom/click (not
+  // the route). Outside roam mode the route's `activeSlug` is authoritative.
+  const [focusSlug, setFocusSlug] = React.useState<string | null>(null);
+  const focusSlugRef = React.useRef<string | null>(null);
+  focusSlugRef.current = focusSlug;
+  const effectiveSlug = roam ? focusSlug : activeSlug;
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<maplibregl.Map | null>(null);
   const markersRef = React.useRef<Array<maplibregl.Marker>>([]);
   // Attraction marker detail-layer elements by id, so selection highlight can
   // update in place without rebuilding (rebuilding would close an open popup).
   const markerElsRef = React.useRef<Map<number, HTMLElement>>(new Map());
-  // Cluster/spiderfy controller (shared with the Leaflet renderer) + its leader-
-  // line overlay. The controller owns the collision pass, the "+N" cluster chips,
-  // and the click-to-fan interaction; we just feed it items and re-run on move.
-  const overlayRef = React.useRef<SVGSVGElement | null>(null);
+  // Cluster controller (shared with the Leaflet renderer). It owns the collision
+  // pass, the "+N" cluster chips, and the click-to-zoom interaction; we just feed
+  // it items and re-run on move.
   const layerRef = React.useRef<MarkerCluster | null>(null);
   const declutterRafRef = React.useRef(0);
-  const popupRef = React.useRef<maplibregl.Popup | null>(null);
+  // The currently-expanded marker card (see openAttractionCard), so any new
+  // interaction can collapse it first.
+  const cardRef = React.useRef<{ close: () => void } | null>(null);
+  const userMarkerRef = React.useRef<maplibregl.Marker | null>(null);
+  const routeCoordsRef = React.useRef<Array<[number, number]> | null>(null);
   // Park-outline FeatureCollection + a (re-)installer. The basemap is rebuilt on
   // theme swap (setStyle wipes custom sources/layers), so we re-add on styledata.
   const boundaryFCRef = React.useRef(boundaryFeatureCollection([]));
@@ -183,19 +219,25 @@ export function ParkMap({
   onSelectRef.current = onSelectAttraction;
   const onDeselectRef = React.useRef(onDeselect);
   onDeselectRef.current = onDeselect;
+  const onRequestDirectionsRef = React.useRef(onRequestDirections);
+  onRequestDirectionsRef.current = onRequestDirections;
   const selectedIdRef = React.useRef(selectedId);
   selectedIdRef.current = selectedId;
 
   const listQ = useQuery(trpc.parks.list.queryOptions());
   const overviewQ = useQuery(trpc.parks.overview.queryOptions());
   const boardQ = useQuery({
-    ...trpc.parks.board.queryOptions({ parkSlug: activeSlug ?? "" }),
-    enabled: !!activeSlug,
+    ...trpc.parks.board.queryOptions({ parkSlug: effectiveSlug ?? "" }),
+    enabled: !!effectiveSlug,
   });
 
   const parks = listQ.data;
   const overview = overviewQ.data;
   const board = boardQ.data;
+  // Latest parks list read inside map event handlers (focus watcher / auto-focus)
+  // without resubscribing them on every refetch.
+  const parksRef = React.useRef(parks);
+  parksRef.current = parks;
 
   // SSR guard: maplibre needs the DOM. Render a placeholder until mounted.
   React.useEffect(() => setMounted(true), []);
@@ -205,27 +247,26 @@ export function ParkMap({
     if (!mounted || !containerRef.current || mapRef.current) return;
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: basemapStyle(dark),
+      style: basemapStyleUrl(dark),
       center: ORLANDO_CENTER,
       zoom: ORLANDO_ZOOM,
       attributionControl: { compact: true },
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
-    // Leader-line overlay + cluster controller. The overlay lives in the
-    // canvas-container alongside the markers (so its coords match map.project);
-    // appended now (after the canvas, before any markers) so lines sit above the
-    // map but behind the marker discs that get added later.
-    const overlay = makeOverlay();
-    map.getCanvasContainer().appendChild(overlay);
-    overlayRef.current = overlay;
     layerRef.current = new MarkerCluster(
-      overlay,
       DECLUTTER_SIZE,
       () => selectedIdRef.current ?? null,
-      // Any marker click dismisses an open ride popup before it spiders/activates.
+      // Tap a cluster head -> fit the camera to its members so the group splits
+      // apart on the way in (unproject the projected points back to lng/lat).
+      (points) => {
+        const b = new maplibregl.LngLatBounds();
+        for (const p of points) b.extend(map.unproject([p.x, p.y]));
+        map.fitBounds(b, { padding: 80, maxZoom: 18, duration: 500 });
+      },
+      // Any marker click collapses an open ride card before it zooms/activates.
       () => {
-        popupRef.current?.remove();
-        popupRef.current = null;
+        cardRef.current?.close();
+        cardRef.current = null;
       },
     );
     map.on("load", () => setReady(true));
@@ -235,7 +276,6 @@ export function ParkMap({
       map.remove();
       mapRef.current = null;
       layerRef.current = null;
-      overlayRef.current = null;
       onMapRef?.(null);
       setReady(false);
     };
@@ -272,26 +312,105 @@ export function ParkMap({
     });
   }, []);
 
+  // Install/refresh the active route as a GeoJSON line layer. Like the
+  // boundaries, it must re-install on `styledata` (a theme swap's setStyle wipes
+  // custom sources/layers). An empty FeatureCollection clears the line in place.
+  const ensureRoute = React.useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!map.isStyleLoaded()) {
+      map.once("styledata", ensureRoute);
+      return;
+    }
+    const coords = routeCoordsRef.current;
+    const fc: FeatureCollection<LineString> = {
+      type: "FeatureCollection",
+      features:
+        coords && coords.length > 1
+          ? [
+              {
+                type: "Feature",
+                properties: {},
+                geometry: { type: "LineString", coordinates: coords },
+              },
+            ]
+          : [],
+    };
+    const src = map.getSource("route");
+    if (src) {
+      (src as maplibregl.GeoJSONSource).setData(fc);
+      return;
+    }
+    map.addSource("route", { type: "geojson", data: fc });
+    map.addLayer({
+      id: "route-line",
+      type: "line",
+      source: "route",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-color": "#2563eb", "line-width": 5, "line-opacity": 0.85 },
+    });
+  }, []);
+
+  // Hide the basemap's own POI / building / house-number labels so our node
+  // labels don't fight them, while keeping street + water names. Runs once the
+  // style is loaded (and re-runs on `styledata` after a theme swap, which brings
+  // in a fresh set of label layers).
+  const stripLabels = React.useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!map.isStyleLoaded()) {
+      map.once("styledata", stripLabels);
+      return;
+    }
+    for (const layer of map.getStyle().layers ?? []) {
+      if (layer.type !== "symbol") continue;
+      const sourceLayer = (layer as maplibregl.SymbolLayerSpecification)["source-layer"];
+      if (sourceLayer && isHiddenLabelLayer(sourceLayer)) {
+        map.setLayoutProperty(layer.id, "visibility", "none");
+      }
+    }
+  }, []);
+
   // Theme swap — DOM markers survive setStyle (they aren't style layers), so
   // swapping the basemap is all that's needed here.
   React.useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    map.setStyle(basemapStyle(dark));
-    // setStyle wipes custom sources/layers — re-add the outlines once it reloads.
+    map.setStyle(basemapStyleUrl(dark));
+    // setStyle wipes custom sources/layers — re-add the outlines + route, and
+    // re-strip the new style's labels, once it reloads.
     ensureBoundaries();
-  }, [dark, ready, ensureBoundaries]);
+    ensureRoute();
+    stripLabels();
+  }, [dark, ready, ensureBoundaries, ensureRoute, stripLabels]);
+
+  // Strip labels on first style load too (the theme effect only fires on swaps).
+  React.useEffect(() => {
+    if (ready) stripLabels();
+  }, [ready, stripLabels]);
+
+  // Draw / update / clear the active walking route, and frame it when it appears.
+  React.useEffect(() => {
+    routeCoordsRef.current = route ?? null;
+    if (!ready) return;
+    ensureRoute();
+    if (route && route.length > 1 && mapRef.current) {
+      const b = new maplibregl.LngLatBounds();
+      for (const c of route) b.extend(c);
+      mapRef.current.fitBounds(b, { padding: 60, maxZoom: 17, duration: 500 });
+    }
+  }, [route, ready, ensureRoute]);
 
   // Recompute the park outline(s) and (re)install the layers: all parks on the
   // overview, just the active park in a park view.
   React.useEffect(() => {
     if (!ready) return;
-    const shapes = activeSlug
-      ? (parks ?? []).filter((p) => p.slug === activeSlug)
+    const shapes = effectiveSlug
+      ? (parks ?? []).filter((p) => p.slug === effectiveSlug)
       : (overview?.parks ?? []);
     boundaryFCRef.current = boundaryFeatureCollection(shapes);
     ensureBoundaries();
-  }, [activeSlug, parks, overview, ready, ensureBoundaries]);
+  }, [effectiveSlug, parks, overview, ready, ensureBoundaries]);
 
   // Keep the canvas correct as the layout width animates.
   React.useEffect(() => {
@@ -308,7 +427,7 @@ export function ParkMap({
     markerElsRef.current.clear();
   }, []);
 
-  // Re-run the cluster/spiderfy pass (rAF-coalesced) — cheap, so it fires on every
+  // Re-run the cluster pass (rAF-coalesced) — cheap, so it fires on every
   // frame of a pan/zoom, letting clusters split and re-form as markers spread.
   const scheduleRefresh = React.useCallback(() => {
     if (declutterRafRef.current) return;
@@ -316,6 +435,31 @@ export function ParkMap({
       declutterRafRef.current = 0;
       layerRef.current?.refresh();
     });
+  }, []);
+
+  // Fly the camera to a park's bounds (used by free-roam park-badge taps). No
+  // max-bounds cap here — roam keeps the whole region pannable.
+  const flyToPark = React.useCallback((slug: string) => {
+    const map = mapRef.current;
+    const park = parksRef.current?.find((p) => p.slug === slug);
+    if (!map || !park) return;
+    map.setMaxZoom(19);
+    map.setMaxBounds(null);
+    if (park.bounds) {
+      map.fitBounds(
+        [
+          [park.bounds.lngMin, park.bounds.latMin],
+          [park.bounds.lngMax, park.bounds.latMax],
+        ],
+        { padding: 60, maxZoom: 17, duration: MAP_FLY_MS },
+      );
+    } else if (park.latitude != null && park.longitude != null) {
+      map.flyTo({
+        center: [park.longitude, park.latitude],
+        zoom: park.mapZoom ?? 15,
+        duration: MAP_FLY_MS,
+      });
+    }
   }, []);
 
   // Rebuild markers: park badges on the overview, attraction pins when a park is
@@ -326,12 +470,12 @@ export function ParkMap({
     if (!map || !layer || !ready) return;
     clearMarkers();
     // Overview spreads its handful of parks apart; a park view clusters its rides.
-    layer.setMode(activeSlug ? "cluster" : "spread");
+    layer.setMode(effectiveSlug ? "cluster" : "spread");
     const items: Array<DeclutterItem> = [];
 
-    if (!activeSlug) {
-      popupRef.current?.remove();
-      popupRef.current = null;
+    if (!effectiveSlug) {
+      cardRef.current?.close();
+      cardRef.current = null;
       for (const p of overview?.parks ?? []) {
         if (p.latitude == null || p.longitude == null) continue;
         const lngLat: [number, number] = [p.longitude, p.latitude];
@@ -345,7 +489,16 @@ export function ParkMap({
           point: () => map.project(lngLat),
           detail,
           raise,
-          onActivate: () => void navigate({ to: "/park/$slug", params: { slug: p.slug } }),
+          // Roam: a tap flies into the park (zoom reveals its rides) without
+          // leaving the map. Otherwise navigate to the park page as before.
+          onActivate: () => {
+            if (roam) {
+              setFocusSlug(p.slug);
+              flyToPark(p.slug);
+            } else {
+              void navigate({ to: "/park/$slug", params: { slug: p.slug } });
+            }
+          },
           // Busier parks anchor their cluster; tie-break is stable input order.
           priority: p.operating,
         });
@@ -354,12 +507,25 @@ export function ParkMap({
       for (const a of board ?? []) {
         if (a.latitude == null || a.longitude == null) continue;
         if (a.entityType !== "ATTRACTION") continue;
+        if (
+          filter &&
+          !rideMatchesFilter(
+            {
+              category: a.category,
+              status: a.status,
+              standbyWait: a.standbyWait,
+              heightRequirement: a.meta?.heightRequirement ?? null,
+            },
+            filter,
+          )
+        )
+          continue;
         const lngLat: [number, number] = [a.longitude, a.latitude];
         const { el, detail } = buildAttractionEl(a, a.id === selectedIdRef.current);
         const raise = makeRaise(el);
         if (containerRef.current) wireHoverLabelFlip(el, containerRef.current);
         const waitLabel = waitLabelFor(a);
-        const rideHref = `/park/${activeSlug}/ride/${a.slug}`;
+        const rideHref = `/park/${effectiveSlug}/ride/${a.slug}`;
         const marker = new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map);
         markersRef.current.push(marker);
         markerElsRef.current.set(a.id, detail);
@@ -369,27 +535,44 @@ export function ParkMap({
           detail,
           raise,
           onActivate: () => {
+            const wasSelected = a.id === selectedIdRef.current;
             onSelectRef.current?.({ id: a.id, name: a.name });
-            popupRef.current?.remove();
-            const popup = new maplibregl.Popup({ offset: 16, closeButton: false, maxWidth: "none" })
-              .setLngLat(lngLat)
-              .setHTML(attractionPopupHtml(a, waitLabel, rideHref))
-              .addTo(map);
-            popupRef.current = popup;
-            // Intercept the in-popup "More info" link for client-side navigation.
-            popup
-              .getElement()
-              ?.querySelector<HTMLAnchorElement>("[data-spa]")
+            cardRef.current?.close();
+            if (!containerRef.current) return;
+            // Morph the marker's own disc into an info card in place, lifting it
+            // above its neighbors for as long as it's open.
+            raise(true);
+            const { card, close } = openAttractionCard({
+              detail,
+              container: containerRef.current,
+              bodyHtml: attractionCardBodyHtml(a, waitLabel, rideHref),
+              wasSelected,
+              onClose: () => raise(false),
+            });
+            cardRef.current = { close };
+            // Intercept the in-card "More info" link for client-side navigation.
+            card.querySelector<HTMLAnchorElement>("[data-spa]")?.addEventListener("click", (e) => {
+              e.preventDefault();
+              void navigate({
+                to: "/park/$slug/ride/$rideSlug",
+                params: { slug: effectiveSlug, rideSlug: a.slug },
+              });
+            });
+            // "Directions" asks the stage to route from the user's location here.
+            card
+              .querySelector<HTMLButtonElement>("[data-directions]")
               ?.addEventListener("click", (e) => {
                 e.preventDefault();
-                void navigate({
-                  to: "/park/$slug/ride/$rideSlug",
-                  params: { slug: activeSlug, rideSlug: a.slug },
-                });
+                if (a.longitude != null && a.latitude != null) {
+                  onRequestDirectionsRef.current?.({
+                    id: a.id,
+                    name: a.name,
+                    coords: [a.longitude, a.latitude],
+                  });
+                }
+                close();
+                cardRef.current = null;
               });
-            // No recentre: MapLibre auto-anchors the popup to keep it on screen,
-            // so easing toward the marker only fought maxBounds (snapping the view
-            // back to the park when the marker sat near the edge).
           },
           priority: attractionPriority(a),
         });
@@ -398,11 +581,11 @@ export function ParkMap({
 
     layer.setItems(items);
     layer.refresh();
-    // Click on empty map collapses any open spider and clears the selection
+    // Click on empty map dismisses the popup and clears the selection
     // (marker clicks stopPropagation, so this only fires on the bare map).
     const onMapClick = () => {
-      layer.unspiderfy();
-      popupRef.current?.remove();
+      cardRef.current?.close();
+      cardRef.current = null;
       onDeselectRef.current?.();
     };
     map.on("move", scheduleRefresh);
@@ -415,7 +598,60 @@ export function ParkMap({
         declutterRafRef.current = 0;
       }
     };
-  }, [activeSlug, overview, board, ready, navigate, clearMarkers, scheduleRefresh]);
+  }, [
+    effectiveSlug,
+    overview,
+    board,
+    ready,
+    navigate,
+    clearMarkers,
+    scheduleRefresh,
+    roam,
+    filter,
+    flyToPark,
+  ]);
+
+  // Free-roam focus watcher: after each pan/zoom, reveal a park's rides once the
+  // viewport is zoomed in over it, and fall back to park badges when zoomed out.
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !roam) return;
+    const onMoveEnd = () => {
+      const z = map.getZoom();
+      if (z >= ROAM_RIDE_ZOOM) {
+        const c = map.getCenter();
+        const park = (parksRef.current ?? []).find((p) =>
+          pointInPolygon([c.lng, c.lat], p.boundary ?? null),
+        );
+        if (park) {
+          if (park.slug !== focusSlugRef.current) setFocusSlug(park.slug);
+        } else if (focusSlugRef.current != null) {
+          setFocusSlug(null);
+        }
+      } else if (focusSlugRef.current != null) {
+        setFocusSlug(null);
+      }
+    };
+    map.on("moveend", onMoveEnd);
+    return () => {
+      map.off("moveend", onMoveEnd);
+    };
+  }, [ready, roam]);
+
+  // Roam auto-focus: the first location fix that lands inside a park flies in and
+  // reveals its rides (the in-map equivalent of "open the park you're standing in").
+  const autoFocusedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!roam || autoFocusedRef.current || !ready || !userLocation) return;
+    const park = (parksRef.current ?? []).find((p) =>
+      pointInPolygon(userLocation.coords, p.boundary ?? null),
+    );
+    if (park) {
+      autoFocusedRef.current = true;
+      setFocusSlug(park.slug);
+      flyToPark(park.slug);
+    }
+  }, [roam, ready, userLocation, flyToPark]);
 
   // Update selection highlight in place (no marker rebuild, so a popup stays open).
   React.useEffect(() => {
@@ -424,6 +660,23 @@ export function ParkMap({
     scheduleRefresh();
   }, [selectedId, board, ready, scheduleRefresh]);
 
+  // "You are here" marker — created on the first fix, moved on later updates,
+  // removed when location turns off. It's a plain DOM marker (not a DeclutterItem)
+  // so the cluster pass never touches it.
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    if (!userLocation) {
+      userMarkerRef.current?.remove();
+      userMarkerRef.current = null;
+      return;
+    }
+    if (!userMarkerRef.current) {
+      userMarkerRef.current = new maplibregl.Marker({ element: buildUserLocationEl() });
+    }
+    userMarkerRef.current.setLngLat(userLocation.coords).addTo(map);
+  }, [userLocation, ready]);
+
   // Camera: fit both resorts on the overview, fly into the active park. Built
   // as a closure recomputed each render and stashed in a ref so the delayed
   // scheduler below always reads fresh data without re-firing the fly on every
@@ -431,6 +684,26 @@ export function ParkMap({
   const runFly = () => {
     const map = mapRef.current;
     if (!map || !attached) return;
+
+    if (roam) {
+      // Free-roam: frame all parks but let the user zoom all the way in. Rides
+      // reveal themselves by zoom (the focus watcher above), so no zoom cap and
+      // no max-bounds — the whole region stays explorable.
+      map.setMaxZoom(18);
+      map.setMaxBounds(null);
+      const coords = (overview?.parks ?? []).filter(
+        (p): p is typeof p & { latitude: number; longitude: number } =>
+          p.latitude != null && p.longitude != null,
+      );
+      if (coords.length === 0) {
+        map.flyTo({ center: ORLANDO_CENTER, zoom: ORLANDO_ZOOM });
+        return;
+      }
+      const b = new maplibregl.LngLatBounds();
+      for (const p of coords) b.extend([p.longitude, p.latitude]);
+      map.fitBounds(b, { padding: 80, maxZoom: 12, duration: MAP_FLY_MS });
+      return;
+    }
 
     if (!activeSlug) {
       // Overview/home: fit both resorts, then cap pan/zoom-out to that area.
@@ -490,7 +763,7 @@ export function ParkMap({
     if (!ready || !attached) return;
     const t = setTimeout(() => runFlyRef.current(), MORPH_MS);
     return () => clearTimeout(t);
-  }, [activeSlug, ready, hasOverview, hasParks, attached]);
+  }, [activeSlug, ready, hasOverview, hasParks, attached, roam]);
 
   if (!mounted) {
     return <div className="size-full bg-muted" aria-hidden />;
