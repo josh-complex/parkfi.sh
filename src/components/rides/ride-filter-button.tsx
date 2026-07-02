@@ -15,7 +15,6 @@ import { cn } from "#/lib/utils.ts";
 import {
   EMPTY_RIDE_FILTER,
   MAX_WAIT_OPTIONS,
-  RIDE_CATEGORIES,
   rideFilterCount,
   useRideFilter,
 } from "./ride-filter.tsx";
@@ -52,26 +51,18 @@ export function RideFilterButton({ className }: { className?: string }) {
   const { filter, setFilter } = useRideFilter();
   const count = rideFilterCount(filter);
 
-  const toggleCategory = (key: string) =>
-    setFilter((f) => {
-      const categories = new Set(f.categories);
-      if (categories.has(key)) categories.delete(key);
-      else categories.add(key);
-      return { ...f, categories };
-    });
-
   return (
     <Drawer>
       <DrawerTrigger
         className={cn(
-          "btn-3d-outline border-3d shadow-3d inline-flex w-fit items-center gap-1.5 rounded-full bg-background px-3.5 py-2 text-sm font-medium transition active:scale-95 dark:border-border",
+          "btn-3d-outline border-3d shadow-3d inline-flex w-fit items-center gap-2 rounded-full bg-background px-4.5 py-2.5 text-base font-medium transition active:scale-95 dark:border-border",
           className,
         )}
       >
-        <SlidersHorizontalIcon className="size-4" />
+        <SlidersHorizontalIcon className="size-5" />
         Filter
         {count > 0 && (
-          <span className="bg-primary text-primary-foreground ml-0.5 inline-flex min-w-[1.1rem] items-center justify-center rounded-full px-1 text-[10px] font-bold leading-[1.1rem]">
+          <span className="bg-primary text-primary-foreground ml-0.5 inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1 text-xs font-bold leading-[1.25rem]">
             {count}
           </span>
         )}
@@ -82,23 +73,6 @@ export function RideFilterButton({ className }: { className?: string }) {
         </DrawerHeader>
         <div className="flex flex-col gap-6 overflow-y-auto px-4 pb-4 pt-6">
           <div className="flex flex-col gap-2">
-            <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
-              Type
-            </span>
-            <div className="flex flex-wrap gap-2 pt-1">
-              {RIDE_CATEGORIES.map((c) => (
-                <Chip
-                  key={c.key}
-                  active={filter.categories.has(c.key)}
-                  onClick={() => toggleCategory(c.key)}
-                >
-                  {c.label}
-                </Chip>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-2 border-t pt-4">
             <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
               Max wait
             </span>

@@ -5,17 +5,25 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowUpRightIcon,
+  DramaIcon,
+  FerrisWheelIcon,
   LoaderCircleIcon,
   LocateFixedIcon,
   MinusIcon,
   PlusIcon,
+  RollerCoasterIcon,
+  ShoppingBagIcon,
+  SmileIcon,
+  UtensilsIcon,
+  WavesIcon,
   XIcon,
+  type LucideIcon,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 
 import { useSelection } from "#/components/park-dashboard/selection-context.tsx";
 import { RideFilterButton } from "#/components/rides/ride-filter-button.tsx";
-import { useRideFilter } from "#/components/rides/ride-filter.tsx";
+import { type MapLayers, useRideFilter } from "#/components/rides/ride-filter.tsx";
 import { useGeolocation, type GeoState } from "#/hooks/use-geolocation.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { cn } from "#/lib/utils.ts";
@@ -425,11 +433,17 @@ export function MapStageProvider({
                 />
               )}
             </React.Suspense>
+            {/* Top-left cluster (roam, once a park is focused): the map-layer
+                toggle chips sit between the search bar above and the park-details
+                shortcut below. The chip row scrolls horizontally if it can't fit. */}
             {attached && engine && roam && roamFocusSlug && (
-              <ParkDetailButton
-                slug={roamFocusSlug}
-                name={parksQ.data?.find((p) => p.slug === roamFocusSlug)?.name ?? null}
-              />
+              <div className="pointer-events-none absolute inset-x-3 top-[calc(env(safe-area-inset-top)+5.5rem)] z-10 flex flex-col items-start gap-2 md:top-3">
+                <MapToggleChips />
+                <ParkDetailButton
+                  slug={roamFocusSlug}
+                  name={parksQ.data?.find((p) => p.slug === roamFocusSlug)?.name ?? null}
+                />
+              </div>
             )}
             {attached && engine && (
               <ZoomControl
@@ -468,14 +482,15 @@ export function MapStageProvider({
 const MAP_CTRL_3D =
   "btn-3d-outline border-3d shadow-3d pointer-events-auto flex size-10 items-center justify-center bg-background/95 text-foreground backdrop-blur transition-[transform,box-shadow,background-color,color] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-border";
 
-/** Vertical +/- zoom group (top-right of the map, below the floating search bar on
- *  mobile). Replaces each engine's native zoom control with one connected 3D
- *  control — a single embossed shelf split by a divider — driving zoom through the
- *  shared MapHandle. Individual buttons flash their background on press rather than
- *  sinking, so the group reads as one solid piece. */
+/** Vertical +/- zoom group, bottom-right, stacked directly above the locate
+ *  button (clear of the bottom-nav island on mobile). Replaces each engine's
+ *  native zoom control with one connected 3D control — a single embossed shelf
+ *  split by a divider — driving zoom through the shared MapHandle. Individual
+ *  buttons flash their background on press rather than sinking, so the group
+ *  reads as one solid piece. */
 function ZoomControl({ onZoomIn, onZoomOut }: { onZoomIn: () => void; onZoomOut: () => void }) {
   return (
-    <div className="pointer-events-none absolute right-3 top-[calc(env(safe-area-inset-top)+5.5rem)] z-10 md:top-3">
+    <div className="pointer-events-none absolute right-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+3.75rem)] z-10 md:bottom-[3.75rem]">
       <div className="btn-3d-outline border-3d shadow-3d pointer-events-auto flex flex-col overflow-hidden rounded-2xl bg-background/95 backdrop-blur dark:border-border">
         <button
           type="button"
@@ -533,8 +548,8 @@ function LocateButton({ state, onClick }: { state: GeoState; onClick: () => void
 /**
  * Free-roam shortcut into the focused park's dashboard. Appears (traveling in the
  * portal with the map) only when the roam map is zoomed into a park and showing
- * its rides — a left-aligned 3D pill tucked just under the floating search bar
- * (mirroring how the filter button hugs the bottom nav). Tapping it opens the full
+ * its rides — a left-aligned 3D pill in the top-left cluster, below the layer
+ * chips (the cluster owns the absolute positioning). Tapping it opens the full
  * `/park/$slug` page; the press sinks via translate-y.
  */
 function ParkDetailButton({ slug, name }: { slug: string; name: string | null }) {
@@ -542,11 +557,73 @@ function ParkDetailButton({ slug, name }: { slug: string; name: string | null })
     <Link
       to="/park/$slug"
       params={{ slug }}
-      className="btn-3d-outline border-3d shadow-3d pointer-events-auto absolute left-3 top-[calc(env(safe-area-inset-top)+5.5rem)] z-10 flex max-w-[70vw] items-center gap-1.5 truncate rounded-full bg-background/95 px-4 py-2 text-sm font-medium text-foreground backdrop-blur transition-[transform,box-shadow] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active md:top-3 dark:border-border"
+      className="btn-3d-outline border-3d shadow-3d pointer-events-auto flex max-w-[70vw] items-center gap-1.5 truncate rounded-full bg-background/95 px-4 py-2 text-sm font-medium text-foreground backdrop-blur transition-[transform,box-shadow] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-border"
     >
       <span className="truncate">{name ? `${name} details` : "Park details"}</span>
       <ArrowUpRightIcon className="size-4 shrink-0 text-muted-foreground" />
     </Link>
+  );
+}
+
+/**
+ * The on-map toggle row: quick icon buttons for what the map draws — ride
+ * categories (which ride markers show, shared with the Waits filter) and the
+ * optional overlay layers (dining/shops markers, themed-land fills). Dining and
+ * Shops appear once, as layers: on the map only ATTRACTION-category rides render
+ * as markers, so a "dine"/"shop" ride-category toggle would have nothing to act
+ * on — the venues live in the overlay layers instead. Icon-only (labels on
+ * `aria-label`/`title`), sized to match the filter button, in a scroll-if-it-
+ * overflows row with the scrollbar hidden.
+ */
+type MapToggle =
+  | { kind: "category"; key: string; label: string; Icon: LucideIcon }
+  | { kind: "layer"; key: keyof MapLayers; label: string; Icon: LucideIcon };
+
+const MAP_TOGGLES: ReadonlyArray<MapToggle> = [
+  { kind: "category", key: "thrill", label: "Thrill", Icon: RollerCoasterIcon },
+  { kind: "category", key: "attraction", label: "Rides", Icon: FerrisWheelIcon },
+  { kind: "category", key: "water", label: "Water", Icon: WavesIcon },
+  { kind: "category", key: "show", label: "Shows", Icon: DramaIcon },
+  { kind: "category", key: "character", label: "Characters", Icon: SmileIcon },
+  { kind: "layer", key: "dining", label: "Dining", Icon: UtensilsIcon },
+  { kind: "layer", key: "shops", label: "Shops", Icon: ShoppingBagIcon },
+];
+
+function MapToggleChips() {
+  const { filter, setFilter } = useRideFilter();
+  const toggleCategory = (key: string) =>
+    setFilter((f) => {
+      const categories = new Set(f.categories);
+      if (categories.has(key)) categories.delete(key);
+      else categories.add(key);
+      return { ...f, categories };
+    });
+  const toggleLayer = (key: keyof MapLayers) =>
+    setFilter((f) => ({ ...f, layers: { ...f.layers, [key]: !f.layers[key] } }));
+  return (
+    <div className="pointer-events-auto flex max-w-full gap-1 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {MAP_TOGGLES.map((t) => {
+        const active = t.kind === "category" ? filter.categories.has(t.key) : filter.layers[t.key];
+        const { Icon } = t;
+        return (
+          <button
+            key={`${t.kind}:${t.key}`}
+            type="button"
+            onClick={() => (t.kind === "category" ? toggleCategory(t.key) : toggleLayer(t.key))}
+            aria-pressed={active}
+            aria-label={t.label}
+            title={t.label}
+            className={cn(
+              "btn-3d-outline border-3d shadow-3d flex size-11 shrink-0 items-center justify-center rounded-full bg-background/95 text-foreground backdrop-blur transition-[transform,box-shadow,background-color,color] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-border",
+              active &&
+                "bg-primary text-primary-foreground [--btn-3d:color-mix(in_oklch,var(--primary),black_32%)] [--btn-glare:color-mix(in_oklch,var(--primary),black_32%)]",
+            )}
+          >
+            <Icon className="size-5" />
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

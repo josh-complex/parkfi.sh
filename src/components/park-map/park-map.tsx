@@ -18,6 +18,7 @@ import {
   boundaryFeatureCollection,
   buildAttractionEl,
   buildParkBadgeEl,
+  buildPoiEl,
   buildUserLocationEl,
   DECLUTTER_SIZE,
   getRoamCamera,
@@ -27,6 +28,7 @@ import {
   openAttractionCard,
   ORLANDO_CENTER,
   ORLANDO_ZOOM,
+  poiCardBodyHtml,
   saveRoamCamera,
   waitLabelFor,
   wireHoverLabelFlip,
@@ -236,6 +238,21 @@ export function ParkMap({
   const boardQ = useQuery({
     ...trpc.parks.board.queryOptions({ parkSlug: effectiveSlug ?? "" }),
     enabled: !!effectiveSlug,
+  });
+
+  // Optional map overlay layers, driven by the shared filter. All three only
+  // render once a park is focused (`effectiveSlug`): the POI markers are scoped
+  // to the focused park's boundary and realms are per-park. The queries are
+  // resort/park-wide (small, cached) and gated so they don't fetch until a layer
+  // is switched on inside a park.
+  const layers = filter?.layers;
+  const diningQ = useQuery({
+    ...trpc.parks.dining.queryOptions(),
+    enabled: !!effectiveSlug && !!layers?.dining,
+  });
+  const shopsQ = useQuery({
+    ...trpc.parks.shops.queryOptions(),
+    enabled: !!effectiveSlug && !!layers?.shops,
   });
 
   const parks = listQ.data;
@@ -596,6 +613,67 @@ export function ParkMap({
           priority: attractionPriority(a),
         });
       }
+
+      // Optional POI overlay layers (dining/shops), folded into the SAME cluster
+      // as the rides so they group + collision-avoid together. Scoped to the
+      // focused park's boundary (the resort-wide feed clipped to this park — the
+      // same containment test roam uses); no boundary → plot nothing rather than
+      // dumping every WDW venue here. Negative ids keep them clear of the
+      // positive attraction/park id space the cluster + selection use.
+      const boundary = parks?.find((p) => p.slug === effectiveSlug)?.boundary ?? null;
+      if (boundary && (layers?.dining || layers?.shops)) {
+        const pois = [
+          ...(layers?.dining ? (diningQ.data ?? []) : []),
+          ...(layers?.shops ? (shopsQ.data ?? []) : []),
+        ];
+        pois.forEach((poi, i) => {
+          if (poi.latitude == null || poi.longitude == null) return;
+          const lngLat: [number, number] = [poi.longitude, poi.latitude];
+          if (!pointInPolygon(lngLat, boundary)) return;
+          const { el, detail } = buildPoiEl(poi);
+          const raise = makeRaise(el);
+          if (containerRef.current) wireHoverLabelFlip(el, containerRef.current);
+          const marker = new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map);
+          markersRef.current.push(marker);
+          items.push({
+            id: -(i + 1),
+            point: () => map.project(lngLat),
+            detail,
+            raise,
+            onActivate: () => {
+              cardRef.current?.close();
+              if (!containerRef.current) return;
+              // Same disc→card morph as rides, with the shared POI body.
+              raise(true);
+              const { card, close } = openAttractionCard({
+                detail,
+                container: containerRef.current,
+                bodyHtml: poiCardBodyHtml(poi),
+                wasSelected: false,
+                onClose: () => raise(false),
+              });
+              cardRef.current = { close };
+              // "Details" always lands on our own page (never the operator site):
+              // shops → /shop/$slug, dining → /dining/$facilityId. The target ids
+              // ride on data attributes so one handler covers both.
+              card
+                .querySelector<HTMLAnchorElement>("[data-spa]")
+                ?.addEventListener("click", (e) => {
+                  e.preventDefault();
+                  const link = e.currentTarget as HTMLAnchorElement;
+                  const shopSlug = link.getAttribute("data-shop-slug");
+                  const diningId = link.getAttribute("data-dining-id");
+                  if (shopSlug) void navigate({ to: "/shop/$slug", params: { slug: shopSlug } });
+                  else if (diningId)
+                    void navigate({ to: "/dining/$facilityId", params: { facilityId: diningId } });
+                });
+            },
+            // POIs never anchor a cluster over a ride — a nearby ride heads the
+            // group, the POI folds under its "+N".
+            priority: 0,
+          });
+        });
+      }
     }
 
     layer.setItems(items);
@@ -621,6 +699,9 @@ export function ParkMap({
     effectiveSlug,
     overview,
     board,
+    parks,
+    diningQ.data,
+    shopsQ.data,
     ready,
     navigate,
     clearMarkers,

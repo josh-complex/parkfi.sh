@@ -340,6 +340,122 @@ export const parksRouter = {
   }),
 
   /**
+   * Dining venues plottable on the map — every active WDW `restaurant_dim` row
+   * with coordinates (resort-wide; the map filters to the focused park by its
+   * boundary, mirroring the roam focus logic). Drives the optional "Dining"
+   * marker layer. `category` is the finder map-pin ('dine' | 'characters').
+   */
+  dining: publicProcedure.query(async () => {
+    const result = await db.execute<{
+      facility_id: string;
+      name: string;
+      url_friendly_id: string | null;
+      latitude: number | null;
+      longitude: number | null;
+      land: string | null;
+      map_pin: string | null;
+      image_url: string | null;
+      detail_url: string | null;
+    }>(sql`
+      SELECT facility_id, name, url_friendly_id, latitude, longitude, land, map_pin, image_url, detail_url
+      FROM restaurant_dim
+      WHERE active = true AND latitude IS NOT NULL AND longitude IS NOT NULL
+      ORDER BY name
+    `);
+    return result.rows.map((r) => ({
+      id: r.facility_id,
+      name: r.name,
+      // Kept for shape-parity with `shops` (the map merges both into one POI
+      // list); dining venues link out to `detailUrl`, not an internal route.
+      slug: r.url_friendly_id,
+      latitude: r.latitude,
+      longitude: r.longitude,
+      land: r.land,
+      category: r.map_pin ?? "dine",
+      imageUrl: r.image_url,
+      detailUrl: r.detail_url,
+    }));
+  }),
+
+  /**
+   * Shops plottable on the map — every active `shop_dim` row with coordinates
+   * (resort-wide; filtered to the focused park client-side by boundary). Drives
+   * the optional "Shops" marker layer. `merchandise` powers a category filter.
+   */
+  shops: publicProcedure.query(async () => {
+    const result = await db.execute<{
+      facility_id: string;
+      name: string;
+      url_friendly_id: string | null;
+      latitude: number | null;
+      longitude: number | null;
+      land: string | null;
+      image_url: string | null;
+      detail_url: string | null;
+      merchandise: Array<string> | null;
+    }>(sql`
+      SELECT facility_id, name, url_friendly_id, latitude, longitude, land, image_url, detail_url, merchandise
+      FROM shop_dim
+      WHERE active = true AND latitude IS NOT NULL AND longitude IS NOT NULL
+      ORDER BY name
+    `);
+    return result.rows.map((r) => ({
+      id: r.facility_id,
+      name: r.name,
+      // Finder slug — deep-links the /shop/$slug detail page (null for a few
+      // carts/kiosks; those just aren't linkable).
+      slug: r.url_friendly_id,
+      latitude: r.latitude,
+      longitude: r.longitude,
+      land: r.land,
+      category: "shop" as const,
+      imageUrl: r.image_url,
+      detailUrl: r.detail_url,
+      merchandise: r.merchandise ?? [],
+    }));
+  }),
+
+  /**
+   * One shop by its finder slug (`url_friendly_id`) — backs the `/shop/$slug`
+   * detail page (deep-linking + SEO). Returns null when the slug is unknown or
+   * the shop has gone inactive.
+   */
+  shop: publicProcedure.input(z.object({ slug: z.string() })).query(async ({ input }) => {
+    const result = await db.execute<{
+      facility_id: string;
+      name: string;
+      url_friendly_id: string | null;
+      land: string | null;
+      park_resort: string | null;
+      image_url: string | null;
+      detail_url: string | null;
+      merchandise: Array<string> | null;
+      latitude: number | null;
+      longitude: number | null;
+    }>(sql`
+      SELECT facility_id, name, url_friendly_id, land, park_resort, image_url, detail_url,
+             merchandise, latitude, longitude
+      FROM shop_dim
+      WHERE active = true AND url_friendly_id = ${input.slug}
+      LIMIT 1
+    `);
+    const r = result.rows[0];
+    if (!r) return null;
+    return {
+      id: r.facility_id,
+      name: r.name,
+      slug: r.url_friendly_id,
+      land: r.land,
+      parkResort: r.park_resort,
+      imageUrl: r.image_url,
+      detailUrl: r.detail_url,
+      merchandise: r.merchandise ?? [],
+      latitude: r.latitude,
+      longitude: r.longitude,
+    };
+  }),
+
+  /**
    * Every active ride across all parks with its live status + standby wait + the
    * fields the unified Waits list filters on (category, land, height requirement,
    * thumbnail) and its park/operator context. Mirrors `board`'s per-park schedule

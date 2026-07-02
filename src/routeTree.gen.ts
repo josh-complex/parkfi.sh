@@ -40,6 +40,7 @@ import { Route as DashAccountIndexRouteImport } from './routes/_dash/account/ind
 import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
 import { Route as ApiPushSubscribeRouteImport } from './routes/api/push/subscribe'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as DashShopSlugRouteImport } from './routes/_dash/shop.$slug'
 import { Route as DashParkSlugRouteImport } from './routes/_dash/park.$slug'
 import { Route as DashAdminBlogRouteImport } from './routes/_dash/admin.blog'
 import { Route as DashAccountSecurityRouteImport } from './routes/_dash/account/security'
@@ -206,6 +207,11 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashShopSlugRoute = DashShopSlugRouteImport.update({
+  id: '/shop/$slug',
+  path: '/shop/$slug',
+  getParentRoute: () => DashRoute,
+} as any)
 const DashParkSlugRoute = DashParkSlugRouteImport.update({
   id: '/park/$slug',
   path: '/park/$slug',
@@ -298,6 +304,7 @@ export interface FileRoutesByFullPath {
   '/account/security': typeof DashAccountSecurityRoute
   '/admin/blog': typeof DashAdminBlogRoute
   '/park/$slug': typeof DashParkSlugRoute
+  '/shop/$slug': typeof DashShopSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
@@ -340,6 +347,7 @@ export interface FileRoutesByTo {
   '/account/security': typeof DashAccountSecurityRoute
   '/admin/blog': typeof DashAdminBlogRoute
   '/park/$slug': typeof DashParkSlugRoute
+  '/shop/$slug': typeof DashShopSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
@@ -385,6 +393,7 @@ export interface FileRoutesById {
   '/_dash/account/security': typeof DashAccountSecurityRoute
   '/_dash/admin/blog': typeof DashAdminBlogRoute
   '/_dash/park/$slug': typeof DashParkSlugRoute
+  '/_dash/shop/$slug': typeof DashShopSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
@@ -430,6 +439,7 @@ export interface FileRouteTypes {
     | '/account/security'
     | '/admin/blog'
     | '/park/$slug'
+    | '/shop/$slug'
     | '/api/auth/$'
     | '/api/push/subscribe'
     | '/api/trpc/$'
@@ -472,6 +482,7 @@ export interface FileRouteTypes {
     | '/account/security'
     | '/admin/blog'
     | '/park/$slug'
+    | '/shop/$slug'
     | '/api/auth/$'
     | '/api/push/subscribe'
     | '/api/trpc/$'
@@ -516,6 +527,7 @@ export interface FileRouteTypes {
     | '/_dash/account/security'
     | '/_dash/admin/blog'
     | '/_dash/park/$slug'
+    | '/_dash/shop/$slug'
     | '/api/auth/$'
     | '/api/push/subscribe'
     | '/api/trpc/$'
@@ -779,6 +791,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_dash/shop/$slug': {
+      id: '/_dash/shop/$slug'
+      path: '/shop/$slug'
+      fullPath: '/shop/$slug'
+      preLoaderRoute: typeof DashShopSlugRouteImport
+      parentRoute: typeof DashRoute
+    }
     '/_dash/park/$slug': {
       id: '/_dash/park/$slug'
       path: '/park/$slug'
@@ -886,6 +905,7 @@ interface DashRouteChildren {
   DashIndexRoute: typeof DashIndexRoute
   DashAdminBlogRoute: typeof DashAdminBlogRoute
   DashParkSlugRoute: typeof DashParkSlugRoute
+  DashShopSlugRoute: typeof DashShopSlugRoute
   DashParkSlugRideRideSlugRoute: typeof DashParkSlugRideRideSlugRoute
 }
 
@@ -896,6 +916,7 @@ const DashRouteChildren: DashRouteChildren = {
   DashIndexRoute: DashIndexRoute,
   DashAdminBlogRoute: DashAdminBlogRoute,
   DashParkSlugRoute: DashParkSlugRoute,
+  DashShopSlugRoute: DashShopSlugRoute,
   DashParkSlugRideRideSlugRoute: DashParkSlugRideRideSlugRoute,
 }
 

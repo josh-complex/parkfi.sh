@@ -302,6 +302,73 @@ export const DisneyDiningListSchema = z.object({
 export type DisneyDiningList = z.infer<typeof DisneyDiningListSchema>;
 
 // ---------------------------------------------------------------------------
+// Merchandise (shops) catalog — the retail counterpart to the dining list
+// (`list-ancestor-entities/wdw/{destination}/{date}/shops`). Same envelope
+// (`results` entities + ancestor `locations`); each entity is a
+// `MerchandiseFacility` carrying a map `marker`, the `merchandise` category
+// facets, a hero image, and a detail link. Shares `DisneyFinderMedia`.
+// ---------------------------------------------------------------------------
+const DisneyMerchandiseEntitySchema = z
+  .object({
+    facilityId: z.string(),
+    id: z.string().optional(),
+    entityType: z.string().nullable().optional(),
+    name: z.string().nullable().optional(),
+    urlFriendlyId: z.string().optional(),
+    url: z.string().optional(),
+    locationName: z.string().nullable().optional(),
+    parkIds: z.array(z.string()).default([]),
+    landId: z.string().nullable().optional(),
+    // "true"/"false" string — Disney-operated vs third-party lessee.
+    disneyOwned: z.string().nullable().optional(),
+    facets: z
+      .object({ merchandise: z.array(z.string()).optional() })
+      .partial()
+      .passthrough()
+      .nullable()
+      .optional(),
+    media: z
+      .object({
+        finderStandardThumb: DisneyFinderMedia.optional(),
+        mapBubbleThumbLarge: DisneyFinderMedia.optional(),
+      })
+      .partial()
+      .passthrough()
+      .nullable()
+      .optional(),
+    webLinks: z
+      .object({ wdwDetail: z.object({ href: z.string().optional() }).partial().optional() })
+      .partial()
+      .passthrough()
+      .nullable()
+      .optional(),
+    marker: z
+      .object({
+        lat: z.number().nullable().optional(),
+        lng: z.number().nullable().optional(),
+        pin: z.string().nullable().optional(),
+        card: z
+          .object({ land: z.string().nullable().optional() })
+          .partial()
+          .passthrough()
+          .nullable()
+          .optional(),
+      })
+      .partial()
+      .passthrough()
+      .nullable()
+      .optional(),
+  })
+  .passthrough();
+export type DisneyMerchandiseEntity = z.infer<typeof DisneyMerchandiseEntitySchema>;
+
+export const DisneyMerchandiseListSchema = z.object({
+  results: z.array(DisneyMerchandiseEntitySchema).default([]),
+  locations: z.array(DisneyDiningLocationSchema).default([]),
+});
+export type DisneyMerchandiseList = z.infer<typeof DisneyMerchandiseListSchema>;
+
+// ---------------------------------------------------------------------------
 // Dining detail enrichment — two per-venue endpoints the weekly catalog cron
 // fetches for schedules + menus (the list feed above carries neither):
 //   • details-entity-simple/wdw/{urlFriendlyId}/{date}/ -> schedule

@@ -594,6 +594,96 @@ export function buildParkBadgeEl(p: {
   return { el, detail };
 }
 
+/** A plottable dining/shop point (from `parks.dining` / `parks.shops`). */
+export type PoiItem = {
+  id: string;
+  name: string;
+  latitude: number | null;
+  longitude: number | null;
+  land: string | null;
+  /** finder map-pin: 'dine' | 'characters' | 'shop'. */
+  category: string;
+  imageUrl: string | null;
+  detailUrl?: string | null;
+  /** Finder slug — present on shops (deep-links `/shop/$slug`); absent on dining. */
+  slug?: string | null;
+};
+
+/**
+ * Body of the shared POI info card (dining + shops) — the same layout both
+ * overlay layers pop, mirroring the attraction card below the photo header (the
+ * marker's own disc, flown up by `openAttractionCard`). Shows the name, a
+ * kind · land subtitle, and a "Details →" link to *our own* page — never the
+ * operator's site: shops → `/shop/$slug`, dining/character spots →
+ * `/dining/$facilityId` (the POI id). The link carries `data-spa` plus the
+ * target ids in data attributes; the renderer intercepts it for client-side nav.
+ * Lives in themed DOM (reads correctly in dark).
+ */
+export function poiCardBodyHtml(poi: PoiItem): string {
+  const kindLabel =
+    poi.category === "shop" ? "Shop" : poi.category === "characters" ? "Character Spot" : "Dining";
+  const subtitle = [kindLabel, poi.land].filter(Boolean).join(" · ");
+  // Shops key their page on the finder slug; dining on the facility id (our
+  // `/dining/$facilityId` route). A shop missing its slug has no page to link.
+  const link =
+    poi.category === "shop"
+      ? poi.slug
+        ? `<a href="/shop/${escapeHtml(poi.slug)}" data-spa data-shop-slug="${escapeHtml(
+            poi.slug,
+          )}" class="text-[11px] font-medium text-blue-600 hover:underline">Details →</a>`
+        : ""
+      : `<a href="/dining/${escapeHtml(poi.id)}" data-spa data-dining-id="${escapeHtml(
+          poi.id,
+        )}" class="text-[11px] font-medium text-blue-600 hover:underline">Details →</a>`;
+  const actions = link ? `<div class="mt-2.5 flex items-center gap-2">${link}</div>` : "";
+  return `<div class="text-[13px] font-semibold leading-tight text-card-foreground">${escapeHtml(
+    poi.name,
+  )}</div><div class="mt-0.5 text-[11px] text-muted-foreground">${escapeHtml(
+    subtitle,
+  )}</div>${actions}`;
+}
+
+// Accent per POI kind — warm amber for dining, violet for shops, pink for
+// character spots. Distinct from the wait-status palette so POIs never read as
+// a ride's crowd level.
+const POI_COLOR: Record<string, string> = {
+  dine: "#d97706",
+  characters: "#db2777",
+  shop: "#9333ea",
+};
+
+/**
+ * Build a dining/shop POI marker: a small colour-ringed photo disc (or category
+ * icon) with a hover label of its name + land. Smaller than a ride marker (36px
+ * vs 52px) so the opt-in POI layers read as secondary to the rides. Not a
+ * DeclutterItem — POIs are plain markers the cluster pass never touches. Returns
+ * the root plus the `detail` layer (for the hover-label flip), like the others.
+ */
+export function buildPoiEl(poi: PoiItem): { el: HTMLButtonElement; detail: HTMLDivElement } {
+  // Normalize the finder pin to a CATEGORY_ICON key ("characters" -> "character").
+  const iconKey = poi.category === "characters" ? "character" : poi.category;
+  const color = POI_COLOR[poi.category] ?? "#64748b";
+
+  const el = document.createElement("button");
+  el.type = "button";
+  el.setAttribute("aria-label", poi.name);
+  el.className = "group relative block cursor-pointer";
+
+  const detail = document.createElement("div");
+  detail.className = DETAIL_CLASS;
+  const disc = discMarkup({
+    url: poi.imageUrl,
+    alt: poi.name,
+    fallbackSvg: categoryIconSvg(iconKey, 12),
+    ring: color,
+    bg: color,
+    px: 36,
+  });
+  detail.innerHTML = `${disc}${labelMarkup(poi.name, escapeHtml(poi.land ?? ""))}`;
+  el.append(detail);
+  return { el, detail };
+}
+
 /**
  * Build an attraction marker's DOM: a root button holding two swappable layers —
  * a full "detail" disc (ride icon + wait badge) and a small "dot" — toggled by

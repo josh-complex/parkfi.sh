@@ -561,6 +561,56 @@ export const diningLocation = pgTable("dining_location", {
 });
 
 /**
+ * (F.3) Merchandise (shops) catalog — the retail counterpart to `restaurant_dim`,
+ * seeded weekly from the PUBLIC finder
+ * (`list-ancestor-entities/wdw/{destination}/{date}/shops`) by the
+ * `merchandise-facilities` cron. One row per `MerchandiseFacility` with its map
+ * marker (lat/lng/land), hero image, detail URL, and the `merchandise` category
+ * facets (apparel, pins, toys-plush, …). Soft-delete (active=false) on drop,
+ * scoped by `source`, so a shop that leaves the feed keeps its row + history.
+ * `facilityId` is the finder numeric id ("90002992"); coordinates are nullable
+ * (a handful of destination-level entries — pressed-coin machines, "Find
+ * Merchandise" — carry no marker and are simply never plotted).
+ */
+export const shopDim = pgTable("shop_dim", {
+  facilityId: text("facility_id").primaryKey(),
+  name: text("name").notNull(),
+  // Finder slug ("gateway-gifts") — keys the detail web URL; null for the ~dozen
+  // carts/kiosks the feed omits it on.
+  urlFriendlyId: text("url_friendly_id"),
+  // Map metadata from the finder marker (null for the destination-level entries
+  // with no marker). `map_pin` is the marker category (almost always 'shop');
+  // `land` is the granular in-park area label, finer than `park_resort`.
+  latitude: doublePrecision("latitude"),
+  longitude: doublePrecision("longitude"),
+  mapPin: text("map_pin"),
+  land: text("land"),
+  // Granular in-park land entity id from the finder ("80007958"), finer than
+  // `land` (a label) and `park_resort`.
+  landId: text("land_id"),
+  // Ancestor location label + id ("Magic Kingdom Park" / "80007944"), the finder
+  // `locationName` / first `parkIds` entry (numeric prefix before `;entityType=`).
+  parkResort: text("park_resort"),
+  parkResortId: text("park_resort_id"),
+  // Card metadata from the finder marker.
+  imageUrl: text("image_url"),
+  detailUrl: text("detail_url"),
+  // Merchandise category facets ("apparel-accessories", "pins", "toys-plush", …)
+  // — power a shops category filter, mirroring `restaurant_dim` taxonomy arrays.
+  merchandise: text("merchandise").array().notNull().default([]),
+  // Disney-operated vs third-party lessee (the finder `disneyOwned` "true"/"false").
+  disneyOwned: boolean("disney_owned").notNull().default(false),
+  // Operator/source that owns this row; scopes the catalog cron's soft-delete.
+  source: smallint("source")
+    .notNull()
+    .default(3)
+    .references(() => refSource.id),
+  active: boolean("active").notNull().default(true),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
  * (F.2) Per-venue operating hours, enriched weekly by the `dining-facilities`
  * cron from `details-entity-simple` (`structuredData.openingHoursSpecification`).
  * One row per (venue, date, schedule type, start). `schedule_type` is

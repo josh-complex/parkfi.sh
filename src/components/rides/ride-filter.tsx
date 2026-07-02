@@ -5,6 +5,19 @@ import * as React from "react";
  * and the Waits list. Held in a context mounted at the dashboard shell so both
  * surfaces and the filter drawer stay in lockstep.
  */
+/**
+ * Optional map overlay layers, separate from the ride filter proper: additive
+ * marker layers the map draws on top of its rides (dining venues, shops). Held
+ * on the shared filter so the map and its on-map toggles stay in lockstep;
+ * ignored by `rideMatchesFilter` (they don't gate the rides).
+ */
+export interface MapLayers {
+  /** Plot dining venues (restaurant_dim) as markers. */
+  dining: boolean;
+  /** Plot shops (shop_dim) as markers. */
+  shops: boolean;
+}
+
 export interface RideFilter {
   /** Selected categories; empty set = all categories. */
   categories: Set<string>;
@@ -14,6 +27,8 @@ export interface RideFilter {
   maxWait: number | null;
   /** Only rides with no height requirement (ride-anything-with-the-kids). */
   noHeightReq: boolean;
+  /** Optional map overlay layers (map surface only). */
+  layers: MapLayers;
 }
 
 export const EMPTY_RIDE_FILTER: RideFilter = {
@@ -21,6 +36,7 @@ export const EMPTY_RIDE_FILTER: RideFilter = {
   openOnly: false,
   maxWait: null,
   noHeightReq: false,
+  layers: { dining: false, shops: false },
 };
 
 /** Selectable categories (matches the marker icon set in park-map/shared.tsx). */

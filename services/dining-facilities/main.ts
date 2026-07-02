@@ -1,14 +1,17 @@
 /**
- * WDW dining catalog refresh (Railway cron, weekly — e.g. "0 6 * * 1").
- * Single-shot, plain HTTPS: pull the PUBLIC finder dining list
- * (`list-ancestor-entities/wdw/{destinationId}/{date}/dining`), upsert
- * `restaurant_dim` (source DISNEY_DIRECT) + the `dining_location` reference
- * table, soft-delete venues that dropped out. Then enrich each active venue
- * with schedules (`details-entity-simple`, slug-keyed → `dining_schedule`) and
- * menus (dinemenu API, id-keyed → `dining_menu_item`) — neither rides the list
- * feed. No OneID session / Browserless — the old `/dine-res/api/dine/facilities`
- * path is now behind an Akamai bot challenge; these public feeds aren't. The
- * catalog is near-static and decoupled from the availability sweep.
+ * WDW finder facilities refresh (Railway cron, weekly — e.g. "0 6 * * 1").
+ * Single-shot, plain HTTPS. One job, several PUBLIC finder point-crawls off the
+ * same `list-ancestor-entities/wdw/{destinationId}/{date}/{type}` endpoint:
+ *   • dining → upsert `restaurant_dim` (source DISNEY_DIRECT) + the
+ *     `dining_location` reference table, soft-delete venues that dropped out,
+ *     then enrich each active venue with schedules (`details-entity-simple`,
+ *     slug-keyed → `dining_schedule`) and menus (dinemenu API, id-keyed →
+ *     `dining_menu_item`) — neither rides the list feed.
+ *   • shops → upsert `shop_dim` + soft-delete (see `refreshShops`).
+ * Additional point crawls (characters, guest services, …) slot in the same way.
+ * No OneID session / Browserless — the old `/dine-res/api/dine/facilities` path
+ * is now behind an Akamai bot challenge; these public feeds aren't. The catalog
+ * is near-static and decoupled from the availability sweep.
  *
  * Run:  bun run dining:facilities
  */
@@ -27,6 +30,7 @@ import {
   diningMenuSnapshot,
   diningSchedule,
   restaurantDim,
+  shopDim,
 } from "#/db/schema.ts";
 import { Source } from "#/server/parks/codes.ts";
 import { config } from "#/server/parks/config.ts";
@@ -40,6 +44,7 @@ import {
   fetchDisneyDiningCatalog,
   type DiningCatalogRow,
 } from "#/server/dining/disney-finder-catalog.ts";
+import { fetchDisneyShopsCatalog } from "#/server/shops/disney-finder-shops.ts";
 
 // WDW resort-wide destination — the ancestor the finder lists all dining under.
 const WDW_DESTINATION_ID =
@@ -292,6 +297,71 @@ async function enrichDetails(rows: Array<DiningCatalogRow>, now: Date): Promise<
   );
 }
 
+/**
+ * Shops point-crawl — the retail counterpart to the dining catalog, folded into
+ * this same weekly job (one finder crawl, not a second cron). Fetch the PUBLIC
+ * shops list, upsert `shop_dim` (source DISNEY_DIRECT), soft-delete shops that
+ * dropped out. Catalog-only: shops carry their marker + categories inline, so
+ * there's no per-shop schedule/menu enrichment to do.
+ */
+async function refreshShops(now: Date): Promise<void> {
+  const rows = await fetchDisneyShopsCatalog(
+    WDW_DESTINATION_ID,
+    isoDate(now),
+    AbortSignal.timeout(config.fetchTimeoutMs),
+  );
+  if (rows.length === 0) {
+    console.warn("[dining-facilities] finder returned no shops");
+    return;
+  }
+
+  for (let i = 0; i < rows.length; i += 500) {
+    await db
+      .insert(shopDim)
+      .values(
+        rows.slice(i, i + 500).map((r) => ({
+          ...r,
+          source: Source.DISNEY_DIRECT,
+          active: true,
+          lastSeenAt: now,
+          updatedAt: now,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: shopDim.facilityId,
+        set: {
+          name: sql`excluded.name`,
+          urlFriendlyId: sql`excluded.url_friendly_id`,
+          latitude: sql`excluded.latitude`,
+          longitude: sql`excluded.longitude`,
+          mapPin: sql`excluded.map_pin`,
+          land: sql`excluded.land`,
+          landId: sql`excluded.land_id`,
+          parkResort: sql`excluded.park_resort`,
+          parkResortId: sql`excluded.park_resort_id`,
+          imageUrl: sql`excluded.image_url`,
+          detailUrl: sql`excluded.detail_url`,
+          merchandise: sql`excluded.merchandise`,
+          disneyOwned: sql`excluded.disney_owned`,
+          active: sql`true`,
+          lastSeenAt: sql`excluded.last_seen_at`,
+          updatedAt: sql`excluded.updated_at`,
+        },
+      });
+  }
+
+  const seen = rows.map((r) => r.facilityId);
+  const deactivated = await db
+    .update(shopDim)
+    .set({ active: false, updatedAt: now })
+    .where(and(eq(shopDim.source, Source.DISNEY_DIRECT), notInArray(shopDim.facilityId, seen)))
+    .returning({ facilityId: shopDim.facilityId });
+
+  console.log(
+    `[dining-facilities] shops: upserted ${rows.length}, deactivated ${deactivated.length}`,
+  );
+}
+
 async function main() {
   const now = new Date();
 
@@ -394,6 +464,14 @@ async function main() {
   console.log(
     `[dining-facilities] upserted ${rows.length} venues, deactivated ${deactivated.length}`,
   );
+
+  // Shops point-crawl — isolated so a shops-feed hiccup can't fail the dining
+  // refresh (or its enrichment below).
+  try {
+    await refreshShops(now);
+  } catch (err) {
+    console.error("[dining-facilities] shops refresh failed:", err);
+  }
 
   // Enrich the active venues with schedules + menus (catalog feed carries
   // neither). Toggle off with DINING_DETAILS=0 for a fast catalog-only run.
