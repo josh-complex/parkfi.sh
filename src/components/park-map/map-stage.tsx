@@ -6,16 +6,13 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ArrowUpRightIcon,
   DramaIcon,
-  FerrisWheelIcon,
   LoaderCircleIcon,
   LocateFixedIcon,
   MinusIcon,
   PlusIcon,
   RollerCoasterIcon,
   ShoppingBagIcon,
-  SmileIcon,
   UtensilsIcon,
-  WavesIcon,
   XIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -201,12 +198,26 @@ export function MapStageProvider({
   const { selected, setSelected } = useSelection();
   const navigate = useNavigate();
   const trpc = useTRPC();
-  const { filter } = useRideFilter();
+  const { filter, setFilter } = useRideFilter();
   // The `/map` route is the free-roam map (zoom reveals rides, no navigation);
   // everywhere else the map is route-driven via `activeSlug`.
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const roam = pathname === "/map";
   const parksQ = useQuery(trpc.parks.list.queryOptions());
+
+  // The free-roam map opens with the "Rides" chip lit (rides only) rather than
+  // every category at once. We seed the shared category filter to the ride group
+  // the first time the roam map is shown — but only if the user hasn't already
+  // made a category selection, so we never stomp an existing choice. Seeding once
+  // (guarded) means turning the Rides chip back off later isn't re-forced on.
+  const seededRoamRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!roam || seededRoamRef.current) return;
+    seededRoamRef.current = true;
+    setFilter((f) =>
+      f.categories.size === 0 ? { ...f, categories: new Set(RIDE_CATEGORY_KEYS) } : f,
+    );
+  }, [roam, setFilter]);
 
   // Remember the last map surface the user was on (the roam map, or a park
   // dashboard) so a ride page's back/Map targets can return there. A ride route
@@ -433,16 +444,17 @@ export function MapStageProvider({
                 />
               )}
             </React.Suspense>
-            {/* Top-left cluster (roam, once a park is focused): the map-layer
-                toggle chips sit between the search bar above and the park-details
-                shortcut below. The chip row scrolls horizontally if it can't fit. */}
+            {/* Top-left cluster (roam, once a park is focused): the park-details
+                shortcut sits directly below the search bar, with the map-layer
+                toggle chips beneath it. The chip row scrolls horizontally if it
+                can't fit. */}
             {attached && engine && roam && roamFocusSlug && (
               <div className="pointer-events-none absolute inset-x-3 top-[calc(env(safe-area-inset-top)+5.5rem)] z-10 flex flex-col items-start gap-2 md:top-3">
-                <MapToggleChips />
                 <ParkDetailButton
                   slug={roamFocusSlug}
                   name={parksQ.data?.find((p) => p.slug === roamFocusSlug)?.name ?? null}
                 />
+                <MapToggleChips />
               </div>
             )}
             {attached && engine && (
@@ -565,61 +577,72 @@ function ParkDetailButton({ slug, name }: { slug: string; name: string | null })
   );
 }
 
+// The ride categories each on-map chip stands for. "Rides" folds the three
+// ride-type markers (coasters, flat/dark rides, water rides) into one toggle;
+// "Shows" folds stage shows and character meets together. Kept as the single
+// source of truth for both the seeded roam-map default and the chip's
+// active/toggle logic.
+const RIDE_CATEGORY_KEYS = ["thrill", "attraction", "water"] as const;
+const SHOW_CATEGORY_KEYS = ["show", "character"] as const;
+
 /**
- * The on-map toggle row: quick icon buttons for what the map draws — ride
+ * The on-map toggle row: labeled pills for what the map draws — grouped ride
  * categories (which ride markers show, shared with the Waits filter) and the
- * optional overlay layers (dining/shops markers, themed-land fills). Dining and
- * Shops appear once, as layers: on the map only ATTRACTION-category rides render
- * as markers, so a "dine"/"shop" ride-category toggle would have nothing to act
- * on — the venues live in the overlay layers instead. Icon-only (labels on
- * `aria-label`/`title`), sized to match the filter button, in a scroll-if-it-
- * overflows row with the scrollbar hidden.
+ * optional overlay layers (dining/shops markers). Two category groups ("Rides",
+ * "Shows") each cover several underlying categories; Shops and Eats are overlay
+ * layers (on the map only ride markers render, so a per-venue ride category would
+ * have nothing to act on — the venues live in the layers instead). Sized to match
+ * the filter button, in a scroll-if-it-overflows row with the scrollbar hidden.
  */
 type MapToggle =
-  | { kind: "category"; key: string; label: string; Icon: LucideIcon }
+  | { kind: "category"; label: string; Icon: LucideIcon; keys: ReadonlyArray<string> }
   | { kind: "layer"; key: keyof MapLayers; label: string; Icon: LucideIcon };
 
 const MAP_TOGGLES: ReadonlyArray<MapToggle> = [
-  { kind: "category", key: "thrill", label: "Thrill", Icon: RollerCoasterIcon },
-  { kind: "category", key: "attraction", label: "Rides", Icon: FerrisWheelIcon },
-  { kind: "category", key: "water", label: "Water", Icon: WavesIcon },
-  { kind: "category", key: "show", label: "Shows", Icon: DramaIcon },
-  { kind: "category", key: "character", label: "Characters", Icon: SmileIcon },
-  { kind: "layer", key: "dining", label: "Dining", Icon: UtensilsIcon },
+  { kind: "category", label: "Rides", Icon: RollerCoasterIcon, keys: RIDE_CATEGORY_KEYS },
+  { kind: "category", label: "Shows", Icon: DramaIcon, keys: SHOW_CATEGORY_KEYS },
   { kind: "layer", key: "shops", label: "Shops", Icon: ShoppingBagIcon },
+  { kind: "layer", key: "dining", label: "Eats", Icon: UtensilsIcon },
 ];
 
 function MapToggleChips() {
   const { filter, setFilter } = useRideFilter();
-  const toggleCategory = (key: string) =>
+  // A group is on when every category it covers is selected; toggling flips the
+  // whole group on/off together.
+  const toggleCategory = (keys: ReadonlyArray<string>) =>
     setFilter((f) => {
       const categories = new Set(f.categories);
-      if (categories.has(key)) categories.delete(key);
-      else categories.add(key);
+      const allOn = keys.every((k) => categories.has(k));
+      for (const k of keys) {
+        if (allOn) categories.delete(k);
+        else categories.add(k);
+      }
       return { ...f, categories };
     });
   const toggleLayer = (key: keyof MapLayers) =>
     setFilter((f) => ({ ...f, layers: { ...f.layers, [key]: !f.layers[key] } }));
   return (
-    <div className="pointer-events-auto flex max-w-full gap-1 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="pointer-events-auto flex max-w-full gap-1.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {MAP_TOGGLES.map((t) => {
-        const active = t.kind === "category" ? filter.categories.has(t.key) : filter.layers[t.key];
+        const active =
+          t.kind === "category"
+            ? t.keys.every((k) => filter.categories.has(k))
+            : filter.layers[t.key];
         const { Icon } = t;
         return (
           <button
-            key={`${t.kind}:${t.key}`}
+            key={t.kind === "category" ? `cat:${t.label}` : `layer:${t.key}`}
             type="button"
-            onClick={() => (t.kind === "category" ? toggleCategory(t.key) : toggleLayer(t.key))}
+            onClick={() => (t.kind === "category" ? toggleCategory(t.keys) : toggleLayer(t.key))}
             aria-pressed={active}
-            aria-label={t.label}
-            title={t.label}
             className={cn(
-              "btn-3d-outline border-3d shadow-3d flex size-11 shrink-0 items-center justify-center rounded-full bg-background/95 text-foreground backdrop-blur transition-[transform,box-shadow,background-color,color] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-border",
+              "btn-3d-outline border-3d shadow-3d flex h-11 shrink-0 items-center gap-1.5 rounded-full bg-background/95 px-4 text-sm font-medium text-foreground backdrop-blur transition-[transform,box-shadow,background-color,color] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-border",
               active &&
                 "bg-primary text-primary-foreground [--btn-3d:color-mix(in_oklch,var(--primary),black_32%)] [--btn-glare:color-mix(in_oklch,var(--primary),black_32%)]",
             )}
           >
             <Icon className="size-5" />
+            {t.label}
           </button>
         );
       })}

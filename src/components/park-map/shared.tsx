@@ -247,19 +247,19 @@ export function attractionCardBodyHtml(a: BoardItem, waitLabel: string, rideHref
       : "";
   const moreInfo = `<a href="${escapeHtml(
     rideHref,
-  )}" data-spa class="text-[11px] font-medium text-blue-600 hover:underline">More info →</a>`;
-  const actions = `<div class="mt-2.5 flex items-center gap-2">${directions}${moreInfo}</div>`;
-  return `<div class="text-[13px] font-semibold leading-tight text-card-foreground">${escapeHtml(
+  )}" data-spa class="text-[13px] font-medium text-blue-600 hover:underline">More info →</a>`;
+  const actions = `<div class="mt-3 flex items-center gap-2">${directions}${moreInfo}</div>`;
+  return `<div class="text-[15px] font-semibold leading-tight text-card-foreground">${escapeHtml(
     a.name,
-  )}</div><div class="mt-0.5 text-[11px] text-muted-foreground">${escapeHtml(
+  )}</div><div class="mt-1 text-[12px] text-muted-foreground">${escapeHtml(
     waitLabel,
   )}</div>${tags}${detail}${actions}`;
 }
 
 // Expanded-card geometry (px). The disc grows in place into a CARD_W-wide photo
 // header of CARD_HEADER_H tall; the body unfolds below it.
-const CARD_W = 224;
-const CARD_HEADER_H = 116;
+const CARD_W = 264;
+const CARD_HEADER_H = 148;
 const CARD_RADIUS = 16; // matches the card's rounded-2xl (1rem)
 // Morph duration (ms): the disc→card container grow + body/close fade.
 const CARD_MS = 360;
@@ -328,7 +328,7 @@ export function openAttractionCard(opts: {
   // card width so its wrapped height is correct even while the wrap is still a
   // circle (it's clipped away below the fold until the card is tall enough).
   const card = document.createElement("div");
-  card.className = "bg-card px-3 pt-2.5 pb-3";
+  card.className = "bg-card px-4 pt-3 pb-3.5";
   card.style.width = `${CARD_W}px`;
   card.style.opacity = "0";
   card.style.transition = "opacity 200ms ease 110ms";
@@ -630,15 +630,15 @@ export function poiCardBodyHtml(poi: PoiItem): string {
       ? poi.slug
         ? `<a href="/shop/${escapeHtml(poi.slug)}" data-spa data-shop-slug="${escapeHtml(
             poi.slug,
-          )}" class="text-[11px] font-medium text-blue-600 hover:underline">Details →</a>`
+          )}" class="text-[13px] font-medium text-blue-600 hover:underline">Details →</a>`
         : ""
       : `<a href="/dining/${escapeHtml(poi.id)}" data-spa data-dining-id="${escapeHtml(
           poi.id,
-        )}" class="text-[11px] font-medium text-blue-600 hover:underline">Details →</a>`;
-  const actions = link ? `<div class="mt-2.5 flex items-center gap-2">${link}</div>` : "";
-  return `<div class="text-[13px] font-semibold leading-tight text-card-foreground">${escapeHtml(
+        )}" class="text-[13px] font-medium text-blue-600 hover:underline">Details →</a>`;
+  const actions = link ? `<div class="mt-3 flex items-center gap-2">${link}</div>` : "";
+  return `<div class="text-[15px] font-semibold leading-tight text-card-foreground">${escapeHtml(
     poi.name,
-  )}</div><div class="mt-0.5 text-[11px] text-muted-foreground">${escapeHtml(
+  )}</div><div class="mt-1 text-[12px] text-muted-foreground">${escapeHtml(
     subtitle,
   )}</div>${actions}`;
 }
