@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from "#/components/ui/card.tsx";
 import { ChartErrorBoundary } from "#/components/chart-error-boundary.tsx";
+import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { cn } from "#/lib/utils.ts";
 
 /**
@@ -31,14 +32,30 @@ export const AXIS_INK = "var(--muted-foreground)";
 export const GRID_INK = "var(--border)";
 export const PRIMARY = "var(--primary)";
 
-/** Standard SVG text props for axis tick labels. */
-export const tickLabelProps = (extra?: Record<string, unknown>) =>
+/** Tick label size to pass on mobile — the 11px desktop default reads too small
+ * at phone widths. Callers opt in: `tickLabelProps({...}, MOBILE_TICK)`. */
+export const MOBILE_TICK = 12;
+
+/** Standard SVG text props for axis tick labels. `fontSize` defaults to 11 so
+ * desktop is untouched; pass `MOBILE_TICK` (12) on narrow screens. */
+export const tickLabelProps = (extra?: Record<string, unknown>, fontSize = 11) =>
   ({
     fill: AXIS_INK,
-    fontSize: 11,
+    fontSize,
     fontVariantNumeric: "tabular-nums",
     ...extra,
   }) as const;
+
+/**
+ * Tighter horizontal plot margins on narrow screens so charts don't waste width
+ * on axis gutters. Returns just the `left`/`right` pair — callers keep their own
+ * `top`/`bottom` (which vary with the axis they draw). Desktop values match what
+ * the charts hand-rolled before.
+ */
+export function chartMargin(width: number): { left: number; right: number } {
+  const narrow = width < 480;
+  return { left: narrow ? 4 : 8, right: narrow ? 26 : 30 };
+}
 
 /**
  * Width-measuring frame. The caller fixes the height (charts live in
@@ -50,14 +67,18 @@ export function ChartFrame({
   className,
   children,
 }: {
-  height: number;
+  /** Fixed height, or a `{ base, md }` pair to shrink the body below `md`
+   * (768px) without a wrapper — e.g. `{ base: 180, md: 220 }`. */
+  height: number | { base: number; md: number };
   className?: string;
   children: (dims: { width: number; height: number }) => React.ReactNode;
 }) {
+  const isMobile = useIsMobile();
+  const h = typeof height === "number" ? height : isMobile ? height.base : height.md;
   return (
-    <div className={cn("w-full", className)} style={{ height }}>
+    <div className={cn("w-full", className)} style={{ height: h }}>
       <ParentSize debounceTime={16} className="!h-full">
-        {({ width }) => (width < 8 ? null : children({ width, height }))}
+        {({ width }) => (width < 8 ? null : children({ width, height: h }))}
       </ParentSize>
     </div>
   );
@@ -96,46 +117,131 @@ export function clientXY(e: React.MouseEvent | React.TouchEvent): {
 }
 
 /**
- * A simple, robust chart tooltip. Positions a `fixed` card at the pointer and
- * renders it through a portal to `document.body`, so it escapes the chart cards'
- * `overflow-hidden` clipping (the reason the earlier in-container portal didn't
- * show). `show(data, e)` on hover, `hide()` on leave; the `Tooltip` render-prop
- * only runs its children when there's data, so call sites never null-check.
+ * Positions the tooltip card at (x, y), then measures itself in a layout effect
+ * and clamps into the viewport — flipping to the pointer's other side and never
+ * letting an edge cross the 12px gutter. Correct at any width (the earlier
+ * transform-only flip could push a wide card off the left edge on phones).
+ */
+function TooltipPositioner({
+  x,
+  y,
+  children,
+}: {
+  x: number;
+  y: number;
+  children: React.ReactNode;
+}) {
+  const ref = React.useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = React.useState<{ left: number; top: number }>({ left: x, top: y });
+
+  React.useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const pad = 12;
+    const gap = 14;
+    // Prefer to the right / below; flip when it would overflow that edge.
+    let left = x + gap + w > vw - pad ? x - gap - w : x + gap;
+    let top = y + gap + h > vh - pad ? y - gap - h : y + gap;
+    left = Math.min(Math.max(pad, left), Math.max(pad, vw - pad - w));
+    top = Math.min(Math.max(pad, top), Math.max(pad, vh - pad - h));
+    setPos({ left, top });
+  }, [x, y, children]);
+
+  return (
+    <div
+      ref={ref}
+      className="pointer-events-none fixed z-50"
+      style={{
+        left: pos.left,
+        top: pos.top,
+        width: "max-content",
+        maxWidth: "min(16rem, calc(100vw - 24px))",
+      }}
+    >
+      <TooltipCard>{children}</TooltipCard>
+    </div>
+  );
+}
+
+/**
+ * A simple, robust chart tooltip. Positions a card at the pointer and renders it
+ * through a portal to `document.body`, so it escapes the chart cards'
+ * `overflow-hidden` clipping. `show(data, e)` on hover/touch, `hide()` on leave;
+ * the `Tooltip` render-prop only runs its children when there's data, so call
+ * sites never null-check.
+ *
+ * Touch pins: a touch `show()` latches the tooltip open (so it survives the
+ * synthesized `mouseleave` that would otherwise kill it the instant the finger
+ * lifts) and stays until the next tap — on another point it repositions, on
+ * empty space it dismisses. Mouse hover is unchanged.
  */
 export function useChartTooltip<T>() {
   const [state, setState] = React.useState<{ data: T; x: number; y: number } | null>(null);
+  const [pinned, setPinned] = React.useState(false);
+  // Whether the active interaction is touch-driven, and a token bumped on every
+  // show() so an outside-tap dismissal can tell "a point handled this gesture"
+  // (token changed) from "empty space" (unchanged).
+  const touchRef = React.useRef(false);
+  const showTokenRef = React.useRef(0);
 
-  const show = React.useCallback(
-    (data: T, e: { clientX: number; clientY: number }) =>
-      setState({ data, x: e.clientX, y: e.clientY }),
-    [],
-  );
-  const hide = React.useCallback(() => setState(null), []);
+  React.useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onTouch = () => (touchRef.current = true);
+    const onMouse = () => (touchRef.current = false);
+    document.addEventListener("touchstart", onTouch, true);
+    document.addEventListener("mousemove", onMouse, true);
+    return () => {
+      document.removeEventListener("touchstart", onTouch, true);
+      document.removeEventListener("mousemove", onMouse, true);
+    };
+  }, []);
+
+  const show = React.useCallback((data: T, e: { clientX: number; clientY: number }) => {
+    showTokenRef.current += 1;
+    setState({ data, x: e.clientX, y: e.clientY });
+    if (touchRef.current) setPinned(true);
+  }, []);
+
+  const hide = React.useCallback(() => {
+    // Pinned (touch) tooltips ignore hover-out — an outside tap dismisses them.
+    if (touchRef.current) return;
+    setState(null);
+    setPinned(false);
+  }, []);
+
+  // Dismiss a pinned tooltip when the viewer taps away from any chart point.
+  React.useEffect(() => {
+    if (!pinned || typeof document === "undefined") return;
+    const onDown = () => {
+      const token = showTokenRef.current;
+      // Defer so a tap that lands on a chart point (which fires show() and bumps
+      // the token) keeps the repositioned tooltip instead of dismissing it.
+      setTimeout(() => {
+        if (showTokenRef.current === token) {
+          setState(null);
+          setPinned(false);
+        }
+      }, 100);
+    };
+    document.addEventListener("touchstart", onDown);
+    document.addEventListener("mousedown", onDown);
+    return () => {
+      document.removeEventListener("touchstart", onDown);
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, [pinned]);
 
   const Tooltip = React.useCallback(
     ({ children }: { children: (data: T) => React.ReactNode }) => {
       if (!state || typeof document === "undefined") return null;
-      // Flip toward the inside near the viewport edges so the card stays on-screen.
-      const flipX = state.x > window.innerWidth - 240;
-      const flipY = state.y > window.innerHeight - 160;
       return createPortal(
-        <div
-          className="pointer-events-none fixed z-50"
-          style={{
-            left: state.x,
-            top: state.y,
-            // Size to content (capped), not to the space left of the viewport edge.
-            // Without this, a `fixed` box with only `left` set shrink-to-fits the
-            // remaining width, so the card narrows the further right the pointer is.
-            width: "max-content",
-            maxWidth: "16rem",
-            transform: `translate(${flipX ? "calc(-100% - 14px)" : "14px"}, ${
-              flipY ? "calc(-100% - 14px)" : "14px"
-            })`,
-          }}
-        >
-          <TooltipCard>{children(state.data)}</TooltipCard>
-        </div>,
+        <TooltipPositioner x={state.x} y={state.y}>
+          {children(state.data)}
+        </TooltipPositioner>,
         document.body,
       );
     },

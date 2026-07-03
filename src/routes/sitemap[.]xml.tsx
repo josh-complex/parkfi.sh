@@ -8,11 +8,15 @@ import { RESORT_CATALOG } from "#/server/stays/resort-catalog.generated.ts";
 /** Public, indexable pages that always exist regardless of DB state. */
 const STATIC_PATHS = [
   "/",
+  "/welcome",
+  "/map",
   "/tickets",
   "/dining",
   "/predictions",
   "/stays",
+  "/pins",
   "/blog",
+  "/privacy",
   "/disclaimers",
 ];
 
@@ -92,6 +96,25 @@ async function buildSitemap(): Promise<string> {
     path: `/resort/${r.slug}`,
   }));
 
+  let pinEntries: SitemapEntry[] = [];
+  try {
+    // Pin detail pages. Only pins with at least one reference image — imageless
+    // rows render a thin, near-empty page that would dilute crawl quality.
+    const result = await db.execute<{ id: string; lastmod: string | null }>(sql`
+      SELECT p.id, p.updated_at AS lastmod
+      FROM pin p
+      WHERE EXISTS (SELECT 1 FROM pin_image i WHERE i.pin_id = p.id)
+      ORDER BY p.updated_at DESC
+      LIMIT 10000
+    `);
+    pinEntries = result.rows.map((r) => ({
+      path: `/pins/${r.id}`,
+      lastmod: r.lastmod ?? undefined,
+    }));
+  } catch {
+    // DB unavailable — skip pins.
+  }
+
   let blogEntries: SitemapEntry[] = [];
   try {
     const result = await db.execute<{ slug: string; lastmod: string | null }>(sql`
@@ -115,6 +138,7 @@ async function buildSitemap(): Promise<string> {
     ...rideEntries,
     ...diningEntries,
     ...resortEntries,
+    ...pinEntries,
     ...blogEntries,
   ];
   const urls = entries

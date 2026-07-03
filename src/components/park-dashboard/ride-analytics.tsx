@@ -25,10 +25,15 @@ import {
   GRID_INK,
   hourLabel,
   intensityColor,
+  MOBILE_TICK,
   PRIMARY,
   tickLabelProps,
   useChartTooltip,
 } from "./visx/kit.tsx";
+
+// Analytics cards stack into one column on mobile, so a tall body makes the page
+// very long — shrink the plot area below `md`, keeping the desktop height.
+const CHART_H_RESPONSIVE = { base: 180, md: CHART_H };
 
 const DOW_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
@@ -69,8 +74,10 @@ function WaitTrendChart({
       : v.toLocaleDateString("en-US", { month: "numeric", day: "numeric", timeZone });
 
   return (
-    <ChartFrame height={CHART_H}>
+    <ChartFrame height={CHART_H_RESPONSIVE}>
       {({ width, height }) => {
+        const narrow = width < 480;
+        const tick = narrow ? MOBILE_TICK : 11;
         const innerW = Math.max(0, width - margin.left - margin.right);
         const innerH = Math.max(0, height - margin.top - margin.bottom);
         const x = scaleTime({
@@ -149,7 +156,9 @@ function WaitTrendChart({
                   stroke={GRID_INK}
                   hideTicks
                   tickFormat={(v) => fmtTick(v as Date)}
-                  tickLabelProps={() => tickLabelProps({ textAnchor: "middle", dy: "0.25em" })}
+                  tickLabelProps={() =>
+                    tickLabelProps({ textAnchor: "middle", dy: "0.25em" }, tick)
+                  }
                 />
                 <AxisLeft
                   scale={y}
@@ -157,7 +166,7 @@ function WaitTrendChart({
                   hideTicks
                   hideAxisLine
                   tickLabelProps={() =>
-                    tickLabelProps({ textAnchor: "end", dx: "-0.25em", dy: "0.3em" })
+                    tickLabelProps({ textAnchor: "end", dx: "-0.25em", dy: "0.3em" }, tick)
                   }
                 />
                 {tip.data && (
@@ -267,8 +276,10 @@ function VerticalBars({ data, unit }: { data: Array<BarDatum>; unit: string }) {
   const max = d3max(data, (d) => d.avgWait) ?? 0;
 
   return (
-    <ChartFrame height={CHART_H}>
+    <ChartFrame height={CHART_H_RESPONSIVE}>
       {({ width, height }) => {
+        const narrow = width < 480;
+        const tick = narrow ? MOBILE_TICK : 11;
         const innerW = Math.max(0, width - margin.left - margin.right);
         const innerH = Math.max(0, height - margin.top - margin.bottom);
         const x = scaleBand({ domain: data.map((d) => d.key), range: [0, innerW], padding: 0.22 });
@@ -301,6 +312,7 @@ function VerticalBars({ data, unit }: { data: Array<BarDatum>; unit: string }) {
                         height={innerH}
                         fill="transparent"
                         onMouseMove={(e) => tip.show(d, clientXY(e))}
+                        onTouchStart={(e) => tip.show(d, clientXY(e))}
                         onMouseLeave={tip.hide}
                       />
                       <Bar
@@ -311,6 +323,7 @@ function VerticalBars({ data, unit }: { data: Array<BarDatum>; unit: string }) {
                         rx={3}
                         fill={intensityColor(max > 0 ? d.avgWait / max : 0)}
                         onMouseMove={(e) => tip.show(d, clientXY(e))}
+                        onTouchStart={(e) => tip.show(d, clientXY(e))}
                         onMouseLeave={tip.hide}
                       />
                       {i % everyNth === 0 && (
@@ -318,7 +331,7 @@ function VerticalBars({ data, unit }: { data: Array<BarDatum>; unit: string }) {
                           x={bx + bw / 2}
                           y={innerH + 14}
                           textAnchor="middle"
-                          fontSize={10}
+                          fontSize={narrow ? 11 : 10}
                           fill={AXIS_INK}
                         >
                           {d.label}
@@ -333,7 +346,7 @@ function VerticalBars({ data, unit }: { data: Array<BarDatum>; unit: string }) {
                   hideTicks
                   hideAxisLine
                   tickLabelProps={() =>
-                    tickLabelProps({ textAnchor: "end", dx: "-0.25em", dy: "0.3em" })
+                    tickLabelProps({ textAnchor: "end", dx: "-0.25em", dy: "0.3em" }, tick)
                   }
                 />
               </Group>
@@ -419,6 +432,11 @@ function RideHeatmap({ data }: { data: Array<{ date: string; hour: number; avgWa
                     className="h-full min-h-[6px] rounded-[2px]"
                     style={{ backgroundColor: cellColor(v) }}
                     onMouseMove={
+                      v != null
+                        ? (e) => tip.show({ day: dayLabel(d), hour: h, avgWait: v }, clientXY(e))
+                        : undefined
+                    }
+                    onTouchStart={
                       v != null
                         ? (e) => tip.show({ day: dayLabel(d), hour: h, avgWait: v }, clientXY(e))
                         : undefined

@@ -14,8 +14,8 @@ import {
 } from "#/components/dining/dining-filters.ts";
 import { HOURS_LABELS, HOURS_OPTIONS } from "#/components/dining/dining-hours.ts";
 import { Button, buttonVariants } from "#/components/ui/button.tsx";
+import { PillRow, Section } from "#/components/ui/drawer-form.tsx";
 import { Input } from "#/components/ui/input.tsx";
-import { ToggleGroup, ToggleGroupItem } from "#/components/ui/toggle-group.tsx";
 import {
   Select,
   SelectContent,
@@ -37,50 +37,9 @@ const FILTERS_SPRING = { type: "spring" as const, stiffness: 420, damping: 34, m
 const FILTERS_SURFACE =
   "bg-background border-3d btn-3d-outline shadow-[0_4px_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)] dark:bg-popover dark:border-border dark:ring-1 dark:ring-foreground/10";
 
-export function Section({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-3 py-4">
-      <span className="text-muted-foreground text-[11px] font-semibold tracking-widest uppercase">
-        {label}
-      </span>
-      {children}
-    </div>
-  );
-}
-
-/** Full-width single-select segmented control used in filter panels. */
-export function PillRow<T extends string>({
-  options,
-  value,
-  onSelect,
-  labelOf,
-}: {
-  options: Array<T>;
-  value: T;
-  onSelect: (v: T) => void;
-  labelOf: (v: T) => string;
-}) {
-  return (
-    <ToggleGroup
-      multiple={false}
-      value={[value]}
-      onValueChange={(v) => onSelect((v[0] as T) ?? value)}
-      variant="outline"
-      size="sm"
-      className="w-full"
-    >
-      {options.map((o) => (
-        <ToggleGroupItem
-          key={o}
-          value={o}
-          className="flex-1 px-2 text-center leading-tight whitespace-normal"
-        >
-          {labelOf(o)}
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
-  );
-}
+// Section + PillRow now live in the shared drawer-form module; re-exported here
+// so existing dining call sites keep importing them from this file.
+export { PillRow, Section };
 
 /** A single-select dropdown with a leading "All" option, for long option lists. */
 export function AllSelect({

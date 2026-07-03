@@ -3,6 +3,13 @@ import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
 
 import { cn } from "#/lib/utils.ts";
 
+/**
+ * Width for popover content that must survive phone widths: caps at 18rem but
+ * shrinks to stay within a 1rem gutter on narrow screens (a fixed `w-72` overflows
+ * at ≤360px). Apply to alert/filter popovers rather than converting them to drawers.
+ */
+export const responsivePopoverWidth = "w-[min(18rem,calc(100vw-2rem))]";
+
 function Popover({ ...props }: PopoverPrimitive.Root.Props) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />;
 }

@@ -40,7 +40,15 @@ import { cn } from "#/lib/utils.ts";
 import { isSingleRiderName, isUniversal, paidLineProduct } from "./lightning-lane.ts";
 import { rideColor } from "./ride-colors.ts";
 import { indicativeSeries, strokeRuns } from "./visx/indicative.ts";
-import { AXIS_INK, GRID_INK, PRIMARY, TooltipCard, tickLabelProps } from "./visx/kit.tsx";
+import {
+  AXIS_INK,
+  chartMargin,
+  GRID_INK,
+  MOBILE_TICK,
+  PRIMARY,
+  TooltipCard,
+  tickLabelProps,
+} from "./visx/kit.tsx";
 
 type Metric = "wait" | "price" | "availability";
 
@@ -70,7 +78,11 @@ const MAX_TOOLTIP_RIDES = 7;
 const PLOT_H = 152;
 const BRUSH_H = 34;
 const BRUSH_GAP = 14;
-const MARGIN = { top: 8, right: 26, bottom: 20, left: 6 };
+// left/right come from `chartMargin(width)`; top/bottom are fixed here.
+const MARGIN = { top: 8, bottom: 20 };
+// Below this width the brush is dropped — precise pinch-brushing is a desktop
+// affordance, and the 24h/7d/30d presets cover ranging on a phone.
+const BRUSH_MIN_W = 480;
 
 type Row = Record<string, number | string | boolean | null> & {
   bucket: string;
@@ -239,7 +251,15 @@ function WaitPlot({
 
   const [hover, setHover] = React.useState<{ row: Row; left: number } | null>(null);
 
-  const innerW = Math.max(0, width - MARGIN.left - MARGIN.right);
+  const narrow = width < BRUSH_MIN_W;
+  const tick = narrow ? MOBILE_TICK : 11;
+  const margin = { ...MARGIN, ...chartMargin(width) };
+  const showBrush = !narrow;
+  // Vertical chrome below the plot: the brush strip + its gap, dropped on mobile.
+  const chromeH = showBrush ? BRUSH_GAP + BRUSH_H : 0;
+  const svgH = PLOT_H + chromeH + 20;
+
+  const innerW = Math.max(0, width - margin.left - margin.right);
   const fullExtent = extent(rows, (d) => d.t) as [number, number];
 
   const visibleRows = React.useMemo(() => {
@@ -340,7 +360,7 @@ function WaitPlot({
   const onHover = (e: React.MouseEvent | React.TouchEvent) => {
     const pt = localPoint(e);
     if (!pt) return;
-    const date = x.invert(pt.x - MARGIN.left);
+    const date = x.invert(pt.x - margin.left);
     const idx = bisectT(visibleRows, date.getTime(), 1);
     const a = visibleRows[idx - 1];
     const b = visibleRows[idx];
@@ -375,8 +395,8 @@ function WaitPlot({
   const avgVal = hover ? hover.row[AVG_KEY] : null;
 
   return (
-    <div className="relative w-full" style={{ height: PLOT_H + BRUSH_GAP + BRUSH_H + 20 }}>
-      <svg width={width} height={PLOT_H + BRUSH_GAP + BRUSH_H + 20} className="overflow-visible">
+    <div className="relative w-full" style={{ height: svgH }}>
+      <svg width={width} height={svgH} className="overflow-visible">
         <PatternLines
           id="wait-closed-hatch"
           height={6}
@@ -394,7 +414,7 @@ function WaitPlot({
           orientation={["diagonal"]}
         />
         {/* ── main plot ── */}
-        <Group left={MARGIN.left} top={MARGIN.top}>
+        <Group left={margin.left} top={margin.top}>
           <GridRows scale={y} width={innerW} stroke={GRID_INK} strokeOpacity={0.5} numTicks={4} />
           {closedBands.map((b) => {
             const x0 = x(new Date(b.x0));
@@ -485,12 +505,14 @@ function WaitPlot({
             tickFormat={(v) =>
               mode === "price" ? `$${v}` : mode === "availability" ? `${v}%` : `${v}`
             }
-            tickLabelProps={() => tickLabelProps({ textAnchor: "end", dx: "2.2em", dy: "0.3em" })}
+            tickLabelProps={() =>
+              tickLabelProps({ textAnchor: "end", dx: "2.2em", dy: "0.3em" }, tick)
+            }
           />
           <AxisBottom
             top={PLOT_H}
             scale={x}
-            numTicks={Math.max(2, Math.floor(innerW / 80))}
+            numTicks={narrow ? 4 : Math.max(2, Math.floor(innerW / 80))}
             stroke={GRID_INK}
             hideTicks
             tickFormat={(v) =>
@@ -506,7 +528,7 @@ function WaitPlot({
                     timeZone: tz,
                   })
             }
-            tickLabelProps={() => tickLabelProps({ textAnchor: "middle", dy: "0.25em" })}
+            tickLabelProps={() => tickLabelProps({ textAnchor: "middle", dy: "0.25em" }, tick)}
           />
           <Bar
             width={innerW}
@@ -518,56 +540,62 @@ function WaitPlot({
           />
         </Group>
 
-        {/* ── brush context strip ── */}
-        <Group left={MARGIN.left} top={MARGIN.top + PLOT_H + BRUSH_GAP}>
-          <rect width={innerW} height={BRUSH_H} rx={6} fill="var(--muted)" fillOpacity={0.4} />
-          {enabledRides.map((r) => (
+        {/* ── brush context strip (desktop only) ── */}
+        {showBrush && (
+          <Group left={margin.left} top={margin.top + PLOT_H + BRUSH_GAP}>
+            <rect width={innerW} height={BRUSH_H} rx={6} fill="var(--muted)" fillOpacity={0.4} />
+            {enabledRides.map((r) => (
+              <LinePath
+                key={r.id}
+                data={brushPts(String(r.id))}
+                x={(d) => brushX(new Date(d.t))}
+                y={(d) => brushY(d.v)}
+                curve={curveMonotoneX}
+                stroke={colorOf(r.id)}
+                strokeWidth={1}
+                strokeOpacity={0.6}
+              />
+            ))}
             <LinePath
-              key={r.id}
-              data={brushPts(String(r.id))}
+              data={brushPts(AVG_KEY)}
               x={(d) => brushX(new Date(d.t))}
               y={(d) => brushY(d.v)}
               curve={curveMonotoneX}
-              stroke={colorOf(r.id)}
-              strokeWidth={1}
-              strokeOpacity={0.6}
+              stroke={PRIMARY}
+              strokeWidth={1.5}
+              strokeOpacity={0.85}
             />
-          ))}
-          <LinePath
-            data={brushPts(AVG_KEY)}
-            x={(d) => brushX(new Date(d.t))}
-            y={(d) => brushY(d.v)}
-            curve={curveMonotoneX}
-            stroke={PRIMARY}
-            strokeWidth={1.5}
-            strokeOpacity={0.85}
-          />
-          <Brush
-            xScale={brushX}
-            yScale={brushY}
-            width={innerW}
-            height={BRUSH_H}
-            margin={{
-              top: MARGIN.top + PLOT_H + BRUSH_GAP,
-              left: MARGIN.left,
-              right: MARGIN.right,
-              bottom: 0,
-            }}
-            handleSize={8}
-            resizeTriggerAreas={["left", "right"]}
-            brushDirection="horizontal"
-            selectedBoxStyle={{ fill: "url(#wait-brush-pattern)", stroke: PRIMARY, strokeWidth: 1 }}
-            useWindowMoveEvents
-            onChange={(domain) => {
-              if (!domain) {
-                setSel(null);
-                return;
-              }
-              setSel({ x0: domain.x0, x1: domain.x1 });
-            }}
-            onClick={() => setSel(null)}
-          />
-        </Group>
+            <Brush
+              xScale={brushX}
+              yScale={brushY}
+              width={innerW}
+              height={BRUSH_H}
+              margin={{
+                top: margin.top + PLOT_H + BRUSH_GAP,
+                left: margin.left,
+                right: margin.right,
+                bottom: 0,
+              }}
+              handleSize={8}
+              resizeTriggerAreas={["left", "right"]}
+              brushDirection="horizontal"
+              selectedBoxStyle={{
+                fill: "url(#wait-brush-pattern)",
+                stroke: PRIMARY,
+                strokeWidth: 1,
+              }}
+              useWindowMoveEvents
+              onChange={(domain) => {
+                if (!domain) {
+                  setSel(null);
+                  return;
+                }
+                setSel({ x0: domain.x0, x1: domain.x1 });
+              }}
+              onClick={() => setSel(null)}
+            />
+          </Group>
+        )}
       </svg>
 
       {/* tooltip */}
@@ -575,7 +603,7 @@ function WaitPlot({
         <div
           className="pointer-events-none absolute top-0"
           style={{
-            left: MARGIN.left + hover.left,
+            left: margin.left + hover.left,
             // Size to content (capped), not to the space left of the container edge.
             // Without this, an `absolute` box with only `left` set shrink-to-fits the
             // remaining width, so the card narrows the further right the pointer is.
@@ -857,7 +885,7 @@ export function ParkWaitChart({
             value={range ? [range] : []}
             onValueChange={(v) => setRange(v[0] ?? "24h")}
             variant="outline"
-            className="hidden *:data-[slot=toggle-group-item]:px-3! @[440px]/card:flex"
+            className="flex *:data-[slot=toggle-group-item]:px-3!"
           >
             <ToggleGroupItem value="24h">24h</ToggleGroupItem>
             <ToggleGroupItem value="7d">7d</ToggleGroupItem>

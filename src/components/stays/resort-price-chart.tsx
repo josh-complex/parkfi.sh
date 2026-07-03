@@ -24,7 +24,9 @@ import { Skeleton } from "#/components/ui/skeleton.tsx";
 import {
   AXIS_INK,
   ChartFrame,
+  chartMargin,
   GRID_INK,
+  MOBILE_TICK,
   PRIMARY,
   clientXY,
   tickLabelProps,
@@ -33,7 +35,7 @@ import {
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
 const PLOT_H = 188;
-const MARGIN = { top: 10, right: 30, bottom: 22, left: 8 };
+const MARGIN = { top: 10, bottom: 22 };
 
 export interface PriceHistoryParams {
   resortId: string;
@@ -56,7 +58,10 @@ const usd = (n: number) => `$${Math.round(n).toLocaleString()}`;
 
 function PricePlot({ width, points, avg }: { width: number; points: Array<Point>; avg: number }) {
   const tip = useChartTooltip<Point>();
-  const innerW = Math.max(0, width - MARGIN.left - MARGIN.right);
+  const narrow = width < 480;
+  const tick = narrow ? MOBILE_TICK : 11;
+  const margin = { ...MARGIN, ...chartMargin(width) };
+  const innerW = Math.max(0, width - margin.left - margin.right);
 
   const x = scaleTime({
     domain: (extent(points, (d) => d.t) as [number, number]).map((t) => new Date(t)) as [
@@ -77,7 +82,7 @@ function PricePlot({ width, points, avg }: { width: number; points: Array<Point>
   const onHover = (e: React.MouseEvent | React.TouchEvent) => {
     const pt = localPoint(e);
     if (!pt) return;
-    const date = x.invert(pt.x - MARGIN.left);
+    const date = x.invert(pt.x - margin.left);
     const idx = bisectT(points, date.getTime(), 1);
     const a = points[idx - 1];
     const b = points[idx];
@@ -90,7 +95,7 @@ function PricePlot({ width, points, avg }: { width: number; points: Array<Point>
   return (
     <div className="relative w-full" style={{ height: PLOT_H + 24 }}>
       <svg width={width} height={PLOT_H + 24} className="overflow-visible">
-        <Group left={MARGIN.left} top={MARGIN.top}>
+        <Group left={margin.left} top={margin.top}>
           <GridRows scale={y} width={innerW} stroke={GRID_INK} strokeOpacity={0.5} numTicks={4} />
 
           {/* Average reference line. */}
@@ -150,7 +155,9 @@ function PricePlot({ width, points, avg }: { width: number; points: Array<Point>
             hideTicks
             hideAxisLine
             tickFormat={(v) => usd(Number(v))}
-            tickLabelProps={() => tickLabelProps({ textAnchor: "end", dx: "2.4em", dy: "0.3em" })}
+            tickLabelProps={() =>
+              tickLabelProps({ textAnchor: "end", dx: "2.4em", dy: "0.3em" }, tick)
+            }
           />
           <AxisBottom
             top={PLOT_H}
@@ -161,7 +168,7 @@ function PricePlot({ width, points, avg }: { width: number; points: Array<Point>
             tickFormat={(v) =>
               (v as Date).toLocaleDateString("en-US", { month: "short", day: "numeric" })
             }
-            tickLabelProps={() => tickLabelProps({ textAnchor: "middle", dy: "0.25em" })}
+            tickLabelProps={() => tickLabelProps({ textAnchor: "middle", dy: "0.25em" }, tick)}
           />
           <Bar
             width={innerW}

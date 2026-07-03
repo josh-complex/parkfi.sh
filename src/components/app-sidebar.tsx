@@ -115,7 +115,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <SidebarMenuButton
               className="data-[slot=sidebar-menu-button]:p-1.5!"
               onClick={closeOnMobile}
-              render={<Link to="/" />}
+              render={<Link to="/map" />}
             >
               <img
                 src="/img/brand/yellow_white_marker.webp"

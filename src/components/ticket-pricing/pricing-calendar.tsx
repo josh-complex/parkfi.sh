@@ -18,6 +18,15 @@ import { Sun } from "#/components/animate-ui/icons/sun.tsx";
 
 import { Calendar } from "#/components/ui/calendar.tsx";
 import { Card, CardDescription, CardHeader, CardTitle } from "#/components/ui/card.tsx";
+import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "#/components/ui/drawer.tsx";
 import { Empty, EmptyDescription, EmptyTitle } from "#/components/ui/empty.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import {
@@ -26,6 +35,7 @@ import {
   useCloseOnScroll,
   type SegPos,
 } from "#/components/core-search.tsx";
+import { TicketsMobileControls } from "#/components/ticket-pricing/tickets-mobile-controls.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { formatHourRange } from "#/lib/park-hours.ts";
 import { RESORT_DEFAULT_SLUG, UOR_PARKS, WDW_PARKS } from "#/lib/parks.ts";
@@ -145,7 +155,7 @@ const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 // Day cell classNames override — removes aspect-square so cells use a fixed
 // height rather than growing as tall as they are wide in a full-width calendar.
 const DAY_CELL_CLASS =
-  "group/day relative h-[72px] sm:h-[90px] lg:h-[100px] w-full rounded-(--cell-radius) p-0 text-center select-none " +
+  "group/day relative h-[64px] sm:h-[90px] lg:h-[100px] w-full rounded-(--cell-radius) p-0 text-center select-none " +
   "[&:last-child[data-selected=true]_button]:rounded-r-(--cell-radius) " +
   "[&:first-child[data-selected=true]_button]:rounded-l-(--cell-radius)";
 
@@ -199,37 +209,28 @@ function PriceDayButton({
               className={cn(
                 "tabular-nums leading-none",
                 !info.available
-                  ? "text-[9px] text-muted-foreground/40 line-through"
+                  ? "text-[10px] text-muted-foreground/40 line-through"
                   : isCheapest
-                    ? "text-[12px] font-extrabold text-primary"
-                    : "text-[10px] font-semibold text-foreground/75",
+                    ? "text-[13px] font-extrabold text-primary"
+                    : "text-[11px] font-semibold text-foreground/75",
               )}
             >
               {dollars(info.priceCents)}
             </span>
           ) : (
-            <span className="text-[9px] text-muted-foreground/25">—</span>
+            <span className="text-[10px] text-muted-foreground/25">—</span>
           )}
         </div>
 
-        {/* ── TABLET (sm–lg): centered stack with all data ── */}
+        {/* ── TABLET (sm–lg): date, temp, price. Crowd rides the corner dot +
+            bottom bar; hours/DOW live in the tap-a-day detail sheet. ── */}
         <div className="hidden h-full w-full flex-col items-center justify-between p-2 pb-3 sm:flex lg:hidden">
-          <div className="flex flex-col items-center gap-[2px]">
-            <span className="text-[15px] font-bold tabular-nums leading-none">
-              {day.date.getDate()}
-            </span>
-            <span className="text-[7px] font-medium uppercase tracking-widest text-muted-foreground/55 leading-none">
-              {DOW[day.date.getDay()]}
-            </span>
-            {overlay?.hours && (
-              <span className="text-[8px] font-semibold tabular-nums leading-none text-foreground/65">
-                {overlay.hours}
-              </span>
-            )}
-          </div>
+          <span className="text-[15px] font-bold tabular-nums leading-none">
+            {day.date.getDate()}
+          </span>
 
           {overlay?.highF != null ? (
-            <span className="text-[10px] tabular-nums text-muted-foreground/80 leading-none">
+            <span className="text-[11px] tabular-nums text-muted-foreground/80 leading-none">
               {overlay.highF}°
               {precip && <span className="ml-1 text-sky-500 dark:text-sky-400">{precip}</span>}
             </span>
@@ -244,28 +245,14 @@ function PriceDayButton({
                 !info.available
                   ? "text-[9px] text-muted-foreground/40 line-through"
                   : isCheapest
-                    ? "text-[14px] font-extrabold text-primary"
-                    : "text-[11px] font-semibold text-foreground/80",
+                    ? "text-[15px] font-extrabold text-primary"
+                    : "text-[12px] font-semibold text-foreground/80",
               )}
             >
               {dollars(info.priceCents)}
             </span>
           ) : (
             <span className="text-[9px] text-muted-foreground/25">—</span>
-          )}
-
-          {crowd ? (
-            <span
-              className={cn(
-                "shrink-0 rounded-full px-1.5 py-[2px] text-[6px] font-bold uppercase tracking-widest leading-none",
-                crowd.pill,
-                overlay?.crowdIsEstimate && "opacity-60",
-              )}
-            >
-              {crowd.label}
-            </span>
-          ) : (
-            <span className="h-[14px]" />
           )}
         </div>
 
@@ -276,7 +263,7 @@ function PriceDayButton({
               <span className="text-[18px] font-bold tabular-nums leading-none">
                 {day.date.getDate()}
               </span>
-              <span className="text-[8px] font-medium uppercase tracking-widest text-muted-foreground/60 leading-none">
+              <span className="text-[9px] font-medium uppercase tracking-widest text-muted-foreground/60 leading-none">
                 {DOW[day.date.getDay()]}
               </span>
               {overlay?.hours && (
@@ -333,7 +320,7 @@ function PriceDayButton({
             {crowd && (
               <span
                 className={cn(
-                  "shrink-0 rounded-full px-1.5 py-[3px] text-[7px] font-bold uppercase tracking-widest leading-none",
+                  "shrink-0 rounded-full px-1.5 py-[3px] text-[9px] font-bold uppercase tracking-widest leading-none",
                   crowd.pill,
                   overlay?.crowdIsEstimate && "opacity-60",
                 )}
@@ -343,6 +330,18 @@ function PriceDayButton({
             )}
           </div>
         </div>
+
+        {/* Crowd corner dot — mobile + tablet only (desktop shows the label pill).
+            Color-only is fine: the detail sheet and legend carry the words. */}
+        {crowd && (
+          <span
+            className={cn(
+              "absolute right-1 top-1 size-[6px] rounded-full lg:hidden",
+              crowd.bg,
+              overlay?.crowdIsEstimate ? "opacity-50" : "opacity-90",
+            )}
+          />
+        )}
 
         {/* Crowd accent bar — visible at all breakpoints */}
         {crowd && (
@@ -367,6 +366,8 @@ export function PricingCalendar() {
   const [ageGroup, setAgeGroup] = React.useState<AgeGroup>("ADULT");
   const [park, setPark] = React.useState<string | null>(null);
   const [openSeg, setOpenSeg] = React.useState<string | null>(null);
+  // ISO date of the tapped day, driving the detail bottom sheet; null = closed.
+  const [selectedDay, setSelectedDay] = React.useState<string | null>(null);
 
   useCloseOnScroll(openSeg !== null, () => setOpenSeg(null));
 
@@ -530,8 +531,9 @@ export function PricingCalendar() {
         </p>
       </div>
 
-      {/* Core-search bar — park (resort inferred) + (WDW) ticket type + age */}
-      <div className="-mx-1 min-w-0 overflow-x-auto overflow-y-clip px-5 py-1 lg:px-7">
+      {/* Core-search bar — park (resort inferred) + (WDW) ticket type + age.
+          Hidden on mobile; the floating FAB drawer carries these controls there. */}
+      <div className="-mx-1 hidden min-w-0 overflow-x-auto overflow-y-clip px-5 py-1 md:block lg:px-7">
         <div className="flex w-max items-stretch">
           <CoreSearchSegment
             pos={posOf("park")}
@@ -630,7 +632,7 @@ export function PricingCalendar() {
         <Card className="@container/card">
           <CardHeader>
             <CardDescription>Cheapest day</CardDescription>
-            <CardTitle className="text-2xl font-semibold tabular-nums">
+            <CardTitle className="text-xl font-semibold tabular-nums @sm/card:text-2xl">
               {stats ? dollars(stats.min) : "—"}
             </CardTitle>
             <CardDescription>
@@ -647,7 +649,7 @@ export function PricingCalendar() {
         <Card className="@container/card">
           <CardHeader>
             <CardDescription>Price range</CardDescription>
-            <CardTitle className="text-2xl font-semibold tabular-nums">
+            <CardTitle className="text-xl font-semibold tabular-nums @sm/card:text-2xl">
               {stats ? `${dollars(stats.min)}–${dollars(stats.max)}` : "—"}
             </CardTitle>
             <CardDescription>
@@ -658,7 +660,7 @@ export function PricingCalendar() {
         <Card className="@container/card">
           <CardHeader>
             <CardDescription>Today</CardDescription>
-            <CardTitle className="text-2xl font-semibold tabular-nums">
+            <CardTitle className="text-xl font-semibold tabular-nums @sm/card:text-2xl">
               {priceMap.get(localIso(today))
                 ? dollars(priceMap.get(localIso(today))!.priceCents)
                 : "—"}
@@ -678,14 +680,17 @@ export function PricingCalendar() {
                 struck through
               </span>
               {overlayQ.data && (
-                <span className="flex flex-wrap items-center gap-1.5">
+                <span
+                  className="flex flex-wrap items-center gap-1.5"
+                  aria-label="Crowd level legend"
+                >
                   {([1, 4, 6, 8] as const).map((idx) => {
                     const cfg = crowdConfig(idx);
                     return (
                       <span
                         key={cfg.label}
                         className={cn(
-                          "rounded-full px-2 py-[3px] text-[9px] font-semibold uppercase tracking-widest leading-none",
+                          "rounded-full px-2 py-[3px] text-[10px] font-semibold uppercase tracking-widest leading-none",
                           cfg.pill,
                         )}
                       >
@@ -699,7 +704,7 @@ export function PricingCalendar() {
           </CardHeader>
           <div className="px-2 pb-4 sm:px-6">
             {calQ.isLoading ? (
-              <Skeleton className="h-[360px] w-full" />
+              <Skeleton className="h-[460px] w-full sm:h-[560px] lg:h-[620px]" />
             ) : !rows || rows.length === 0 ? (
               <Empty className="h-[360px]">
                 <EmptyTitle>No pricing captured</EmptyTitle>
@@ -721,12 +726,182 @@ export function PricingCalendar() {
                 className="w-full"
                 classNames={{ day: DAY_CELL_CLASS, week: "mt-2 flex w-full gap-1" }}
                 components={{ DayButton: PriceDayButton }}
-                onDayClick={() => {}}
+                onDayClick={(day) => setSelectedDay(localIso(day))}
               />
             )}
           </div>
         </Card>
       </div>
+
+      <TicketsMobileControls
+        resort={resort}
+        park={park}
+        parkHopper={parkHopper}
+        ageGroup={ageGroup}
+        onSelectPark={selectPark}
+        onParkHopper={setParkHopper}
+        onAgeGroup={setAgeGroup}
+      />
+
+      <DayDetailSheet
+        iso={selectedDay}
+        onClose={() => setSelectedDay(null)}
+        priceMap={priceMap}
+        overlayMap={overlayMap}
+        min={stats?.min}
+        productLabel={productLabel}
+      />
     </div>
+  );
+}
+
+/**
+ * Bottom sheet shown on tapping a calendar day — the cell is a summary; this
+ * carries the full date, price context, hours, weather, and an explained crowd
+ * level. Reads the maps the calendar already built, so it's pure presentation.
+ */
+function DayDetailSheet({
+  iso,
+  onClose,
+  priceMap,
+  overlayMap,
+  min,
+  productLabel,
+}: {
+  iso: string | null;
+  onClose: () => void;
+  priceMap: Map<string, DayPrice>;
+  overlayMap: Map<string, DayOverlay>;
+  min: number | undefined;
+  productLabel: string;
+}) {
+  const info = iso ? priceMap.get(iso) : undefined;
+  const overlay = iso ? overlayMap.get(iso) : undefined;
+  const crowd = overlay?.crowdIndex != null ? crowdConfig(overlay.crowdIndex) : null;
+  const precip = formatPrecip(overlay?.precipProb ?? null);
+  const isCheapest = info != null && min != null && info.priceCents === min;
+  const deltaCents = info != null && min != null ? info.priceCents - min : null;
+
+  const fullDate = iso
+    ? new Date(`${iso}T00:00:00`).toLocaleDateString("en-US", {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+      })
+    : "";
+
+  return (
+    <Drawer open={iso != null} onOpenChange={(o) => !o && onClose()}>
+      <DrawerContent>
+        <DrawerHeader className="border-b pb-4 text-left">
+          <DrawerTitle>{fullDate}</DrawerTitle>
+          <DrawerDescription>
+            {productLabel} price, hours, weather, and crowd forecast for this day.
+          </DrawerDescription>
+        </DrawerHeader>
+
+        <div className="flex flex-col gap-5 px-4 pb-2 pt-5">
+          {/* Price */}
+          <div className="flex flex-col gap-1">
+            {info ? (
+              <>
+                <span
+                  className={cn(
+                    "text-3xl font-semibold tabular-nums",
+                    !info.available
+                      ? "text-muted-foreground/50 line-through"
+                      : isCheapest
+                        ? "text-primary"
+                        : "text-foreground",
+                  )}
+                >
+                  {dollars(info.priceCents)}
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  {!info.available
+                    ? "Sold out for this day"
+                    : isCheapest
+                      ? "Cheapest day in the window"
+                      : deltaCents != null && deltaCents > 0
+                        ? `${dollars(deltaCents)} above the cheapest day`
+                        : `${productLabel} price`}
+                </span>
+              </>
+            ) : (
+              <span className="text-sm text-muted-foreground">
+                No pricing captured for this day.
+              </span>
+            )}
+          </div>
+
+          {/* Hours + weather */}
+          <div className="flex flex-wrap gap-x-8 gap-y-3">
+            {overlay?.hours && (
+              <div className="flex flex-col gap-0.5">
+                <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                  Park hours
+                </span>
+                <span className="text-sm font-semibold tabular-nums">{overlay.hours}</span>
+              </div>
+            )}
+            {overlay?.highF != null && (
+              <div className="flex flex-col gap-0.5">
+                <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                  Weather
+                </span>
+                <span className="flex items-center gap-1.5 text-sm font-semibold tabular-nums">
+                  <WeatherIcon
+                    condition={overlay.condition}
+                    precipProb={overlay.precipProb}
+                    size={16}
+                  />
+                  {overlay.highF}°F
+                  {precip && (
+                    <span className="font-medium text-sky-500 dark:text-sky-400">
+                      {precip} rain
+                    </span>
+                  )}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Crowd, with a plain-language explanation of the scale */}
+          {crowd && (
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-2">
+                <span
+                  className={cn(
+                    "rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-widest leading-none",
+                    crowd.pill,
+                  )}
+                >
+                  {crowd.label}
+                </span>
+                {overlay?.crowdIndex != null && (
+                  <span className="text-sm font-semibold tabular-nums text-muted-foreground">
+                    {overlay.crowdIndex}/10
+                  </span>
+                )}
+                {overlay?.crowdIsEstimate && (
+                  <span className="text-xs text-muted-foreground">estimate</span>
+                )}
+              </div>
+              <span className="text-xs text-muted-foreground">
+                Crowd forecast, 1–10 scale — 8+ means peak-holiday level waits.
+              </span>
+            </div>
+          )}
+        </div>
+
+        <DrawerFooter>
+          <DrawerClose asChild>
+            <Button variant="outline" className="rounded-full">
+              Close
+            </Button>
+          </DrawerClose>
+        </DrawerFooter>
+      </DrawerContent>
+    </Drawer>
   );
 }

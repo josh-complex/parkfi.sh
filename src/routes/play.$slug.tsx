@@ -15,6 +15,8 @@ export const Route = createFileRoute("/play/$slug")({
     seo({
       title: "Wayfarer — ParkFi",
       description: "Your in-park adventure — explore the realms and gather your party (preview).",
+      // In-park app flow behind a feature flag — not a search landing page.
+      noindex: true,
     }),
 });
 

@@ -571,10 +571,14 @@ export const parksRouter = {
       }),
     )
     .query(async ({ input }) => {
-      const start = input.startDate ? sql`${input.startDate}::date` : sql`current_date`;
+      // Default bounds use the park-local date, not the DB's current_date (UTC):
+      // otherwise today's row drops out of the range once UTC rolls over in the
+      // park's evening, and the UI reads it as "Closed today".
+      const localToday = sql`(now() AT TIME ZONE (SELECT timezone FROM park))::date`;
+      const start = input.startDate ? sql`${input.startDate}::date` : localToday;
       const end = input.endDate
         ? sql`${input.endDate}::date`
-        : sql`current_date + INTERVAL '13 days'`;
+        : sql`${localToday} + INTERVAL '13 days'`;
       const result = await db.execute<{
         timezone: string;
         service_date: string;

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute, notFound } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
 import { AppInset } from "#/components/app-inset.tsx";
@@ -23,14 +23,37 @@ import type { TRPCRouter } from "#/integrations/trpc/router.ts";
 
 type PinDetailData = NonNullable<inferRouterOutputs<TRPCRouter>["pinCatalog"]["detail"]>;
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const Route = createFileRoute("/pins_/$pinId")({
   component: PinDetailPage,
-  head: ({ params }) =>
-    seo({
-      title: "Pin Details — ParkFi",
-      description: "Disney trading pin details, estimated value, and trade availability on ParkFi.",
+  // SSR-prefetch the pin so the HTML carries the name/series/value content that
+  // makes the page indexable, and hard-404 unknown ids so crawlers don't index
+  // an infinite space of "Pin Details" shells (soft 404s).
+  loader: async ({ context, params }) => {
+    if (!UUID_RE.test(params.pinId)) throw notFound();
+    const pin = await context.queryClient.ensureQueryData(
+      context.trpc.pinCatalog.detail.queryOptions({ id: params.pinId }),
+    );
+    if (!pin) throw notFound();
+    return {
+      name: pin.name,
+      series: pin.series ?? null,
+      year: pin.year ?? null,
+      image: pin.images.find((i) => i.isPrimary)?.url ?? pin.images[0]?.url ?? null,
+    };
+  },
+  head: ({ params, loaderData }) => {
+    const name = loaderData?.name ?? "Pin Details";
+    const series = loaderData?.series ? ` from the ${loaderData.series} series` : "";
+    const year = loaderData?.year ? ` (${loaderData.year})` : "";
+    return seo({
+      title: `${name} — Disney Pin Value & Trading — ParkFi`,
+      description: `${name}${year}${series} — estimated value, reference photos, and live trade availability on ParkFi.`,
       path: `/pins/${params.pinId}`,
-    }),
+      image: loaderData?.image ?? undefined,
+    });
+  },
 });
 
 function PinDetailPage() {
