@@ -14,6 +14,7 @@ import { MarkerCluster, type DeclutterItem } from "./declutter.ts";
 import {
   applySelected,
   attractionCardBodyHtml,
+  attractionKind,
   attractionPriority,
   boundaryFeatureCollection,
   buildAttractionEl,
@@ -40,6 +41,11 @@ const FLY_SECONDS = MAP_FLY_MS / 1000;
 
 // Zoom at/above which free-roam reveals a park's rides (mirrors the GL renderer).
 const ROAM_RIDE_ZOOM = 14;
+
+// How long the map must sit still before the cluster pass re-runs — debounced so
+// markers don't flicker in/out across the grouping threshold on every pan/zoom
+// frame (flushed immediately on move/zoom end). Mirrors the GL renderer.
+const DECLUTTER_SETTLE_MS = 150;
 
 /**
  * Keyless raster basemap, per the app theme — the same OSM Standard (light) /
@@ -179,7 +185,7 @@ export function ParkMapLeaflet({
   const markerElsRef = React.useRef<Map<number, HTMLElement>>(new Map());
   // Cluster controller (shared with the MapLibre renderer); see park-map.tsx.
   const layerRef = React.useRef<MarkerCluster | null>(null);
-  const declutterRafRef = React.useRef(0);
+  const declutterTimerRef = React.useRef(0);
   // The currently-expanded marker card (see openAttractionCard), so any new
   // interaction can collapse it first.
   const cardRef = React.useRef<{ close: () => void } | null>(null);
@@ -302,21 +308,39 @@ export function ParkMapLeaflet({
     markerElsRef.current.clear();
   }, []);
 
-  // Re-run the cluster pass (rAF-coalesced) on every pan/zoom frame.
-  const scheduleRefresh = React.useCallback(() => {
-    if (declutterRafRef.current) return;
-    declutterRafRef.current = requestAnimationFrame(() => {
-      declutterRafRef.current = 0;
-      const map = mapRef.current;
-      const layer = layerRef.current;
-      if (!layer) return;
-      // Cluster inside a park until we're zoomed in far enough, then spread so
-      // markers stop grouping and just nudge apart. Overview always spreads.
-      const inPark = effectiveSlugRef.current != null;
-      layer.setMode(inPark && (map?.getZoom() ?? 0) < SPREAD_ZOOM ? "cluster" : "spread");
-      layer.refresh();
-    });
+  // Run the cluster pass now: pick the layout mode for the current zoom and
+  // relayout. Reached through the debounced helpers below so marker visibility
+  // doesn't toggle on every frame.
+  const runRefresh = React.useCallback(() => {
+    const map = mapRef.current;
+    const layer = layerRef.current;
+    if (!layer) return;
+    // Cluster inside a park until we're zoomed in far enough, then spread so
+    // markers stop grouping and just nudge apart. Overview always spreads.
+    const inPark = effectiveSlugRef.current != null;
+    layer.setMode(inPark && (map?.getZoom() ?? 0) < SPREAD_ZOOM ? "cluster" : "spread");
+    layer.refresh();
   }, []);
+
+  // Debounced relayout for continuous motion (trailing timer, reset per frame) so
+  // a whole pan/zoom collapses into one pass instead of flickering markers.
+  const scheduleRefresh = React.useCallback(() => {
+    if (declutterTimerRef.current) clearTimeout(declutterTimerRef.current);
+    declutterTimerRef.current = window.setTimeout(() => {
+      declutterTimerRef.current = 0;
+      runRefresh();
+    }, DECLUTTER_SETTLE_MS);
+  }, [runRefresh]);
+
+  // Immediate relayout, cancelling any pending debounce — used on move/zoom end so
+  // the settled layout snaps in without waiting out the debounce.
+  const flushRefresh = React.useCallback(() => {
+    if (declutterTimerRef.current) {
+      clearTimeout(declutterTimerRef.current);
+      declutterTimerRef.current = 0;
+    }
+    runRefresh();
+  }, [runRefresh]);
 
   // Fly to a park's bounds (free-roam park-badge taps). No max-bounds cap.
   const flyToPark = React.useCallback((slug: string) => {
@@ -452,6 +476,7 @@ export function ParkMapLeaflet({
               });
           },
           priority: attractionPriority(a),
+          kind: attractionKind(a.category),
         });
       }
     }
@@ -466,13 +491,15 @@ export function ParkMapLeaflet({
       onDeselectRef.current?.();
     };
     map.on("move zoom", scheduleRefresh);
+    map.on("moveend zoomend", flushRefresh);
     map.on("click", onMapClick);
     return () => {
       map.off("move zoom", scheduleRefresh);
+      map.off("moveend zoomend", flushRefresh);
       map.off("click", onMapClick);
-      if (declutterRafRef.current) {
-        cancelAnimationFrame(declutterRafRef.current);
-        declutterRafRef.current = 0;
+      if (declutterTimerRef.current) {
+        clearTimeout(declutterTimerRef.current);
+        declutterTimerRef.current = 0;
       }
     };
   }, [
@@ -483,6 +510,7 @@ export function ParkMapLeaflet({
     navigate,
     clearMarkers,
     scheduleRefresh,
+    flushRefresh,
     roam,
     filter,
     flyToPark,

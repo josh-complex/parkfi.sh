@@ -19,6 +19,8 @@
  * to lng/lat in its own engine).
  */
 
+import { MAP_TYPE_COLOR, type MapItemKind } from "./shared.tsx";
+
 export interface DeclutterItem {
   id: number;
   /** Current marker center in map-container pixels, or null if unprojectable. */
@@ -31,25 +33,45 @@ export interface DeclutterItem {
   onActivate: () => void;
   /** Placement priority — higher wins an anchor slot first. */
   priority: number;
+  /** Toggle group this marker belongs to, for the cluster's overflow dots. */
+  kind?: MapItemKind;
 }
 
-/** Add / update / hide the "+N" cluster-count chip on an anchor's photo. */
-function setClusterCount(detail: HTMLElement, count: number): void {
+// Fixed left-to-right order for the overflow dots, so a cluster's composition
+// always reads the same way regardless of which marker anchored it.
+const DOT_ORDER: ReadonlyArray<MapItemKind> = ["rides", "shows", "shops", "eats"];
+const EMPTY_COUNTS: ReadonlyMap<MapItemKind, number> = new Map();
+
+/**
+ * Set the cluster's overflow indicator — one colour-coded count badge per *type*
+ * of marker in the group (a group of 3 rides + 4 shops + 6 eats shows three
+ * badges: blue "3", violet "4", amber "6"). Top-centered on the anchor's disc.
+ * Passing empty counts clears it, so a lone marker carries no badges.
+ */
+function setClusterDots(detail: HTMLElement, counts: ReadonlyMap<MapItemKind, number>): void {
   const wrap = detail.firstElementChild as HTMLElement | null;
   if (!wrap) return;
+  // `data-cluster-count` is reused so the card-morph's badge-hiding still finds it.
   let badge = wrap.querySelector<HTMLElement>("[data-cluster-count]");
-  if (count > 0) {
+  const present = DOT_ORDER.filter((k) => (counts.get(k) ?? 0) > 0);
+  if (present.length > 0) {
     if (!badge) {
       badge = document.createElement("span");
       badge.setAttribute("data-cluster-count", "");
       badge.className =
-        "pointer-events-none absolute -top-1 -left-1 flex min-w-[1.15rem] items-center justify-center rounded-full border border-white bg-primary px-1 text-[9px] leading-[14px] font-bold text-primary-foreground shadow";
+        "pointer-events-none absolute -top-2 left-1/2 flex -translate-x-1/2 items-center gap-0.5";
       wrap.appendChild(badge);
     }
-    badge.textContent = `+${count}`;
+    badge.innerHTML = present
+      .map(
+        (k) =>
+          `<span class="flex min-w-[1rem] items-center justify-center rounded-full border border-white px-1 text-[9px] leading-[14px] font-bold text-white shadow" style="background:${MAP_TYPE_COLOR[k]}">${counts.get(k)}</span>`,
+      )
+      .join("");
     badge.classList.remove("hidden");
   } else if (badge) {
     badge.classList.add("hidden");
+    badge.innerHTML = "";
   }
 }
 
@@ -158,12 +180,25 @@ export class MarkerCluster {
       }
     }
     for (const q of placed) {
-      setClusterCount(q.item.detail, this.members.get(q.item.id)?.length ?? 0);
+      const members = this.members.get(q.item.id) ?? [];
+      // Badges tally the whole visible group (anchor + everyone it absorbed) by
+      // type; a lone marker (no members) gets none.
+      const counts = new Map<MapItemKind, number>();
+      if (members.length > 0) {
+        for (const it of [q.item, ...members]) {
+          if (it.kind) counts.set(it.kind, (counts.get(it.kind) ?? 0) + 1);
+        }
+      }
+      setClusterDots(q.item.detail, counts);
     }
+    // Grouping only guarantees anchors are ≥ clusterDist apart — narrower than the
+    // disc, so anchors can still overlap. Nudge them apart too, so overlap never
+    // survives whether markers grouped or not.
+    this.relax(placed.map((q) => ({ it: q.item, x: q.x, y: q.y, ox: 0, oy: 0 })));
   }
 
   /**
-   * Overview layout: keep every marker on screen and resolve overlaps by nudging
+   * Spread layout: keep every marker on screen and resolve overlaps by nudging
    * markers apart with a short force-relaxation pass, applied as a CSS transform
    * offset from each marker's true projected point. Displacement is kept minimal
    * (only overlapping pairs push), so markers sit as close to their real location
@@ -180,9 +215,24 @@ export class MarkerCluster {
         continue;
       }
       it.detail.classList.remove("hidden");
-      setClusterCount(it.detail, 0);
+      setClusterDots(it.detail, EMPTY_COUNTS);
       nodes.push({ it, x: p.x, y: p.y, ox: 0, oy: 0 });
     }
+    this.relax(nodes);
+  }
+
+  /**
+   * Nudge overlapping markers apart with a short force-relaxation pass, applied as
+   * a CSS transform offset from each marker's true projected point. Only
+   * overlapping pairs push, so displacement stays minimal and markers slide back
+   * onto their real spot as a zoom-in separates the underlying points (the
+   * detail's `transition-transform` animates the convergence). Runs in *both*
+   * modes — spread (all markers) and cluster (the surviving anchors) — so markers
+   * never visually overlap regardless of zoom or grouping.
+   */
+  private relax(
+    nodes: Array<{ it: DeclutterItem; x: number; y: number; ox: number; oy: number }>,
+  ): void {
     // Desired center-to-center separation — the collision box plus a little air.
     const min = this.clusterDist + 12;
     const ITER = 60;

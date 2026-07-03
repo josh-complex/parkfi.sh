@@ -71,20 +71,19 @@ export const MAP_FLY_MS = 800;
 // box settles frames the view for the wrong size. Layout first, then zoom.
 export const MORPH_MS = 420;
 
-// Square (px) reserved around a full attraction marker for collision avoidance.
-// Two markers whose projected centers fall within this on both axes can't both
-// stay expanded; the lower-priority one is absorbed into the anchor's "+N"
-// cluster (a tap on which zooms in). Well below the photo disc (44px) so markers
-// only group once the discs substantially overlap — less aggressive grouping, more
-// individual pins visible (and a cluster tap now zooms in enough to split them).
-export const DECLUTTER_SIZE = 30;
+// Square (px) reserved around a full marker for collision avoidance. Two markers
+// whose projected centers fall within this on both axes can't both stay expanded;
+// the lower-priority one is absorbed into the anchor's cluster (a tap on which
+// zooms in). Just under the photo disc (52px) so markers group as soon as their
+// discs meaningfully overlap (a cluster tap still zooms in enough to split them).
+export const DECLUTTER_SIZE = 44;
 
 // At/above this zoom a park view stops clustering entirely and switches to the
-// overview's "spread" layout — every marker stays visible, overlapping ones just
-// nudge apart. By this depth pins are close to their true spots, so a "+N" group
-// is more annoying than the slight nudge, and the user can always zoom that last
-// bit to separate them fully.
-export const SPREAD_ZOOM = 20;
+// "spread" layout — every marker stays visible, overlapping ones just nudge
+// apart. By this depth pins are close to their true spots, so a group badge is
+// more annoying than the slight nudge, and the user can zoom that last bit to
+// separate them fully.
+export const SPREAD_ZOOM = 19;
 
 // Ring highlight layered onto the selected attraction marker (no scale — the
 // charted ride shouldn't balloon). Applied to the inner element, not the marker
@@ -217,6 +216,34 @@ export function attractionPriority(a: BoardItem): number {
   if (a.status === "OPERATING" && a.standbyWait != null) return 2000 + a.standbyWait;
   if (a.status === "OPERATING") return 1000;
   return 0;
+}
+
+/**
+ * A map "type" — the four groups the on-map toggle chips stand for. Every marker
+ * belongs to exactly one, and each has a signature accent colour shared by its
+ * toggle pill (`map-stage`) and its cluster overflow dot (`declutter`), so a dot
+ * always reads as the same category its chip lit.
+ */
+export type MapItemKind = "rides" | "shows" | "shops" | "eats";
+export const MAP_TYPE_COLOR: Record<MapItemKind, string> = {
+  rides: "#2563eb", // blue
+  shows: "#e11d48", // rose
+  shops: "#9333ea", // violet — matches the shop POI ring
+  eats: "#d97706", // amber — matches the dining POI ring
+};
+
+// Attraction categories that roll up into the "Shows" group; everything else
+// attraction-y (thrill / attraction / water) is a "ride".
+const SHOW_KIND_CATEGORIES = new Set(["show", "character"]);
+
+/** Which toggle group an attraction row belongs to ("Rides" vs "Shows"). */
+export function attractionKind(category: string | null): MapItemKind {
+  return category && SHOW_KIND_CATEGORIES.has(category) ? "shows" : "rides";
+}
+
+/** Which toggle group a POI belongs to ("Shops" vs "Eats" — dining/characters). */
+export function poiKind(category: string): MapItemKind {
+  return category === "shop" ? "shops" : "eats";
 }
 
 /**
@@ -665,10 +692,10 @@ const POI_COLOR: Record<string, string> = {
 };
 
 /**
- * Build a dining/shop POI marker: a small colour-ringed photo disc (or category
- * icon) with a hover label of its name + land. Smaller than a ride marker (36px
- * vs 52px) so the opt-in POI layers read as secondary to the rides. Not a
- * DeclutterItem — POIs are plain markers the cluster pass never touches. Returns
+ * Build a dining/shop POI marker: a colour-ringed photo disc (or category icon)
+ * with a hover label of its name + land. Same 52px disc as a ride marker so the
+ * POI layers sit as equal citizens on the map. Folded into the ride cluster by
+ * the renderer, so overlapping markers group + collision-avoid together. Returns
  * the root plus the `detail` layer (for the hover-label flip), like the others.
  */
 export function buildPoiEl(poi: PoiItem): { el: HTMLButtonElement; detail: HTMLDivElement } {
@@ -686,10 +713,10 @@ export function buildPoiEl(poi: PoiItem): { el: HTMLButtonElement; detail: HTMLD
   const disc = discMarkup({
     url: poi.imageUrl,
     alt: poi.name,
-    fallbackSvg: categoryIconSvg(iconKey, 12),
+    fallbackSvg: categoryIconSvg(iconKey),
     ring: color,
     bg: color,
-    px: 36,
+    px: 52,
   });
   detail.innerHTML = `${disc}${labelMarkup(poi.name, escapeHtml(poi.land ?? ""))}`;
   el.append(detail);

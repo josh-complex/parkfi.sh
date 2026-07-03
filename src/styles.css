@@ -144,12 +144,20 @@
 
   body {
     @apply bg-background text-foreground;
+    /* Belt-and-suspenders with the `html` rule below — some engines read the
+       viewport's overscroll behaviour off the body. Kills the rubber-band that
+       drags the sticky search header on the fixed map shell. */
+    overscroll-behavior: none;
   }
   html {
     @apply font-sans bg-sidebar;
     /* Reserve the page scrollbar's space so layout never reflows when it
        appears/disappears (the classic Win-vs-Mac jump). */
     scrollbar-gutter: stable;
+    /* No viewport rubber-band / pull-to-refresh — the app is a fixed shell
+       (especially the fullscreen map), so a bounce just drags the sticky search
+       header around. Content still scrolls; only the overscroll bounce is gone. */
+    overscroll-behavior: none;
   }
 
   /* ── Cross-platform scrollbars ──────────────────────────────────────────── *

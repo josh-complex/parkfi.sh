@@ -27,7 +27,7 @@ import { cn } from "#/lib/utils.ts";
 import { lazyWithReload } from "#/lib/lazy-with-reload.tsx";
 import { distanceMeters, pointInPolygon } from "#/server/living/geofence.ts";
 
-import type { MapHandle } from "./shared.tsx";
+import { MAP_TYPE_COLOR, type MapHandle, type MapItemKind } from "./shared.tsx";
 import { hasWebGl } from "./webgl.ts";
 
 // Lazy-loaded so the heavy map libraries (maplibre-gl, leaflet) are never
@@ -450,19 +450,11 @@ export function MapStageProvider({
                 can't fit. */}
             {attached && engine && roam && (
               <div className="pointer-events-none absolute inset-x-3 top-[calc(env(safe-area-inset-top)+5.5rem)] z-10 flex flex-col items-start gap-2 md:top-3">
-                {/* The whole row scrolls as one — the park-info shortcut (only once
-                    zoomed into a park), the breaker, and park chips. Negative
-                    margins + matching padding let it bleed past the cluster's inset
-                    to the screen edges while the first item still lines up with the
-                    search bar. */}
-                <div className="pointer-events-auto -mx-3 flex w-[calc(100%+1.5rem)] items-center gap-2 overflow-x-auto px-3 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                  {roamFocusSlug && <ParkDetailButton slug={roamFocusSlug} />}
-                  <ParkZoomChips
-                    parks={parksQ.data ?? []}
-                    focusSlug={roamFocusSlug}
-                    onZoom={(slug) => mapRef.current?.flyToPark(slug)}
-                  />
-                </div>
+                <ParkChipScroller
+                  parks={parksQ.data ?? []}
+                  focusSlug={roamFocusSlug}
+                  onZoom={(slug) => mapRef.current?.flyToPark(slug)}
+                />
                 {roamFocusSlug && <MapToggleChips />}
               </div>
             )}
@@ -608,9 +600,9 @@ function ParkZoomChips({
   return (
     <>
       {focusSlug && (
-        <span className="flex shrink-0 select-none flex-col items-center rounded-full bg-background/80 px-2.5 py-1 text-center font-medium leading-none text-muted-foreground backdrop-blur">
-          <span className="text-[10px]">or</span>
-          <span className="mt-0.5 text-xs">go to</span>
+        <span className="mt-1 flex shrink-0 select-none flex-col items-center rounded-full bg-background/80 px-2.5 py-1 text-center font-medium leading-none text-muted-foreground backdrop-blur">
+          <span className="text-[10px] leading-none">or</span>
+          <span className="mb-0.5 text-xs leading-none">go to</span>
         </span>
       )}
       {others.map((p) => (
@@ -624,6 +616,83 @@ function ParkZoomChips({
         </button>
       ))}
     </>
+  );
+}
+
+// Left inset (px) of the whole cluster — matches the `inset-x-3` parent, so the
+// pinned button and the scroll row's `px-3` both line up with the search bar.
+const CHIP_ROW_INSET = 12;
+// How far past the pinned button the chips finish fading back in — short, so the
+// fade hugs the button and the chips sit close to it.
+const CHIP_FADE_TAIL = 8;
+
+/**
+ * The top park-chip row. Once zoomed into a park, the "Park info" shortcut is
+ * pinned to the left as its own overlay while the park chips (and the "or / go to"
+ * breaker) scroll beneath it — and the scroll row is *masked* so those chips fade
+ * to transparent as they slide under the button, dissolving into it rather than
+ * bumping a visible panel. Zoomed out (no focus) it's just a plain scroll row.
+ *
+ * The button is measured (its label is fixed, but the width still depends on font
+ * metrics) so both the reserved left gutter and the mask's fade stops track it
+ * exactly. Negative margins + matching padding let the row bleed to the screen
+ * edges while the first item still lines up with the search bar.
+ */
+function ParkChipScroller({
+  parks,
+  focusSlug,
+  onZoom,
+}: {
+  parks: ReadonlyArray<{ slug: string; name: string }>;
+  focusSlug: string | null;
+  onZoom: (slug: string) => void;
+}) {
+  const btnRef = React.useRef<HTMLDivElement>(null);
+  const [btnWidth, setBtnWidth] = React.useState(0);
+  React.useLayoutEffect(() => {
+    const el = btnRef.current;
+    if (!focusSlug || !el) {
+      setBtnWidth(0);
+      return;
+    }
+    const measure = () => setBtnWidth(el.offsetWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [focusSlug]);
+
+  // Right edge of the pinned button (from the row's screen-flush left). Chips are
+  // fully transparent up to here, then fade back in across CHIP_FADE_TAIL, so a
+  // chip has vanished before it reaches the button.
+  const fadeEnd = focusSlug && btnWidth ? CHIP_ROW_INSET + btnWidth : 0;
+  const mask = fadeEnd
+    ? `linear-gradient(to right, transparent 0, transparent ${fadeEnd}px, #000 ${fadeEnd + CHIP_FADE_TAIL}px)`
+    : undefined;
+
+  return (
+    <div className="relative -mx-3 w-[calc(100%+1.5rem)]">
+      <div
+        className="pointer-events-auto flex touch-pan-x items-center gap-1.5 overflow-x-auto overscroll-contain px-3 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        style={mask ? { WebkitMaskImage: mask, maskImage: mask } : undefined}
+      >
+        {focusSlug &&
+          btnWidth > 0 && (
+            // Transparent gutter reserving the pinned button's footprint (plus a
+            // little air past the fade) so the chips rest just clear of it, then
+            // scroll under it as you swipe.
+            <div aria-hidden className="shrink-0" style={{ width: btnWidth + 4 }} />
+          )}
+        <ParkZoomChips parks={parks} focusSlug={focusSlug} onZoom={onZoom} />
+      </div>
+      {focusSlug && (
+        <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center pb-1">
+          <div ref={btnRef} className="pointer-events-auto">
+            <ParkDetailButton slug={focusSlug} />
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -644,15 +713,22 @@ const SHOW_CATEGORY_KEYS = ["show", "character"] as const;
  * have nothing to act on — the venues live in the layers instead). Sized to match
  * the filter button, in a scroll-if-it-overflows row with the scrollbar hidden.
  */
-type MapToggle =
-  | { kind: "category"; label: string; Icon: LucideIcon; keys: ReadonlyArray<string> }
-  | { kind: "layer"; key: keyof MapLayers; label: string; Icon: LucideIcon };
+type MapToggle = { label: string; Icon: LucideIcon; color: MapItemKind } & (
+  | { kind: "category"; keys: ReadonlyArray<string> }
+  | { kind: "layer"; key: keyof MapLayers }
+);
 
 const MAP_TOGGLES: ReadonlyArray<MapToggle> = [
-  { kind: "category", label: "Rides", Icon: RollerCoasterIcon, keys: RIDE_CATEGORY_KEYS },
-  { kind: "category", label: "Shows", Icon: DramaIcon, keys: SHOW_CATEGORY_KEYS },
-  { kind: "layer", key: "shops", label: "Shops", Icon: ShoppingBagIcon },
-  { kind: "layer", key: "dining", label: "Eats", Icon: UtensilsIcon },
+  {
+    kind: "category",
+    label: "Rides",
+    Icon: RollerCoasterIcon,
+    keys: RIDE_CATEGORY_KEYS,
+    color: "rides",
+  },
+  { kind: "category", label: "Shows", Icon: DramaIcon, keys: SHOW_CATEGORY_KEYS, color: "shows" },
+  { kind: "layer", key: "shops", label: "Shops", Icon: ShoppingBagIcon, color: "shops" },
+  { kind: "layer", key: "dining", label: "Eats", Icon: UtensilsIcon, color: "eats" },
 ];
 
 function MapToggleChips() {
@@ -672,31 +748,44 @@ function MapToggleChips() {
   const toggleLayer = (key: keyof MapLayers) =>
     setFilter((f) => ({ ...f, layers: { ...f.layers, [key]: !f.layers[key] } }));
   return (
-    <div className="pointer-events-auto flex max-w-full gap-1.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="pointer-events-auto flex max-w-full touch-pan-x gap-1.5 overflow-x-auto overscroll-contain pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {MAP_TOGGLES.map((t) => {
         const active =
           t.kind === "category"
             ? t.keys.every((k) => filter.categories.has(k))
             : filter.layers[t.key];
         const { Icon } = t;
+        const color = MAP_TYPE_COLOR[t.color];
         return (
           <button
             key={t.kind === "category" ? `cat:${t.label}` : `layer:${t.key}`}
             type="button"
             onClick={() => (t.kind === "category" ? toggleCategory(t.keys) : toggleLayer(t.key))}
             aria-pressed={active}
+            style={
+              active
+                ? // Fill + 3D shelf/glare all derived from the type's signature
+                  // colour, so a lit chip matches its markers' overflow dot.
+                  ({
+                    backgroundColor: color,
+                    "--btn-3d": `color-mix(in oklch, ${color}, black 32%)`,
+                    "--btn-glare": `color-mix(in oklch, ${color}, black 32%)`,
+                  } as React.CSSProperties)
+                : undefined
+            }
             className={cn(
               "btn-3d-outline border-3d flex shrink-0 select-none items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium backdrop-blur transition-[transform,box-shadow,background-color,color] duration-150 ease-out dark:border-border",
               active
                 ? // Selected: hold the pressed-in state — the filled pill sits
                   // translated down into its shelf with the shadow collapsed, so it
                   // reads as depressed rather than raised.
-                  "translate-y-[3px] bg-primary text-primary-foreground shadow-3d-active [--btn-3d:color-mix(in_oklch,var(--primary),black_32%)] [--btn-glare:color-mix(in_oklch,var(--primary),black_32%)]"
-                : // Resting: raised 3D outline pill that sinks on press.
+                  "translate-y-[3px] text-white shadow-3d-active"
+                : // Resting: raised 3D outline pill that sinks on press. The icon
+                  // carries the type colour so the mapping reads even when off.
                   "bg-background/95 text-foreground shadow-3d active:translate-y-[3px] active:shadow-3d-active",
             )}
           >
-            <Icon className="size-5" />
+            <Icon className="size-5" style={active ? undefined : { color }} />
             {t.label}
           </button>
         );

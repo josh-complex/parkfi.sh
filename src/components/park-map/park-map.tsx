@@ -14,6 +14,7 @@ import { MarkerCluster, type DeclutterItem } from "./declutter.ts";
 import {
   applySelected,
   attractionCardBodyHtml,
+  attractionKind,
   attractionPriority,
   boundaryFeatureCollection,
   buildAttractionEl,
@@ -29,6 +30,7 @@ import {
   ORLANDO_CENTER,
   ORLANDO_ZOOM,
   poiCardBodyHtml,
+  poiKind,
   saveRoamCamera,
   SPREAD_ZOOM,
   waitLabelFor,
@@ -121,6 +123,12 @@ let topHover: (() => void) | null = null;
 // Zoom at/above which free-roam reveals a park's rides (and below which it falls
 // back to park badges). Park-bounds fits land around 15–16, comfortably above.
 const ROAM_RIDE_ZOOM = 14;
+
+// How long the map must sit still before the cluster pass re-runs. Re-clustering
+// on every frame of a zoom made markers flicker in/out as they crossed the
+// grouping threshold; debouncing coalesces a whole gesture into one relayout
+// (with an immediate flush on `moveend`, so the settled state still snaps in).
+const DECLUTTER_SETTLE_MS = 150;
 
 type ParkBounds = { latMin: number; latMax: number; lngMin: number; lngMax: number };
 
@@ -216,7 +224,7 @@ export function ParkMap({
   // pass, the "+N" cluster chips, and the click-to-zoom interaction; we just feed
   // it items and re-run on move.
   const layerRef = React.useRef<MarkerCluster | null>(null);
-  const declutterRafRef = React.useRef(0);
+  const declutterTimerRef = React.useRef(0);
   // The currently-expanded marker card (see openAttractionCard), so any new
   // interaction can collapse it first.
   const cardRef = React.useRef<{ close: () => void } | null>(null);
@@ -465,22 +473,40 @@ export function ParkMap({
     markerElsRef.current.clear();
   }, []);
 
-  // Re-run the cluster pass (rAF-coalesced) — cheap, so it fires on every
-  // frame of a pan/zoom, letting clusters split and re-form as markers spread.
-  const scheduleRefresh = React.useCallback(() => {
-    if (declutterRafRef.current) return;
-    declutterRafRef.current = requestAnimationFrame(() => {
-      declutterRafRef.current = 0;
-      const map = mapRef.current;
-      const layer = layerRef.current;
-      if (!layer) return;
-      // Cluster inside a park until we're zoomed in far enough, then spread so
-      // markers stop grouping and just nudge apart. Overview always spreads.
-      const inPark = effectiveSlugRef.current != null;
-      layer.setMode(inPark && (map?.getZoom() ?? 0) < SPREAD_ZOOM ? "cluster" : "spread");
-      layer.refresh();
-    });
+  // Run the cluster pass now: pick the layout mode for the current zoom and
+  // relayout. Cheap, but toggling marker visibility on every frame flickers, so
+  // callers reach it through the debounced `scheduleRefresh` / `flushRefresh`.
+  const runRefresh = React.useCallback(() => {
+    const map = mapRef.current;
+    const layer = layerRef.current;
+    if (!layer) return;
+    // Cluster inside a park until we're zoomed in far enough, then spread so
+    // markers stop grouping and just nudge apart. Overview always spreads.
+    const inPark = effectiveSlugRef.current != null;
+    layer.setMode(inPark && (map?.getZoom() ?? 0) < SPREAD_ZOOM ? "cluster" : "spread");
+    layer.refresh();
   }, []);
+
+  // Debounced relayout for continuous motion (a trailing timer, reset on each
+  // move frame) so a whole pan/zoom collapses into one pass instead of flickering
+  // markers across the grouping threshold frame by frame.
+  const scheduleRefresh = React.useCallback(() => {
+    if (declutterTimerRef.current) clearTimeout(declutterTimerRef.current);
+    declutterTimerRef.current = window.setTimeout(() => {
+      declutterTimerRef.current = 0;
+      runRefresh();
+    }, DECLUTTER_SETTLE_MS);
+  }, [runRefresh]);
+
+  // Immediate relayout, cancelling any pending debounce — used on `moveend` so the
+  // settled layout snaps in without waiting out the debounce.
+  const flushRefresh = React.useCallback(() => {
+    if (declutterTimerRef.current) {
+      clearTimeout(declutterTimerRef.current);
+      declutterTimerRef.current = 0;
+    }
+    runRefresh();
+  }, [runRefresh]);
 
   // Fly the camera to a park's bounds (used by free-roam park-badge taps). No
   // max-bounds cap here — roam keeps the whole region pannable.
@@ -628,6 +654,7 @@ export function ParkMap({
               });
           },
           priority: attractionPriority(a),
+          kind: attractionKind(a.category),
         });
       }
 
@@ -686,8 +713,9 @@ export function ParkMap({
                 });
             },
             // POIs never anchor a cluster over a ride — a nearby ride heads the
-            // group, the POI folds under its "+N".
+            // group, the POI folds under its dot.
             priority: 0,
+            kind: poiKind(poi.category),
           });
         });
       }
@@ -703,13 +731,15 @@ export function ParkMap({
       onDeselectRef.current?.();
     };
     map.on("move", scheduleRefresh);
+    map.on("moveend", flushRefresh);
     map.on("click", onMapClick);
     return () => {
       map.off("move", scheduleRefresh);
+      map.off("moveend", flushRefresh);
       map.off("click", onMapClick);
-      if (declutterRafRef.current) {
-        cancelAnimationFrame(declutterRafRef.current);
-        declutterRafRef.current = 0;
+      if (declutterTimerRef.current) {
+        clearTimeout(declutterTimerRef.current);
+        declutterTimerRef.current = 0;
       }
     };
   }, [
@@ -723,6 +753,7 @@ export function ParkMap({
     navigate,
     clearMarkers,
     scheduleRefresh,
+    flushRefresh,
     roam,
     filter,
     flyToPark,
