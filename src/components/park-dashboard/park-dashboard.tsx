@@ -101,7 +101,7 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
         </div>
       </div>
 
-      <div className="flex flex-col gap-4 px-4 lg:px-6">
+      <div className="order-1 flex flex-col gap-4 px-4 lg:px-6">
         <NotificationPrompt />
         {/* The at-a-glance stat bar leads the dashboard, above the map + chart. */}
         <ParkStatCards
@@ -113,55 +113,58 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
         {/* Operating hours for today + the days ahead, sourced from the park's
             schedule feed (same data that gates the open/closed state). */}
         <ParkHours parkSlug={activeSlug ?? null} />
-        {/* Map and wait chart share a row at equal width; the board table spans
-            the full column underneath them. The map cell is a shared-layout
-            slot — the live map morphs in from the overview hero. */}
-        {/* `[&>*]:min-w-0` makes the two tracks `minmax(0,1fr)` instead of
-            `minmax(auto,1fr)`: without it the chart card's intrinsic min-content
-            (chart container + the header toolbar) blows the column past 1fr
-            and overflows the content card at lg+. */}
-        <div className="grid items-stretch gap-4 lg:grid-cols-2 lg:[&>*]:min-w-0">
-          {/* Card-like surface to match the chart container, but no drop shadow:
-              the 3D shelf border carries the depth, a box-shadow under it would
-              double up and read as a floating panel. */}
-          <MapSlot className="border-3d btn-3d-outline relative isolate h-[320px] overflow-hidden rounded-4xl border-t-3 bg-card lg:h-auto lg:min-h-[460px] dark:border-border" />
-          {/* The chart is a `React.lazy` boundary that DOES server-render (React
-              ships the resolved subtree), but its chunk isn't loaded yet when the
-              client hydrates — so the client falls back to this skeleton, the
-              server's chart markup is torn out, and the resulting `removeChild`
-              throw aborts hydration of the whole page. Render the skeleton on the
-              server AND the first client render (gate on `hydrated`); the lazy
-              chart then mounts cleanly after hydration. It isn't crawler content
-              — the same numbers ship in the SSR'd board table below. */}
-          {hydrated ? (
-            <ChartErrorBoundary
-              label="wait-chart"
-              fallback={
-                <div className="flex h-[320px] w-full items-center justify-center rounded-2xl border text-sm text-muted-foreground lg:h-auto lg:min-h-[460px]">
-                  Chart unavailable
-                </div>
-              }
-            >
-              <React.Suspense
-                fallback={
-                  <Skeleton className="h-[320px] w-full rounded-2xl lg:h-auto lg:min-h-[460px]" />
-                }
-              >
-                <ParkWaitChart
-                  parkSlug={activeSlug ?? null}
-                  focusedId={selected?.id ?? null}
-                  onClearFocus={() => setSelected(null)}
-                  operatorSlug={operatorSlug}
-                />
-              </React.Suspense>
-            </ChartErrorBoundary>
-          ) : (
-            <Skeleton className="h-[320px] w-full rounded-2xl lg:h-auto lg:min-h-[460px]" />
-          )}
-        </div>
       </div>
 
-      <div className="px-4 lg:px-6">
+      {/* Map and wait chart share a row at equal width. On mobile they drop
+          below the ride board (order-3) so the page's core content — the board —
+          is reachable without scrolling past ~640px of map + chart; on lg they
+          return above it (order-2). The map cell is a shared-layout slot: the
+          live map morphs in from the overview hero. */}
+      {/* `[&>*]:min-w-0` makes the two tracks `minmax(0,1fr)` instead of
+          `minmax(auto,1fr)`: without it the chart card's intrinsic min-content
+          (chart container + the header toolbar) blows the column past 1fr
+          and overflows the content card at lg+. */}
+      <div className="order-3 grid items-stretch gap-4 px-4 md:order-2 lg:grid-cols-2 lg:px-6 lg:[&>*]:min-w-0">
+        {/* Card-like surface to match the chart container, but no drop shadow:
+            the 3D shelf border carries the depth, a box-shadow under it would
+            double up and read as a floating panel. */}
+        <MapSlot className="border-3d btn-3d-outline relative isolate h-[320px] overflow-hidden rounded-4xl border-t-3 bg-card lg:h-auto lg:min-h-[460px] dark:border-border" />
+        {/* The chart is a `React.lazy` boundary that DOES server-render (React
+            ships the resolved subtree), but its chunk isn't loaded yet when the
+            client hydrates — so the client falls back to this skeleton, the
+            server's chart markup is torn out, and the resulting `removeChild`
+            throw aborts hydration of the whole page. Render the skeleton on the
+            server AND the first client render (gate on `hydrated`); the lazy
+            chart then mounts cleanly after hydration. It isn't crawler content
+            — the same numbers ship in the SSR'd board table below. */}
+        {hydrated ? (
+          <ChartErrorBoundary
+            label="wait-chart"
+            fallback={
+              <div className="flex h-[320px] w-full items-center justify-center rounded-2xl border text-sm text-muted-foreground lg:h-auto lg:min-h-[460px]">
+                Chart unavailable
+              </div>
+            }
+          >
+            <React.Suspense
+              fallback={
+                <Skeleton className="h-[320px] w-full rounded-2xl lg:h-auto lg:min-h-[460px]" />
+              }
+            >
+              <ParkWaitChart
+                parkSlug={activeSlug ?? null}
+                focusedId={selected?.id ?? null}
+                onClearFocus={() => setSelected(null)}
+                operatorSlug={operatorSlug}
+              />
+            </React.Suspense>
+          </ChartErrorBoundary>
+        ) : (
+          <Skeleton className="h-[320px] w-full rounded-2xl lg:h-auto lg:min-h-[460px]" />
+        )}
+      </div>
+
+      <div className="order-2 px-4 md:order-3 lg:px-6">
         <ParkBoardTable
           board={board}
           loading={boardQ.isLoading || !activeSlug}
@@ -173,7 +176,7 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
         />
       </div>
 
-      <div className="px-4 lg:px-6">
+      <div className="order-4 px-4 lg:px-6">
         {/* Same hazard as the chart above: a server-rendered `React.lazy`
             boundary whose chunk isn't ready at hydration. Keep it client-only. */}
         {hydrated ? (

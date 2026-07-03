@@ -94,7 +94,7 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
   // Return to wherever the user last was on the map (the free-roam map at its
   // remembered camera, or a park dashboard) rather than always the park page.
   const back = getLastMapView();
-  const backClass = "inline-flex items-center gap-1.5 hover:underline";
+  const backClass = "-m-2 inline-flex items-center gap-1.5 p-2 hover:underline";
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-6 lg:px-6">

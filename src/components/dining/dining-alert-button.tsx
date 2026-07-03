@@ -99,14 +99,18 @@ export function DiningAlertButton({
           <Button
             variant="secondary"
             size="icon"
-            className="size-7 shrink-0 shadow-sm"
+            className="size-9 shrink-0 shadow-sm md:size-7"
             aria-label={`Alert me about ${restaurantName}`}
           />
         }
       >
         <BellIcon className="size-4" />
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-72 gap-0">
+      <PopoverContent
+        align="end"
+        collisionPadding={12}
+        className="w-[min(18rem,calc(100vw-2rem))] gap-0"
+      >
         {!loggedIn ? (
           <div className="space-y-3">
             <PopoverHeader>

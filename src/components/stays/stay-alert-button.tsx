@@ -130,7 +130,7 @@ export function StayAlertButton({
           <Button
             variant="secondary"
             size="icon"
-            className="bg-background/85 size-7 shadow-sm backdrop-blur-sm"
+            className="bg-background/85 size-9 shadow-sm backdrop-blur-sm md:size-7"
             aria-label={`Alert me about ${resortName}`}
             onClick={(e) => {
               e.preventDefault();
@@ -143,7 +143,8 @@ export function StayAlertButton({
       </PopoverTrigger>
       <PopoverContent
         align="end"
-        className="w-72"
+        collisionPadding={12}
+        className="w-[min(18rem,calc(100vw-2rem))]"
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();

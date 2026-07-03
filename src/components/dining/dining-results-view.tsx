@@ -137,7 +137,13 @@ export function ResultsView({
       {isLoading ? (
         <div className="grid gap-4 @xl/main:grid-cols-2 @4xl/main:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-[160px] rounded-4xl" />
+            <div key={i} className="overflow-hidden rounded-4xl border">
+              <Skeleton className="h-32 w-full rounded-none" />
+              <div className="flex flex-col gap-2 px-3 py-3 sm:px-4">
+                <Skeleton className="h-5 w-3/4" />
+                <Skeleton className="h-3 w-1/2" />
+              </div>
+            </div>
           ))}
         </div>
       ) : isError ? (
@@ -195,13 +201,20 @@ export function ResultsView({
                     className={cn(currentPage === 0 && "pointer-events-none opacity-50")}
                   />
                 </PaginationItem>
+                {/* Below 400px the numbered links crowd the row — collapse to a
+                    plain "Page X of Y" label between the prev/next controls. */}
+                <PaginationItem className="hidden max-[400px]:flex">
+                  <span className="px-2 text-sm text-muted-foreground tabular-nums">
+                    Page {currentPage + 1} of {pageCount}
+                  </span>
+                </PaginationItem>
                 {pageList(currentPage, pageCount).map((p, i) =>
                   p === null ? (
-                    <PaginationItem key={`gap-${i}`}>
+                    <PaginationItem key={`gap-${i}`} className="max-[400px]:hidden">
                       <PaginationEllipsis />
                     </PaginationItem>
                   ) : (
-                    <PaginationItem key={p}>
+                    <PaginationItem key={p} className="max-[400px]:hidden">
                       <PaginationLink
                         isActive={p === currentPage}
                         onClick={(e) => {

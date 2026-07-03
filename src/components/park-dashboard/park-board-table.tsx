@@ -295,7 +295,7 @@ function SortHeader({
     <button
       type="button"
       onClick={onClick}
-      className="-mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5 font-medium text-foreground hover:text-foreground"
+      className="-mx-1 -my-2 inline-flex items-center gap-1 rounded px-1 py-2 font-medium text-foreground transition-colors hover:text-foreground active:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
     >
       {label}
       {sorted === "asc" ? (
@@ -599,7 +599,7 @@ export function ParkBoardTable({
       {loading ? (
         <div className="flex flex-col gap-2 px-4 pb-4 sm:px-6">
           {Array.from({ length: 8 }).map((_, i) => (
-            <Skeleton key={i} className="h-14 w-full" />
+            <Skeleton key={i} className="h-16 w-full" />
           ))}
         </div>
       ) : sortedRows.length === 0 ? (
@@ -815,7 +815,7 @@ function MobileControls({
         {/* Sort */}
         <Drawer>
           <DrawerTrigger asChild>
-            <Button variant="ghost" size="sm" className="rounded-full">
+            <Button variant="ghost" className="min-h-10 rounded-full">
               <ArrowUpDownIcon data-icon="inline-start" />
               Sort
             </Button>
@@ -846,7 +846,7 @@ function MobileControls({
         {/* Filter */}
         <Drawer>
           <DrawerTrigger asChild>
-            <Button variant="ghost" size="sm" className="rounded-full">
+            <Button variant="ghost" className="min-h-10 rounded-full">
               <SlidersHorizontalIcon data-icon="inline-start" />
               Filter
               {filterActive ? <span className="size-1.5 rounded-full bg-primary" /> : null}

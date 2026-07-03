@@ -160,13 +160,18 @@ function ResortCard({
         </div>
         {area && <span className="text-muted-foreground line-clamp-1 text-xs">{area}</span>}
         {hasResult && available && pricePerNight != null && (
-          <span className="mt-0.5 text-sm">
-            <span className="text-muted-foreground">From </span>
-            <span className="font-semibold">${pricePerNight.toLocaleString()}</span>{" "}
-            <span className="text-muted-foreground">
-              / night{nights ? ` · $${(pricePerNight * nights).toLocaleString()} total` : ""}
+          <div className="mt-0.5 flex flex-col leading-tight">
+            <span className="text-sm">
+              <span className="text-muted-foreground">From </span>
+              <span className="font-semibold">${pricePerNight.toLocaleString()}</span>{" "}
+              <span className="text-muted-foreground">/ night</span>
             </span>
-          </span>
+            {nights ? (
+              <span className="text-muted-foreground text-xs tabular-nums">
+                ${(pricePerNight * nights).toLocaleString()} total
+              </span>
+            ) : null}
+          </div>
         )}
       </div>
     </>
@@ -186,7 +191,7 @@ function ResortCard({
   return (
     <div className="relative">
       {card}
-      <div className="absolute top-3 right-3 z-10">{alertSlot}</div>
+      <div className="absolute top-2 right-2 z-10">{alertSlot}</div>
     </div>
   );
 }
@@ -671,14 +676,13 @@ export function StaysBoard() {
                       </Button>
                     )}
                   </div>
-                  {/* Two months side-by-side; second hides on narrow screens instead of wrapping */}
-                  <div className="flex justify-center [&_.stay-cal-months>:nth-child(2)]:hidden sm:[&_.stay-cal-months>:nth-child(2)]:flex">
+                  <div className="flex justify-center">
                     <Calendar
                       mode="range"
                       selected={range}
                       onSelect={setRange}
-                      numberOfMonths={2}
-                      classNames={{ months: "stay-cal-months relative flex flex-nowrap gap-4" }}
+                      numberOfMonths={isMobile ? 1 : 2}
+                      classNames={{ months: "relative flex flex-nowrap gap-4" }}
                       disabled={{ before: today }}
                       startMonth={today}
                       showOutsideDays
@@ -715,7 +719,7 @@ export function StaysBoard() {
                       <DrawerClose key={k} asChild>
                         <Button
                           variant={sortKey === k ? "secondary" : "ghost"}
-                          className="justify-start"
+                          className="w-full justify-start"
                           onClick={() => setSortKey(k)}
                         >
                           {STAY_SORT_LABELS[k]}
@@ -872,7 +876,11 @@ function BrowseView({
             <Skeleton className="h-6 w-56" />
             <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-5">
               {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="aspect-[4/3] rounded-2xl" />
+                <div key={i} className="flex flex-col gap-2">
+                  <Skeleton className="aspect-[4/3] rounded-2xl" />
+                  <Skeleton className="h-4 w-3/4" />
+                  <Skeleton className="h-3 w-1/2" />
+                </div>
               ))}
             </div>
           </div>

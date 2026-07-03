@@ -334,8 +334,8 @@ export function DiningMobileFAB({ options }: { options: FilterOptions }) {
               size="sm"
               className="rounded-full gap-1.5 px-3 text-xs font-medium"
             >
-              <SearchIcon className="size-3.5" />
-              {mobileSearchLabel}
+              <SearchIcon className="size-3.5 shrink-0" />
+              <span className="max-w-[40vw] truncate">{mobileSearchLabel}</span>
             </Button>
           </DrawerTrigger>
           <DrawerContent ref={setSearchNode}>

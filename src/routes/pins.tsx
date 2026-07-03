@@ -7,6 +7,7 @@ import { ScanLineIcon, SearchIcon } from "lucide-react";
 
 import { AppInset } from "#/components/app-inset.tsx";
 import { AppSidebar } from "#/components/app-sidebar.tsx";
+import { PageContainer } from "#/components/page-container.tsx";
 import { PinCard, type PinCardData } from "#/components/pins/pin-card.tsx";
 import { SiteHeader } from "#/components/site-header.tsx";
 import { Button } from "#/components/ui/button.tsx";
@@ -120,7 +121,7 @@ function PinsPage() {
         <SiteHeader title="Pins" />
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
-            <div className="mx-auto w-full max-w-6xl space-y-5 px-4 py-8">
+            <PageContainer className="space-y-5 py-8">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h1 className="text-xl font-semibold">Pin catalog</h1>
@@ -240,7 +241,7 @@ function PinsPage() {
                   ) : null}
                 </>
               )}
-            </div>
+            </PageContainer>
           </div>
         </div>
       </AppInset>

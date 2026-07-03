@@ -160,19 +160,19 @@ function ReservationsSection({
 
   return (
     <section className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between">
         <h2 className="text-lg font-semibold tracking-tight">Reservations</h2>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full items-center gap-2 md:w-auto">
           <DatePicker
             value={date}
             onChange={setDate}
             fromDate={tomorrow}
             toDate={maxDate}
             placeholder="Pick a date"
-            className="h-8 w-44"
+            className="h-8 flex-1 md:w-44 md:flex-none"
           />
           <Select value={String(partySize)} onValueChange={(v) => v && setPartySize(Number(v))}>
-            <SelectTrigger size="sm" className="w-32" aria-label="Party size">
+            <SelectTrigger size="sm" className="w-28 shrink-0" aria-label="Party size">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -296,7 +296,7 @@ export function DiningVenueDetail({
       ) : (
         <header className="flex flex-col gap-4">
           {venue.imageUrl && (
-            <div className="relative h-48 w-full overflow-hidden rounded-2xl bg-muted sm:h-64">
+            <div className="relative h-40 w-full overflow-hidden rounded-2xl bg-muted sm:h-56 lg:h-64">
               <img
                 src={venue.imageUrl}
                 alt={venue.name}
@@ -357,7 +357,7 @@ export function DiningVenueDetail({
             label={venue.name}
             zoom={17}
             caption={[venue.land, venue.parkResort].filter(Boolean).join(", ") || undefined}
-            className="h-56 w-full overflow-hidden rounded-2xl border sm:h-72"
+            className="h-48 w-full overflow-hidden rounded-2xl border sm:h-72"
           />
         </section>
       )}
@@ -370,7 +370,7 @@ export function DiningVenueDetail({
             <p className="text-xs text-muted-foreground">Prices excl. tax &amp; gratuity</p>
           </div>
           {state.menuQ.isLoading || hasMenu ? (
-            <div className="flex h-[70vh] min-h-[420px] flex-col overflow-hidden rounded-2xl border bg-card">
+            <div className="flex h-[60vh] min-h-0 flex-col overflow-hidden rounded-2xl border bg-card sm:h-[70vh] sm:min-h-[420px]">
               <MenuBody
                 periods={state.periods}
                 activePeriodIdx={state.activePeriodIdx}

@@ -192,9 +192,10 @@ function ResortAvailability({
         />
       </div>
 
-      {/* Simple field controls: dates + adults + kids + search. */}
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="flex flex-col gap-1.5">
+      {/* Simple field controls: dates + adults + kids + search. On phones this is
+          a 2-col grid (date + Check rates span the full width); md+ is an inline row. */}
+      <div className="grid grid-cols-2 items-end gap-3 md:flex md:flex-wrap">
+        <div className="col-span-2 flex flex-col gap-1.5">
           <Label className="text-xs font-medium text-muted-foreground">When</Label>
           <Popover open={datesOpen} onOpenChange={setDatesOpen}>
             <PopoverTrigger
@@ -203,14 +204,14 @@ function ResortAvailability({
                   type="button"
                   variant="outline"
                   data-empty={!range?.from}
-                  className="h-9 w-52 justify-start gap-2 font-normal data-[empty=true]:text-muted-foreground"
+                  className="h-9 w-full justify-start gap-2 font-normal data-[empty=true]:text-muted-foreground md:w-52"
                 />
               }
             >
               <CalendarIcon className="size-4" />
               {rangeLabel(range)}
             </PopoverTrigger>
-            <PopoverContent align="start" className="w-auto p-2">
+            <PopoverContent align="center" collisionPadding={12} className="w-auto p-2">
               <Calendar
                 mode="range"
                 selected={range}
@@ -232,7 +233,7 @@ function ResortAvailability({
         <div className="flex flex-col gap-1.5">
           <Label className="text-xs font-medium text-muted-foreground">Adults</Label>
           <Select value={String(adults)} onValueChange={(v) => v && setAdults(Number(v))}>
-            <SelectTrigger className="w-28" aria-label="Adults">
+            <SelectTrigger className="w-full md:w-28" aria-label="Adults">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -248,7 +249,7 @@ function ResortAvailability({
         <div className="flex flex-col gap-1.5">
           <Label className="text-xs font-medium text-muted-foreground">Kids</Label>
           <Select value={String(children)} onValueChange={(v) => v && setChildren(Number(v))}>
-            <SelectTrigger className="w-28" aria-label="Kids">
+            <SelectTrigger className="w-full md:w-28" aria-label="Kids">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -261,7 +262,7 @@ function ResortAvailability({
           </Select>
         </div>
 
-        <Button type="button" onClick={submit} className="h-9">
+        <Button type="button" onClick={submit} className="col-span-2 h-9 w-full md:w-auto">
           Check rates
         </Button>
       </div>
@@ -302,7 +303,10 @@ function ResortAvailability({
       {committed && (
         <div className="border-t pt-4">
           {availabilityQ.isLoading ? (
-            <Skeleton className="h-10 w-60" />
+            <div className="flex flex-col gap-1.5">
+              <Skeleton className="h-9 w-40" />
+              <Skeleton className="h-4 w-52" />
+            </div>
           ) : availabilityQ.isError ? (
             <p className="text-sm text-muted-foreground">
               We couldn&apos;t pull live rates just now — please try again.
@@ -459,7 +463,7 @@ export function ResortDetail({ slug }: { slug: string }) {
             label={resort.name}
             markers={parkMarkers}
             caption={`Approximate location${resort.area ? ` · ${resort.area}` : ""}`}
-            className="h-56 w-full overflow-hidden rounded-2xl border sm:h-72"
+            className="h-48 w-full overflow-hidden rounded-2xl border sm:h-72"
           />
           {nearby.some((l) => l.kind === "park") && (
             <div className="flex flex-wrap items-center gap-2">

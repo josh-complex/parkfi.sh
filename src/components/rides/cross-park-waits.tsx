@@ -90,7 +90,13 @@ function WaitBadge({ ride, className }: { ride: Ride; className?: string }) {
         : "Open"
       : statusLabel(ride.status);
   return (
-    <Badge className={cn("border-0 text-xs font-semibold shadow", waitBadgeClass(ride), className)}>
+    <Badge
+      className={cn(
+        "border-0 text-xs font-semibold tabular-nums shadow",
+        waitBadgeClass(ride),
+        className,
+      )}
+    >
       {label}
     </Badge>
   );
@@ -169,7 +175,11 @@ function SortDrawer({
   return (
     <Drawer>
       <DrawerTrigger asChild>
-        <Button variant={variant} size="sm" className={cn(variant === "ghost" && "rounded-full")}>
+        <Button
+          variant={variant}
+          size="sm"
+          className={cn("min-h-10", variant === "ghost" && "rounded-full")}
+        >
           <ArrowUpDownIcon data-icon="inline-start" />
           Sort
         </Button>
@@ -204,7 +214,11 @@ function FilterDrawer({ variant }: { variant: "ghost" | "outline" }) {
   return (
     <Drawer>
       <DrawerTrigger asChild>
-        <Button variant={variant} size="sm" className={cn(variant === "ghost" && "rounded-full")}>
+        <Button
+          variant={variant}
+          size="sm"
+          className={cn("min-h-10", variant === "ghost" && "rounded-full")}
+        >
           <SlidersHorizontalIcon data-icon="inline-start" />
           Filter
           {count > 0 && (
@@ -239,7 +253,7 @@ function ViewToggle({
     <Button
       variant={variant}
       size="icon-sm"
-      className={cn(variant === "ghost" && "rounded-full")}
+      className={cn("min-h-10 min-w-10", variant === "ghost" && "rounded-full")}
       onClick={() => onView(next)}
       aria-label={view === "grid" ? "Switch to list view" : "Switch to card view"}
     >

@@ -310,14 +310,14 @@ export function MenuBody({
       {hasTypeSections && (
         <div
           ref={pillsRef}
-          className="flex shrink-0 gap-1.5 overflow-x-auto border-b px-4 py-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="flex shrink-0 snap-x snap-mandatory gap-1.5 overflow-x-auto border-b px-4 py-2.5 [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           {typeSections.map((s) => (
             <button
               key={s.typeKey}
               type="button"
               onClick={() => onJumpToType(s.typeKey)}
-              className="shrink-0 rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
+              className="shrink-0 snap-start rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
             >
               {s.label}
             </button>
