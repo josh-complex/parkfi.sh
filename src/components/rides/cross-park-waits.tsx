@@ -398,7 +398,11 @@ export function CrossParkWaits() {
                       {g.rides.map((r) => (
                         <CarouselItem
                           key={r.id}
-                          className="basis-[42%] pl-0 sm:basis-1/3 md:basis-1/4 lg:basis-1/5 xl:basis-1/6"
+                          // Embla only reads the last slide's margin for the end
+                          // gap — the track's padding-right is ignored — so
+                          // last:mr keeps the final card off the device edge at
+                          // full scroll.
+                          className="basis-[42%] pl-0 last:mr-4 sm:basis-1/3 md:basis-1/4 lg:basis-1/5 lg:last:mr-6 xl:basis-1/6"
                         >
                           <RideCard ride={r} />
                         </CarouselItem>
