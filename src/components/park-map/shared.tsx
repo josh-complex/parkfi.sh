@@ -76,7 +76,7 @@ export const MORPH_MS = 420;
 // the lower-priority one is absorbed into the anchor's cluster (a tap on which
 // zooms in). Just under the photo disc (52px) so markers group as soon as their
 // discs meaningfully overlap (a cluster tap still zooms in enough to split them).
-export const DECLUTTER_SIZE = 44;
+export const DECLUTTER_SIZE = 56;
 
 // At/above this zoom a park view stops clustering entirely and switches to the
 // "spread" layout — every marker stays visible, overlapping ones just nudge
@@ -734,7 +734,11 @@ export function buildAttractionEl(
   a: BoardItem,
   selected: boolean,
 ): { el: HTMLButtonElement; detail: HTMLDivElement } {
-  const color = waitColor(a.standbyWait, a.status);
+  // Ring the disc in its toggle-group colour (blue rides / rose shows) so a
+  // marker's outline reads as the same category its chip lit — matching the POI
+  // rings and the cluster overflow dots. Live wait/status still shows via the
+  // numeric wait badge below, so the ring is free to signal *kind* not crowd.
+  const color = MAP_TYPE_COLOR[attractionKind(a.category)];
   const operating = a.status === "OPERATING";
 
   const el = document.createElement("button");

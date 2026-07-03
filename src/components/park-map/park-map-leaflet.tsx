@@ -244,8 +244,13 @@ export function ParkMapLeaflet({
       (points) => {
         const lls = points.map((p) => map.layerPointToLatLng(L.point(p.x, p.y)));
         const bounds = L.latLngBounds(lls);
-        const fit = map.getBoundsZoom(bounds, false, L.point(80, 80));
-        const target = Math.min(21, Math.max(fit, map.getZoom() + 2));
+        // Reserve space for the chrome overlaying the map (top search/chips, the
+        // bottom nav + zoom/locate controls) so the split-apart members land in
+        // the visible band, not behind a button. Cap the fit at SPREAD_ZOOM: past
+        // it the layout spreads markers apart anyway, so over-zooming a tight
+        // two-node group just flings its members to opposite edges.
+        const fit = map.getBoundsZoom(bounds, false, L.point(70, 140));
+        const target = Math.min(SPREAD_ZOOM, Math.max(fit, map.getZoom() + 2));
         map.flyTo(bounds.getCenter(), target, { duration: FLY_SECONDS });
       },
       // Any marker click collapses an open ride card before it zooms/activates.
@@ -733,5 +738,8 @@ export function ParkMapLeaflet({
   if (!mounted) {
     return <div className="size-full bg-muted" aria-hidden />;
   }
-  return <div ref={containerRef} className="size-full" />;
+  // `isolate` gives the map its own stacking context so markers — which lift to a
+  // high z-index on hover/select/card-open — stay beneath the app chrome (search,
+  // nav, filter, zoom), which is layered over the map at z-10.
+  return <div ref={containerRef} className="isolate size-full" />;
 }

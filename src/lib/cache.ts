@@ -33,6 +33,8 @@ export const CACHEABLE_TRPC_PATHS: ReadonlySet<string> = new Set([
   "dining.restaurants",
   "dining.picks",
   "dining.menuChanges",
+  "parks.dining",
+  "parks.shops",
   "stays.catalog",
   "stays.availability",
 ]);

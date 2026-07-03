@@ -251,19 +251,27 @@ export function ParkMap({
     enabled: !!effectiveSlug,
   });
 
-  // Optional map overlay layers, driven by the shared filter. All three only
-  // render once a park is focused (`effectiveSlug`): the POI markers are scoped
-  // to the focused park's boundary and realms are per-park. The queries are
-  // resort/park-wide (small, cached) and gated so they don't fetch until a layer
-  // is switched on inside a park.
+  // Optional map overlay layers, driven by the shared filter. Markers only
+  // render once a park is focused (`effectiveSlug`) and the layer is toggled on
+  // (see the POI block below) — but we start fetching the moment a park is
+  // focused, regardless of the toggle, so the data is already warm when the user
+  // flips "Eats"/"Shops" and the markers appear instantly instead of after a
+  // round trip. The feeds are resort-wide and identical across parks, so this
+  // fetches once and is shared; a long `staleTime` keeps it from refetching as
+  // the user roams between parks (also edge-cached — see CACHEABLE_TRPC_PATHS).
   const layers = filter?.layers;
+  const POI_STALE_MS = 30 * 60 * 1000;
   const diningQ = useQuery({
     ...trpc.parks.dining.queryOptions(),
-    enabled: !!effectiveSlug && !!layers?.dining,
+    enabled: !!effectiveSlug,
+    staleTime: POI_STALE_MS,
+    gcTime: POI_STALE_MS,
   });
   const shopsQ = useQuery({
     ...trpc.parks.shops.queryOptions(),
-    enabled: !!effectiveSlug && !!layers?.shops,
+    enabled: !!effectiveSlug,
+    staleTime: POI_STALE_MS,
+    gcTime: POI_STALE_MS,
   });
 
   const parks = listQ.data;
@@ -300,8 +308,17 @@ export function ParkMap({
       (points) => {
         const b = new maplibregl.LngLatBounds();
         for (const p of points) b.extend(map.unproject([p.x, p.y]));
-        const cam = map.cameraForBounds(b, { padding: 80, maxZoom: 21 });
-        const target = Math.min(21, Math.max(cam?.zoom ?? 0, map.getZoom() + 2));
+        // Reserve space for the chrome overlaying the map (top search/chips, the
+        // bottom nav + zoom/locate controls) so the split-apart members land in
+        // the visible band, not tucked behind a button. Cap the fit at
+        // SPREAD_ZOOM: past it the layout switches to "spread" (markers just
+        // nudge apart, no grouping), so there's no reason to over-zoom a tight
+        // two-node group toward max and fling its members to opposite edges.
+        const cam = map.cameraForBounds(b, {
+          padding: { top: 140, bottom: 140, left: 70, right: 70 },
+          maxZoom: SPREAD_ZOOM,
+        });
+        const target = Math.min(SPREAD_ZOOM, Math.max(cam?.zoom ?? 0, map.getZoom() + 2));
         map.easeTo({ center: cam?.center ?? b.getCenter(), zoom: target, duration: 500 });
       },
       // Any marker click collapses an open ride card before it zooms/activates.
@@ -935,5 +952,8 @@ export function ParkMap({
   if (!mounted) {
     return <div className="size-full bg-muted" aria-hidden />;
   }
-  return <div ref={containerRef} className="size-full" />;
+  // `isolate` gives the map its own stacking context so markers — which lift to a
+  // high z-index on hover/select/card-open — stay beneath the app chrome (search,
+  // nav, filter, zoom), which is layered over the map at z-10.
+  return <div ref={containerRef} className="isolate size-full" />;
 }
