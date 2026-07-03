@@ -448,13 +448,22 @@ export function MapStageProvider({
                 shortcut sits directly below the search bar, with the map-layer
                 toggle chips beneath it. The chip row scrolls horizontally if it
                 can't fit. */}
-            {attached && engine && roam && roamFocusSlug && (
+            {attached && engine && roam && (
               <div className="pointer-events-none absolute inset-x-3 top-[calc(env(safe-area-inset-top)+5.5rem)] z-10 flex flex-col items-start gap-2 md:top-3">
-                <ParkDetailButton
-                  slug={roamFocusSlug}
-                  name={parksQ.data?.find((p) => p.slug === roamFocusSlug)?.name ?? null}
-                />
-                <MapToggleChips />
+                {/* The whole row scrolls as one — the park-info shortcut (only once
+                    zoomed into a park), the breaker, and park chips. Negative
+                    margins + matching padding let it bleed past the cluster's inset
+                    to the screen edges while the first item still lines up with the
+                    search bar. */}
+                <div className="pointer-events-auto -mx-3 flex w-[calc(100%+1.5rem)] items-center gap-2 overflow-x-auto px-3 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {roamFocusSlug && <ParkDetailButton slug={roamFocusSlug} />}
+                  <ParkZoomChips
+                    parks={parksQ.data ?? []}
+                    focusSlug={roamFocusSlug}
+                    onZoom={(slug) => mapRef.current?.flyToPark(slug)}
+                  />
+                </div>
+                {roamFocusSlug && <MapToggleChips />}
               </div>
             )}
             {attached && engine && (
@@ -564,16 +573,57 @@ function LocateButton({ state, onClick }: { state: GeoState; onClick: () => void
  * chips (the cluster owns the absolute positioning). Tapping it opens the full
  * `/park/$slug` page; the press sinks via translate-y.
  */
-function ParkDetailButton({ slug, name }: { slug: string; name: string | null }) {
+function ParkDetailButton({ slug }: { slug: string }) {
   return (
     <Link
       to="/park/$slug"
       params={{ slug }}
-      className="btn-3d-outline border-3d shadow-3d pointer-events-auto flex max-w-[70vw] items-center gap-1.5 truncate rounded-full bg-background/95 px-4 py-2 text-sm font-medium text-foreground backdrop-blur transition-[transform,box-shadow] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-border"
+      className="btn-3d-outline border-3d shadow-3d pointer-events-auto flex shrink-0 select-none items-center gap-1.5 rounded-full bg-background/95 px-4 py-2 text-sm font-medium text-foreground backdrop-blur transition-[transform,box-shadow] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-border"
     >
-      <span className="truncate">{name ? `${name} details` : "Park details"}</span>
+      <span>Park info</span>
       <ArrowUpRightIcon className="size-4 shrink-0 text-muted-foreground" />
     </Link>
+  );
+}
+
+/**
+ * A horizontally-scrollable row of pills to jump the roam camera to a park.
+ * Zoomed into a park (`focusSlug` set): offers the *other* parks, split from the
+ * details shortcut by an "or / go to" copy breaker. Zoomed out (`focusSlug` null):
+ * offers every park with no breaker. Tapping a chip flies the shared map there;
+ * the roam viewport watcher then re-points the cluster at the new focus. Renders
+ * nothing when there's no park to offer.
+ */
+function ParkZoomChips({
+  parks,
+  focusSlug,
+  onZoom,
+}: {
+  parks: ReadonlyArray<{ slug: string; name: string }>;
+  focusSlug: string | null;
+  onZoom: (slug: string) => void;
+}) {
+  const others = focusSlug ? parks.filter((p) => p.slug !== focusSlug) : parks;
+  if (others.length === 0) return null;
+  return (
+    <>
+      {focusSlug && (
+        <span className="flex shrink-0 select-none flex-col items-center rounded-full bg-background/80 px-2.5 py-1 text-center font-medium leading-none text-muted-foreground backdrop-blur">
+          <span className="text-[10px]">or</span>
+          <span className="mt-0.5 text-xs">go to</span>
+        </span>
+      )}
+      {others.map((p) => (
+        <button
+          key={p.slug}
+          type="button"
+          onClick={() => onZoom(p.slug)}
+          className="btn-3d-outline border-3d shadow-3d flex shrink-0 select-none items-center whitespace-nowrap rounded-full bg-background/95 px-4 py-2 text-sm font-medium text-foreground backdrop-blur transition-[transform,box-shadow] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-border"
+        >
+          {p.name}
+        </button>
+      ))}
+    </>
   );
 }
 
@@ -636,9 +686,14 @@ function MapToggleChips() {
             onClick={() => (t.kind === "category" ? toggleCategory(t.keys) : toggleLayer(t.key))}
             aria-pressed={active}
             className={cn(
-              "btn-3d-outline border-3d shadow-3d flex h-11 shrink-0 items-center gap-1.5 rounded-full bg-background/95 px-4 text-sm font-medium text-foreground backdrop-blur transition-[transform,box-shadow,background-color,color] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-border",
-              active &&
-                "bg-primary text-primary-foreground [--btn-3d:color-mix(in_oklch,var(--primary),black_32%)] [--btn-glare:color-mix(in_oklch,var(--primary),black_32%)]",
+              "btn-3d-outline border-3d flex shrink-0 select-none items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium backdrop-blur transition-[transform,box-shadow,background-color,color] duration-150 ease-out dark:border-border",
+              active
+                ? // Selected: hold the pressed-in state — the filled pill sits
+                  // translated down into its shelf with the shadow collapsed, so it
+                  // reads as depressed rather than raised.
+                  "translate-y-[3px] bg-primary text-primary-foreground shadow-3d-active [--btn-3d:color-mix(in_oklch,var(--primary),black_32%)] [--btn-glare:color-mix(in_oklch,var(--primary),black_32%)]"
+                : // Resting: raised 3D outline pill that sinks on press.
+                  "bg-background/95 text-foreground shadow-3d active:translate-y-[3px] active:shadow-3d-active",
             )}
           >
             <Icon className="size-5" />

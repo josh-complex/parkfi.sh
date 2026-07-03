@@ -30,6 +30,7 @@ import {
   ORLANDO_ZOOM,
   poiCardBodyHtml,
   saveRoamCamera,
+  SPREAD_ZOOM,
   waitLabelFor,
   wireHoverLabelFlip,
 } from "./shared.tsx";
@@ -203,6 +204,8 @@ export function ParkMap({
   const focusSlugRef = React.useRef<string | null>(null);
   focusSlugRef.current = focusSlug;
   const effectiveSlug = roam ? focusSlug : activeSlug;
+  const effectiveSlugRef = React.useRef<string | null>(effectiveSlug);
+  effectiveSlugRef.current = effectiveSlug;
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<maplibregl.Map | null>(null);
   const markersRef = React.useRef<Array<maplibregl.Marker>>([]);
@@ -281,12 +284,17 @@ export function ParkMap({
     layerRef.current = new MarkerCluster(
       DECLUTTER_SIZE,
       () => selectedIdRef.current ?? null,
-      // Tap a cluster head -> fit the camera to its members so the group splits
-      // apart on the way in (unproject the projected points back to lng/lat).
+      // Tap a cluster head -> zoom in on its members so the group splits apart on
+      // the way in (unproject the projected points back to lng/lat). A tight,
+      // near-coincident group barely changes the fit zoom, which would just
+      // re-form the cluster, so we always land at least a couple levels closer
+      // than we are now and allow a deeper max so repeated taps keep progressing.
       (points) => {
         const b = new maplibregl.LngLatBounds();
         for (const p of points) b.extend(map.unproject([p.x, p.y]));
-        map.fitBounds(b, { padding: 80, maxZoom: 18, duration: 500 });
+        const cam = map.cameraForBounds(b, { padding: 80, maxZoom: 21 });
+        const target = Math.min(21, Math.max(cam?.zoom ?? 0, map.getZoom() + 2));
+        map.easeTo({ center: cam?.center ?? b.getCenter(), zoom: target, duration: 500 });
       },
       // Any marker click collapses an open ride card before it zooms/activates.
       () => {
@@ -300,6 +308,7 @@ export function ParkMap({
       resize: () => map.resize(),
       zoomIn: () => map.zoomIn(),
       zoomOut: () => map.zoomOut(),
+      flyToPark: (slug) => flyToPark(slug),
     });
     return () => {
       map.remove();
@@ -462,7 +471,14 @@ export function ParkMap({
     if (declutterRafRef.current) return;
     declutterRafRef.current = requestAnimationFrame(() => {
       declutterRafRef.current = 0;
-      layerRef.current?.refresh();
+      const map = mapRef.current;
+      const layer = layerRef.current;
+      if (!layer) return;
+      // Cluster inside a park until we're zoomed in far enough, then spread so
+      // markers stop grouping and just nudge apart. Overview always spreads.
+      const inPark = effectiveSlugRef.current != null;
+      layer.setMode(inPark && (map?.getZoom() ?? 0) < SPREAD_ZOOM ? "cluster" : "spread");
+      layer.refresh();
     });
   }, []);
 
@@ -472,7 +488,7 @@ export function ParkMap({
     const map = mapRef.current;
     const park = parksRef.current?.find((p) => p.slug === slug);
     if (!map || !park) return;
-    map.setMaxZoom(19);
+    map.setMaxZoom(21);
     map.setMaxBounds(null);
     if (park.bounds) {
       map.fitBounds(
@@ -498,8 +514,9 @@ export function ParkMap({
     const layer = layerRef.current;
     if (!map || !layer || !ready) return;
     clearMarkers();
-    // Overview spreads its handful of parks apart; a park view clusters its rides.
-    layer.setMode(effectiveSlug ? "cluster" : "spread");
+    // Overview spreads its handful of parks apart; a park view clusters its rides
+    // until it's zoomed in past SPREAD_ZOOM, where it spreads too (no grouping).
+    layer.setMode(effectiveSlug && map.getZoom() < SPREAD_ZOOM ? "cluster" : "spread");
     const items: Array<DeclutterItem> = [];
 
     if (!effectiveSlug) {
@@ -847,7 +864,7 @@ export function ParkMap({
     const park = parks?.find((p) => p.slug === activeSlug);
     if (!park) return;
     // Park views need close zoom; lift the overview's cap.
-    map.setMaxZoom(19);
+    map.setMaxZoom(21);
     if (park.bounds) {
       const bounds = park.bounds;
       // Clear first so the fit isn't constrained mid-flight, then cap the

@@ -28,6 +28,7 @@ import {
   ORLANDO_CENTER,
   ORLANDO_ZOOM,
   saveRoamCamera,
+  SPREAD_ZOOM,
   waitLabelFor,
   wireHoverLabelFlip,
 } from "./shared.tsx";
@@ -46,16 +47,21 @@ const ROAM_RIDE_ZOOM = 14;
  * identical. Leaflet pulls them straight as `<img>` tiles (no WebGL).
  */
 function makeTileLayer(dark: boolean): L.TileLayer {
+  // maxNativeZoom caps the deepest tiles the provider actually serves; maxZoom
+  // sits above it so Leaflet upscales (overzooms) those tiles for the extra-close
+  // park levels instead of blanking out.
   return dark
     ? L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png", {
         subdomains: "abcd",
-        maxZoom: 20,
+        maxNativeZoom: 20,
+        maxZoom: 21,
         attribution:
           '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
       })
     : L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         subdomains: "abc",
-        maxZoom: 19,
+        maxNativeZoom: 19,
+        maxZoom: 21,
         attribution:
           '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       });
@@ -164,6 +170,8 @@ export function ParkMapLeaflet({
   const focusSlugRef = React.useRef<string | null>(null);
   focusSlugRef.current = focusSlug;
   const effectiveSlug = roam ? focusSlug : activeSlug;
+  const effectiveSlugRef = React.useRef<string | null>(effectiveSlug);
+  effectiveSlugRef.current = effectiveSlug;
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<L.Map | null>(null);
   const tileRef = React.useRef<L.TileLayer | null>(null);
@@ -222,15 +230,17 @@ export function ParkMapLeaflet({
     layerRef.current = new MarkerCluster(
       DECLUTTER_SIZE,
       () => selectedIdRef.current ?? null,
-      // Tap a cluster head -> fit the camera to its members (layer points back to
-      // lat/lng) so the group splits apart on the way in.
+      // Tap a cluster head -> zoom in on its members (layer points back to
+      // lat/lng) so the group splits apart on the way in. A tight, near-coincident
+      // group barely changes the fit zoom, which would just re-form the cluster, so
+      // we always land at least a couple levels closer than we are now and allow a
+      // deeper max so repeated taps keep progressing.
       (points) => {
         const lls = points.map((p) => map.layerPointToLatLng(L.point(p.x, p.y)));
-        map.flyToBounds(L.latLngBounds(lls), {
-          padding: [80, 80],
-          maxZoom: 18,
-          duration: FLY_SECONDS,
-        });
+        const bounds = L.latLngBounds(lls);
+        const fit = map.getBoundsZoom(bounds, false, L.point(80, 80));
+        const target = Math.min(21, Math.max(fit, map.getZoom() + 2));
+        map.flyTo(bounds.getCenter(), target, { duration: FLY_SECONDS });
       },
       // Any marker click collapses an open ride card before it zooms/activates.
       () => {
@@ -249,6 +259,7 @@ export function ParkMapLeaflet({
       },
       zoomIn: () => map.zoomIn(),
       zoomOut: () => map.zoomOut(),
+      flyToPark: (slug) => flyToPark(slug),
     });
     return () => {
       map.remove();
@@ -296,7 +307,14 @@ export function ParkMapLeaflet({
     if (declutterRafRef.current) return;
     declutterRafRef.current = requestAnimationFrame(() => {
       declutterRafRef.current = 0;
-      layerRef.current?.refresh();
+      const map = mapRef.current;
+      const layer = layerRef.current;
+      if (!layer) return;
+      // Cluster inside a park until we're zoomed in far enough, then spread so
+      // markers stop grouping and just nudge apart. Overview always spreads.
+      const inPark = effectiveSlugRef.current != null;
+      layer.setMode(inPark && (map?.getZoom() ?? 0) < SPREAD_ZOOM ? "cluster" : "spread");
+      layer.refresh();
     });
   }, []);
 
@@ -305,7 +323,7 @@ export function ParkMapLeaflet({
     const map = mapRef.current;
     const park = parksRef.current?.find((p) => p.slug === slug);
     if (!map || !park) return;
-    map.setMaxZoom(19);
+    map.setMaxZoom(21);
     map.setMaxBounds(null as unknown as L.LatLngBoundsExpression);
     if (park.bounds) {
       map.flyToBounds(
@@ -327,8 +345,9 @@ export function ParkMapLeaflet({
     const layer = layerRef.current;
     if (!map || !layer || !ready) return;
     clearMarkers();
-    // Overview spreads its handful of parks apart; a park view clusters its rides.
-    layer.setMode(effectiveSlug ? "cluster" : "spread");
+    // Overview spreads its handful of parks apart; a park view clusters its rides
+    // until it's zoomed in past SPREAD_ZOOM, where it spreads too (no grouping).
+    layer.setMode(effectiveSlug && map.getZoom() < SPREAD_ZOOM ? "cluster" : "spread");
     const items: Array<DeclutterItem> = [];
 
     if (!effectiveSlug) {
@@ -654,7 +673,7 @@ export function ParkMapLeaflet({
     const park = parks?.find((p) => p.slug === activeSlug);
     if (!park) return;
     // Park views need close zoom; lift the overview's cap.
-    map.setMaxZoom(19);
+    map.setMaxZoom(21);
     if (park.bounds) {
       const bd = park.bounds;
       const b = L.latLngBounds([

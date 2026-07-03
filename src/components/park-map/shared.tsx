@@ -34,7 +34,12 @@ import type { Feature, FeatureCollection, MultiPolygon, Polygon } from "geojson"
 /** A renderer handle the map stage pokes: keep the canvas sized during the layout
  *  morph, and drive zoom from our own overlay controls (the engine's native
  *  +/- are hidden in favour of 3D buttons that match the app). */
-export type MapHandle = { resize: () => void; zoomIn: () => void; zoomOut: () => void };
+export type MapHandle = {
+  resize: () => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  flyToPark: (slug: string) => void;
+};
 
 /**
  * Last free-roam camera (center `[lng,lat]` + zoom), remembered across
@@ -69,10 +74,17 @@ export const MORPH_MS = 420;
 // Square (px) reserved around a full attraction marker for collision avoidance.
 // Two markers whose projected centers fall within this on both axes can't both
 // stay expanded; the lower-priority one is absorbed into the anchor's "+N"
-// cluster (a tap on which zooms in). Kept close to the photo disc (44px) so
-// markers only group once they'd actually overlap — less aggressive grouping,
-// more individual pins visible.
-export const DECLUTTER_SIZE = 52;
+// cluster (a tap on which zooms in). Well below the photo disc (44px) so markers
+// only group once the discs substantially overlap — less aggressive grouping, more
+// individual pins visible (and a cluster tap now zooms in enough to split them).
+export const DECLUTTER_SIZE = 30;
+
+// At/above this zoom a park view stops clustering entirely and switches to the
+// overview's "spread" layout — every marker stays visible, overlapping ones just
+// nudge apart. By this depth pins are close to their true spots, so a "+N" group
+// is more annoying than the slight nudge, and the user can always zoom that last
+// bit to separate them fully.
+export const SPREAD_ZOOM = 20;
 
 // Ring highlight layered onto the selected attraction marker (no scale — the
 // charted ride shouldn't balloon). Applied to the inner element, not the marker
