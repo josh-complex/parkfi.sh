@@ -496,7 +496,7 @@ export function MapStageProvider({
             {attached && engine && roam && (
               <div
                 data-map-chrome="top"
-                className="pointer-events-none absolute inset-x-3 top-[calc(env(safe-area-inset-top)+5.5rem)] z-10 flex flex-col items-start gap-2 md:top-3"
+                className="pointer-events-none absolute inset-x-3 top-[calc(env(safe-area-inset-top)+5.25rem)] z-10 flex flex-col items-start gap-1 md:top-3"
               >
                 <ParkChipScroller
                   parks={parksDisneyFirst}
@@ -523,7 +523,7 @@ export function MapStageProvider({
                 className="pointer-events-none absolute left-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] z-10 flex flex-col items-start gap-2 md:bottom-3"
               >
                 <ParkDetailButton slug={roamFocusSlug} />
-                <RideFilterButton className="pointer-events-auto" />
+                <RideFilterButton className="pointer-events-auto gap-1.5 px-4 py-2 text-sm [&>svg]:size-4" />
               </div>
             )}
             {/* Kingdom Hearts play overlay — GL renderer only. Live over a focused
