@@ -441,6 +441,11 @@ export function ParkMapLeaflet({
               heightRequirement: a.meta?.heightRequirement ?? null,
             },
             filter,
+            // On the roam map, once the user has turned on another layer
+            // (Shops/Eats), deselecting every ride group hides the rides
+            // instead of falling back to showing them all. With nothing
+            // selected at all we keep the default rides+shows.
+            { emptyCategoriesMatchNone: roam && (filter.layers.shops || filter.layers.dining) },
           )
         )
           continue;

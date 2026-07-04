@@ -64,7 +64,12 @@ export function rideFilterCount(f: RideFilter): number {
 }
 
 /** Does a ride pass the filter? Fields are normalized so both the map's
- *  `BoardItem` (meta.heightRequirement) and the Waits list's flat row work. */
+ *  `BoardItem` (meta.heightRequirement) and the Waits list's flat row work.
+ *
+ *  `emptyCategoriesMatchNone` flips the empty-set meaning: normally an empty
+ *  category set means "no category filter, show all" (the Waits list), but on
+ *  the map — where the category chips are explicit on/off toggles — deselecting
+ *  every group must hide all ride markers rather than reveal them again. */
 export function rideMatchesFilter(
   r: {
     category: string | null;
@@ -73,8 +78,11 @@ export function rideMatchesFilter(
     heightRequirement: string | null;
   },
   f: RideFilter,
+  opts?: { emptyCategoriesMatchNone?: boolean },
 ): boolean {
-  if (f.categories.size > 0 && (r.category == null || !f.categories.has(r.category))) return false;
+  if (f.categories.size === 0) {
+    if (opts?.emptyCategoriesMatchNone) return false;
+  } else if (r.category == null || !f.categories.has(r.category)) return false;
   if (f.openOnly && r.status !== "OPERATING") return false;
   if (f.maxWait != null && (r.standbyWait == null || r.standbyWait > f.maxWait)) return false;
   if (f.noHeightReq && r.heightRequirement != null) return false;
