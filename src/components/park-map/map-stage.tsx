@@ -207,6 +207,15 @@ export function MapStageProvider({
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const roam = pathname === "/map";
   const parksQ = useQuery(trpc.parks.list.queryOptions());
+  // Park chips list Disney parks first (the app's primary operator), otherwise
+  // preserving the query's resort/name order. `.sort` is stable, so this only
+  // hoists Disney to the front.
+  const parksDisneyFirst = React.useMemo(() => {
+    const parks = parksQ.data ?? [];
+    return [...parks].sort(
+      (a, b) => (a.operatorSlug === "disney" ? 0 : 1) - (b.operatorSlug === "disney" ? 0 : 1),
+    );
+  }, [parksQ.data]);
 
   // The free-roam map opens with the "Rides" chip lit (rides only) rather than
   // every category at once. We seed the shared category filter to the ride group
@@ -490,7 +499,7 @@ export function MapStageProvider({
                 className="pointer-events-none absolute inset-x-3 top-[calc(env(safe-area-inset-top)+5.5rem)] z-10 flex flex-col items-start gap-2 md:top-3"
               >
                 <ParkChipScroller
-                  parks={parksQ.data ?? []}
+                  parks={parksDisneyFirst}
                   focusSlug={roamFocusSlug}
                   onZoom={(slug) => mapRef.current?.flyToPark(slug)}
                 />
@@ -504,8 +513,18 @@ export function MapStageProvider({
               />
             )}
             {attached && engine && <LocateButton state={geo.state} onClick={geo.locate} />}
-            {attached && engine && roam && !playMode && (
-              <RideFilterButton className="absolute left-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] z-10 md:bottom-3" />
+            {/* Bottom-left cluster (roam, once a park is focused): the park-details
+                shortcut stacked directly on top of the ride filter button. Both are
+                hidden at the all-parks overview — there's no single park to open or
+                filter until you've zoomed into one. */}
+            {attached && engine && roam && !playMode && roamFocusSlug && (
+              <div
+                data-map-chrome="bottom"
+                className="pointer-events-none absolute left-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] z-10 flex flex-col items-start gap-2 md:bottom-3"
+              >
+                <ParkDetailButton slug={roamFocusSlug} />
+                <RideFilterButton className="pointer-events-auto" />
+              </div>
             )}
             {/* Kingdom Hearts play overlay — GL renderer only. Live over a focused
                 Disney park; otherwise a hint points the player at one. */}
@@ -630,9 +649,9 @@ function LocateButton({ state, onClick }: { state: GeoState; onClick: () => void
 
 /**
  * Free-roam shortcut into the focused park's dashboard. Appears (traveling in the
- * portal with the map) only when the roam map is zoomed into a park and showing
- * its rides — a left-aligned 3D pill in the top-left cluster, below the layer
- * chips (the cluster owns the absolute positioning). Tapping it opens the full
+ * portal with the map) only when the roam map is zoomed into a park — a left-aligned
+ * 3D pill in the bottom-left cluster, stacked directly on top of the filter button
+ * (the cluster owns the absolute positioning). Tapping it opens the full
  * `/park/$slug` page; the press sinks via translate-y.
  */
 function ParkDetailButton({ slug }: { slug: string }) {
@@ -649,14 +668,15 @@ function ParkDetailButton({ slug }: { slug: string }) {
 }
 
 /**
- * A horizontally-scrollable row of pills to jump the roam camera to a park.
- * Zoomed into a park (`focusSlug` set): offers the *other* parks, split from the
- * details shortcut by an "or / go to" copy breaker. Zoomed out (`focusSlug` null):
- * offers every park with no breaker. Tapping a chip flies the shared map there;
- * the roam viewport watcher then re-points the cluster at the new focus. Renders
- * nothing when there's no park to offer.
+ * The top park-chip row: a plain horizontally-scrollable row of pills that fly the
+ * roam camera to a park. Zoomed into a park (`focusSlug` set) it offers the *other*
+ * parks; zoomed out (`focusSlug` null) it offers every park. Tapping a chip flies
+ * the shared map there; the roam viewport watcher then re-points the cluster at the
+ * new focus. Renders nothing when there's no park to offer. Negative margins +
+ * matching padding let the row bleed to the screen edges while the first chip still
+ * lines up with the search bar.
  */
-function ParkZoomChips({
+function ParkChipScroller({
   parks,
   focusSlug,
   onZoom,
@@ -668,13 +688,7 @@ function ParkZoomChips({
   const others = focusSlug ? parks.filter((p) => p.slug !== focusSlug) : parks;
   if (others.length === 0) return null;
   return (
-    <>
-      {focusSlug && (
-        <span className="mt-1 flex shrink-0 select-none flex-col items-center rounded-full bg-background/80 px-2.5 py-1 text-center font-medium leading-none text-muted-foreground backdrop-blur">
-          <span className="text-[10px] leading-none">or</span>
-          <span className="mb-0.5 text-xs leading-none">go to</span>
-        </span>
-      )}
+    <div className="pointer-events-auto -mx-3 flex w-[calc(100%+1.5rem)] touch-pan-x items-center gap-1.5 overflow-x-auto overscroll-contain px-3 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {others.map((p) => (
         <button
           key={p.slug}
@@ -685,83 +699,6 @@ function ParkZoomChips({
           {p.name}
         </button>
       ))}
-    </>
-  );
-}
-
-// Left inset (px) of the whole cluster — matches the `inset-x-3` parent, so the
-// pinned button and the scroll row's `px-3` both line up with the search bar.
-const CHIP_ROW_INSET = 12;
-// How far past the pinned button the chips finish fading back in — short, so the
-// fade hugs the button and the chips sit close to it.
-const CHIP_FADE_TAIL = 8;
-
-/**
- * The top park-chip row. Once zoomed into a park, the "Park info" shortcut is
- * pinned to the left as its own overlay while the park chips (and the "or / go to"
- * breaker) scroll beneath it — and the scroll row is *masked* so those chips fade
- * to transparent as they slide under the button, dissolving into it rather than
- * bumping a visible panel. Zoomed out (no focus) it's just a plain scroll row.
- *
- * The button is measured (its label is fixed, but the width still depends on font
- * metrics) so both the reserved left gutter and the mask's fade stops track it
- * exactly. Negative margins + matching padding let the row bleed to the screen
- * edges while the first item still lines up with the search bar.
- */
-function ParkChipScroller({
-  parks,
-  focusSlug,
-  onZoom,
-}: {
-  parks: ReadonlyArray<{ slug: string; name: string }>;
-  focusSlug: string | null;
-  onZoom: (slug: string) => void;
-}) {
-  const btnRef = React.useRef<HTMLDivElement>(null);
-  const [btnWidth, setBtnWidth] = React.useState(0);
-  React.useLayoutEffect(() => {
-    const el = btnRef.current;
-    if (!focusSlug || !el) {
-      setBtnWidth(0);
-      return;
-    }
-    const measure = () => setBtnWidth(el.offsetWidth);
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [focusSlug]);
-
-  // Right edge of the pinned button (from the row's screen-flush left). Chips are
-  // fully transparent up to here, then fade back in across CHIP_FADE_TAIL, so a
-  // chip has vanished before it reaches the button.
-  const fadeEnd = focusSlug && btnWidth ? CHIP_ROW_INSET + btnWidth : 0;
-  const mask = fadeEnd
-    ? `linear-gradient(to right, transparent 0, transparent ${fadeEnd}px, #000 ${fadeEnd + CHIP_FADE_TAIL}px)`
-    : undefined;
-
-  return (
-    <div className="relative -mx-3 w-[calc(100%+1.5rem)]">
-      <div
-        className="pointer-events-auto flex touch-pan-x items-center gap-1.5 overflow-x-auto overscroll-contain px-3 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        style={mask ? { WebkitMaskImage: mask, maskImage: mask } : undefined}
-      >
-        {focusSlug &&
-          btnWidth > 0 && (
-            // Transparent gutter reserving the pinned button's footprint (plus a
-            // little air past the fade) so the chips rest just clear of it, then
-            // scroll under it as you swipe.
-            <div aria-hidden className="shrink-0" style={{ width: btnWidth + 4 }} />
-          )}
-        <ParkZoomChips parks={parks} focusSlug={focusSlug} onZoom={onZoom} />
-      </div>
-      {focusSlug && (
-        <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center pb-1">
-          <div ref={btnRef} className="pointer-events-auto">
-            <ParkDetailButton slug={focusSlug} />
-          </div>
-        </div>
-      )}
     </div>
   );
 }
