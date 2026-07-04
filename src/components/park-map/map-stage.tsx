@@ -5,13 +5,23 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useStore } from "@tanstack/react-store";
 import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  ArrowUpDownIcon,
+  ArrowUpIcon,
+  ArrowUpLeftIcon,
   ArrowUpRightIcon,
+  ChevronDownIcon,
+  CornerUpLeftIcon,
+  CornerUpRightIcon,
   DramaIcon,
+  FlagIcon,
   LoaderCircleIcon,
   LocateFixedIcon,
   MinusIcon,
   PlusIcon,
   RollerCoasterIcon,
+  RotateCwIcon,
   ShoppingBagIcon,
   UtensilsIcon,
   XIcon,
@@ -29,6 +39,7 @@ import { useTRPC } from "#/integrations/trpc/react.ts";
 import { cn } from "#/lib/utils.ts";
 import { lazyWithReload } from "#/lib/lazy-with-reload.tsx";
 import { distanceMeters, pointInPolygon } from "#/server/living/geofence.ts";
+import type { RouteManeuver } from "#/server/routing/valhalla.ts";
 
 import { MAP_TYPE_COLOR, type MapHandle, type MapItemKind } from "./shared.tsx";
 import { hasWebGl } from "./webgl.ts";
@@ -308,12 +319,17 @@ export function MapStageProvider({
   // trip origin (so the route doesn't re-fetch/re-frame on every GPS tick) and
   // routes to the destination via the `routing.route` query. If location isn't
   // granted yet, we stash the destination and fulfill it once a fix arrives.
+  // Both ends are labeled `Place`s (not a bare origin coord) so the route is
+  // symmetric — Swap just flips them, which re-keys the query and re-fetches.
   type Dest = { id: number; name: string; coords: [number, number] };
+  type Place = { name: string; coords: [number, number] };
   const [pendingDest, setPendingDest] = React.useState<Dest | null>(null);
-  const [trip, setTrip] = React.useState<{ origin: [number, number]; dest: Dest } | null>(null);
+  const [trip, setTrip] = React.useState<{ from: Place; to: Place } | null>(null);
   const requestDirections = React.useCallback(
     (d: Dest) => {
-      if (geo.state.status === "granted") setTrip({ origin: geo.state.coords, dest: d });
+      const to: Place = { name: d.name, coords: d.coords };
+      if (geo.state.status === "granted")
+        setTrip({ from: { name: "Your location", coords: geo.state.coords }, to });
       else {
         setPendingDest(d);
         geo.locate();
@@ -323,14 +339,17 @@ export function MapStageProvider({
   );
   React.useEffect(() => {
     if (geo.state.status === "granted" && pendingDest) {
-      setTrip({ origin: geo.state.coords, dest: pendingDest });
+      setTrip({
+        from: { name: "Your location", coords: geo.state.coords },
+        to: { name: pendingDest.name, coords: pendingDest.coords },
+      });
       setPendingDest(null);
     }
   }, [geo.state, pendingDest]);
   const routeQ = useQuery({
     ...trpc.routing.route.queryOptions({
-      from: trip?.origin ?? [0, 0],
-      to: trip?.dest.coords ?? [0, 0],
+      from: trip?.from.coords ?? [0, 0],
+      to: trip?.to.coords ?? [0, 0],
     }),
     enabled: trip != null,
   });
@@ -338,6 +357,12 @@ export function MapStageProvider({
     setTrip(null);
     setPendingDest(null);
   }, []);
+  const swapEnds = React.useCallback(() => {
+    setTrip((t) => (t ? { from: t.to, to: t.from } : t));
+  }, []);
+  // While navigating (a resolved trip, or waiting on a location fix for a
+  // pending one), the green nav UI takes over and the filter chrome hides.
+  const navigating = trip != null || pendingDest != null;
   // The map host is a plain DOM node created imperatively (client-only), NOT a
   // React-rendered element. We then `appendChild` it between the parking div and
   // whichever <MapSlot> claims it. If React owned this node in its tree, moving
@@ -493,7 +518,7 @@ export function MapStageProvider({
                 shortcut sits directly below the search bar, with the map-layer
                 toggle chips beneath it. The chip row scrolls horizontally if it
                 can't fit. */}
-            {attached && engine && roam && (
+            {attached && engine && roam && !navigating && (
               <div
                 data-map-chrome="top"
                 className="pointer-events-none absolute inset-x-3 top-[calc(env(safe-area-inset-top)+5.25rem)] z-10 flex flex-col items-start gap-1 md:top-3"
@@ -517,7 +542,7 @@ export function MapStageProvider({
                 shortcut stacked directly on top of the ride filter button. Both are
                 hidden at the all-parks overview — there's no single park to open or
                 filter until you've zoomed into one. */}
-            {attached && engine && roam && !playMode && roamFocusSlug && (
+            {attached && engine && roam && !playMode && roamFocusSlug && !navigating && (
               <div
                 data-map-chrome="bottom"
                 className="pointer-events-none absolute left-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] z-10 flex flex-col items-start gap-2 md:bottom-3"
@@ -544,14 +569,17 @@ export function MapStageProvider({
             {attached && engine === "leaflet" && roam && playMode ? (
               <PlayHint>Kingdom Hearts needs a WebGL-capable browser to play.</PlayHint>
             ) : null}
-            {attached && trip && (
-              <DirectionsPanel
-                destName={trip.dest.name}
+            {attached && navigating && (
+              <NavOverlay
+                destName={trip?.to.name ?? pendingDest?.name ?? ""}
                 geoBlocked={geo.state.status === "denied" || geo.state.status === "unavailable"}
+                locating={trip == null}
                 loading={routeQ.isFetching && !routeQ.data}
                 error={routeQ.isError}
                 distanceMeters={routeQ.data?.distanceMeters ?? null}
                 durationSeconds={routeQ.data?.durationSeconds ?? null}
+                maneuvers={routeQ.data?.maneuvers ?? null}
+                onSwap={swapEnds}
                 onClear={clearTrip}
               />
             )}
@@ -809,60 +837,204 @@ function formatWalk(s: number): string {
 }
 
 /**
- * Floating directions readout, overlaid at the top of the map (travels in the
- * portal with the map). Shows the route's distance + walking ETA to the
- * destination, a loading/permission/error state, and a dismiss button.
+ * Map a Valhalla maneuver `type` code to a turn icon. Codes follow Valhalla's
+ * `DirectionsLeg.Maneuver.Type` enum; we collapse the ones a pedestrian on OSM
+ * footpaths actually hits (start/continue/turns/destination) and fall back to a
+ * straight arrow for anything exotic (ramps, ferries, transit).
  */
-function DirectionsPanel({
+function maneuverIcon(type: number): LucideIcon {
+  switch (type) {
+    case 4: // destination
+    case 5: // destination right
+    case 6: // destination left
+      return FlagIcon;
+    case 9: // slight right
+    case 23: // stay right
+      return ArrowUpRightIcon;
+    case 10: // right
+    case 18: // ramp right
+    case 20: // exit right
+      return CornerUpRightIcon;
+    case 11: // sharp right
+      return ArrowRightIcon;
+    case 16: // slight left
+    case 24: // stay left
+      return ArrowUpLeftIcon;
+    case 15: // left
+    case 19: // ramp left
+    case 21: // exit left
+      return CornerUpLeftIcon;
+    case 14: // sharp left
+      return ArrowLeftIcon;
+    case 12: // uturn right
+    case 13: // uturn left
+      return RotateCwIcon;
+    default: // 1 start, 8 continue, 25 merge, roundabouts, unknown…
+      return ArrowUpIcon;
+  }
+}
+
+/**
+ * Google-style walking-nav UI, overlaid on the map while a trip is active (it
+ * travels in the portal with the map, and the filter chrome hides beneath it).
+ * Two parts, deliberately solid highway-sign green to read as "actively
+ * navigating" against the light 3D chips:
+ *  - a top turn sign where the park/category chips were — the next maneuver,
+ *    tappable to expand the full step list;
+ *  - a bottom bar where the Filter button was — ETA + distance, with Swap
+ *    (reverse origin/destination) and Cancel (end nav → plain UI).
+ */
+function NavOverlay({
   destName,
   geoBlocked,
+  locating,
   loading,
   error,
   distanceMeters,
   durationSeconds,
+  maneuvers,
+  onSwap,
   onClear,
 }: {
   destName: string;
   geoBlocked: boolean;
+  /** Waiting on a location fix — trip not resolved yet, so no route to show. */
+  locating: boolean;
   loading: boolean;
   error: boolean;
   distanceMeters: number | null;
   durationSeconds: number | null;
+  maneuvers: Array<RouteManeuver> | null;
+  onSwap: () => void;
   onClear: () => void;
 }) {
-  let body: React.ReactNode;
-  if (geoBlocked) {
-    body = <span className="text-muted-foreground">Enable location to route to {destName}</span>;
-  } else if (loading) {
-    body = (
-      <span className="flex items-center gap-2">
-        <LoaderCircleIcon className="size-4 animate-spin" />
-        Finding route to {destName}…
-      </span>
-    );
-  } else if (error || distanceMeters == null || durationSeconds == null) {
-    body = <span className="text-muted-foreground">No walking route found to {destName}</span>;
-  } else {
-    body = (
-      <span>
-        <span className="font-semibold">{formatDistance(distanceMeters)}</span>
-        <span className="text-muted-foreground"> · {formatWalk(durationSeconds)} to </span>
-        <span className="font-medium">{destName}</span>
-      </span>
-    );
-  }
-  return (
-    <div className="pointer-events-auto absolute inset-x-3 top-3 z-10 mx-auto flex max-w-md items-center gap-3 rounded-2xl border border-black/10 bg-background/95 px-4 py-2.5 text-sm shadow-lg backdrop-blur">
-      <div className="min-w-0 flex-1 truncate">{body}</div>
-      <button
-        type="button"
-        onClick={onClear}
-        aria-label="Clear route"
-        className="-mr-1 inline-flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-foreground/10 hover:text-foreground active:scale-95"
-      >
-        <XIcon className="size-4" />
-      </button>
+  const [expanded, setExpanded] = React.useState(false);
+  // Steps only make sense on a resolved route; keep the ones with real copy
+  // (Valhalla sometimes emits an empty final maneuver).
+  const steps = (maneuvers ?? []).filter((m) => m.instruction.trim().length > 0);
+  const routed =
+    !geoBlocked &&
+    !locating &&
+    !loading &&
+    !error &&
+    distanceMeters != null &&
+    durationSeconds != null;
+  const canExpand = routed && steps.length > 0;
+  // Collapse whenever the route goes away (new fetch, cleared, errored) so a
+  // stale step list can't linger open over the next trip.
+  React.useEffect(() => {
+    if (!canExpand) setExpanded(false);
+  }, [canExpand]);
+
+  // Top sign: headline the first maneuver once routed (no live GPS tracking yet,
+  // so "next turn" == first step); otherwise a status line.
+  const first = steps[0];
+  const HeadIcon = geoBlocked
+    ? LocateFixedIcon
+    : locating || loading
+      ? LoaderCircleIcon
+      : routed && first
+        ? maneuverIcon(first.type)
+        : ArrowUpIcon;
+  let headline: React.ReactNode;
+  if (geoBlocked) headline = "Enable location to navigate";
+  else if (locating) headline = "Getting your location…";
+  else if (loading) headline = "Finding route…";
+  else if (error || !routed) headline = `No walking route found to ${destName}`;
+  else headline = first ? first.instruction : `Heading to ${destName}`;
+  const headSub =
+    routed && first && first.distanceMeters > 0 ? formatDistance(first.distanceMeters) : null;
+
+  const topSign = (
+    <div className="flex items-center gap-3 px-4 py-3 text-left">
+      <HeadIcon
+        className={cn("size-7 shrink-0", (locating || loading) && "animate-spin")}
+        aria-hidden
+      />
+      <div className="min-w-0 flex-1">
+        <div className="font-semibold leading-snug">{headline}</div>
+        {headSub && <div className="text-xs text-white/70">{headSub}</div>}
+      </div>
+      {canExpand && (
+        <ChevronDownIcon
+          className={cn("size-5 shrink-0 transition-transform", expanded && "rotate-180")}
+          aria-hidden
+        />
+      )}
     </div>
+  );
+
+  return (
+    <>
+      {/* Top turn sign — sits where the park/category chips were. */}
+      <div className="pointer-events-auto absolute inset-x-3 top-[calc(env(safe-area-inset-top)+5.25rem)] z-10 mx-auto max-w-md overflow-hidden rounded-2xl bg-green-700 text-white shadow-lg ring-1 ring-white/15 md:top-3">
+        {canExpand ? (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            className="block w-full transition hover:bg-white/5"
+          >
+            {topSign}
+          </button>
+        ) : (
+          topSign
+        )}
+        {expanded && (
+          <ol className="max-h-64 divide-y divide-white/15 overflow-y-auto border-t border-white/15">
+            {steps.map((m, i) => {
+              const Icon = maneuverIcon(m.type);
+              return (
+                <li key={i} className="flex items-start gap-3 px-4 py-2.5 text-sm">
+                  <Icon className="mt-0.5 size-4 shrink-0 text-white/80" aria-hidden />
+                  <span className="min-w-0 flex-1">{m.instruction}</span>
+                  {m.distanceMeters > 0 && (
+                    <span className="shrink-0 text-xs text-white/70 tabular-nums">
+                      {formatDistance(m.distanceMeters)}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </div>
+
+      {/* Bottom ETA bar — sits where the Filter button was. */}
+      <div className="pointer-events-auto absolute inset-x-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] z-10 mx-auto flex max-w-md items-center gap-3 rounded-2xl bg-green-700 px-4 py-2.5 text-white shadow-lg ring-1 ring-white/15 md:bottom-3">
+        <div className="min-w-0 flex-1">
+          {routed ? (
+            <div className="leading-tight">
+              <span className="font-semibold">{formatWalk(durationSeconds)}</span>
+              <span className="text-white/70"> · {formatDistance(distanceMeters)}</span>
+            </div>
+          ) : (
+            <div className="font-medium leading-tight">
+              {geoBlocked ? "Location off" : error ? "No route" : "Routing…"}
+            </div>
+          )}
+          <div className="truncate text-xs text-white/70">to {destName}</div>
+        </div>
+        {!locating && !geoBlocked && (
+          <button
+            type="button"
+            onClick={onSwap}
+            aria-label="Reverse route"
+            className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-white/15 transition hover:bg-white/25 active:scale-95"
+          >
+            <ArrowUpDownIcon className="size-4" />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onClear}
+          aria-label="End navigation"
+          className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-white/15 transition hover:bg-white/25 active:scale-95"
+        >
+          <XIcon className="size-4" />
+        </button>
+      </div>
+    </>
   );
 }
 

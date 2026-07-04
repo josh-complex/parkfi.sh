@@ -14,11 +14,17 @@ import { decodePolyline } from "./polyline.ts";
 
 export const VALHALLA_URL = normalizeBaseUrl(process.env.VALHALLA_URL ?? "http://localhost:8002");
 
-function normalizeBaseUrl(raw: string): string {
+export function normalizeBaseUrl(raw: string): string {
   const trimmed = raw.trim();
-  const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+  const hadScheme = /^https?:\/\//i.test(trimmed);
+  const withScheme = hadScheme ? trimmed : `http://${trimmed}`;
   const url = new URL(withScheme.replace(/\/+$/, ""));
-  if (!url.port) url.port = "8002";
+  // Only default the port for the schemeless `host` case (a bare Railway
+  // internal host). A full URL keeps its own port — crucially, an `https://`
+  // public domain has an *implicit* 443 (url.port === ""), which must NOT be
+  // rewritten to Valhalla's :8002 (that port isn't exposed on Railway's edge,
+  // so the fetch would hang and fail).
+  if (!hadScheme && !url.port) url.port = "8002";
   return url.toString().replace(/\/+$/, "");
 }
 
