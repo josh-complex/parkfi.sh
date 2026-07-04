@@ -5,7 +5,7 @@
 > theme-park _life_, recorded — the save file you protect for years. **Cold-
 > start** is the empty-world problem, and the flywheel turns it from a bug into
 > the engine: your persistent marks _are_ what makes the world alive for the
-> next Warden.
+> next Wielder.
 
 ## Part A — Achievements (the part a couch app cannot copy)
 
@@ -24,7 +24,7 @@ of sensor fusion + the live feed ([06](06-location-and-geofencing.md)).
 | **Live-state-gated** (rare/surprising) | "rode it in the final 10 min before it went down for the night"; "experienced a hard ride-down event"; "rode in a thunderstorm" | only our feed knows these conditions occurred                |
 | **Depth / mastery**                    | "knows this ride" = rode it across day/night/rain/crowds                                                                        | requires repeated real presence under varied real conditions |
 | **Discovery**                          | found N hidden details; recognized a landmark; completed a `discovery` chain                                                    | requires being at each spot                                  |
-| **Collection**                         | recruited a full Realm's Companions; completed a Key set                                                                        | the recruit loop ([05](05-companions-and-proximity.md))      |
+| **Collection**                         | recruited a full World's Companions; completed a keychain set                                                                   | the recruit loop ([05](05-companions-and-proximity.md))      |
 | **Social**                             | rode together with N friends; met a stranger in a Convergence                                                                   | co-presence verification                                     |
 | **Secret**                             | _unlisted_ — discovered, not checklisted                                                                                        | rewards genuine exploration, the most Imagineering of all    |
 
@@ -46,12 +46,12 @@ of sensor fusion + the live feed ([06](06-location-and-geofencing.md)).
    stats. This is the sentimental core and the most shareable thing we will ever
    ship. A **"Park Wrapped"** year-in-review is a viral inevitability (Spotify
    Wrapped for your theme-park life).
-2. **The traveling identity** — _one_ Warden / roster / rank that persists
+2. **The traveling identity** — _one_ Wielder / roster / rank that persists
    **across parks**: WDW → Disneyland → Universal → Tokyo. The single biggest
    differentiator — it turns a day-trip utility into a **lifelong save file** —
    and the place the IP tension peaks ([13](13-roadmap-risks-ip.md)).
 3. **The world contribution** — the `marks` _you_ leave persist for future
-   Wardens. **Your past self is literally part of the cold-start solution.**
+   Wielders. **Your past self is literally part of the cold-start solution.**
    Persistence and cold-start are the same mechanism viewed from two ends.
 
 ### Seasons
@@ -82,8 +82,8 @@ _actually_ empty.
 
 The "other players" texture comes from **traces**, not concurrency:
 
-- `discovery`/`dare` **marks left** by past Wardens ([03](03-marks-and-discovery.md)).
-- "1,204 explorers sealed this Realm before you."
+- `discovery`/`dare` **marks left** by past Wielders ([03](03-marks-and-discovery.md)).
+- "1,204 explorers sealed this World before you."
 - Ghost paths / aggregated "how others played here."
 
 Asynchronous presence reads as a living world _without_ requiring people online

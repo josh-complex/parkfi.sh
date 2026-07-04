@@ -12,13 +12,13 @@
 A demo and the product v1 are the same artifact here, which means **no throwaway
 work**. The art is choosing the _one_ vertical slice that proves the whole thesis
 end-to-end with the least build — and making the irreplaceable part (the
-reactive Dimming) genuinely real while faking the expensive parts (full combat,
+reactive Darkness) genuinely real while faking the expensive parts (full combat,
 multiplayer, the full character roster).
 
 ## The mic-drop (must be real)
 
 > An exec is standing in the park. A ride **actually goes down** in real life.
-> Seconds later their phone buzzes — _"the Dimming is leaking from \[that
+> Seconds later their phone buzzes — _"the Darkness is leaking from \[that
 > ride]"_ — and an encounter surges at that exact spot, because the worker
 > already ingested the status change.
 
@@ -26,14 +26,14 @@ That is the entire company in ten seconds, and it falls out of infra we already
 run. **Wire it for real.** (And wire a _simulated_ trigger too, for when no ride
 obligingly breaks during the meeting — see Dev mode.)
 
-## The vertical slice (one Realm, the full loop)
+## The vertical slice (one World, the full loop)
 
 One land, a few spots, the loop end to end ([04](04-game-design.md)):
 
 1. **Geofence trigger** — reach a spot → wrist/screen cue.
-2. **Encounter** — a Faded appears in **AR** on the ground, stand-still.
+2. **Encounter** — a Heartless appears in **AR** on the ground, stand-still.
 3. **Battle** — turn-based, 2–3 moves, one Companion, a Surge meter.
-4. **Recruit / reward** — clear it → unlock a Companion bound to that Realm
+4. **Recruit / reward** — clear it → unlock a Companion bound to that World
    ([05](05-companions-and-proximity.md)).
 5. **The live hook** — trigger a real (or simulated) ride-down and watch the
    world react.
@@ -46,11 +46,11 @@ cross-park travel, the full dex — is _narrated_ over this working core.
 
 | System                                           | Demo version                                             | Rationale                                  |
 | ------------------------------------------------ | -------------------------------------------------------- | ------------------------------------------ |
-| **Live-data Dimming hook**                       | **Real**                                                 | the moat — the whole point                 |
+| **Live-data Darkness hook**                      | **Real**                                                 | the moat — the whole point                 |
 | **Geofencing**                                   | **Real** (+ dev spoofer)                                 | proves "it knows where you are"            |
 | **AR encounter**                                 | Real but **simple** — plane-/image-anchored, stand-still | impressive without markerless multiplayer  |
 | **Battle**                                       | **Scoped** — turn-based, 2–3 moves                       | full combat is a v2 problem                |
-| **Companion roster**                             | **Real but tiny** — 3–4 characters, one Realm            | shows the collection hook                  |
+| **Companion roster**                             | **Real but tiny** — 3–4 characters, one World            | shows the collection hook                  |
 | **Discovery marks**                              | **Real** — create + find + react                         | low-risk, no game balance, proves UGC loop |
 | **Cross-park / raids / synthesis**               | **Narrated**, not built                                  | "here's where it goes"                     |
 | **Native app, background geofencing, watch app** | **Roadmap slide**                                        | web AR carries the demo                    |
@@ -62,7 +62,7 @@ and location-AR in the browser ([07](07-ar-and-channels.md)):
 
 - **"Scan this QR code and it just works"** — no app store, no TestFlight invite
   for a skeptical exec.
-- Reuse existing tRPC + the live feed directly; the Dimming hook is one more
+- Reuse existing tRPC + the live feed directly; the Darkness hook is one more
   subscription.
 - Ship a _link_; iterate in minutes.
 
@@ -77,7 +77,7 @@ You cannot develop a location game by standing in Magic Kingdom all day. The
 - **GPS spoofer** — a debug panel to set the client's position to any park
   coordinate (and walk a path) without leaving your desk.
 - **Live-event injector** — fake an `attraction_status_obs` DOWN/OPERATING
-  transition or a `queue_obs` surge on demand, so you can trigger the Dimming
+  transition or a `queue_obs` surge on demand, so you can trigger the Darkness
   engine deterministically (also the in-meeting fallback for the mic-drop).
 - **Time/condition overrides** — force night, rain, fireworks, a Convergence.
 - **Presence bypass (dev only)** — short-circuit verification so you can test the
@@ -89,16 +89,16 @@ requires a theme-park trip to test.
 ## Suggested build order (each step demoable on its own)
 
 1. **Dev/armchair mode** — spoofer + event injector + condition overrides.
-2. **`realm` table + geofence engine** — seed Realms from `attraction_meta.land`
-   ([10](10-data-model.md)); detect Park/Realm/attraction crossings; wrist/screen
+2. **`world` table + geofence engine** — seed Worlds from `attraction_meta.land`
+   ([10](10-data-model.md)); detect Park/World/attraction crossings; wrist/screen
    cue on threshold.
-3. **The `mark` primitive + Dimming engine** — the worker job that turns a
+3. **The `mark` primitive + Darkness engine** — the worker job that turns a
    (real or injected) ride-down into a `world`/`encounter` mark
    ([11](11-architecture.md)). **This is the mic-drop; do it early.**
 4. **Discovery marks** — create/find/react ([03](03-marks-and-discovery.md)).
    Lowest-risk real feature; proves the UGC + flywheel loop with no AR.
 5. **AR encounter + scoped battle** — WebXR/8th Wall plane anchor; turn-based.
-6. **Companion recruit (one Realm)** — the collection hook
+6. **Companion recruit (one World)** — the collection hook
    ([05](05-companions-and-proximity.md)).
 7. **The logbook** — persistence made visible ([08](08-achievements-persistence-coldstart.md));
    the shareable artifact.
@@ -106,7 +106,7 @@ requires a theme-park trip to test.
 
 ## Validation plan
 
-- **At-desk:** the entire loop runs via dev mode; the Dimming engine fires on an
+- **At-desk:** the entire loop runs via dev mode; the Darkness engine fires on an
   injected event.
 - **In-park (one trip):** validate real geofence accuracy, battery over a
   half-day, AR anchoring on real landmarks, and the _real_ ride-down mic-drop.

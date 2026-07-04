@@ -3,7 +3,7 @@
  *
  * You cannot iterate on a location game by standing in a park all day. These
  * helpers let the whole loop be driven from the desk: inject a synthetic ride
- * status (to fire the Dimming engine deterministically) and stash a spoofed
+ * status (to fire the Darkness engine deterministically) and stash a spoofed
  * position. They are HARD-GATED behind LIVING_DEV and refuse to run in
  * production, so they can never be reached on a live deployment.
  */
@@ -29,7 +29,7 @@ export function assertDevEnabled(): void {
 /**
  * Inject a synthetic attraction-status observation. This writes a real
  * `attraction_status_obs` row exactly like the worker would, which on the next
- * reconcile makes the Dimming engine spawn (status=DOWN) or seal (status back to
+ * reconcile makes the Darkness engine spawn (status=DOWN) or seal (status back to
  * OPERATING) — the in-meeting fallback for the live mic-drop.
  */
 export async function injectStatus(attractionId: number, status: number): Promise<void> {
@@ -46,14 +46,14 @@ export async function injectStatus(attractionId: number, status: number): Promis
 }
 
 /**
- * Run a one-shot Dimming reconcile on demand (so a dev doesn't have to wait for
+ * Run a one-shot Darkness reconcile on demand (so a dev doesn't have to wait for
  * the worker tick). Imported lazily to avoid pulling the engine into the web
  * bundle's hot path.
  */
 export async function reconcileNow(): Promise<{ spawned: number; expired: number }> {
   assertDevEnabled();
-  const { reconcileDimming } = await import("./dimming.ts");
-  return reconcileDimming();
+  const { reconcileDarkness } = await import("./darkness.ts");
+  return reconcileDarkness();
 }
 
 /** Count of currently-active marks in a park — for dev assertions/UI. */

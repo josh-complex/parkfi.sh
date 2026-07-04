@@ -24,7 +24,7 @@
         └───────────────┬─────────────────────────────────────────────────────────────────┘
                         │
         ┌───────────────▼───────────────┐     ┌──────────────────────────────────────────┐
-        │ Postgres / Timescale (REUSE)  │◀────│  the DIMMING engine (NEW worker job)       │
+        │ Postgres / Timescale (REUSE)  │◀────│  the DARKNESS engine (NEW worker job)       │
         │ existing + new game tables    │     │  subscribes to queue_obs / status_obs →    │
         │ ([10])                        │     │  computes spawn table → writes `world` /   │
         └───────────────▲───────────────┘     │  `collectible` / `encounter` marks         │
@@ -38,32 +38,32 @@
 
 ## What we reuse (the bulk of it)
 
-| Existing system                                       | Role in the Living Layer                                                                                 |
-| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| **Worker poll loop** (`services/worker/main.ts`)      | already produces `queue_obs` / `attraction_status_obs` every cycle — the raw input to the Dimming engine |
-| **Alert-eval + Resend + notifications**               | the push backbone; extend to in-park, geofenced Go-Now / Convergence pushes                              |
-| **Postgres / Timescale + Drizzle**                    | game tables + hypertables for presence/encounter logs ([10](10-data-model.md))                           |
-| **Better-Auth**                                       | `warden` and all game-save tables key straight off `user`                                                |
-| **tRPC + TanStack Start**                             | new `living.*` router; web client reuses the app shell                                                   |
-| **pin CLIP embedding service**                        | re-aimed for **landmark image-anchored AR** ([07](07-ar-and-channels.md))                                |
-| **ml-train Python service + `queue_forecast`**        | forecast-weighted spawn planning (quiet windows, predicted surges)                                       |
-| **R2 + uploads router**                               | `discovery` photos, companion art, mark media                                                            |
-| **cron + Claude-API pattern** (`cron-park-news`)      | UGC pre-screen moderation ([09](09-moderation-trust-safety.md)); narrative/lore generation               |
-| **edge-cache discipline** (`lib/cache.ts`, splitLink) | cache read-only catalog reads (realms, companion dex) like we cache forecast data                        |
+| Existing system                                       | Role in the Living Layer                                                                                  |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Worker poll loop** (`services/worker/main.ts`)      | already produces `queue_obs` / `attraction_status_obs` every cycle — the raw input to the Darkness engine |
+| **Alert-eval + Resend + notifications**               | the push backbone; extend to in-park, geofenced Go-Now / Convergence pushes                               |
+| **Postgres / Timescale + Drizzle**                    | game tables + hypertables for presence/encounter logs ([10](10-data-model.md))                            |
+| **Better-Auth**                                       | `wielder` and all game-save tables key straight off `user`                                                |
+| **tRPC + TanStack Start**                             | new `living.*` router; web client reuses the app shell                                                    |
+| **pin CLIP embedding service**                        | re-aimed for **landmark image-anchored AR** ([07](07-ar-and-channels.md))                                 |
+| **ml-train Python service + `queue_forecast`**        | forecast-weighted spawn planning (quiet windows, predicted surges)                                        |
+| **R2 + uploads router**                               | `discovery` photos, companion art, mark media                                                             |
+| **cron + Claude-API pattern** (`cron-park-news`)      | UGC pre-screen moderation ([09](09-moderation-trust-safety.md)); narrative/lore generation                |
+| **edge-cache discipline** (`lib/cache.ts`, splitLink) | cache read-only catalog reads (worlds, companion dex) like we cache forecast data                         |
 
 ## What's genuinely new
 
-### 1. The Dimming engine (new worker job)
+### 1. The Darkness engine (new worker job)
 
 The heart of the moat. A worker job that **subscribes to the live feed and emits
 game state**:
 
 - **Input:** `attraction_status_obs` transitions (DOWN/OPERATING), `queue_obs`
-  surges per Realm, `park_schedule` events (fireworks → Convergence),
+  surges per World, `park_schedule` events (fireworks → Convergence),
   `weather_obs`, `queue_forecast`.
 - **Logic:** a **spawn function** `f(location, time-of-day, live state,
 forecast) → spawn table`. Ride goes DOWN → write rare/strong `world` +
-  `encounter` marks at that attraction; Realm surge → raise `collectible`/
+  `encounter` marks at that attraction; World surge → raise `collectible`/
   `encounter` density there; fireworks → schedule a Convergence.
 - **Output:** writes `mark` rows ([10](10-data-model.md)) with appropriate
   `expiresAt` (decay) and `liveStateSnapshot` (provenance).
@@ -92,32 +92,32 @@ New procedures, mirroring the existing router style:
 
 | Procedure                             | Purpose                                               |
 | ------------------------------------- | ----------------------------------------------------- |
-| `living.realms`                       | realm catalog + boundaries for a park                 |
+| `living.worlds`                       | world catalog + boundaries for a park                 |
 | `living.nearbyMarks`                  | live marks near a verified position                   |
 | `living.proposePresence`              | client → server presence claim (verified)             |
 | `living.leaveMark`                    | create a `discovery`/`dare` (verified-presence gated) |
 | `living.reactMark`                    | found/upvote/report                                   |
 | `living.encounter.start` / `.resolve` | begin/resolve a battle (server-authoritative)         |
-| `living.party`                        | fieldable party for `(roster, current realm, rank)`   |
+| `living.party`                        | fieldable party for `(roster, current world, rank)`   |
 | `living.recruit`                      | complete a recruit quest → add to roster              |
-| `living.seal`                         | contribute to a Realm seal                            |
-| `living.profile`                      | warden, roster, logbook, achievements                 |
+| `living.seal`                         | contribute to a World seal                            |
+| `living.profile`                      | wielder, roster, logbook, achievements                |
 
 ## Data flow: a single encounter, end to end
 
 1. Worker poll writes `attraction_status_obs` = **DOWN** for ride X (existing).
-2. **Dimming engine** sees the transition → writes a rare `encounter` mark at X
+2. **Darkness engine** sees the transition → writes a rare `encounter` mark at X
    with `expiresAt` = while-down and a `liveStateSnapshot` (new).
-3. Push pipeline notifies in-park Wardens within X's geofence (reused).
-4. Client wrist/ear cue → Warden walks over; client geofence + motion confirm
+3. Push pipeline notifies in-park Wielders within X's geofence (reused).
+4. Client wrist/ear cue → Wielder walks over; client geofence + motion confirm
    presence → `living.proposePresence` (new).
 5. Presence-verification service validates against the feed → writes
    `presence_event` (new).
-6. `living.encounter.start` → server returns the Faded spec; client renders the
+6. `living.encounter.start` → server returns the Heartless spec; client renders the
    AR battle (new).
 7. `living.encounter.resolve` → server validates, writes `encounter_log`, grants
    drops/XP/achievements, advances `seal_state` (new).
-8. Warden may `living.leaveMark` a `discovery` → feeds the flywheel (new).
+8. Wielder may `living.leaveMark` a `discovery` → feeds the flywheel (new).
 
 Every "existing" step is infrastructure already running in production today; the
 "new" steps are the thin reactive layer on top.

@@ -1,8 +1,8 @@
 /**
  * Living Layer — public tRPC router (M3).
  *
- * The real (non-dev) API surface: read the realms + active marks for a park
- * (so the play map can render the Dimming spawns the worker already produces),
+ * The real (non-dev) API surface: read the worlds + active marks for a park
+ * (so the play map can render the Darkness spawns the worker already produces),
  * and the user-defined discovery-pin loop (create + react), gated by login and
  * a lightweight in-park presence check.
  *
@@ -15,13 +15,13 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "#/db/index.ts";
-import { fadedSpec } from "#/server/living/battle.ts";
-import { FadedType, MarkReactionKind, MarkState, MarkType } from "#/server/living/codes.ts";
+import { heartlessSpec } from "#/server/living/battle.ts";
+import { HeartlessType, MarkReactionKind, MarkState, MarkType } from "#/server/living/codes.ts";
 import { pointInPolygon, type LngLat } from "#/server/living/geofence.ts";
 
 import { protectedProcedure, publicProcedure } from "../init.ts";
 
-import type { FadedTypeCode } from "#/server/living/codes.ts";
+import type { HeartlessTypeCode } from "#/server/living/codes.ts";
 import type { GeoPolygon, LiveStateSnapshot } from "#/db/schema.ts";
 
 /** An active system encounter mark, loaded for battle start/resolve. */
@@ -29,7 +29,7 @@ type EncounterMarkRow = {
   id: number;
   park_id: number;
   attraction_id: number | null;
-  payload: { fadedType?: string; rarity?: number } | null;
+  payload: { heartlessType?: string; rarity?: number } | null;
   live_state_snapshot: LiveStateSnapshot | null;
 };
 
@@ -63,8 +63,8 @@ async function parkBySlug(slug: string): Promise<{
 }
 
 export const livingRouter = {
-  /** Realm catalog + boundaries for a park (for the map overlay). */
-  realms: publicProcedure.input(z.object({ parkSlug: z.string() })).query(async ({ input }) => {
+  /** World catalog + boundaries for a park (for the map overlay). */
+  worlds: publicProcedure.input(z.object({ parkSlug: z.string() })).query(async ({ input }) => {
     const r = await db.execute<{
       id: number;
       name: string;
@@ -73,7 +73,7 @@ export const livingRouter = {
       theme_color: string | null;
     }>(sql`
         SELECT rl.id, rl.name, rl.slug, rl.boundary, rl.theme_color
-        FROM realm rl
+        FROM world rl
         JOIN parks p ON p.id = rl.park_id
         WHERE p.slug = ${input.parkSlug}
         ORDER BY rl.name
@@ -87,7 +87,7 @@ export const livingRouter = {
     }));
   }),
 
-  /** Active marks in a park — the Dimming spawns + user discovery pins. */
+  /** Active marks in a park — the Darkness spawns + user discovery pins. */
   marks: publicProcedure
     .input(
       z.object({
@@ -230,7 +230,7 @@ export const livingRouter = {
     }),
 
   /**
-   * Begin a battle against a Dimming spawn. Returns the deterministic Faded spec
+   * Begin a battle against a Darkness spawn. Returns the deterministic Heartless spec
    * the client plays out. Server-derived from the mark's payload so the client
    * can't pick an easier enemy.
    */
@@ -238,10 +238,10 @@ export const livingRouter = {
     .input(z.object({ markId: z.number().int().positive() }))
     .mutation(async ({ input }) => {
       const mk = await activeEncounterMark(input.markId);
-      if (!mk) throw new TRPCError({ code: "NOT_FOUND", message: "That Dimming has cleared." });
-      const fadedType = (mk.payload?.fadedType as FadedTypeCode) ?? FadedType.SHADE;
+      if (!mk) throw new TRPCError({ code: "NOT_FOUND", message: "That Darkness has cleared." });
+      const heartlessType = (mk.payload?.heartlessType as HeartlessTypeCode) ?? HeartlessType.SHADE;
       const rarity = Number(mk.payload?.rarity ?? 1);
-      return { markId: mk.id, ...fadedSpec(fadedType, rarity) };
+      return { markId: mk.id, ...heartlessSpec(heartlessType, rarity) };
     }),
 
   /**
@@ -260,10 +260,10 @@ export const livingRouter = {
       const mk = await activeEncounterMark(input.markId);
       if (!mk) return { ok: true, alreadyResolved: true };
 
-      const fadedType = (mk.payload?.fadedType as FadedTypeCode) ?? FadedType.SHADE;
+      const heartlessType = (mk.payload?.heartlessType as HeartlessTypeCode) ?? HeartlessType.SHADE;
       await db.execute(sql`
-        INSERT INTO encounter_log (user_id, mark_id, park_id, attraction_id, faded_type, outcome, live_state_snapshot)
-        VALUES (${ctx.userId}, ${mk.id}, ${mk.park_id}, ${mk.attraction_id}, ${fadedType},
+        INSERT INTO encounter_log (user_id, mark_id, park_id, attraction_id, heartless_type, outcome, live_state_snapshot)
+        VALUES (${ctx.userId}, ${mk.id}, ${mk.park_id}, ${mk.attraction_id}, ${heartlessType},
                 ${input.outcome}, ${JSON.stringify(mk.live_state_snapshot)}::jsonb)
       `);
 
@@ -272,7 +272,133 @@ export const livingRouter = {
           UPDATE mark SET state = ${MarkState.CLAIMED}
           WHERE id = ${mk.id} AND state = ${MarkState.ACTIVE}
         `);
+        // Award the Wielder XP for the seal (creates the profile on first win).
+        await grantWielderXp(ctx.userId, 10);
       }
       return { ok: true, outcome: input.outcome };
     }),
+
+  /** The Wielder's profile — rank, xp, and recruited roster (M5). */
+  profile: protectedProcedure.query(async ({ ctx }) => {
+    await db.execute(
+      sql`INSERT INTO wielder (user_id) VALUES (${ctx.userId}) ON CONFLICT (user_id) DO NOTHING`,
+    );
+    const w = await db.execute<{ rank: number; xp: number; display_name: string | null }>(
+      sql`SELECT rank, xp, display_name FROM wielder WHERE user_id = ${ctx.userId}`,
+    );
+    const roster = await db.execute<{
+      id: number;
+      name: string;
+      slug: string;
+      element: string | null;
+      level: number;
+      world_name: string | null;
+    }>(sql`
+      SELECT c.id, c.name, c.slug, c.element, wc.level, r.name AS world_name
+      FROM wielder_companion wc
+      JOIN companion c ON c.id = wc.companion_id
+      LEFT JOIN world r ON r.id = c.home_world_id
+      WHERE wc.user_id = ${ctx.userId}
+      ORDER BY wc.recruited_at
+    `);
+    const row = w.rows[0];
+    return {
+      rank: Number(row?.rank ?? 1),
+      xp: Number(row?.xp ?? 0),
+      displayName: row?.display_name ?? null,
+      roster: roster.rows.map((c) => ({
+        id: Number(c.id),
+        name: c.name,
+        slug: c.slug,
+        element: c.element,
+        level: Number(c.level),
+        worldName: c.world_name,
+      })),
+    };
+  }),
+
+  /** Companion catalog for a park, with recruited/recruitable status (M5). */
+  companions: protectedProcedure
+    .input(z.object({ parkSlug: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const r = await db.execute<{
+        id: number;
+        name: string;
+        slug: string;
+        element: string | null;
+        role: string | null;
+        world_name: string | null;
+        signature_name: string | null;
+        recruited: boolean;
+        recruitable: boolean;
+      }>(sql`
+        SELECT c.id, c.name, c.slug, c.element, c.role,
+               r.name AS world_name, sa.name AS signature_name,
+               (wc.user_id IS NOT NULL) AS recruited,
+               EXISTS(
+                 SELECT 1 FROM encounter_log el
+                 WHERE el.user_id = ${ctx.userId} AND el.outcome = 'win'
+                   AND el.attraction_id = c.signature_attraction_id
+               ) AS recruitable
+        FROM companion c
+        JOIN world r ON r.id = c.home_world_id
+        JOIN parks p ON p.id = r.park_id
+        LEFT JOIN attractions sa ON sa.id = c.signature_attraction_id
+        LEFT JOIN wielder_companion wc ON wc.companion_id = c.id AND wc.user_id = ${ctx.userId}
+        WHERE p.slug = ${input.parkSlug}
+        ORDER BY r.name, c.name
+      `);
+      return r.rows.map((c) => ({
+        id: Number(c.id),
+        name: c.name,
+        slug: c.slug,
+        element: c.element,
+        role: c.role,
+        worldName: c.world_name,
+        signatureName: c.signature_name,
+        recruited: c.recruited,
+        recruitable: c.recruitable,
+      }));
+    }),
+
+  /**
+   * Recruit a companion. Requires having defeated the Darkness at its signature
+   * ride (a real win in `encounter_log`) — the collection hook tied to the
+   * battle loop. Presence-gating of that win is hardened later (M5b).
+   */
+  recruit: protectedProcedure
+    .input(z.object({ companionId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const ok = await db.execute<{ ok: boolean }>(sql`
+        SELECT EXISTS(
+          SELECT 1 FROM encounter_log el
+          JOIN companion c ON c.id = ${input.companionId}
+          WHERE el.user_id = ${ctx.userId} AND el.outcome = 'win'
+            AND el.attraction_id = c.signature_attraction_id
+        ) AS ok
+      `);
+      if (!ok.rows[0]?.ok) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Defeat the Darkness at this companion's signature ride first.",
+        });
+      }
+      await db.execute(sql`
+        INSERT INTO wielder_companion (user_id, companion_id)
+        VALUES (${ctx.userId}, ${input.companionId})
+        ON CONFLICT (user_id, companion_id) DO NOTHING
+      `);
+      await grantWielderXp(ctx.userId, 50);
+      return { ok: true };
+    }),
 } satisfies TRPCRouterRecord;
+
+/** Upsert the Wielder profile and add XP, recomputing rank (100 xp / rank). */
+async function grantWielderXp(userId: string, gain: number): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO wielder (user_id, xp, rank) VALUES (${userId}, ${gain}, 1)
+    ON CONFLICT (user_id) DO UPDATE
+      SET xp = wielder.xp + ${gain},
+          rank = floor((wielder.xp + ${gain}) / 100) + 1
+  `);
+}

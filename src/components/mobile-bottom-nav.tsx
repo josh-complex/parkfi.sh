@@ -1,7 +1,18 @@
 import * as React from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { ActivityIcon, BedDoubleIcon, MapIcon, TicketIcon, UtensilsIcon } from "lucide-react";
+import {
+  ActivityIcon,
+  BedDoubleIcon,
+  MapIcon,
+  SwordsIcon,
+  TicketIcon,
+  UtensilsIcon,
+} from "lucide-react";
 
+import { useStore } from "@tanstack/react-store";
+
+import { playModeStore, setPlayMode } from "#/components/living/play-mode.ts";
+import { useLivingLayerEnabled } from "#/integrations/posthog/feature-flags.ts";
 import { cn } from "#/lib/utils.ts";
 
 /**
@@ -70,8 +81,44 @@ function MapButton({ active }: { active: boolean }) {
   );
 }
 
+/**
+ * Floating "Play" key for Kingdom Hearts, riding above the center Map button. Only
+ * shown on the free-roam `/map` (the surface play mode overlays) when the
+ * `living-layer` flag is on. Tapping it toggles play mode; lit primary while active.
+ */
+function PlayButton() {
+  const { playMode, hudExpanded } = useStore(playModeStore);
+  // When a battle/drop panel owns the bottom band, slide the button down out of
+  // the way so it never overlaps the panel; it eases back in when the panel closes.
+  const tucked = playMode && hudExpanded;
+
+  return (
+    <button
+      type="button"
+      onClick={() => setPlayMode(!playMode)}
+      aria-pressed={playMode}
+      aria-hidden={tucked}
+      tabIndex={tucked ? -1 : undefined}
+      aria-label="Play — Kingdom Hearts"
+      className={cn(
+        "absolute bottom-[calc(100%+0.375rem)] left-1/2 z-10 flex -translate-x-1/2 select-none items-center gap-1.5 rounded-full border-3d px-4 py-2 text-sm font-semibold shadow-3d transition-[transform,opacity,box-shadow,background-color,color] duration-200 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-border [&>svg]:size-4",
+        playMode
+          ? "btn-3d-primary bg-primary text-primary-foreground"
+          : "btn-3d-outline bg-background text-foreground",
+        tucked
+          ? "pointer-events-none translate-y-6 scale-90 opacity-0"
+          : "pointer-events-auto opacity-100",
+      )}
+    >
+      <SwordsIcon />
+      Play
+    </button>
+  );
+}
+
 export function MobileBottomNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const livingEnabled = useLivingLayerEnabled();
   // Only the free-roam `/map` hub lights the Map key. A park (or ride) detail page
   // is a drill-down, not the map surface, so it leaves the key unselected.
   const mapActive = pathname === "/map";
@@ -82,6 +129,7 @@ export function MobileBottomNav() {
       className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center md:hidden"
       style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.5rem)" }}
     >
+      {livingEnabled && mapActive ? <PlayButton /> : null}
       {/* One connected row; `items-end` aligns every segment's base so the bar is
           a single piece, with the taller Map key rising out of the middle. */}
       <div className="pointer-events-auto mx-3 flex w-full max-w-md items-end">

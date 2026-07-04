@@ -35,7 +35,7 @@ fireworks, ticketed events), `weather_obs`, and ML `queue_forecast`. Pointed at
 a game, that feed becomes an **encounter engine no one else can build**:
 
 - A ride **actually breaks** → darkness leaks from _that_ attraction → rare,
-  stronger Faded spawn _there, now_. Players feel the real park breaking.
+  stronger Heartless spawn _there, now_. Players feel the real park breaking.
 - A land's **real waits surge** → the darkness is "massing" there → encounter
   density follows the _real_ crowd.
 - **Fireworks fire** → a park-wide **Convergence** (raid) — every present
@@ -45,21 +45,17 @@ This is the sentence that wins the pitch and anchors the product: **the game
 world is alive because the real world is alive, and we are the only ones holding
 the wire.**
 
-## The pitch-vs-product duality (and why it's a feature, not a tension)
+## The product (and the moat that won the deal)
 
-This initiative is simultaneously:
+This initiative is a **licensed Kingdom Hearts product**. The data moat is what
+made the partnership: Disney has _wanted_ exactly this (they shipped Play Disney
+Parks; they monetize Genie+), and we bring the **live-data engine they don't
+have** — a game world driven by the real park's actual condition in real time.
+See [13 — Roadmap, risks & IP](13-roadmap-risks-ip.md).
 
-1. **A pitch to Disney.** The concept + our data moat is a strong partnership
-   play. Disney has _wanted_ exactly this (they shipped Play Disney Parks; they
-   monetize Genie+). We bring the live-data engine they don't have. See
-   [13 — Roadmap, risks & IP](13-roadmap-risks-ip.md).
-2. **A real product we ship now.** We build the full _machine_ (mechanics,
-   systems, the data engine) with an **original, legally-distinct skin** (see
-   the codename table in the [README](README.md)). It works at _any_ park.
-
-The duality is a gift: a working demo is the most persuasive pitch artifact
-possible, and the demo is also the v1 of the product. We never build throwaway
-work. **Build the machine; keep the skin loose; the working demo is the pitch.**
+We build the full _machine_ (mechanics, systems, the data engine) and ship it in
+full Kingdom Hearts dress. **Build the machine; make the live-data hook real; the
+working game is the product.**
 
 ## The design ethic: heads-up, not heads-down
 

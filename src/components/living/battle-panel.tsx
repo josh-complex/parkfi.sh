@@ -4,7 +4,7 @@ import * as React from "react";
 import { useMutation } from "@tanstack/react-query";
 
 import { useTRPC } from "#/integrations/trpc/react.ts";
-import { MOVES, WARDEN_HP, type MoveKey } from "#/server/living/battle.ts";
+import { MOVES, WIELDER_HP, type MoveKey } from "#/server/living/battle.ts";
 
 type Phase = "loading" | "fight" | "won" | "lost" | "gone";
 
@@ -39,7 +39,7 @@ export function BattlePanel({ markId, onClose, onResolved }: BattlePanelProps) {
 
   const [phase, setPhase] = React.useState<Phase>("loading");
   const [foe, setFoe] = React.useState<{ name: string; hp: number; maxHp: number; atk: number }>();
-  const [warHp, setWarHp] = React.useState(WARDEN_HP);
+  const [warHp, setWarHp] = React.useState(WIELDER_HP);
   const [surgeUsed, setSurgeUsed] = React.useState(false);
   const [log, setLog] = React.useState<string[]>([]);
 
@@ -52,7 +52,7 @@ export function BattlePanel({ markId, onClose, onResolved }: BattlePanelProps) {
         if (cancelled) return;
         setFoe({ name: spec.name, hp: spec.hp, maxHp: spec.hp, atk: spec.atk });
         setPhase("fight");
-        setLog([`A ${spec.name} rises from the Dimming.`]);
+        setLog([`A ${spec.name} rises from the Darkness.`]);
       })
       .catch(() => {
         if (!cancelled) setPhase("gone");
@@ -86,7 +86,7 @@ export function BattlePanel({ markId, onClose, onResolved }: BattlePanelProps) {
       return;
     }
 
-    // The Faded strikes back; Guard halves the incoming hit.
+    // The Heartless strikes back; Guard halves the incoming hit.
     const incoming = move === "guard" ? Math.ceil(foe.atk / 2) : foe.atk;
     const newWar = warHp - incoming;
     lines.push(`The ${foe.name} hits you for ${incoming}.`);
@@ -104,19 +104,19 @@ export function BattlePanel({ markId, onClose, onResolved }: BattlePanelProps) {
   };
 
   return (
-    <div className="bg-background absolute bottom-3 left-1/2 w-[min(94%,440px)] -translate-x-1/2 rounded-lg border p-4 shadow-lg">
+    <div className="bg-background w-full rounded-lg border p-4 shadow-lg">
       {phase === "loading" ? (
-        <div className="py-6 text-center text-sm">Approaching the Dimming…</div>
+        <div className="py-6 text-center text-sm">Approaching the Darkness…</div>
       ) : phase === "gone" ? (
         <div className="py-4 text-center">
-          <p className="text-sm">That Dimming has already cleared.</p>
+          <p className="text-sm">That Darkness has already cleared.</p>
           <button className="mt-3 rounded-md border px-3 py-1.5 text-sm" onClick={onClose}>
             Close
           </button>
         </div>
       ) : (
         <>
-          <HpBar label="You" hp={warHp} max={WARDEN_HP} tone="#378ADD" />
+          <HpBar label="You" hp={warHp} max={WIELDER_HP} tone="#378ADD" />
           {foe ? <HpBar label={foe.name} hp={foe.hp} max={foe.maxHp} tone="#D85A30" /> : null}
 
           <div className="bg-muted/40 my-3 max-h-24 overflow-y-auto rounded-md p-2 text-xs leading-relaxed">

@@ -8,14 +8,17 @@
 >
 > The flagship expression of this is a Pokémon-GO-scale, location-native AR
 > game with a Kingdom-Hearts-shaped design: you are a wielder of light, you
-> **recruit companions by physically reaching the lands they belong to**, and
-> you fight back the darkness in XR battles — where the darkness is driven by
-> the _real_ park breaking, surging, and celebrating in real time.
+> **hunt the darkness rather than catch it** — defeating enemies for drops,
+> forging keys and gear, ranking toward Mastery — you **recruit companions by
+> physically reaching the lands they belong to**, and when the park itself
+> convulses, cloaked antagonists step through for time-limited chaos battles.
+> All of it driven by the _real_ park breaking, surging, and celebrating in
+> real time.
 
-This directory is the end-to-end design record for that initiative. It is
-deliberately exhaustive: it is both the **build spec** for the actual product
-and the **pitch artifact** for Disney. (We build the machine; we keep the skin
-loose and legally distinct; Disney knows where to find us.)
+This directory is the end-to-end design record for that initiative — the
+deliberately exhaustive **build spec** for the product. The Kingdom Hearts IP is
+licensed, so the docs, code, and UI use the canonical KH vocabulary directly
+(Keyblade wielder, Worlds, Heartless, and so on).
 
 ## The one-paragraph thesis
 
@@ -31,22 +34,29 @@ run**.
 
 ## Document map
 
-| #   | Doc                                                                                | What it covers                                                  |
-| --- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| 01  | [Vision & strategy](01-vision-and-strategy.md)                                     | Why, the pitch-vs-product duality, the moat, design ethic       |
-| 02  | [The living layer & the flywheel](02-living-layer-and-flywheel.md)                 | The core mental model; the self-reinforcing loop                |
-| 03  | [Marks & discovery](03-marks-and-discovery.md)                                     | The atomic unit; user-defined pins; the discovery layer         |
-| 04  | [Game design — the machine](04-game-design.md)                                     | Worlds, encounters, the darkness engine, battles, progression   |
-| 05  | [Companions & land-proximity](05-companions-and-proximity.md)                      | Square-Enix-style party system gated by physical land proximity |
-| 06  | [Location & geofencing](06-location-and-geofencing.md)                             | Tracking, sensor fusion, battery, anti-spoof, privacy           |
-| 07  | [AR & the multi-channel UX](07-ar-and-channels.md)                                 | Screen / ear / wrist / AR; the reveal; web-AR tech path         |
-| 08  | [Achievements, persistence & cold-start](08-achievements-persistence-coldstart.md) | Verified-by-physics, the save file, the empty-world problem     |
-| 09  | [Moderation, trust & safety](09-moderation-trust-safety.md)                        | UGC pins, physical safety, the two-layer model                  |
-| 10  | [Data model](10-data-model.md)                                                     | New Drizzle tables; how they hang off the existing schema       |
-| 11  | [Architecture](11-architecture.md)                                                 | How every piece reuses infra we already operate                 |
-| 12  | [The demo / vertical slice](12-demo-vertical-slice.md)                             | What to build first; web AR; the dev/armchair mode              |
-| 13  | [Roadmap, risks & IP](13-roadmap-risks-ip.md)                                      | Phasing, the IP fork, the kill-risks                            |
-| 14  | [Implementation plan](14-implementation-plan.md)                                   | File-by-file build plan for the Phase-0 demo (M0–M7)            |
+> **Start here: [GDD.md](GDD.md) — the game design canon.** Source of truth for
+> concepts, the domain model (userspace / enemyspace / worldspace / eventspace /
+> companionspace / socialspace / interactionspace), interaction schemes, balance
+> knobs, and the loose story. The numbered docs are deep dives it sits above; if
+> they disagree, the GDD wins.
+
+| #   | Doc                                                                                | What it covers                                                                                       |
+| --- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| ★   | [GDD.md](GDD.md)                                                                   | **Game design canon** — pillars, glossary, the spaces, loops, interaction, story, balance, decisions |
+| 01  | [Vision & strategy](01-vision-and-strategy.md)                                     | Why, the moat, the design ethic                                                                      |
+| 02  | [The living layer & the flywheel](02-living-layer-and-flywheel.md)                 | The core mental model; the self-reinforcing loop                                                     |
+| 03  | [Marks & discovery](03-marks-and-discovery.md)                                     | The atomic unit; user-defined pins; the discovery layer                                              |
+| 04  | [Game design — the machine](04-game-design.md)                                     | Worlds, encounters, the darkness engine, battles, progression                                        |
+| 05  | [Companions & land-proximity](05-companions-and-proximity.md)                      | Square-Enix-style party system gated by physical land proximity                                      |
+| 06  | [Location & geofencing](06-location-and-geofencing.md)                             | Tracking, sensor fusion, battery, anti-spoof, privacy                                                |
+| 07  | [AR & the multi-channel UX](07-ar-and-channels.md)                                 | Screen / ear / wrist / AR; the reveal; web-AR tech path                                              |
+| 08  | [Achievements, persistence & cold-start](08-achievements-persistence-coldstart.md) | Verified-by-physics, the save file, the empty-world problem                                          |
+| 09  | [Moderation, trust & safety](09-moderation-trust-safety.md)                        | UGC pins, physical safety, the two-layer model                                                       |
+| 10  | [Data model](10-data-model.md)                                                     | New Drizzle tables; how they hang off the existing schema                                            |
+| 11  | [Architecture](11-architecture.md)                                                 | How every piece reuses infra we already operate                                                      |
+| 12  | [The demo / vertical slice](12-demo-vertical-slice.md)                             | What to build first; web AR; the dev/armchair mode                                                   |
+| 13  | [Roadmap, risks & IP](13-roadmap-risks-ip.md)                                      | Phasing, the IP fork, the kill-risks                                                                 |
+| 14  | [Implementation plan](14-implementation-plan.md)                                   | File-by-file build plan for the Phase-0 demo (M0–M7)                                                 |
 
 ## Reading order
 
@@ -54,28 +64,30 @@ run**.
 - **Engineers / build:** 02 → 10 → 11 → 12, then the deep dives (03, 05, 06, 07).
 - **Everyone:** start at 01.
 
-## Player-facing brand: **Wayfarer**
+## Player-facing brand: **Kingdom Hearts**
 
-The name users see is **Wayfarer** (explorer/adventurer energy — travel the
-realms, gather your party). "Living Layer" stays the _internal_ architecture
-term (and the `living-layer` PostHog flag key + `living` router/`Lumen`
-codename remain unchanged) to avoid churn. When writing user-facing copy, use
-**Wayfarer**; in code/docs, the internal names persist.
+The name users see is **Kingdom Hearts**. "Living Layer" stays the _internal_
+architecture term — the `living-layer` PostHog flag key, the `living` tRPC
+router, and the `Lumen` engine codename are infrastructure names and remain
+unchanged. User-facing copy uses **Kingdom Hearts** and its canonical terms.
 
-## Naming note (the loose skin)
+## Glossary (canonical KH terms)
 
-Throughout these docs the game is referred to by the codename **Lumen**, with
-original placeholder nouns for the Kingdom-Hearts-shaped pieces:
+The game uses Kingdom Hearts vocabulary throughout code, UI, and docs:
 
-| Loose skin (ours, shippable)    | KH reference (the north star) |
-| ------------------------------- | ----------------------------- |
-| a **Warden** (the player)       | a Keyblade wielder            |
-| the **Key** / a Lightkey        | the Keyblade                  |
-| **Companions**                  | party members                 |
-| **Realms** (themed lands)       | Worlds                        |
-| the **Faded** / the **Dimming** | Heartless / Nobodies          |
-| **Sealing a Realm**             | sealing a keyhole             |
-| **Convergence** (live raid)     | a boss / world event          |
+| Term                | Meaning (and code identifier)                              |
+| ------------------- | ---------------------------------------------------------- |
+| **Wielder**         | the player, a Keyblade wielder (`wielder` table / profile) |
+| **Keyblade**        | the player's weapon                                        |
+| **Companions**      | party members, recruited by reaching their home World      |
+| **Worlds**          | themed lands (`world` table)                               |
+| **Heartless**       | the darkness-born enemies (`ref_heartless_type`)           |
+| **the Darkness**    | the live spawn phenomenon — a downed ride leaks it         |
+| **Sealing a World** | clearing a World's Heartless breach (sealing its keyhole)  |
+| **Convergence**     | a live raid / world-event boss                             |
 
-The mechanics are the asset and are entirely ours. The skin is a five-minute
-reskin if the pitch lands. Names are placeholders — do not bikeshed them.
+Deeper design tiers in the numbered docs still use working codenames for
+not-yet-built concepts — **Nobodies** (Nobodies), **Organization XIII** (Organization XIII),
+**incursion** (an Organization incursion), **Journal** (Jiminy's Journal),
+**Mark of Mastery** (Mark of Mastery). These map to canonical KH terms and can
+be swept once they reach code.

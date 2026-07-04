@@ -1,18 +1,18 @@
 /**
- * Living Layer — realm seeding (M1).
+ * Living Layer — world seeding (M1).
  *
- * Promotes "land" (today only `attraction_meta.land`) into first-class `realm`
+ * Promotes "land" (today only `attraction_meta.land`) into first-class `world`
  * rows with a `boundary` polygon derived from the convex hull of each land's
  * attraction coordinates. Idempotent: re-running upserts by (park_id, slug).
  *
  * Intended to be called from the monthly geo cron (services/geo) AFTER
- * attraction geo enrichment, so realms refresh alongside the rest of the geo
- * data. Safe to run standalone. Reads only existing tables; writes only `realm`.
+ * attraction geo enrichment, so worlds refresh alongside the rest of the geo
+ * data. Safe to run standalone. Reads only existing tables; writes only `world`.
  */
 import { sql } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
-import { realm } from "#/db/schema.ts";
+import { world } from "#/db/schema.ts";
 import { activeParkIds } from "#/server/parks/ingest.ts";
 
 import { convexHull, type LngLat } from "./geofence.ts";
@@ -29,19 +29,19 @@ function slugify(s: string): string {
   );
 }
 
-export interface SeedRealmsResult {
+export interface SeedWorldsResult {
   parkId: number;
-  realms: number;
+  worlds: number;
 }
 
 /**
- * Seed/refresh realms for one park from its attractions' `land` + coordinates.
+ * Seed/refresh worlds for one park from its attractions' `land` + coordinates.
  *
  * Note the `category IS NOT NULL` filter: un-enriched duplicate attraction rows
  * carry a null category and would otherwise pollute land membership and hull
  * geometry (project memory: ghost-duplicate-attractions).
  */
-export async function seedRealmsForPark(parkId: number): Promise<SeedRealmsResult> {
+export async function seedWorldsForPark(parkId: number): Promise<SeedWorldsResult> {
   const rows = (
     await db.execute<{ land: string; lng: number; lat: number }>(sql`
       SELECT am.land AS land, a.longitude AS lng, a.latitude AS lat
@@ -68,41 +68,41 @@ export async function seedRealmsForPark(parkId: number): Promise<SeedRealmsResul
   for (const [land, pts] of byLand) {
     const hull = convexHull(pts);
     // A polygon needs >=3 distinct points; below that we seed without a boundary
-    // (realmForPoint falls back to a centroid radius until the next refresh).
+    // (worldForPoint falls back to a centroid radius until the next refresh).
     const boundary: GeoPolygon | null =
       hull.length >= 3 ? { type: "Polygon", coordinates: [[...hull, hull[0]]] } : null;
 
     await db
-      .insert(realm)
+      .insert(world)
       .values({ parkId, name: land, slug: slugify(land), boundary })
       .onConflictDoUpdate({
-        target: [realm.parkId, realm.slug],
+        target: [world.parkId, world.slug],
         set: { name: land, boundary },
       });
     count++;
   }
 
-  return { parkId, realms: count };
+  return { parkId, worlds: count };
 }
 
 /**
- * Seed/refresh realms for every active park — no park id needed. Reuses the
+ * Seed/refresh worlds for every active park — no park id needed. Reuses the
  * worker's `activeParkIds()` so it stays in sync with what actually gets polled.
- * Intended for `scripts/seed-realms.ts` and the monthly geo cron.
+ * Intended for `scripts/seed-worlds.ts` and the monthly geo cron.
  */
-export async function seedAllRealms(): Promise<{
+export async function seedAllWorlds(): Promise<{
   parks: number;
-  realms: number;
-  perPark: SeedRealmsResult[];
+  worlds: number;
+  perPark: SeedWorldsResult[];
 }> {
   const parkIds = await activeParkIds();
-  const perPark: SeedRealmsResult[] = [];
+  const perPark: SeedWorldsResult[] = [];
   for (const parkId of parkIds) {
-    perPark.push(await seedRealmsForPark(parkId));
+    perPark.push(await seedWorldsForPark(parkId));
   }
   return {
     parks: parkIds.length,
-    realms: perPark.reduce((n, r) => n + r.realms, 0),
+    worlds: perPark.reduce((n, r) => n + r.worlds, 0),
     perPark,
   };
 }

@@ -15,7 +15,7 @@ import { publicProcedure } from "../init.ts";
 import type { TRPCRouterRecord } from "@trpc/server";
 
 export const livingDevRouter = {
-  /** Write a synthetic ride status (e.g. DOWN) to drive the Dimming engine. */
+  /** Write a synthetic ride status (e.g. DOWN) to drive the Darkness engine. */
   injectStatus: publicProcedure
     .input(
       z.object({
@@ -28,7 +28,7 @@ export const livingDevRouter = {
       return { ok: true };
     }),
 
-  /** Run a Dimming reconcile immediately instead of waiting for the worker. */
+  /** Run a Darkness reconcile immediately instead of waiting for the worker. */
   reconcile: publicProcedure.mutation(async () => {
     return reconcileNow();
   }),

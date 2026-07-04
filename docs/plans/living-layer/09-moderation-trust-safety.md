@@ -23,7 +23,7 @@ it from the first commit, it becomes unmanageable fast.
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------ |
 | **Verified-presence-to-post** | you can only leave a mark where you were _verifiably present_ ([06](06-location-and-geofencing.md))               | yes — the integrity rule |
 | **Aggressive decay**          | nothing stays long; bad content fades fast, good content (upvoted/found) lives longer                             | yes — the decay knob     |
-| **Rate limits**               | per-Warden caps on marks/hour, escalating with trust/rank                                                         | new, simple              |
+| **Rate limits**               | per-Wielder caps on marks/hour, escalating with trust/rank                                                        | new, simple              |
 | **Reporting + fast takedown** | one-tap report; auto-hide on threshold; human review queue                                                        | new, standard            |
 | **Reputation / trust tiers**  | new accounts post to a quarantined layer; trust unlocks reach                                                     | new                      |
 | **Automated pre-screen**      | text/image classification (reuse the Claude-API cron pattern, plus an image classifier) before a mark goes public | reuse infra              |
@@ -35,7 +35,7 @@ Split the world into:
 
 - **A curated/system layer** everyone sees by default — `world`, `collectible`,
   `companion`, `encounter` marks. Fully under our control. Safe, always-on.
-- **An open player layer** (`discovery`, `dare`) that a Warden **opts into**,
+- **An open player layer** (`discovery`, `dare`) that a Wielder **opts into**,
   governed by all the defenses above.
 
 This bounds the blast radius: the default experience is never at the mercy of
@@ -76,8 +76,8 @@ Safety is a _design pillar_, enforced mechanically, not a warning screen.
 ### Trespass / boundary respect
 
 Geofence interactions strictly _inside_ legitimate guest areas (use
-`parks.boundary` and Realm polygons). Never place a mark, spawn, or objective
-that induces a Warden to enter backstage, restricted, or unsafe areas.
+`parks.boundary` and World polygons). Never place a mark, spawn, or objective
+that induces a Wielder to enter backstage, restricted, or unsafe areas.
 
 ## Part C — Why this is also a pitch asset
 

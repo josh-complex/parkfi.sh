@@ -26,8 +26,8 @@ and it's another heads-down time-sink (and a safety hazard —
 
 The choreography of a typical beat:
 
-> **wrist** buzz (_here_) → **ear** cue (_"the Dimming's rising by the
-> mansion"_) → raise phone, **AR reveal** (the Faded appears) → resolve →
+> **wrist** buzz (_here_) → **ear** cue (_"the Darkness's rising by the
+> mansion"_) → raise phone, **AR reveal** (the Heartless appears) → resolve →
 > **screen** confirm (drop, roster) → phone back in pocket.
 
 ## AR is the punchline, not the paragraph
@@ -35,7 +35,7 @@ The choreography of a typical beat:
 Rules of engagement for AR:
 
 - **Episodic, not ambient.** AR fires for _moments_ (a battle, a capture, a
-  reveal), then ends. We never ask a Warden to walk-and-stare.
+  reveal), then ends. We never ask a Wielder to walk-and-stare.
 - **Stand-still.** Encounters are stationary by design (see battle constraints,
   [04](04-game-design.md), and safety, [09](09-moderation-trust-safety.md)).
 - **Short.** Seconds-to-a-minute interactions.
@@ -58,9 +58,9 @@ Climb the ladder; do not start at the top.
 | Rung | Technique                                                                                                                                                                                               | Robustness | When               |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ------------------ |
 | 1    | **Image-anchored AR** — recognize a known landmark/sign, overlay relative to it. Re-aim the **pin CLIP embedding** tech we already run.                                                                 | High       | **demo / v1**      |
-| 2    | **Plane-anchored AR** — drop the Faded on a detected ground plane in front of a stationary Warden.                                                                                                      | High       | **demo / v1**      |
+| 2    | **Plane-anchored AR** — drop the Heartless on a detected ground plane in front of a stationary Wielder.                                                                                                 | High       | **demo / v1**      |
 | 3    | **VPS (visual positioning)** — Niantic Lightship / Google Geospatial (ARCore) / 8th Wall anchor to a _visually-scanned_ location with sub-meter precision. Google has already mapped much public space. | Medium     | v2                 |
-| 4    | **Shared-anchor co-op** — two Wardens pointing at the same spot see the _same_ boss. The magic, and the hard part.                                                                                      | Hard       | v2+ (Convergences) |
+| 4    | **Shared-anchor co-op** — two Wielders pointing at the same spot see the _same_ boss. The magic, and the hard part.                                                                                     | Hard       | v2+ (Convergences) |
 
 Raw GPS will **not** hold a virtual object on a real statue — that's why we start
 at image/plane anchors, not world-scale GPS placement.
@@ -73,7 +73,7 @@ plane-, image-, and location-AR _in the browser_. For the demo this is enormous
 
 - **"Scan this QR code at the park and it just works"** — no app store, no
   TestFlight invite for a skeptical exec.
-- Reuse existing tRPC + the live feed directly; the Dimming hook is just another
+- Reuse existing tRPC + the live feed directly; the Darkness hook is just another
   subscription.
 - Ship a _link_; iterate in minutes.
 
@@ -84,7 +84,7 @@ roadmap.
 
 ## Channel availability & graceful degradation
 
-Not every Warden has every channel — design down gracefully:
+Not every Wielder has every channel — design down gracefully:
 
 - **No smartwatch?** Wrist cues fall back to phone haptics + a glanceable lock-
   screen widget.

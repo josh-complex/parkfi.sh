@@ -74,25 +74,25 @@ async function tick(): Promise<void> {
       console.error("[alerts] eval failed:", err);
     }
 
-    // Living Layer (M2) — reconcile the Dimming game layer to the live park
+    // Living Layer (M2) — reconcile the Darkness game layer to the live park
     // state we just ingested. OFF by default (LIVING_ENABLED), level-triggered
     // (reads current state, writes only `mark`), and isolated so it can never
     // affect ingestion or alerts. No-op unless explicitly enabled.
-    let dimming = "";
+    let darkness = "";
     if (LIVING_ENABLED) {
       try {
-        const { reconcileDimming } = await import("#/server/living/dimming.ts");
-        const r = await reconcileDimming();
-        dimming = ` dimming(+${r.spawned}/-${r.expired})`;
+        const { reconcileDarkness } = await import("#/server/living/darkness.ts");
+        const r = await reconcileDarkness();
+        darkness = ` darkness(+${r.spawned}/-${r.expired})`;
       } catch (err) {
-        console.error("[living] dimming reconcile failed:", err);
+        console.error("[living] darkness reconcile failed:", err);
       }
     }
 
     lastTickOk = Date.now();
     const ms = lastTickOk - started;
     console.log(
-      `[tick] parks=${parkIds.length} entities=${entities} statusΔ=${statusChanges} queueRows=${queueRows} alerts=${alertsFired} degraded=${degraded} errors=${errors}${dimming} ${ms}ms`,
+      `[tick] parks=${parkIds.length} entities=${entities} statusΔ=${statusChanges} queueRows=${queueRows} alerts=${alertsFired} degraded=${degraded} errors=${errors}${darkness} ${ms}ms`,
     );
   } catch (err) {
     console.error("[tick] failed:", err);

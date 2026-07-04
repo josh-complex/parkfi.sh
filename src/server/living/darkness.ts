@@ -1,5 +1,5 @@
 /**
- * Living Layer — the Dimming engine (M2). THE mic-drop.
+ * Living Layer — the Darkness engine (M2). THE mic-drop.
  *
  * Turns the REAL live park feed into reactive game state: when a ride actually
  * goes DOWN, darkness "leaks" from it — we spawn an `encounter`/`world` mark at
@@ -9,7 +9,7 @@
  *
  * DESIGN — level-triggered reconcile, not edge-triggered:
  *   Rather than hooking the hot ingest path and reacting to status *transitions*,
- *   `reconcileDimming()` reads the CURRENT status of every attraction (the rows
+ *   `reconcileDarkness()` reads the CURRENT status of every attraction (the rows
  *   ingest already wrote) and makes the world match it. This means:
  *     • ZERO changes to services/parks/ingest.ts — it stays exactly as-is.
  *     • Self-healing — a missed tick can't strand the world in a wrong state.
@@ -26,12 +26,12 @@ import { mark } from "#/db/schema.ts";
 import { AttractionStatus } from "#/server/parks/codes.ts";
 
 import { livingConfig } from "./config.ts";
-import { FadedType, MarkState, MarkType } from "./codes.ts";
+import { HeartlessType, MarkState, MarkType } from "./codes.ts";
 
-import type { FadedTypeCode } from "./codes.ts";
+import type { HeartlessTypeCode } from "./codes.ts";
 import type { LiveStateSnapshot } from "#/db/schema.ts";
 
-export interface DimmingResult {
+export interface DarknessResult {
   spawned: number;
   expired: number;
 }
@@ -45,18 +45,18 @@ export interface SpawnInputs {
 }
 
 /**
- * Pure spawn rule: should a ride be leaking the Dimming right now, and how
+ * Pure spawn rule: should a ride be leaking the Darkness right now, and how
  * strong? Returns null when there's nothing to spawn. Kept I/O-free so the
- * economy can be tuned and unit-tested without a DB or device (dimming.test.ts).
+ * economy can be tuned and unit-tested without a DB or device (darkness.test.ts).
  */
 export function spawnDecision(
   inp: SpawnInputs,
-): { fadedType: FadedTypeCode; rarity: number } | null {
+): { heartlessType: HeartlessTypeCode; rarity: number } | null {
   // A genuine breakdown is the headline event — darkness leaks here, now.
   if (inp.status === AttractionStatus.DOWN) {
     // A long-standby ride going down is a bigger deal → rarer/stronger spawn.
     const rarity = inp.standbyMin != null && inp.standbyMin >= 60 ? 3 : 2;
-    return { fadedType: FadedType.BREAKER, rarity };
+    return { heartlessType: HeartlessType.BREAKER, rarity };
   }
   return null;
 }
@@ -73,18 +73,18 @@ type CurrentStatusRow = {
 };
 
 /**
- * Reconcile the Dimming layer to the current live park state.
+ * Reconcile the Darkness layer to the current live park state.
  *
  *  1. For every attraction whose latest status is DOWN, ensure an active system
  *     `encounter` mark exists (idempotent upsert).
- *  2. Expire active system Dimming marks whose source ride is no longer DOWN
+ *  2. Expire active system Darkness marks whose source ride is no longer DOWN
  *     (after a small grace), and any time-expired marks.
  *
  * Returns counts for the worker log line.
  */
-export async function reconcileDimming(): Promise<DimmingResult> {
+export async function reconcileDarkness(): Promise<DarknessResult> {
   // (1) Spawn — current DOWN attractions in active parks, with their latest
-  // standby and any realm they fall in. DISTINCT ON gives the carry-forward
+  // standby and any world they fall in. DISTINCT ON gives the carry-forward
   // latest status per attraction (mirrors how the board derives "current").
   const down = (
     await db.execute<CurrentStatusRow>(sql`
@@ -137,16 +137,20 @@ export async function reconcileDimming(): Promise<DimmingResult> {
         type: MarkType.ENCOUNTER,
         isSystem: true,
         parkId: Number(row.park_id),
-        // Realm association is added later via a geofence point-in-polygon step
-        // (a single park has many realms, so it can't be joined in SQL here).
-        realmId: null,
+        // World association is added later via a geofence point-in-polygon step
+        // (a single park has many worlds, so it can't be joined in SQL here).
+        worldId: null,
         attractionId: Number(row.attraction_id),
         latitude: row.latitude,
         longitude: row.longitude,
         state: MarkState.ACTIVE,
         liveStateSnapshot: snapshot,
         expiresAt,
-        payload: { fadedType: decision.fadedType, rarity: decision.rarity, source: "dimming" },
+        payload: {
+          heartlessType: decision.heartlessType,
+          rarity: decision.rarity,
+          source: "darkness",
+        },
       })
       .onConflictDoUpdate({
         target: [mark.attractionId, mark.type],

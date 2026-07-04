@@ -1556,21 +1556,21 @@ export const refMarkState = pgTable("ref_mark_state", {
   label: text("label").notNull(),
 });
 
-/** Faded (enemy) archetypes, referenced by encounter payloads. */
-export const refFadedType = pgTable("ref_faded_type", {
+/** Heartless (enemy) archetypes, referenced by encounter payloads. */
+export const refHeartlessType = pgTable("ref_heartless_type", {
   code: text("code").primaryKey(),
   label: text("label").notNull(),
   element: text("element"),
 });
 
 /**
- * Realm — promotes "land" (today only `attraction_meta.land`) to a first-class
- * geofenced entity, used for party-gating and Realm-tier geofences. `boundary`
+ * World — promotes "land" (today only `attraction_meta.land`) to a first-class
+ * geofenced entity, used for party-gating and World-tier geofences. `boundary`
  * is seeded from the convex hull of the land's attraction coordinates by
- * `seedRealmsForPark` (filter `category IS NOT NULL` to drop ghost-dup rows).
+ * `seedWorldsForPark` (filter `category IS NOT NULL` to drop ghost-dup rows).
  */
-export const realm = pgTable(
-  "realm",
+export const world = pgTable(
+  "world",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     parkId: bigint("park_id", { mode: "number" })
@@ -1582,7 +1582,7 @@ export const realm = pgTable(
     element: text("element"),
     themeColor: text("theme_color"),
   },
-  (t) => [uniqueIndex("realm_park_slug_idx").on(t.parkId, t.slug)],
+  (t) => [uniqueIndex("world_park_slug_idx").on(t.parkId, t.slug)],
 );
 
 /** A snapshot of live park state captured when a mark was created. */
@@ -1599,7 +1599,7 @@ export type MarkPayload = Record<string, unknown>;
 
 /**
  * Mark — THE atomic unit of the Living Layer. Every geo-anchored thing
- * (discovery pins, collectibles, the live "Dimming", encounters, companions,
+ * (discovery pins, collectibles, the live "Darkness", encounters, companions,
  * memories) is a row here; `type` selects the shape of `payload`. See
  * docs/plans/living-layer/03-marks-and-discovery.md.
  */
@@ -1615,7 +1615,7 @@ export const mark = pgTable(
     parkId: bigint("park_id", { mode: "number" })
       .notNull()
       .references(() => parks.id),
-    realmId: bigint("realm_id", { mode: "number" }).references(() => realm.id),
+    worldId: bigint("world_id", { mode: "number" }).references(() => world.id),
     attractionId: bigint("attraction_id", { mode: "number" }).references(() => attractions.id),
     latitude: doublePrecision("latitude"),
     longitude: doublePrecision("longitude"),
@@ -1634,14 +1634,14 @@ export const mark = pgTable(
   },
   (t) => [
     index("mark_park_state_idx").on(t.parkId, t.state),
-    index("mark_realm_type_idx").on(t.realmId, t.type),
+    index("mark_world_type_idx").on(t.worldId, t.type),
     index("mark_attraction_idx").on(t.attractionId),
     index("mark_expires_idx").on(t.expiresAt),
   ],
 );
 
 /**
- * Resolved Faded battles (M4a). Append-only history feeding the logbook (M6)
+ * Resolved Heartless battles (M4a). Append-only history feeding the logbook (M6)
  * and economy tuning. Plain table for now; promotable to a Timescale hypertable
  * later if volume warrants.
  */
@@ -1653,7 +1653,7 @@ export const encounterLog = pgTable(
     markId: bigint("mark_id", { mode: "number" }).references(() => mark.id),
     parkId: bigint("park_id", { mode: "number" }).references(() => parks.id),
     attractionId: bigint("attraction_id", { mode: "number" }).references(() => attractions.id),
-    fadedType: text("faded_type").references(() => refFadedType.code),
+    heartlessType: text("heartless_type").references(() => refHeartlessType.code),
     outcome: text("outcome").notNull(),
     liveStateSnapshot: jsonb("live_state_snapshot").$type<LiveStateSnapshot>(),
     ts: timestamp("ts", { withTimezone: true }).notNull().defaultNow(),
@@ -1662,56 +1662,6 @@ export const encounterLog = pgTable(
     index("encounter_log_user_ts_idx").on(t.userId, t.ts),
     index("encounter_log_mark_idx").on(t.markId),
   ],
-);
-
-/** Per-user game profile (M5). 1:1 with `user`; created on first progression. */
-export const warden = pgTable("warden", {
-  userId: text("user_id")
-    .primaryKey()
-    .references(() => user.id),
-  displayName: text("display_name"),
-  rank: integer("rank").notNull().default(1),
-  xp: integer("xp").notNull().default(0),
-  homeParkId: bigint("home_park_id", { mode: "number" }).references(() => parks.id),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
-/** Companion catalog (M5) — recruitable allies bound to a realm + a signature ride. */
-export type CompanionStats = { hp?: number; atk?: number; def?: number; spd?: number };
-
-export const companion = pgTable(
-  "companion",
-  {
-    id: bigserial("id", { mode: "number" }).primaryKey(),
-    homeRealmId: bigint("home_realm_id", { mode: "number" }).references(() => realm.id),
-    signatureAttractionId: bigint("signature_attraction_id", { mode: "number" }).references(
-      () => attractions.id,
-    ),
-    name: text("name").notNull(),
-    slug: text("slug").notNull().unique(),
-    element: text("element"),
-    role: text("role"),
-    baseStats: jsonb("base_stats").$type<CompanionStats>().notNull().default({}),
-    imageR2Key: text("image_r2_key"),
-  },
-  (t) => [index("companion_home_realm_idx").on(t.homeRealmId)],
-);
-
-/** A user's recruited roster (M5). */
-export const wardenCompanion = pgTable(
-  "warden_companion",
-  {
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id),
-    companionId: bigint("companion_id", { mode: "number" })
-      .notNull()
-      .references(() => companion.id),
-    level: integer("level").notNull().default(1),
-    xp: integer("xp").notNull().default(0),
-    recruitedAt: timestamp("recruited_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [primaryKey({ columns: [t.userId, t.companionId] })],
 );
 
 /** Reactions on a mark — found / upvote / report (moderation + flywheel). */

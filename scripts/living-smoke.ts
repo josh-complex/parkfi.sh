@@ -4,7 +4,7 @@
  * Proves the mic-drop loop without any dev server:
  *   1. create a throwaway fixture park + attraction (its own data — never
  *      touches a real ride's status),
- *   2. seed realms from it (M1),
+ *   2. seed worlds from it (M1),
  *   3. inject a DOWN status → reconcile → assert an active encounter mark
  *      appears at that attraction (M2 — the mic-drop),
  *   4. inject OPERATING (+ age the mark past the grace) → reconcile → assert it
@@ -33,10 +33,10 @@ import {
   attractions,
   mark,
   parks,
-  realm,
+  world,
 } from "#/db/schema.ts";
-import { reconcileDimming } from "#/server/living/dimming.ts";
-import { seedRealmsForPark } from "#/server/living/realms.ts";
+import { reconcileDarkness } from "#/server/living/darkness.ts";
+import { seedWorldsForPark } from "#/server/living/worlds.ts";
 import { AttractionStatus, Source } from "#/server/parks/codes.ts";
 
 const SLUG = "zzz-living-smoke-park";
@@ -82,9 +82,9 @@ async function main() {
     source: Source.THEMEPARKS_WIKI,
   });
 
-  // --- M1: seed realms ----------------------------------------------------
-  const seeded = await seedRealmsForPark(parkId);
-  check("M1 seedRealmsForPark created a realm for the land", seeded.realms === 1);
+  // --- M1: seed worlds ----------------------------------------------------
+  const seeded = await seedWorldsForPark(parkId);
+  check("M1 seedWorldsForPark created a world for the land", seeded.worlds === 1);
 
   // --- M2: inject DOWN → reconcile → expect a spawn -----------------------
   await db.insert(attractionStatusObs).values({
@@ -93,7 +93,7 @@ async function main() {
     status: AttractionStatus.DOWN,
     source: Source.THEMEPARKS_WIKI,
   });
-  const r1 = await reconcileDimming();
+  const r1 = await reconcileDarkness();
   check("M2 reconcile spawned at least one mark", r1.spawned >= 1);
 
   const active = await db
@@ -121,7 +121,7 @@ async function main() {
     status: AttractionStatus.OPERATING,
     source: Source.THEMEPARKS_WIKI,
   });
-  const r2 = await reconcileDimming();
+  const r2 = await reconcileDarkness();
   const afterRecovery = await db
     .select({ id: mark.id })
     .from(mark)
@@ -138,7 +138,7 @@ async function main() {
     .update(mark)
     .set({ expiresAt: sql`now() - interval '1 minute'` })
     .where(eq(mark.attractionId, attractionId));
-  const r3 = await reconcileDimming();
+  const r3 = await reconcileDarkness();
   check("M2 reconcile despawned the mark once its TTL elapsed", r3.expired >= 1);
 
   const stillActive = await db
@@ -164,7 +164,7 @@ async function cleanup() {
       await db.delete(attractionStatusObs).where(eq(attractionStatusObs.attractionId, a.id));
       await db.delete(attractionMeta).where(eq(attractionMeta.attractionId, a.id));
     }
-    await db.delete(realm).where(eq(realm.parkId, p.id));
+    await db.delete(world).where(eq(world.parkId, p.id));
     await db.delete(attractions).where(eq(attractions.parkId, p.id));
     await db.delete(parks).where(eq(parks.id, p.id));
   }

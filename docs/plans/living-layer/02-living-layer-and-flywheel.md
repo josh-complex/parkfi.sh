@@ -12,7 +12,7 @@ reacts to_ reality because it's wired to our live feed. It has two threads, and
 they are designed to feed each other:
 
 - **The personal thread** — solo, intimate, persistent. Something _you_ carry
-  and grow across every visit and every park: your Warden, your Companion
+  and grow across every visit and every park: your Wielder, your Companion
   roster, your Key, your rank, your logbook. Lives mostly in your **ear and on
   your wrist**. It is _yours_.
 - **The communal thread** — live, shared, ambient. The park-wide state. Real
@@ -31,9 +31,9 @@ not as a bolted-on multiplayer mode.
 
 A deliberate dual narrative:
 
-- **Park-wide (communal, live):** the realm is under threat; the darkness rises
+- **Park-wide (communal, live):** the world is under threat; the darkness rises
   and falls with the real park; Convergences are shared finales.
-- **Personal (solo, persistent):** your Warden's arc — who you've recruited,
+- **Personal (solo, persistent):** your Wielder's arc — who you've recruited,
   what you've sealed, where you've been, what you carry between parks.
 
 Neither is subordinate. The personal arc is the _retention_ engine (a save file
@@ -75,7 +75,7 @@ Every node hands off to the next. Two consequences fall straight out:
    treatment in [08](08-achievements-persistence-coldstart.md)).
 2. **Persistence and cold-start are the same mechanism** viewed from two ends —
    the marks _you_ leave are _exactly_ what makes the world alive for the next
-   Warden.
+   Wielder.
 
 ## The two halves of the loop
 

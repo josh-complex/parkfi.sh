@@ -9,7 +9,7 @@ import type { GeoPolygon } from "#/db/schema.ts";
 
 export type LngLat = [number, number];
 
-/** Party-eligibility tier for a companion given where the warden is ([05]). */
+/** Party-eligibility tier for a companion given where the wielder is ([05]). */
 export type ProximityTier = "home" | "guest" | "away";
 
 /**
@@ -53,7 +53,7 @@ export function distanceMeters(a: LngLat, b: LngLat): number {
   return Math.sqrt(x * x + y * y) * R;
 }
 
-export interface RealmLike {
+export interface WorldLike {
   id: number;
   boundary?: GeoPolygon | null;
   /** Optional centroid fallback when no boundary polygon exists yet. */
@@ -61,21 +61,21 @@ export interface RealmLike {
 }
 
 /**
- * Which realm contains the point. Prefers a true polygon hit; falls back to the
- * nearest realm centroid within `fallbackRadiusM` when boundaries are absent
+ * Which world contains the point. Prefers a true polygon hit; falls back to the
+ * nearest world centroid within `fallbackRadiusM` when boundaries are absent
  * (e.g. before the geo cron has seeded polygons). Returns null if none match.
  */
-export function realmForPoint(
+export function worldForPoint(
   point: LngLat,
-  realms: ReadonlyArray<RealmLike>,
+  worlds: ReadonlyArray<WorldLike>,
   fallbackRadiusM = 75,
 ): number | null {
-  for (const r of realms) {
+  for (const r of worlds) {
     if (pointInPolygon(point, r.boundary)) return r.id;
   }
   let bestId: number | null = null;
   let bestDist = fallbackRadiusM;
-  for (const r of realms) {
+  for (const r of worlds) {
     if (!r.centroid) continue;
     const d = distanceMeters(point, r.centroid);
     if (d < bestDist) {
@@ -88,18 +88,18 @@ export function realmForPoint(
 
 /**
  * Proximity tier for a companion ([05] — companions-and-proximity):
- *  - home:  warden is in the companion's home realm
- *  - guest: warden is elsewhere in the same park
- *  - away:  warden is in a different park entirely
+ *  - home:  wielder is in the companion's home world
+ *  - guest: wielder is elsewhere in the same park
+ *  - away:  wielder is in a different park entirely
  */
 export function tierFor(args: {
-  homeRealmId: number | null;
-  currentRealmId: number | null;
+  homeWorldId: number | null;
+  currentWorldId: number | null;
   homeParkId: number | null;
   currentParkId: number | null;
 }): ProximityTier {
-  const { homeRealmId, currentRealmId, homeParkId, currentParkId } = args;
-  if (homeRealmId != null && homeRealmId === currentRealmId) return "home";
+  const { homeWorldId, currentWorldId, homeParkId, currentParkId } = args;
+  if (homeWorldId != null && homeWorldId === currentWorldId) return "home";
   if (homeParkId != null && currentParkId != null && homeParkId === currentParkId) return "guest";
   return "away";
 }

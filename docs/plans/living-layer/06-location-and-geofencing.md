@@ -2,7 +2,7 @@
 
 > **Theme:** Verified physical presence is the currency of the entire system —
 > the anti-cheat, the anti-spam, the achievement integrity, and a piece of the
-> moat. This doc is the engineering reality of _knowing where a Warden is_,
+> moat. This doc is the engineering reality of _knowing where a Wielder is_,
 > cheaply, accurately enough, without killing the battery, and without being
 > fooled by a fake-GPS app.
 
@@ -31,7 +31,7 @@ tunnel under the train station = "you've left the real world").
 | Tier             | Boundary source                                   | Used for                                                                 |
 | ---------------- | ------------------------------------------------- | ------------------------------------------------------------------------ |
 | **Park**         | `parks.boundary` GeoJSON (already enriched)       | "you entered" — wake the layer                                           |
-| **Realm** (land) | new `realm.boundary` (see [10](10-data-model.md)) | party eligibility ([05](05-companions-and-proximity.md)), Realm identity |
+| **World** (land) | new `world.boundary` (see [10](10-data-model.md)) | party eligibility ([05](05-companions-and-proximity.md)), World identity |
 | **Attraction**   | `attractions.lat/lng` + radius                    | encounters, recruit quests                                               |
 | **Queue**        | attraction + motion/dwell heuristic               | queue-time experiences, ride detection                                   |
 | **Micro-spot**   | a precise coordinate or recognized landmark       | a specific `discovery`/`world` mark, AR anchor                           |
@@ -71,13 +71,13 @@ structural, not a server-side guess.
 An all-day game cannot run high-accuracy GPS continuously. The discipline:
 
 - **Region monitoring for coarse triggers.** OS geofence/region APIs are
-  low-power and run even when the app is backgrounded. Use them for Park/Realm
+  low-power and run even when the app is backgrounded. Use them for Park/World
   tier crossings.
 - **High-accuracy only in active moments.** Spin up precise GPS + motion + AR
   _only_ during an encounter, a recruit quest, or a mark interaction — then spin
   back down.
 - **Push, don't poll.** Reuse the worker + push pipeline ([11](11-architecture.md))
-  so the _server_ tells an in-park device "a Dimming surged near you" rather than
+  so the _server_ tells an in-park device "a Darkness surged near you" rather than
   the device burning battery polling.
 - **Budget explicitly.** Treat battery as a first-class metric in testing
   (target: a full park day on one charge with normal use). A great experience
@@ -105,7 +105,7 @@ All-day location is sensitive. The contract must be explicit and honest:
   background/region monitoring is a clear, separate opt-in tied to a concrete
   benefit (Go-Now nudges, Convergence alerts).
 - **On-device where possible.** Geofence evaluation and motion classification run
-  client-side; we send the _server_ derived events ("entered Realm X",
+  client-side; we send the _server_ derived events ("entered World X",
   "verified ride of Y"), not a raw breadcrumb trail, unless the user opts into
   features that need it.
 - **Minimize & retain briefly.** Store the _events_ the game needs, not a
@@ -118,6 +118,6 @@ All-day location is sensitive. The contract must be explicit and honest:
 
 - **Reused:** `parks.boundary`, `attractions.lat/lng`, the live feed (as a
   corroborating signal), the worker + push pipeline.
-- **Net-new:** the `realm` table + polygons ([10](10-data-model.md)), a
+- **Net-new:** the `world` table + polygons ([10](10-data-model.md)), a
   client-side geofence/motion engine, the verification service (server-side
   presence validation against the live feed), platform attestation.

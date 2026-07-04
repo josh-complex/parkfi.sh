@@ -4,20 +4,20 @@
 > [12 — Demo / vertical slice](12-demo-vertical-slice.md), grounded in the actual
 > repo. Eight milestones (M0–M7), each independently demoable, each with the
 > exact files to touch and an acceptance check. The mic-drop (the live-data
-> Dimming hook) is wired for real against the existing ingest path; everything
+> Darkness hook) is wired for real against the existing ingest path; everything
 > else is scoped per [12](12-demo-vertical-slice.md).
 
 ## Build status — M0–M3 shipped (2026-06-20)
 
-M0 (dev mode), M1 (realm + geofence), M2 (mark + Dimming engine — the mic-drop),
+M0 (dev mode), M1 (world + geofence), M2 (mark + Darkness engine — the mic-drop),
 and M3 (public `living` router + discovery pins + the gated play map) are
 **built and green** (`bun tsc --noEmit` clean repo-wide; `bun vp lint` clean on
 all new files; 18/18 unit tests pass in `src/server/living/`).
 
-**M3 adds:** `src/integrations/trpc/routers/living.ts` (`realms`, `marks`,
+**M3 adds:** `src/integrations/trpc/routers/living.ts` (`worlds`, `marks`,
 `leaveMark`, `reactMark` — public reads + presence-/rate-gated discovery loop),
 `src/components/living/play-map.tsx` (self-contained maplibre map rendering
-Dimming spawns + discovery pins, tap-to-drop, react-via-popup),
+Darkness spawns + discovery pins, tap-to-drop, react-via-popup),
 `src/routes/play.$slug.tsx` (gated by `useLivingLayerEnabled()` — the PostHog
 flag now gates a real screen at `/play/$slug`). The route tree
 (`src/routeTree.gen.ts`) was regenerated via `@tanstack/router-generator`; the
@@ -27,10 +27,10 @@ diff only **adds** the new route. Still additive + flag-off-by-default.
 > added is **additive and dark by default**:
 >
 > - The migration `drizzle/20260620120000_living_layer/` only `CREATE`s new
->   tables (`realm`, `mark`, `mark_reaction`, three `ref_*`). It never alters,
+>   tables (`world`, `mark`, `mark_reaction`, three `ref_*`). It never alters,
 >   drops, or touches an existing table/column/index. No current code reads
 >   these tables.
-> - The worker's Dimming reconcile is a **hard no-op unless `LIVING_ENABLED=1`**,
+> - The worker's Darkness reconcile is a **hard no-op unless `LIVING_ENABLED=1`**,
 >   runs in its own isolated `try/catch` after `evaluateAlerts`, and **requires
 >   zero changes to `ingest.ts`** (see the design change below).
 > - The dev tRPC procedures (`livingDev.*`) throw `FORBIDDEN` unless
@@ -45,7 +45,7 @@ diff only **adds** the new route. Still additive + flag-off-by-default.
 The original sketch had us modify `ingestPark` to **return** its status
 transitions and feed them to an edge-triggered `onStatusTransitions`. The
 **built** design is better and was chosen to honor "don't touch existing work":
-`reconcileDimming()` is **level-triggered** — it reads the _current_ status of
+`reconcileDarkness()` is **level-triggered** — it reads the _current_ status of
 every attraction (rows ingest already wrote) and makes the `mark` world match.
 Net effect: **`src/server/parks/ingest.ts` is unchanged**, the reconcile
 self-heals on a missed tick, and it's idempotent (a partial unique index keeps
@@ -56,12 +56,12 @@ at most one active system mark per `(attraction, type)`).
 | File                                                | New?           | Role                                                      |
 | --------------------------------------------------- | -------------- | --------------------------------------------------------- |
 | `drizzle/20260620120000_living_layer/migration.sql` | new            | additive DDL + `ref_*` seeds                              |
-| `src/db/schema.ts`                                  | **appended**   | `realm`, `mark`, `mark_reaction`, `ref_*` + payload types |
+| `src/db/schema.ts`                                  | **appended**   | `world`, `mark`, `mark_reaction`, `ref_*` + payload types |
 | `src/server/living/config.ts`                       | new            | `LIVING_ENABLED` / `LIVING_DEV` kill switches             |
 | `src/server/living/codes.ts`                        | new            | mark/state/faded string codes                             |
 | `src/server/living/geofence.ts` (+ `.test.ts`)      | new            | pure geometry: point-in-polygon, tier, hull               |
-| `src/server/living/realms.ts`                       | new            | `seedRealmsForPark` (M1)                                  |
-| `src/server/living/dimming.ts` (+ `.test.ts`)       | new            | the Dimming engine (M2, the mic-drop)                     |
+| `src/server/living/worlds.ts`                       | new            | `seedWorldsForPark` (M1)                                  |
+| `src/server/living/darkness.ts` (+ `.test.ts`)      | new            | the Darkness engine (M2, the mic-drop)                    |
 | `src/server/living/dev.ts`                          | new            | guarded inject/reconcile helpers (M0)                     |
 | `src/integrations/trpc/routers/livingDev.ts`        | new            | dev-only tRPC procedures (M0)                             |
 | `src/integrations/trpc/router.ts`                   | **+2 lines**   | register `livingDev`                                      |
@@ -72,10 +72,10 @@ at most one active system mark per `(attraction, type)`).
 
 1. Apply the migration (via `bun`, per convention) — or just run
    `bun run living:smoke`, which applies it idempotently and validates the loop.
-2. Seed realms for every active park: `bun run living:seed-realms`
-   (`seedAllRealms()` — reuses the worker's `activeParkIds()`; later wired into
+2. Seed worlds for every active park: `bun run living:seed-worlds`
+   (`seedAllWorlds()` — reuses the worker's `activeParkIds()`; later wired into
    `services/geo`).
-3. Set `LIVING_ENABLED=1` on the worker → the Dimming reconcile begins.
+3. Set `LIVING_ENABLED=1` on the worker → the Darkness reconcile begins.
 4. Drive it from the desk with `livingDev.injectStatus({ attractionId, status:
 2 })` then `livingDev.reconcile()` (needs `LIVING_DEV=1`), and assert with
    `livingDev.activeMarks({ parkId })`.
@@ -105,7 +105,7 @@ camelCase) **or** the drizzle query builder (ingest uses`db.insert(...).values(.
   `no-node-run-bins-via-bun`). So `bun vp check`, `bun vp test`,
   `bun drizzle-kit ...` (we don't use generate, but apply/push via bun).
 - **Ghost dup attractions:** filter `category IS NOT NULL` whenever deriving
-  Realm membership / signature attractions (memory:
+  World membership / signature attractions (memory:
   `ghost-duplicate-attractions`).
 - **Worker on Railway binds `::` not `0.0.0.0`** for any internal calls
   (memory: `railway-private-network-ipv6`).
@@ -120,7 +120,7 @@ Status transitions are _already detected_ in
 [src/server/parks/ingest.ts](../../../src/server/parks/ingest.ts): around
 line 211–231 it builds `statusRows` only on genuine transitions
 (`prev.status !== e.status`) and inserts into `attractionStatusObs`. **That is
-the exact seam for the Dimming engine** — when a ride transitions to
+the exact seam for the Darkness engine** — when a ride transitions to
 `AttractionStatus.DOWN`, we emit a `world`/`encounter` mark. We hook it as a
 post-tick step in [services/worker/main.ts](../../../services/worker/main.ts)
 right next to `evaluateAlerts`, so a failure can't break ingestion (same
@@ -139,7 +139,7 @@ You cannot iterate on a location game from your desk without it
   `LIVING_DEV=1` env flag; **hard-fails in production**).
 - `src/integrations/trpc/routers/livingDev.ts` — dev-only tRPC procedures:
   - `injectStatus({ attractionId, status })` — insert a synthetic
-    `attraction_status_obs` row (drives the Dimming engine deterministically).
+    `attraction_status_obs` row (drives the Darkness engine deterministically).
   - `setPosition({ lat, lng })` — store a spoofed position in dev state.
   - `overrideConditions({ night?, rain?, fireworks? })`.
 - Client: a `<DevPanel/>` under `src/components/living/dev-panel.tsx` (rendered
@@ -156,14 +156,14 @@ an `attraction_status_obs` row; `setPosition` round-trips. Guard throws when
 
 ---
 
-## M1 — `realm` table + geofence engine
+## M1 — `world` table + geofence engine
 
-**New migration** `drizzle/<stamp>_living_realm_and_marks/migration.sql`
+**New migration** `drizzle/<stamp>_living_world_and_marks/migration.sql`
 (combine M1+M2 DDL — see [10 — Data model](10-data-model.md) for the full
 shape). M1 portion:
 
 ```sql
-CREATE TABLE IF NOT EXISTS "realm" (
+CREATE TABLE IF NOT EXISTS "world" (
   "id" bigserial PRIMARY KEY,
   "park_id" bigint NOT NULL REFERENCES "parks"("id"),
   "name" text NOT NULL,
@@ -172,62 +172,62 @@ CREATE TABLE IF NOT EXISTS "realm" (
   "element" text,
   "theme_color" text
 );
-CREATE UNIQUE INDEX IF NOT EXISTS "realm_park_slug_idx" ON "realm" ("park_id","slug");
+CREATE UNIQUE INDEX IF NOT EXISTS "world_park_slug_idx" ON "world" ("park_id","slug");
 ```
 
 **New files**
 
-- Add `realm` (+ `MarkPayload`/`GeoPolygon`-style types) to
+- Add `world` (+ `MarkPayload`/`GeoPolygon`-style types) to
   [src/db/schema.ts](../../../src/db/schema.ts), matching the `parks`/`attractions`
   style.
-- `src/server/living/realms.ts` — `seedRealmsForPark(parkId)`: read distinct
+- `src/server/living/worlds.ts` — `seedWorldsForPark(parkId)`: read distinct
   `attraction_meta.land` for the park (joined to `attractions`, **filter
   `category IS NOT NULL`**), compute a convex-hull `boundary` from each land's
-  attraction `lat/lng`, upsert `realm` rows.
+  attraction `lat/lng`, upsert `world` rows.
 - `src/server/living/geofence.ts` — pure functions: `pointInPolygon`,
-  `nearestRealm(lat,lng,realms)`, `tierFor(homeRealmId, currentRealmId, samePark)`
+  `nearestWorld(lat,lng,worlds)`, `tierFor(homeWorldId, currentWorldId, samePark)`
   → `home | guest | away` ([05](05-companions-and-proximity.md)). **Pure +
   unit-tested**, no I/O.
 - `src/server/living/geofence.test.ts`.
 
 **Modify**
 
-- `services/geo` (the monthly geo cron): call `seedRealmsForPark` after attraction
-  geo enrichment so Realms refresh with the rest of the geo data.
+- `services/geo` (the monthly geo cron): call `seedWorldsForPark` after attraction
+  geo enrichment so Worlds refresh with the rest of the geo data.
 
 **Acceptance:** unit tests for point-in-polygon and tier logic pass
-(`bun vp test`). A seed script run against a dev DB produces one `realm` row per
+(`bun vp test`). A seed script run against a dev DB produces one `world` row per
 land for a test park.
 
 ---
 
-## M2 — the `mark` primitive + the Dimming engine (THE MIC-DROP)
+## M2 — the `mark` primitive + the Darkness engine (THE MIC-DROP)
 
 **Migration (same folder as M1)** — `mark`, `ref_mark_type`, `ref_mark_state`,
-`ref_faded_type`, `mark_reaction` exactly as in [10](10-data-model.md), with the
+`ref_heartless_type`, `mark_reaction` exactly as in [10](10-data-model.md), with the
 spatial/state indexes. Seed the `ref_*` rows in the migration.
 
 **New files**
 
 - Add the tables to [schema.ts](../../../src/db/schema.ts).
-- `src/server/living/dimming.ts` — the engine:
+- `src/server/living/darkness.ts` — the engine:
   - `onStatusTransitions(transitions)` — given the transitions ingest just wrote,
     for each → `DOWN` emit an `encounter` + `world` mark at that attraction with
     `expires_at` = while-down (cleared on the → `OPERATING` transition) and a
-    `live_state_snapshot`. For Realm `queue_obs` surges, raise spawn weight
-    (start simple: a `collectible` mark when a Realm's avg standby crosses a
+    `live_state_snapshot`. For World `queue_obs` surges, raise spawn weight
+    (start simple: a `collectible` mark when a World's avg standby crosses a
     threshold).
   - `spawnWeight({ liveState, timeOfDay, forecast })` — the pure spawn function
     ([11 — Architecture](11-architecture.md)); unit-tested.
   - `expireMarks()` — sweep `mark` where `expires_at < now()` → `state='faded'`
     (or delete); run each tick.
-- `src/server/living/dimming.test.ts`.
+- `src/server/living/darkness.test.ts`.
 
 **Modify**
 
 - [src/server/parks/ingest.ts](../../../src/server/parks/ingest.ts): have
   `ingestPark` **return the transition list** it already computes (the
-  `statusRows`), so the worker can feed the Dimming engine. (Minimal change — the
+  `statusRows`), so the worker can feed the Darkness engine. (Minimal change — the
   data is already in scope at line ~211.)
 - [services/worker/main.ts](../../../services/worker/main.ts): after
   `evaluateAlerts`, add an isolated `try { await onStatusTransitions(...) ;
@@ -249,7 +249,7 @@ No AR, no game balance — pure UGC loop + the flywheel made visible.
 **New file** `src/integrations/trpc/routers/living.ts` (the main router; grows
 through M6):
 
-- `living.realms({ parkSlug })` → realm catalog + boundaries (raw SQL, like
+- `living.worlds({ parkSlug })` → world catalog + boundaries (raw SQL, like
   `parks.list`).
 - `living.nearbyMarks({ parkId, lat, lng, types? })` → live marks
   (`state='active'`) within a bbox of the point.
@@ -274,7 +274,7 @@ through M6):
 - `src/components/living/` — `play-map.tsx`, `mark-sheet.tsx`,
   `leave-mark-dialog.tsx`.
 
-**Acceptance:** in dev, set position inside a Realm → drop a discovery mark →
+**Acceptance:** in dev, set position inside a World → drop a discovery mark →
 it appears in `nearbyMarks` for a second client → react "found" increments the
 counter. Router unit tests for `leaveMark` (presence gate) + `reactMark`
 (report auto-hide).
@@ -291,12 +291,12 @@ avoid a vendor account; document the 8th Wall upgrade path.
 **New files**
 
 - `src/components/living/ar/encounter-canvas.tsx` — plane-/image-anchored AR
-  scene; spawns the Faded model on a detected ground plane, **stand-still**
+  scene; spawns the Heartless model on a detected ground plane, **stand-still**
   ([07](07-ar-and-channels.md), [09](09-moderation-trust-safety.md) safety:
   speed-lockout + stationary).
 - `src/components/living/battle/` — turn-based UI (2–3 moves, one Companion, a
   Surge meter). Pure client state machine; server validates start/resolve.
-- Extend `living.ts`: `encounter.start({ markId })` → returns Faded spec;
+- Extend `living.ts`: `encounter.start({ markId })` → returns Heartless spec;
   `encounter.resolve({ markId, outcome })` → **server-authoritative**, writes
   `encounter_log`, grants drops/XP, advances `seal_state`
   ([10](10-data-model.md)).
@@ -305,7 +305,7 @@ avoid a vendor account; document the 8th Wall upgrade path.
 `seal_state` per [10](10-data-model.md).
 
 **Acceptance:** on an AR-capable device (one in-park or local test), an
-`encounter` mark → tap → AR Faded renders anchored to the ground → battle
+`encounter` mark → tap → AR Heartless renders anchored to the ground → battle
 resolves → `encounter_log` row written. **2D fallback** path works when camera is
 declined (the loop must complete without AR — [07](07-ar-and-channels.md)).
 
@@ -323,17 +323,17 @@ declined (the loop must complete without AR — [07](07-ar-and-channels.md)).
 - Swap the M3 `proposePresence` stub for the real call; gate `leaveMark`,
   `recruit`, `encounter.resolve` on it.
 
-**Companion recruit (one Realm)** ([05](05-companions-and-proximity.md))
+**Companion recruit (one World)** ([05](05-companions-and-proximity.md))
 
-- Migration: `companion`, `warden`, `warden_companion`, `key_item`,
-  `warden_key` per [10](10-data-model.md). Seed 3–4 original Companions bound to
-  one demo Realm (signature attractions, **`category IS NOT NULL`**).
-- `living.party()` → fieldable party from `(roster, current realm, rank)`
+- Migration: `companion`, `wielder`, `wielder_companion`, `key_item`,
+  `wielder_key` per [10](10-data-model.md). Seed 3–4 original Companions bound to
+  one demo World (signature attractions, **`category IS NOT NULL`**).
+- `living.party()` → fieldable party from `(roster, current world, rank)`
   (compute client-side, validate server-side).
 - `living.recruit({ companionId })` → verified-presence-gated; adds to
-  `warden_companion`.
+  `wielder_companion`.
 
-**Acceptance:** completing the demo Realm's recruit quest (clear N Faded +
+**Acceptance:** completing the demo World's recruit quest (clear N Heartless +
 verified presence) adds the Companion to the roster; fielding rules reflect
 home/guest/away tiers. Presence verification rejects a spoofed claim that
 contradicts the live feed (unit test).
@@ -346,11 +346,11 @@ The shareable artifact ([08 — Achievements, persistence & cold-start](08-achie
 
 **New files / migration**
 
-- `achievement_def`, `warden_achievement` ([10](10-data-model.md)); seed a few
+- `achievement_def`, `wielder_achievement` ([10](10-data-model.md)); seed a few
   verified-by-physics + one secret achievement.
 - `src/server/living/achievements.ts` — evaluate achievement rules off
   `presence_event` / `encounter_log` (run post-tick or on resolve).
-- `living.profile()` → warden, roster, logbook timeline, achievements.
+- `living.profile()` → wielder, roster, logbook timeline, achievements.
 - `src/routes/_dash/$slug.play.logbook.tsx` + `src/components/living/logbook/`.
 
 **Acceptance:** a verified ride/encounter produces a logbook entry and unlocks
@@ -374,7 +374,7 @@ full loop (web AR, [07](07-ar-and-channels.md)).
 ## Build dependency graph
 
 ```
-M0 dev mode ─┬─▶ M1 realm+geofence ─▶ M2 mark + DIMMING (mic-drop) ─┬─▶ M3 discovery
+M0 dev mode ─┬─▶ M1 world+geofence ─▶ M2 mark + DARKNESS (mic-drop) ─┬─▶ M3 discovery
              │                                                       ├─▶ M4 AR + battle ─▶ M5 presence + recruit ─▶ M6 logbook ─▶ M7 pitch
              └───────────────────────────────────────────────────────┘
 ```
@@ -386,7 +386,7 @@ first public release ([13](13-roadmap-risks-ip.md) Phase 1).
 ## Verification & tooling (no dev server)
 
 - `bun vp check` — format + lint + types after each milestone.
-- `bun vp test` — unit tests; the pure modules (`geofence`, `dimming.spawnWeight`,
+- `bun vp test` — unit tests; the pure modules (`geofence`, `darkness.spawnWeight`,
   `presence` fusion, tier logic) are all unit-testable with no DB or device.
 - DB-touching logic: small integration tests against a dev DB, following the
   existing `*.test.ts` pattern (e.g.
@@ -408,6 +408,6 @@ Per [12](12-demo-vertical-slice.md) / [13](13-roadmap-risks-ip.md): Convergences
 
 Start at **M0** + the **M1/M2 migration**, because the mic-drop is the whole
 pitch and M0 is what lets you build it from your desk. Concretely, the first PR:
-the dev panel + `livingDev` router (guarded), the `realm`+`mark` migration and
-schema, and `dimming.ts` wired into the worker — provable end-to-end via
+the dev panel + `livingDev` router (guarded), the `world`+`mark` migration and
+schema, and `darkness.ts` wired into the worker — provable end-to-end via
 `livingDev.injectStatus` with a unit test, no park trip required.

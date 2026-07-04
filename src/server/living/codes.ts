@@ -24,12 +24,12 @@ export const MarkState = {
 } as const;
 export type MarkStateCode = (typeof MarkState)[keyof typeof MarkState];
 
-export const FadedType = {
+export const HeartlessType = {
   SHADE: "shade",
   WISP: "wisp",
   BREAKER: "breaker",
 } as const;
-export type FadedTypeCode = (typeof FadedType)[keyof typeof FadedType];
+export type HeartlessTypeCode = (typeof HeartlessType)[keyof typeof HeartlessType];
 
 /** Reaction kinds on a mark. */
 export const MarkReactionKind = {

@@ -4,7 +4,7 @@ import {
   convexHull,
   distanceMeters,
   pointInPolygon,
-  realmForPoint,
+  worldForPoint,
   tierFor,
   type LngLat,
 } from "./geofence.ts";
@@ -76,36 +76,36 @@ describe("distanceMeters", () => {
   });
 });
 
-describe("realmForPoint", () => {
-  const realms = [
+describe("worldForPoint", () => {
+  const worlds = [
     { id: 1, boundary: square },
     { id: 2, boundary: null, centroid: [5, 5] as LngLat },
   ];
   it("prefers a polygon hit", () => {
-    expect(realmForPoint([0.5, 0.5], realms)).toBe(1);
+    expect(worldForPoint([0.5, 0.5], worlds)).toBe(1);
   });
   it("falls back to nearest centroid within radius", () => {
     // ~0.0001 deg from the centroid — well within 75 m.
-    expect(realmForPoint([5.0001, 5.0001], realms)).toBe(2);
+    expect(worldForPoint([5.0001, 5.0001], worlds)).toBe(2);
   });
   it("returns null when nothing matches", () => {
-    expect(realmForPoint([50, 50], realms)).toBe(null);
+    expect(worldForPoint([50, 50], worlds)).toBe(null);
   });
 });
 
 describe("tierFor", () => {
-  it("home when in the companion's home realm", () => {
-    expect(tierFor({ homeRealmId: 7, currentRealmId: 7, homeParkId: 1, currentParkId: 1 })).toBe(
+  it("home when in the companion's home world", () => {
+    expect(tierFor({ homeWorldId: 7, currentWorldId: 7, homeParkId: 1, currentParkId: 1 })).toBe(
       "home",
     );
   });
   it("guest when elsewhere in the same park", () => {
-    expect(tierFor({ homeRealmId: 7, currentRealmId: 9, homeParkId: 1, currentParkId: 1 })).toBe(
+    expect(tierFor({ homeWorldId: 7, currentWorldId: 9, homeParkId: 1, currentParkId: 1 })).toBe(
       "guest",
     );
   });
   it("away when in a different park", () => {
-    expect(tierFor({ homeRealmId: 7, currentRealmId: 9, homeParkId: 1, currentParkId: 2 })).toBe(
+    expect(tierFor({ homeWorldId: 7, currentWorldId: 9, homeParkId: 1, currentParkId: 2 })).toBe(
       "away",
     );
   });

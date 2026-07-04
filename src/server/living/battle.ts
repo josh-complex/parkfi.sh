@@ -1,61 +1,70 @@
 /**
- * Living Layer / Wayfarer — scoped battle rules (M4a).
+ * Living Layer / Kingdom Hearts — scoped battle rules (M4a).
  *
  * Pure, deterministic functions (no I/O) so the encounter economy is testable
  * at the desk and the client + server agree on the same numbers. The turn-by-
- * turn loop runs in the UI ([battle-panel.tsx]); the server derives the Faded
- * from the mark's payload (fadedType + rarity) and validates the outcome.
+ * turn loop runs in the UI ([battle-panel.tsx]); the server derives the Heartless
+ * from the mark's payload (heartlessType + rarity) and validates the outcome.
  */
-import { FadedType, type FadedTypeCode } from "./codes.ts";
+import { HeartlessType, type HeartlessTypeCode } from "./codes.ts";
 
 export type BattleOutcome = "win" | "loss" | "flee";
 
-export interface FadedSpec {
-  fadedType: FadedTypeCode;
+export interface HeartlessSpec {
+  heartlessType: HeartlessTypeCode;
   rarity: number;
   name: string;
   /** Hit points — what the player must whittle down. */
   hp: number;
-  /** Damage the Faded deals to the player each turn. */
+  /** Damage the Heartless deals to the player each turn. */
   atk: number;
 }
 
-const FADED_NAME: Record<FadedTypeCode, string> = {
-  [FadedType.SHADE]: "Shade",
-  [FadedType.WISP]: "Wisp",
-  [FadedType.BREAKER]: "Breaker",
+const HEARTLESS_NAME: Record<HeartlessTypeCode, string> = {
+  [HeartlessType.SHADE]: "Shade",
+  [HeartlessType.WISP]: "Wisp",
+  [HeartlessType.BREAKER]: "Breaker",
 };
 
 /** Per-type base stats; rarity scales them up so headliner-downs are tougher. */
-const FADED_BASE: Record<FadedTypeCode, { hp: number; atk: number }> = {
-  [FadedType.SHADE]: { hp: 20, atk: 4 },
-  [FadedType.WISP]: { hp: 14, atk: 3 },
-  [FadedType.BREAKER]: { hp: 30, atk: 6 },
+const HEARTLESS_BASE: Record<HeartlessTypeCode, { hp: number; atk: number }> = {
+  [HeartlessType.SHADE]: { hp: 20, atk: 4 },
+  [HeartlessType.WISP]: { hp: 14, atk: 3 },
+  [HeartlessType.BREAKER]: { hp: 30, atk: 6 },
 };
 
 /**
- * Deterministic Faded stats for an encounter. `rarity` (>=1) scales hp/atk so a
+ * Deterministic Heartless stats for an encounter. `rarity` (>=1) scales hp/atk so a
  * long-standby headliner going down (higher rarity) is a meatier fight.
  */
-export function fadedSpec(fadedType: FadedTypeCode, rarity: number): FadedSpec {
-  const base = FADED_BASE[fadedType] ?? FADED_BASE[FadedType.SHADE];
+export function heartlessSpec(heartlessType: HeartlessTypeCode, rarity: number): HeartlessSpec {
+  const base = HEARTLESS_BASE[heartlessType] ?? HEARTLESS_BASE[HeartlessType.SHADE];
   const r = Math.max(1, Math.floor(rarity));
   return {
-    fadedType,
+    heartlessType,
     rarity: r,
-    name: FADED_NAME[fadedType] ?? "Faded",
+    name: HEARTLESS_NAME[heartlessType] ?? "Heartless",
     hp: base.hp + (r - 1) * 10,
     atk: base.atk + (r - 1) * 2,
   };
 }
 
-/** The Warden's starting hit points for a scoped (single-Warden) battle. */
-export const WARDEN_HP = 30;
+/**
+ * The Wielder's starting hit points for a scoped (single-Wielder) battle.
+ *
+ * BALANCE — every *real* Darkness spawn is a BREAKER at rarity 2 (short standby)
+ * or 3 (long-standby headliner), never a Shade/Wisp (see `spawnDecision` in
+ * darkness.ts). So the Wielder's kit is tuned against those, not the base Shade:
+ *   • Breaker r2 (hp 40, atk 8): comfortably winnable, surge optional.
+ *   • Breaker r3 (hp 50, atk 10): winnable, but ONLY if Surge is spent — a
+ *     strike-only line dies one turn short. Surge is the skill expression.
+ */
+export const WIELDER_HP = 42;
 
 /** Move damage. Surge is a one-per-battle heavy hit; guard halves the next hit. */
 export const MOVES = {
-  strike: { label: "Strike", damage: 6 },
-  surge: { label: "Surge", damage: 14 },
+  strike: { label: "Strike", damage: 9 },
+  surge: { label: "Surge", damage: 22 },
   guard: { label: "Guard", damage: 0 },
 } as const;
 export type MoveKey = keyof typeof MOVES;

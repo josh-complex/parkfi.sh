@@ -25,7 +25,6 @@ import { Route as BlogIndexRouteImport } from './routes/blog/index'
 import { Route as DashIndexRouteImport } from './routes/_dash/index'
 import { Route as StaysAlertsRouteImport } from './routes/stays_.alerts'
 import { Route as ResortSlugRouteImport } from './routes/resort.$slug'
-import { Route as PlaySlugRouteImport } from './routes/play.$slug'
 import { Route as PinsTradesRouteImport } from './routes/pins_.trades'
 import { Route as PinsScanRouteImport } from './routes/pins_.scan'
 import { Route as PinsCollectionRouteImport } from './routes/pins_.collection'
@@ -130,11 +129,6 @@ const StaysAlertsRoute = StaysAlertsRouteImport.update({
 const ResortSlugRoute = ResortSlugRouteImport.update({
   id: '/resort/$slug',
   path: '/resort/$slug',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PlaySlugRoute = PlaySlugRouteImport.update({
-  id: '/play/$slug',
-  path: '/play/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PinsTradesRoute = PinsTradesRouteImport.update({
@@ -294,7 +288,6 @@ export interface FileRoutesByFullPath {
   '/pins/collection': typeof PinsCollectionRoute
   '/pins/scan': typeof PinsScanRoute
   '/pins/trades': typeof PinsTradesRoute
-  '/play/$slug': typeof PlaySlugRoute
   '/resort/$slug': typeof ResortSlugRoute
   '/stays/alerts': typeof StaysAlertsRoute
   '/blog/': typeof BlogIndexRoute
@@ -336,7 +329,6 @@ export interface FileRoutesByTo {
   '/pins/collection': typeof PinsCollectionRoute
   '/pins/scan': typeof PinsScanRoute
   '/pins/trades': typeof PinsTradesRoute
-  '/play/$slug': typeof PlaySlugRoute
   '/resort/$slug': typeof ResortSlugRoute
   '/stays/alerts': typeof StaysAlertsRoute
   '/': typeof DashIndexRoute
@@ -382,7 +374,6 @@ export interface FileRoutesById {
   '/pins_/collection': typeof PinsCollectionRoute
   '/pins_/scan': typeof PinsScanRoute
   '/pins_/trades': typeof PinsTradesRoute
-  '/play/$slug': typeof PlaySlugRoute
   '/resort/$slug': typeof ResortSlugRoute
   '/stays_/alerts': typeof StaysAlertsRoute
   '/_dash/': typeof DashIndexRoute
@@ -429,7 +420,6 @@ export interface FileRouteTypes {
     | '/pins/collection'
     | '/pins/scan'
     | '/pins/trades'
-    | '/play/$slug'
     | '/resort/$slug'
     | '/stays/alerts'
     | '/blog/'
@@ -471,7 +461,6 @@ export interface FileRouteTypes {
     | '/pins/collection'
     | '/pins/scan'
     | '/pins/trades'
-    | '/play/$slug'
     | '/resort/$slug'
     | '/stays/alerts'
     | '/'
@@ -516,7 +505,6 @@ export interface FileRouteTypes {
     | '/pins_/collection'
     | '/pins_/scan'
     | '/pins_/trades'
-    | '/play/$slug'
     | '/resort/$slug'
     | '/stays_/alerts'
     | '/_dash/'
@@ -559,7 +547,6 @@ export interface RootRouteChildren {
   PinsCollectionRoute: typeof PinsCollectionRoute
   PinsScanRoute: typeof PinsScanRoute
   PinsTradesRoute: typeof PinsTradesRoute
-  PlaySlugRoute: typeof PlaySlugRoute
   ResortSlugRoute: typeof ResortSlugRoute
   StaysAlertsRoute: typeof StaysAlertsRoute
   BlogIndexRoute: typeof BlogIndexRoute
@@ -684,13 +671,6 @@ declare module '@tanstack/react-router' {
       path: '/resort/$slug'
       fullPath: '/resort/$slug'
       preLoaderRoute: typeof ResortSlugRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/play/$slug': {
-      id: '/play/$slug'
-      path: '/play/$slug'
-      fullPath: '/play/$slug'
-      preLoaderRoute: typeof PlaySlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pins_/trades': {
@@ -942,7 +922,6 @@ const rootRouteChildren: RootRouteChildren = {
   PinsCollectionRoute: PinsCollectionRoute,
   PinsScanRoute: PinsScanRoute,
   PinsTradesRoute: PinsTradesRoute,
-  PlaySlugRoute: PlaySlugRoute,
   ResortSlugRoute: ResortSlugRoute,
   StaysAlertsRoute: StaysAlertsRoute,
   BlogIndexRoute: BlogIndexRoute,

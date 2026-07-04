@@ -1,5 +1,5 @@
 /**
- * Living Layer / Wayfarer — conjure a test Dimming spawn from the desk.
+ * Living Layer / Kingdom Hearts — conjure a test Darkness spawn from the desk.
  *
  * Picks a real attraction (with coordinates) in the given park, injects a DOWN
  * status for it, and reconciles — so a coral encounter pin appears on the map at
@@ -58,7 +58,7 @@ if (!ride) {
 await injectStatus(Number(ride.id), AttractionStatus.DOWN);
 const result = await reconcileNow();
 console.log(
-  `Dimming spawned at "${ride.name}" (${ride.latitude}, ${ride.longitude}) — reconcile +${result.spawned}/-${result.expired}.`,
+  `Darkness spawned at "${ride.name}" (${ride.latitude}, ${ride.longitude}) — reconcile +${result.spawned}/-${result.expired}.`,
 );
 console.log(`Open /play/${slug}, find the coral pin, and tap it to fight.`);
 process.exit(0);

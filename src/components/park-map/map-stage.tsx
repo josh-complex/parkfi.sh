@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useStore } from "@tanstack/react-store";
 import {
   ArrowUpRightIcon,
   DramaIcon,
@@ -18,6 +19,8 @@ import {
 } from "lucide-react";
 import { createPortal } from "react-dom";
 
+import { playModeStore, setHudExpanded } from "#/components/living/play-mode.ts";
+import { PlayOverlay } from "#/components/living/play-overlay.tsx";
 import { useSelection } from "#/components/park-dashboard/selection-context.tsx";
 import { RideFilterButton } from "#/components/rides/ride-filter-button.tsx";
 import { type MapLayers, useRideFilter } from "#/components/rides/ride-filter.tsx";
@@ -231,6 +234,30 @@ export function MapStageProvider({
   // Roam only: which park's rides are currently revealed (reported by the active
   // renderer), so we can float a "view park details" shortcut over the map.
   const [roamFocusSlug, setRoamFocusSlug] = React.useState<string | null>(null);
+
+  // Kingdom Hearts play mode — an overlay on the roam map, scoped to the currently
+  // focused park when it's a Disney park (the live-feed game world is built for
+  // Disney; Universal isn't wired). Toggled from the bottom-nav Play button.
+  const playMode = useStore(playModeStore, (s) => s.playMode);
+  const focusPark = parksQ.data?.find((p) => p.slug === roamFocusSlug) ?? null;
+  const isDisneyFocus = focusPark?.operatorSlug === "disney";
+  const playActive = playMode && roam && isDisneyFocus;
+  // Map-reported taps: a Darkness spawn engaged (→ battle) / the bare map tapped
+  // (→ drop a discovery). Cleared whenever play mode isn't actively running.
+  const [battleMarkId, setBattleMarkId] = React.useState<number | null>(null);
+  const [dropAt, setDropAt] = React.useState<{ lat: number; lng: number } | null>(null);
+  React.useEffect(() => {
+    if (!playActive) {
+      setBattleMarkId(null);
+      setDropAt(null);
+    }
+  }, [playActive]);
+  // Tell the bottom-nav Play button when a panel owns the bottom band, so it can
+  // fade out of the way (and back in when the panel closes).
+  React.useEffect(() => {
+    setHudExpanded(playActive && (battleMarkId != null || dropAt != null));
+    return () => setHudExpanded(false);
+  }, [playActive, battleMarkId, dropAt]);
   // One geolocation watch for the whole app, owned here so it survives the map
   // moving between routes. Never auto-prompts — the locate button calls locate().
   const geo = useGeolocation({ watch: true });
@@ -425,6 +452,15 @@ export function MapStageProvider({
                   roam={roam}
                   filter={filter}
                   onRoamFocusChange={setRoamFocusSlug}
+                  play={playActive}
+                  playParkSlug={roamFocusSlug}
+                  onEngageDarkness={(id) => {
+                    setDropAt(null);
+                    setBattleMarkId(id);
+                  }}
+                  onDropDiscovery={(p) => {
+                    if (battleMarkId == null) setDropAt(p);
+                  }}
                 />
               )}
               {engine === "leaflet" && (
@@ -465,9 +501,27 @@ export function MapStageProvider({
               />
             )}
             {attached && engine && <LocateButton state={geo.state} onClick={geo.locate} />}
-            {attached && engine && roam && (
+            {attached && engine && roam && !playMode && (
               <RideFilterButton className="absolute left-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] z-10 md:bottom-3" />
             )}
+            {/* Kingdom Hearts play overlay — GL renderer only. Live over a focused
+                Disney park; otherwise a hint points the player at one. */}
+            {attached && engine === "gl" && roam && playMode ? (
+              isDisneyFocus && roamFocusSlug ? (
+                <PlayOverlay
+                  parkSlug={roamFocusSlug}
+                  battleMarkId={battleMarkId}
+                  dropAt={dropAt}
+                  onCloseBattle={() => setBattleMarkId(null)}
+                  onCloseDrop={() => setDropAt(null)}
+                />
+              ) : (
+                <PlayHint>Kingdom Hearts is live at Disney parks — zoom into one to play.</PlayHint>
+              )
+            ) : null}
+            {attached && engine === "leaflet" && roam && playMode ? (
+              <PlayHint>Kingdom Hearts needs a WebGL-capable browser to play.</PlayHint>
+            ) : null}
             {attached && trip && (
               <DirectionsPanel
                 destName={trip.dest.name}
@@ -494,6 +548,16 @@ export function MapStageProvider({
 // with a blur so it floats cleanly over the map.
 const MAP_CTRL_3D =
   "btn-3d-outline border-3d shadow-3d pointer-events-auto flex size-10 items-center justify-center bg-background/95 text-foreground backdrop-blur transition-[transform,box-shadow,background-color,color] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-border";
+
+/** A small centered pill for Kingdom Hearts status copy (wrong park / no WebGL). Sits
+ *  in the bottom-center slot the play HUD would otherwise occupy. */
+function PlayHint({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="animate-in fade-in slide-in-from-bottom-2 pointer-events-none absolute left-1/2 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+3rem)] z-10 -translate-x-1/2 rounded-full border bg-background/90 px-4 py-2 text-center text-xs shadow-sm backdrop-blur duration-200 md:bottom-4">
+      {children}
+    </div>
+  );
+}
 
 /** Vertical +/- zoom group, bottom-right, stacked directly above the locate
  *  button (clear of the bottom-nav island on mobile). Replaces each engine's

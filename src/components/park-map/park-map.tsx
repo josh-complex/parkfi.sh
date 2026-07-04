@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import maplibregl from "maplibre-gl";
 import { useTheme } from "next-themes";
 
@@ -22,6 +22,7 @@ import {
   buildPoiEl,
   buildUserLocationEl,
   DECLUTTER_SIZE,
+  escapeHtml,
   getRoamCamera,
   type MapHandle,
   MAP_FLY_MS,
@@ -120,6 +121,17 @@ function makeRaise(el: HTMLElement): (on: boolean) => void {
  *  hover slot, so a new hover can knock the previous one down. */
 let topHover: (() => void) | null = null;
 
+/** A Kingdom Hearts (play-mode) map dot: `darkness` (live ride-down / battle) = coral,
+ *  `discovery` (user pin) = blue. Plain DOM markers, kept out of the ride cluster
+ *  so the game layer overlays cleanly without disturbing the wait-time markers. */
+function livingMarkerEl(kind: "darkness" | "discovery"): HTMLElement {
+  const el = document.createElement("div");
+  const color = kind === "darkness" ? "#D85A30" : "#378ADD";
+  el.style.cssText = `width:18px;height:18px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 0 0 2px rgba(0,0,0,.15);cursor:pointer;`;
+  if (kind === "darkness") el.style.boxShadow = `0 0 10px 2px ${color}`;
+  return el;
+}
+
 // Zoom at/above which free-roam reveals a park's rides (and below which it falls
 // back to park badges). Park-bounds fits land around 15–16, comfortably above.
 const ROAM_RIDE_ZOOM = 14;
@@ -168,6 +180,10 @@ export function ParkMap({
   roam = false,
   filter,
   onRoamFocusChange,
+  play = false,
+  playParkSlug,
+  onEngageDarkness,
+  onDropDiscovery,
 }: {
   activeSlug: string | null;
   /** Currently charted attraction — its marker is highlighted. */
@@ -197,6 +213,15 @@ export function ParkMap({
   /** Roam only: reports which park's rides are currently revealed (or null), so
    *  the stage can offer a "view park details" shortcut. */
   onRoamFocusChange?: (slug: string | null) => void;
+  /** Kingdom Hearts play mode: overlay the Darkness/discovery game layer for
+   *  `playParkSlug` on top of the roam map. GL renderer only. */
+  play?: boolean;
+  /** The park whose Living Layer marks to render while `play` is on. */
+  playParkSlug?: string | null;
+  /** Tapping a Darkness spawn — the stage opens the battle panel for this mark. */
+  onEngageDarkness?: (markId: number) => void;
+  /** Tapping the bare map in play mode — the stage opens the discovery-drop sheet. */
+  onDropDiscovery?: (p: { lat: number; lng: number }) => void;
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -217,6 +242,9 @@ export function ParkMap({
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<maplibregl.Map | null>(null);
   const markersRef = React.useRef<Array<maplibregl.Marker>>([]);
+  // Kingdom Hearts play-mode markers (Darkness spawns + discovery pins), kept in their
+  // own set so they never touch the ride cluster's marker bookkeeping.
+  const playMarkersRef = React.useRef<Array<maplibregl.Marker>>([]);
   // Attraction marker detail-layer elements by id, so selection highlight can
   // update in place without rebuilding (rebuilding would close an open popup).
   const markerElsRef = React.useRef<Map<number, HTMLElement>>(new Map());
@@ -241,6 +269,10 @@ export function ParkMap({
   onDeselectRef.current = onDeselect;
   const onRequestDirectionsRef = React.useRef(onRequestDirections);
   onRequestDirectionsRef.current = onRequestDirections;
+  const onEngageDarknessRef = React.useRef(onEngageDarkness);
+  onEngageDarknessRef.current = onEngageDarkness;
+  const onDropDiscoveryRef = React.useRef(onDropDiscovery);
+  onDropDiscoveryRef.current = onDropDiscovery;
   const selectedIdRef = React.useRef(selectedId);
   selectedIdRef.current = selectedId;
 
@@ -273,6 +305,27 @@ export function ParkMap({
     staleTime: POI_STALE_MS,
     gcTime: POI_STALE_MS,
   });
+
+  // Kingdom Hearts play mode: the active Living Layer marks for the focused park.
+  // Only fetches while play is on and a park is focused; polls so a ride going
+  // down (a fresh Darkness spawn) appears without a manual refresh.
+  const marksQ = useQuery({
+    ...trpc.living.marks.queryOptions({ parkSlug: playParkSlug ?? "" }),
+    enabled: play && !!playParkSlug,
+    refetchInterval: play ? 30_000 : false,
+  });
+  const reactMark = useMutation(
+    trpc.living.reactMark.mutationOptions({
+      onSuccess: () => {
+        if (playParkSlug)
+          void queryClient.invalidateQueries({
+            queryKey: trpc.living.marks.queryKey({ parkSlug: playParkSlug }),
+          });
+      },
+    }),
+  );
+  const reactMarkRef = React.useRef(reactMark);
+  reactMarkRef.current = reactMark;
 
   const parks = listQ.data;
   const overview = overviewQ.data;
@@ -853,6 +906,73 @@ export function ParkMap({
     }
     userMarkerRef.current.setLngLat(userLocation.coords).addTo(map);
   }, [userLocation, ready]);
+
+  // Kingdom Hearts play layer — render Darkness spawns (tap → battle) and discovery
+  // pins (popup with note + reactions) as plain DOM markers over the roam map.
+  // Cleared whenever play turns off. Independent of the ride-cluster effect.
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    for (const m of playMarkersRef.current) m.remove();
+    playMarkersRef.current = [];
+    if (!play) return;
+    for (const mk of marksQ.data ?? []) {
+      if (mk.latitude == null || mk.longitude == null) continue;
+      const el = livingMarkerEl(mk.isSystem ? "darkness" : "discovery");
+      const marker = new maplibregl.Marker({ element: el }).setLngLat([mk.longitude, mk.latitude]);
+      if (mk.isSystem) {
+        // A Darkness spawn — tapping it hands the battle up to the stage overlay.
+        // stopPropagation so the same tap doesn't also drop a discovery pin.
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          onEngageDarknessRef.current?.(mk.id);
+        });
+      } else {
+        const note = (mk.payload as { note?: string } | null)?.note;
+        const popup = new maplibregl.Popup({ offset: 14 }).setHTML(
+          `<div style="font:14px system-ui;max-width:220px">
+             <strong>Discovery</strong>
+             <div style="margin-top:4px;color:#555">${escapeHtml(note ?? "")}</div>
+             <div style="margin-top:8px;display:flex;gap:8px">
+               <button data-react="found" data-id="${mk.id}">Found it (${mk.findCount})</button>
+               <button data-react="upvote" data-id="${mk.id}">▲ (${mk.upvoteCount})</button>
+               <button data-react="report" data-id="${mk.id}">Report</button>
+             </div>
+           </div>`,
+        );
+        popup.on("open", () => {
+          popup
+            .getElement()
+            ?.querySelectorAll<HTMLButtonElement>("button[data-react]")
+            .forEach((btn) => {
+              btn.onclick = () =>
+                reactMarkRef.current.mutate({
+                  markId: Number(btn.dataset.id),
+                  kind: btn.dataset.react as "found" | "upvote" | "report",
+                });
+            });
+        });
+        marker.setPopup(popup);
+      }
+      marker.addTo(map);
+      playMarkersRef.current.push(marker);
+    }
+  }, [play, marksQ.data, ready]);
+
+  // Play mode: a tap on the bare map (not a marker) asks the stage to open the
+  // discovery-drop sheet at that point. Marker taps land on their own DOM element
+  // (above the canvas), so they never reach this canvas-level handler.
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !play) return;
+    const onClick = (e: maplibregl.MapMouseEvent) => {
+      onDropDiscoveryRef.current?.({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+    };
+    map.on("click", onClick);
+    return () => {
+      map.off("click", onClick);
+    };
+  }, [play, ready]);
 
   // Camera: fit both resorts on the overview, fly into the active park. Built
   // as a closure recomputed each render and stashed in a ref so the delayed

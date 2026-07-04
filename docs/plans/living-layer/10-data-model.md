@@ -2,7 +2,7 @@
 
 > **Theme:** The Living Layer is a thin set of new tables hanging off the schema
 > we already have. The center of gravity is **one polymorphic `mark` table** (the
-> atomic unit), a **`realm` table** that promotes "land" to first-class with a
+> atomic unit), a **`world` table** that promotes "land" to first-class with a
 > geofence, and a small cluster of **game-save tables** keyed to `user`. Follows
 > the existing `src/db/schema.ts` conventions exactly: `bigserial` PKs,
 > snake_case table names + camelCase exports, `jsonb().$type<>()`, explicit
@@ -29,7 +29,7 @@ export const refMarkType = pgTable("ref_mark_type", {
 });
 
 // faded (enemy) archetypes, used by encounter payloads
-export const refFadedType = pgTable("ref_faded_type", {
+export const refHeartlessType = pgTable("ref_heartless_type", {
   code: text("code").primaryKey(),
   label: text("label").notNull(),
   element: text("element"), // for affinity vs Key/Companion
@@ -42,16 +42,16 @@ export const refMarkState = pgTable("ref_mark_state", {
 });
 ```
 
-## `realm` — promote "land" to a first-class geofenced entity
+## `world` — promote "land" to a first-class geofenced entity
 
 Today "land" lives only as `attraction_meta.land` (text). The Living Layer needs
 it as a real entity with a boundary polygon for party-gating
-([05](05-companions-and-proximity.md)) and Realm-tier geofences
+([05](05-companions-and-proximity.md)) and World-tier geofences
 ([06](06-location-and-geofencing.md)).
 
 ```ts
-export const realm = pgTable(
-  "realm",
+export const world = pgTable(
+  "world",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     parkId: bigint("park_id", { mode: "number" })
@@ -64,11 +64,11 @@ export const realm = pgTable(
     // coordinates (filter `category IS NOT NULL` to drop ghost-dup rows), refined
     // later from OSM land boundaries. Reuses the GeoPolygon type from schema.ts.
     boundary: jsonb("boundary").$type<GeoPolygon>(),
-    // the Dimming flavor / element this Realm leans toward (affinity)
+    // the Darkness flavor / element this World leans toward (affinity)
     element: text("element"),
     themeColor: text("theme_color"),
   },
-  (t) => [uniqueIndex("realm_park_slug_idx").on(t.parkId, t.slug)],
+  (t) => [uniqueIndex("world_park_slug_idx").on(t.parkId, t.slug)],
 );
 ```
 
@@ -90,18 +90,18 @@ export const mark = pgTable(
     authorUserId: text("author_user_id").references(() => user.id),
     isSystem: boolean("is_system").notNull().default(false),
 
-    // anchor — coarse to fine; at least one of (attractionId, realmId, lat/lng)
+    // anchor — coarse to fine; at least one of (attractionId, worldId, lat/lng)
     parkId: bigint("park_id", { mode: "number" })
       .notNull()
       .references(() => parks.id),
-    realmId: bigint("realm_id", { mode: "number" }).references(() => realm.id),
+    worldId: bigint("world_id", { mode: "number" }).references(() => world.id),
     attractionId: bigint("attraction_id", { mode: "number" }).references(() => attractions.id),
     latitude: doublePrecision("latitude"),
     longitude: doublePrecision("longitude"),
     // optional landmark anchor key for image-anchored AR (CLIP, reused from pins)
     anchorKey: text("anchor_key"),
 
-    // typed content — discovery: {note, photoR2Key}; collectible: {fadedType,
+    // typed content — discovery: {note, photoR2Key}; collectible: {heartlessType,
     // rarity, rewardTable}; world: {sourceEvent, attractionId}; dare: {text};
     // companion: {companionId}; memory: {visitId, snapshot}
     payload: jsonb("payload").$type<MarkPayload>().notNull().default({}),
@@ -125,7 +125,7 @@ export const mark = pgTable(
   (t) => [
     // primary spatial query: live marks near a point in a park
     index("mark_park_state_idx").on(t.parkId, t.state),
-    index("mark_realm_type_idx").on(t.realmId, t.type),
+    index("mark_world_type_idx").on(t.worldId, t.type),
     index("mark_attraction_idx").on(t.attractionId),
     index("mark_expires_idx").on(t.expiresAt),
   ],
@@ -157,10 +157,10 @@ export const markReaction = pgTable(
 
 ## Game-save tables (keyed to `user`)
 
-### `warden` — the player's game profile (1:1 with `user`)
+### `wielder` — the player's game profile (1:1 with `user`)
 
 ```ts
-export const warden = pgTable("warden", {
+export const wielder = pgTable("wielder", {
   userId: text("user_id")
     .primaryKey()
     .references(() => user.id),
@@ -174,15 +174,15 @@ export const warden = pgTable("warden", {
 });
 ```
 
-### `companion` — Companion catalog (dimension, bound to a Realm)
+### `companion` — Companion catalog (dimension, bound to a World)
 
 ```ts
 export const companion = pgTable(
   "companion",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
-    // loose-skin original character; home Realm gates recruit + affinity ([05])
-    homeRealmId: bigint("home_realm_id", { mode: "number" }).references(() => realm.id),
+    // Disney-character party member; home World gates recruit + affinity ([05])
+    homeWorldId: bigint("home_world_id", { mode: "number" }).references(() => world.id),
     // the signature attraction whose quest recruits this companion
     signatureAttractionId: bigint("signature_attraction_id", {
       mode: "number",
@@ -194,15 +194,15 @@ export const companion = pgTable(
     baseStats: jsonb("base_stats").$type<CompanionStats>().notNull(),
     imageR2Key: text("image_r2_key"),
   },
-  (t) => [index("companion_realm_idx").on(t.homeRealmId)],
+  (t) => [index("companion_world_idx").on(t.homeWorldId)],
 );
 ```
 
-### `warden_companion` — the roster (who you've recruited)
+### `wielder_companion` — the roster (who you've recruited)
 
 ```ts
-export const wardenCompanion = pgTable(
-  "warden_companion",
+export const wielderCompanion = pgTable(
+  "wielder_companion",
   {
     userId: text("user_id")
       .notNull()
@@ -223,22 +223,22 @@ export const wardenCompanion = pgTable(
 ```
 
 > The **fieldable party** is _not_ stored — it's a pure function of
-> `(roster, current Realm, rank)` computed client-side and validated
+> `(roster, current World, rank)` computed client-side and validated
 > server-side ([05](05-companions-and-proximity.md)).
 
-### `key_item` + `warden_key` — gear & synthesis
+### `key_item` + `wielder_key` — gear & synthesis
 
 ```ts
 export const keyItem = pgTable("key_item", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
-  themeRealmId: bigint("theme_realm_id", { mode: "number" }).references(() => realm.id),
+  themeWorldId: bigint("theme_world_id", { mode: "number" }).references(() => world.id),
   baseStats: jsonb("base_stats").$type<KeyStats>().notNull(),
 });
 
-export const wardenKey = pgTable(
-  "warden_key",
+export const wielderKey = pgTable(
+  "wielder_key",
   {
     userId: text("user_id")
       .notNull()
@@ -253,22 +253,22 @@ export const wardenKey = pgTable(
 );
 ```
 
-### `seal_state` — Realm control points
+### `seal_state` — World control points
 
 ```ts
 export const sealState = pgTable(
   "seal_state",
   {
-    realmId: bigint("realm_id", { mode: "number" })
+    worldId: bigint("world_id", { mode: "number" })
       .notNull()
-      .references(() => realm.id),
+      .references(() => world.id),
     // the day this seal applies to (daily-reset PvE; team-held when dense)
     sealDate: date("seal_date").notNull(),
     sealedByUserId: text("sealed_by_user_id").references(() => user.id),
     progress: integer("progress").notNull().default(0), // 0..100
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.realmId, t.sealDate] })],
+  (t) => [primaryKey({ columns: [t.worldId, t.sealDate] })],
 );
 ```
 
@@ -289,9 +289,9 @@ export const presenceEvent = pgTable(
     parkId: bigint("park_id", { mode: "number" })
       .notNull()
       .references(() => parks.id),
-    realmId: bigint("realm_id", { mode: "number" }).references(() => realm.id),
+    worldId: bigint("world_id", { mode: "number" }).references(() => world.id),
     attractionId: bigint("attraction_id", { mode: "number" }).references(() => attractions.id),
-    kind: text("kind").notNull(), // enter_park | enter_realm | at_attraction | ride_verified
+    kind: text("kind").notNull(), // enter_park | enter_world | at_attraction | ride_verified
     // fused-signal confidence + which signals agreed (gps/motion/dwell/live)
     confidence: real("confidence").notNull(),
     signals: jsonb("signals").$type<PresenceSignals>().notNull(),
@@ -309,9 +309,9 @@ export const encounterLog = pgTable(
       .notNull()
       .references(() => user.id),
     markId: bigint("mark_id", { mode: "number" }).references(() => mark.id),
-    fadedType: text("faded_type").references(() => refFadedType.code),
+    heartlessType: text("heartless_type").references(() => refHeartlessType.code),
     outcome: text("outcome").notNull(), // win | flee | loss
-    // the live state that drove this spawn (proves the Dimming hook, [04])
+    // the live state that drove this spawn (proves the Darkness hook, [04])
     liveStateSnapshot: jsonb("live_state_snapshot").$type<LiveStateSnapshot>(),
     ts: timestamp("ts", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -330,8 +330,8 @@ export const achievementDef = pgTable("achievement_def", {
   isSecret: boolean("is_secret").notNull().default(false),
 });
 
-export const wardenAchievement = pgTable(
-  "warden_achievement",
+export const wielderAchievement = pgTable(
+  "wielder_achievement",
   {
     userId: text("user_id")
       .notNull()
@@ -380,11 +380,11 @@ a timestamped `migration.sql` folder; no `_journal.json`; do not use
 
 ## How it hangs off the existing schema
 
-| New table                                                        | Anchored to existing                                                                         |
-| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `realm`                                                          | `parks`; seeded from `attraction_meta.land`                                                  |
-| `mark`                                                           | `parks`, `realm`, `attractions`, `user`                                                      |
-| `warden`, `warden_companion`, `warden_key`, `warden_achievement` | `user` (Better-Auth)                                                                         |
-| `companion`                                                      | `realm`, `attractions`                                                                       |
-| `presence_event`, `encounter_log`                                | `user`, `parks`, `attractions` — driven by the live `queue_obs`/`attraction_status_obs` feed |
-| `seal_state`                                                     | `realm`, `user`                                                                              |
+| New table                                                            | Anchored to existing                                                                         |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `world`                                                              | `parks`; seeded from `attraction_meta.land`                                                  |
+| `mark`                                                               | `parks`, `world`, `attractions`, `user`                                                      |
+| `wielder`, `wielder_companion`, `wielder_key`, `wielder_achievement` | `user` (Better-Auth)                                                                         |
+| `companion`                                                          | `world`, `attractions`                                                                       |
+| `presence_event`, `encounter_log`                                    | `user`, `parks`, `attractions` — driven by the live `queue_obs`/`attraction_status_obs` feed |
+| `seal_state`                                                         | `world`, `user`                                                                              |
