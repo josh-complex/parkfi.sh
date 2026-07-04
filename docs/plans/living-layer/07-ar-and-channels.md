@@ -17,12 +17,12 @@ and it's another heads-down time-sink (and a safety hazard —
 
 ## The four channels and their jobs
 
-| Channel                 | Job                                            | Attention cost                | When                                              |
-| ----------------------- | ---------------------------------------------- | ----------------------------- | ------------------------------------------------- |
-| **Wrist** (haptic)      | "something is here — look up"                  | near-zero, eyes-up            | threshold crossings, nudges, Convergence alerts   |
-| **Ear** (spatial audio) | continuous story / guidance while walking      | low, hands-free, eyes-on-park | navigation, lore, a Companion talking to you      |
-| **Screen**              | maps, roster, the moment of choice             | medium, heads-down            | interactions, party management, the logbook       |
-| **AR**                  | the _reveal_ — the layer made visible in place | high, heads-down              | encounters, captures, the data-made-physical view |
+| Channel                 | Job                                            | Attention cost                | When                                                |
+| ----------------------- | ---------------------------------------------- | ----------------------------- | --------------------------------------------------- |
+| **Wrist** (haptic)      | "something is here — look up"                  | near-zero, eyes-up            | threshold crossings, nudges, Convergence alerts     |
+| **Ear** (spatial audio) | continuous story / guidance while walking      | low, hands-free, eyes-on-park | navigation, lore, a Companion talking to you        |
+| **Screen**              | maps, roster, the moment of choice             | medium, heads-down            | interactions, party management, the logbook         |
+| **AR**                  | the _reveal_ — the layer made visible in place | high, heads-down              | encounters, mark finds, the data-made-physical view |
 
 The choreography of a typical beat:
 
@@ -34,7 +34,7 @@ The choreography of a typical beat:
 
 Rules of engagement for AR:
 
-- **Episodic, not ambient.** AR fires for _moments_ (a battle, a capture, a
+- **Episodic, not ambient.** AR fires for _moments_ (a battle, a mark find, a
   reveal), then ends. We never ask a Wielder to walk-and-stare.
 - **Stand-still.** Encounters are stationary by design (see battle constraints,
   [04](04-game-design.md), and safety, [09](09-moderation-trust-safety.md)).
@@ -47,7 +47,7 @@ Rules of engagement for AR:
    "energy." We turn our data feed into **environmental storytelling, on
    location** — and nobody else has the data to do it. This is the single most
    distinctive AR moment we can show.
-2. **AR is how you find _and_ leave marks.** The capture/leave loop runs through
+2. **AR is how you find _and_ leave marks.** The find/leave loop runs through
    the AR viewport — which is exactly what feeds persistence and cold-start
    ([02](02-living-layer-and-flywheel.md), [03](03-marks-and-discovery.md)).
 

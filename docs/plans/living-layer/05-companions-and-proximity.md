@@ -8,7 +8,7 @@
 
 ## Core insight
 
-In a normal RPG you pick any party member anywhere. Lumen's twist — the thing
+In a normal RPG you pick any party member anywhere. Our twist — the thing
 that makes it _location-native_ rather than a normal game with a map skin — is
 that **the real park decides your roster.** Companions belong to Worlds (themed
 lands); proximity to a land defines who you can recruit there and who fights at
@@ -76,9 +76,9 @@ another _threshold moment_ (wrist cue: "Jack is at full strength here").
    ride-down) levels and "masters" the Companion.
 
 Disney IP makes this loop unusually sticky: "I'm three Companions away from the
-full Fantasyland set" is a _vacation-planning-grade_ motivator. (In the loose
-skin, Companions are original characters; in the pitch, this is the
-character-collection engine Disney would kill for.)
+full Fantasyland set" is a _vacation-planning-grade_ motivator. (With the KH
+license secured — [GDD §0.5](GDD.md) — Companions ship as real Disney
+characters; the current Ember/Tide/Quill seed is placeholder art/names only.)
 
 ## Why proximity-gating is strategically right
 

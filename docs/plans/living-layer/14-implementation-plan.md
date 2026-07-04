@@ -325,9 +325,10 @@ declined (the loop must complete without AR — [07](07-ar-and-channels.md)).
 
 **Companion recruit (one World)** ([05](05-companions-and-proximity.md))
 
-- Migration: `companion`, `wielder`, `wielder_companion`, `key_item`,
-  `wielder_key` per [10](10-data-model.md). Seed 3–4 original Companions bound to
-  one demo World (signature attractions, **`category IS NOT NULL`**).
+- Migration: `companion`, `wielder`, `wielder_companion`, `keyblade`,
+  `wielder_keyblade` per [10](10-data-model.md). Seed 3–4 placeholder Companions
+  bound to one demo World (signature attractions, **`category IS NOT NULL`**;
+  final Disney-character roster per [GDD §3.6](GDD.md)).
 - `living.party()` → fieldable party from `(roster, current world, rank)`
   (compute client-side, validate server-side).
 - `living.recruit({ companionId })` → verified-presence-gated; adds to

@@ -4,7 +4,7 @@ import * as React from "react";
 import { useMutation } from "@tanstack/react-query";
 
 import { useTRPC } from "#/integrations/trpc/react.ts";
-import { MOVES, WIELDER_HP, type MoveKey } from "#/server/living/battle.ts";
+import { MOVES, WIELDER_HP, type FieldedCompanion, type MoveKey } from "#/server/living/battle.ts";
 
 type Phase = "loading" | "fight" | "won" | "lost" | "gone";
 
@@ -41,6 +41,7 @@ export function BattlePanel({ markId, onClose, onResolved }: BattlePanelProps) {
   const [foe, setFoe] = React.useState<{ name: string; hp: number; maxHp: number; atk: number }>();
   const [warHp, setWarHp] = React.useState(WIELDER_HP);
   const [surgeUsed, setSurgeUsed] = React.useState(false);
+  const [party, setParty] = React.useState<FieldedCompanion[]>([]);
   const [log, setLog] = React.useState<string[]>([]);
 
   // Kick off the encounter once.
@@ -51,8 +52,14 @@ export function BattlePanel({ markId, onClose, onResolved }: BattlePanelProps) {
       .then((spec) => {
         if (cancelled) return;
         setFoe({ name: spec.name, hp: spec.hp, maxHp: spec.hp, atk: spec.atk });
+        setParty(spec.party);
         setPhase("fight");
-        setLog([`A ${spec.name} rises from the Darkness.`]);
+        const intro = [`A ${spec.name} rises from the Darkness.`];
+        if (spec.party.length > 0) {
+          const names = spec.party.map((c) => c.name).join(", ");
+          intro.unshift(`${names} join${spec.party.length === 1 ? "s" : ""} the fight.`);
+        }
+        setLog(intro);
       })
       .catch(() => {
         if (!cancelled) setPhase("gone");
@@ -73,22 +80,33 @@ export function BattlePanel({ markId, onClose, onResolved }: BattlePanelProps) {
 
     const dmg = MOVES[move].damage;
     const lines: string[] = [];
+    const atHome = (c: FieldedCompanion) => (c.tier === "home" ? " (home)" : "");
     if (move === "surge") setSurgeUsed(true);
 
-    const foeHp = foe.hp - dmg;
+    let foeHp = foe.hp - dmg;
     lines.push(dmg > 0 ? `You ${MOVES[move].label.toLowerCase()} for ${dmg}.` : `You brace.`);
 
-    if (foeHp <= 0) {
+    const win = () => {
       setFoe({ ...foe, hp: 0 });
       setLog((l) => [...lines, `The ${foe.name} fades. The breach is sealed.`, ...l]);
       setPhase("won");
       finish("win");
-      return;
+    };
+
+    if (foeHp <= 0) return win();
+
+    // Ally action (attackers): each fielded attacker strikes once per round,
+    // amplified at a breach in its home World (GDD §6).
+    for (const c of party) {
+      if (c.kind !== "attack") continue;
+      foeHp -= c.action;
+      lines.push(`${c.name} strikes for ${c.action}${atHome(c)}.`);
     }
+    if (foeHp <= 0) return win();
 
     // The Heartless strikes back; Guard halves the incoming hit.
     const incoming = move === "guard" ? Math.ceil(foe.atk / 2) : foe.atk;
-    const newWar = warHp - incoming;
+    let newWar = warHp - incoming;
     lines.push(`The ${foe.name} hits you for ${incoming}.`);
     setFoe({ ...foe, hp: foeHp });
 
@@ -99,6 +117,16 @@ export function BattlePanel({ markId, onClose, onResolved }: BattlePanelProps) {
       finish("loss");
       return;
     }
+
+    // Ally action (supports): mend the Wielder at round's end, never past full.
+    for (const c of party) {
+      if (c.kind !== "heal") continue;
+      const healed = Math.min(WIELDER_HP - newWar, c.action);
+      if (healed <= 0) continue;
+      newWar += healed;
+      lines.push(`${c.name} mends ${healed}${atHome(c)}.`);
+    }
+
     setWarHp(newWar);
     setLog((l) => [...lines, ...l]);
   };
@@ -118,6 +146,23 @@ export function BattlePanel({ markId, onClose, onResolved }: BattlePanelProps) {
         <>
           <HpBar label="You" hp={warHp} max={WIELDER_HP} tone="#378ADD" />
           {foe ? <HpBar label={foe.name} hp={foe.hp} max={foe.maxHp} tone="#D85A30" /> : null}
+
+          {party.length > 0 ? (
+            <div className="mb-1 flex flex-wrap gap-1.5">
+              {party.map((c) => (
+                <span
+                  key={c.id}
+                  className="bg-muted rounded-full px-2 py-0.5 text-[11px]"
+                  title={`${c.kind === "heal" ? "Mends" : "Strikes for"} ${c.action}${
+                    c.tier === "home" ? " · home World" : ""
+                  }`}
+                >
+                  {c.name}
+                  {c.tier === "home" ? " ★" : ""}
+                </span>
+              ))}
+            </div>
+          ) : null}
 
           <div className="bg-muted/40 my-3 max-h-24 overflow-y-auto rounded-md p-2 text-xs leading-relaxed">
             {log.map((line, i) => (

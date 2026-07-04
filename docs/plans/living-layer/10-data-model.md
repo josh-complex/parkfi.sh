@@ -28,7 +28,7 @@ export const refMarkType = pgTable("ref_mark_type", {
   label: text("label").notNull(),
 });
 
-// faded (enemy) archetypes, used by encounter payloads
+// Heartless archetypes, used by encounter payloads
 export const refHeartlessType = pgTable("ref_heartless_type", {
   code: text("code").primaryKey(),
   label: text("label").notNull(),
@@ -226,10 +226,10 @@ export const wielderCompanion = pgTable(
 > `(roster, current World, rank)` computed client-side and validated
 > server-side ([05](05-companions-and-proximity.md)).
 
-### `key_item` + `wielder_key` — gear & synthesis
+### `keyblade` + `wielder_keyblade` — gear & synthesis
 
 ```ts
-export const keyItem = pgTable("key_item", {
+export const keyblade = pgTable("keyblade", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
@@ -237,19 +237,19 @@ export const keyItem = pgTable("key_item", {
   baseStats: jsonb("base_stats").$type<KeyStats>().notNull(),
 });
 
-export const wielderKey = pgTable(
-  "wielder_key",
+export const wielderKeyblade = pgTable(
+  "wielder_keyblade",
   {
     userId: text("user_id")
       .notNull()
       .references(() => user.id),
-    keyItemId: bigint("key_item_id", { mode: "number" })
+    keybladeId: bigint("keyblade_id", { mode: "number" })
       .notNull()
-      .references(() => keyItem.id),
+      .references(() => keyblade.id),
     level: integer("level").notNull().default(1),
     acquiredAt: timestamp("acquired_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.userId, t.keyItemId] })],
+  (t) => [primaryKey({ columns: [t.userId, t.keybladeId] })],
 );
 ```
 
@@ -262,7 +262,8 @@ export const sealState = pgTable(
     worldId: bigint("world_id", { mode: "number" })
       .notNull()
       .references(() => world.id),
-    // the day this seal applies to (daily-reset PvE; team-held when dense)
+    // the day this seal applies to — canon: a seal = every active wound in the
+    // World cleared while darkness presses; first seal grants its keychain (GDD §4.3)
     sealDate: date("seal_date").notNull(),
     sealedByUserId: text("sealed_by_user_id").references(() => user.id),
     progress: integer("progress").notNull().default(0), // 0..100
@@ -380,11 +381,11 @@ a timestamped `migration.sql` folder; no `_journal.json`; do not use
 
 ## How it hangs off the existing schema
 
-| New table                                                            | Anchored to existing                                                                         |
-| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `world`                                                              | `parks`; seeded from `attraction_meta.land`                                                  |
-| `mark`                                                               | `parks`, `world`, `attractions`, `user`                                                      |
-| `wielder`, `wielder_companion`, `wielder_key`, `wielder_achievement` | `user` (Better-Auth)                                                                         |
-| `companion`                                                          | `world`, `attractions`                                                                       |
-| `presence_event`, `encounter_log`                                    | `user`, `parks`, `attractions` — driven by the live `queue_obs`/`attraction_status_obs` feed |
-| `seal_state`                                                         | `world`, `user`                                                                              |
+| New table                                                                 | Anchored to existing                                                                         |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `world`                                                                   | `parks`; seeded from `attraction_meta.land`                                                  |
+| `mark`                                                                    | `parks`, `world`, `attractions`, `user`                                                      |
+| `wielder`, `wielder_companion`, `wielder_keyblade`, `wielder_achievement` | `user` (Better-Auth)                                                                         |
+| `companion`                                                               | `world`, `attractions`                                                                       |
+| `presence_event`, `encounter_log`                                         | `user`, `parks`, `attractions` — driven by the live `queue_obs`/`attraction_status_obs` feed |
+| `seal_state`                                                              | `world`, `user`                                                                              |

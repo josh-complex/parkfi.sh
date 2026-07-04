@@ -15,7 +15,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "#/db/index.ts";
-import { heartlessSpec } from "#/server/living/battle.ts";
+import { fieldParty, heartlessSpec, type CompanionInput } from "#/server/living/battle.ts";
 import { HeartlessType, MarkReactionKind, MarkState, MarkType } from "#/server/living/codes.ts";
 import { pointInPolygon, type LngLat } from "#/server/living/geofence.ts";
 
@@ -230,18 +230,78 @@ export const livingRouter = {
     }),
 
   /**
-   * Begin a battle against a Darkness spawn. Returns the deterministic Heartless spec
-   * the client plays out. Server-derived from the mark's payload so the client
-   * can't pick an easier enemy.
+   * Begin a battle against a Darkness spawn. Returns the deterministic Heartless
+   * spec plus the Wielder's **fielded party** for this breach — both derived
+   * server-side (the client can't pick an easier enemy or an off-World power
+   * boost). The party is a pure function of (roster, breach World, rank): a
+   * companion fights at full strength only at a breach in its home World (§6).
    */
   startEncounter: protectedProcedure
     .input(z.object({ markId: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const mk = await activeEncounterMark(input.markId);
       if (!mk) throw new TRPCError({ code: "NOT_FOUND", message: "That Darkness has cleared." });
       const heartlessType = (mk.payload?.heartlessType as HeartlessTypeCode) ?? HeartlessType.SHADE;
       const rarity = Number(mk.payload?.rarity ?? 1);
-      return { markId: mk.id, ...heartlessSpec(heartlessType, rarity) };
+
+      // Resolve the breach's World. Encounter marks don't store world_id (a park
+      // has many worlds — see darkness.ts), so derive it from the attraction's
+      // land, the same land→World mapping the companion seed uses.
+      const bw =
+        mk.attraction_id == null
+          ? null
+          : await db.execute<{ world_id: number }>(sql`
+              SELECT r.id AS world_id
+              FROM attractions a
+              JOIN attraction_meta am ON am.attraction_id = a.id
+              JOIN world r ON r.name = am.land AND r.park_id = a.park_id
+              WHERE a.id = ${mk.attraction_id}
+              LIMIT 1
+            `);
+      const breachWorldId = bw?.rows[0]?.world_id != null ? Number(bw.rows[0].world_id) : null;
+
+      // The Wielder's rank + recruited roster (with each companion's home
+      // World/park, so proximity tiers can be resolved for this breach).
+      const prof = await db.execute<{ rank: number }>(
+        sql`SELECT rank FROM wielder WHERE user_id = ${ctx.userId}`,
+      );
+      const rank = Number(prof.rows[0]?.rank ?? 1);
+      const roster = await db.execute<{
+        id: number;
+        name: string;
+        element: string | null;
+        role: string | null;
+        level: number;
+        base_stats: { hp?: number; atk?: number } | null;
+        home_world_id: number | null;
+        home_park_id: number | null;
+      }>(sql`
+        SELECT c.id, c.name, c.element, c.role, wc.level, c.base_stats,
+               c.home_world_id, r.park_id AS home_park_id
+        FROM wielder_companion wc
+        JOIN companion c ON c.id = wc.companion_id
+        LEFT JOIN world r ON r.id = c.home_world_id
+        WHERE wc.user_id = ${ctx.userId}
+      `);
+      const party = fieldParty(
+        roster.rows.map(
+          (c): CompanionInput => ({
+            id: Number(c.id),
+            name: c.name,
+            element: c.element,
+            role: c.role,
+            level: Number(c.level),
+            baseStats: c.base_stats,
+            homeWorldId: c.home_world_id != null ? Number(c.home_world_id) : null,
+            homeParkId: c.home_park_id != null ? Number(c.home_park_id) : null,
+          }),
+        ),
+        breachWorldId,
+        Number(mk.park_id),
+        rank,
+      );
+
+      return { markId: mk.id, ...heartlessSpec(heartlessType, rarity), party };
     }),
 
   /**

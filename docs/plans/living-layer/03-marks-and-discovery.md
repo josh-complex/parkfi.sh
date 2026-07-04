@@ -1,7 +1,7 @@
 # 03 — Marks & discovery (the atomic unit)
 
 > **Theme:** There is one primitive under the entire layer: the **mark**. A
-> user-defined discovery pin is a mark. A captured collectible is a mark. An
+> user-defined discovery pin is a mark. A claimed collectible is a mark. An
 > achievement is a mark you earned at a place. A live darkness surge is a
 > system-authored mark. Your logbook is a timeline of marks. We build _one_
 > thing, not a dozen.
@@ -40,15 +40,15 @@ the moat. It is non-negotiable.
 
 ## The taxonomy (one primitive, many `type`s)
 
-| Type          | Author     | What it is                                                                             | Threads it serves            |
-| ------------- | ---------- | -------------------------------------------------------------------------------------- | ---------------------------- |
-| `discovery`   | user       | a user-defined pin: a note, doodle, or photo left at a spot — the geocaching logbook   | UGC, async-social, sentiment |
-| `collectible` | system     | a "spark"/creature/token the world seeds at a real place, reactive to live state       | the catch loop               |
-| `world`       | system     | narrative beacon driven by the live feed — the ride-down "Darkness," the crowd "surge" | how the park _speaks_        |
-| `dare`        | user       | a micro-challenge left for whoever comes next ("do this, here")                        | solo-in-social               |
-| `memory`      | user (you) | _your own_ past, pinned in place — re-experience your last visit                       | persistence, sentiment       |
-| `companion`   | system     | a recruitable Companion bound to a land (see [05](05-companions-and-proximity.md))     | the party system             |
-| `encounter`   | system     | a spawned Heartless battle (see [04](04-game-design.md))                               | the game core                |
+| Type          | Author     | What it is                                                                                            | Threads it serves            |
+| ------------- | ---------- | ----------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `discovery`   | user       | a user-defined pin: a note, doodle, or photo left at a spot — the geocaching logbook                  | UGC, async-social, sentiment |
+| `collectible` | system     | a "spark"/token the world seeds at a real place, reactive to live state (never a creature — pillar 6) | the collect loop             |
+| `world`       | system     | narrative beacon driven by the live feed — the ride-down "Darkness," the crowd "surge"                | how the park _speaks_        |
+| `dare`        | user       | a micro-challenge left for whoever comes next ("do this, here")                                       | solo-in-social               |
+| `memory`      | user (you) | _your own_ past, pinned in place — re-experience your last visit                                      | persistence, sentiment       |
+| `companion`   | system     | a recruitable Companion bound to a land (see [05](05-companions-and-proximity.md))                    | the party system             |
+| `encounter`   | system     | a spawned Heartless battle (see [04](04-game-design.md))                                              | the game core                |
 
 The user explicitly wants **in-park, user-defined pins for discovery** — that is
 the `discovery` type, and it is the cleanest, lowest-risk thing to ship first
@@ -64,7 +64,7 @@ fade (or claimed).** Decay does three jobs at once:
 
 1. **Freshness** — the world self-cleans; stale content disappears instead of
    accumulating into graffiti.
-2. **Urgency & scarcity** — "catch it before it fades" creates pull; rarity
+2. **Urgency & scarcity** — "claim it before it fades" creates pull; rarity
    becomes real.
 3. **Cold-start tuning** — decay rate is the **master volume knob for how alive
    the world feels.** Few players → slow decay so marks linger and the world

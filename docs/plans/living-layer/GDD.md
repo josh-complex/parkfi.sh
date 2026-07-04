@@ -86,7 +86,7 @@ Read left-to-right: **Kingdom Hearts** is the canonical term we design and ship
 | Concept               | Kingdom Hearts                                                   | Code                                         |
 | --------------------- | ---------------------------------------------------------------- | -------------------------------------------- |
 | the player            | **Keyblade wielder**                                             | `wielder`                                    |
-| the weapon            | **Keyblade**                                                     | `key_item` (future)                          |
+| the weapon            | **Keyblade**                                                     | `keyblade` (future)                          |
 | the enemy             | **Heartless**                                                    | `ref_heartless_type`                         |
 | the escalation tier   | **Nobodies** — Dusks (common), Berserker/Sorcerer-class (elite)  | `ref_heartless_type` tier _(future)_         |
 | the antagonists       | **Organization XIII** (a cloaked member)                         | `mark type=incursion` _(future)_             |
@@ -515,13 +515,24 @@ Per context — input, feedback, channel, and the heads-up/safety rule.
 
 **Battle scheme (canonical, current):** turn-based; Kingdom Hearts HP 42; **Strike** 9,
 **Surge** 22 (once per fight), **Guard** halves the next incoming hit; the Heartless
-counterattacks each turn. (Tuned so a rarity-3 Breaker is only winnable if Surge
-is spent — Surge is the skill expression; see `battle.ts`.)
+counterattacks each turn. (Solo tuning: a rarity-3 Breaker is only winnable if
+Surge is spent — Surge is the skill expression; see `battle.ts`.)
+
+**Companions in battle (canonical, current — shipped):** each fielded party
+member takes **one ally action per round** — an **attacker** damages the
+Heartless, a **support** mends the Wielder — and enjoys its **home-World
+passive**: at a breach in the companion's own World the action is amplified
+(×1.5), a guest elsewhere in-park is at ×1.0, and away in another park is
+benched. The fielded party is a pure function of `(roster, breach World, rank)`
+resolved server-side in `startEncounter` (`fieldParty` in `battle.ts`), so the
+client can't fake an off-World boost; capacity is rank-gated (1 slot Dreamer → 2
+Apprentice → 3 Guardian, §4.1). With an empty roster this is a no-op, so the
+solo tuning above still holds. Which ride broke decides who fights at full
+strength — geography _is_ the party-builder (§3.6).
 
 **Battle scheme (designed next):** the loadout modifies the _same three verbs_
 — keychain Might adds to Strike, Surge power scales Surge, armor reduces
-incoming (§4.3–4.4); the party member takes **one ally action per round** plus
-a home-World passive (decided, §11); **Nobodies warp** — after a telegraph they
+incoming (§4.3–4.4); **Nobodies warp** — after a telegraph they
 dodge your next Strike unless you Guard first (new reads, no new verbs);
 Organization duels are phased (escort wave → duel) with a rank-scaled objective
 (§4.6). AR (M4b) swaps the 2D panel for a stand-still camera reveal — the _game
@@ -575,20 +586,22 @@ stays playable without AR_ (2D is the canonical fallback, not throwaway).
 
 ## 8. Economy & balance knobs (current values, all tunable)
 
-| Knob                               | Current                                                                                    | Where                    |
-| ---------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------ |
-| Spawn TTL (linger)                 | 30 min (`LIVING_SPAWN_TTL_MS`)                                                             | `config.ts`              |
-| Spawn rule                         | DOWN → Breaker; rarity≥60min standby                                                       | `darkness.spawnDecision` |
-| Heartless base stats               | Shade 20/4, Wisp 14/3, Breaker 30/6 (+10/+2 per rarity)                                    | `battle.ts`              |
-| Kingdom Hearts HP                  | 42                                                                                         | `battle.ts`              |
-| Moves                              | Strike 9 / Surge 22 (1×) / Guard ½                                                         | `battle.ts`              |
-| XP economy                         | today: seal +10 / recruit +50 (placeholder); canonical table §4.5                          | `living` router          |
-| Rank curve                         | today: `floor(xp/100)+1` (placeholder); canonical: `100×r` per rank + band trials §4.1     | `living` router          |
-| Escalation thresholds _(designed)_ | ~45 min unsealed → Dusks; ~90 min headliner / 2-down World / cancellation → incursion roll | §3.4                     |
-| incursion TTL _(designed)_         | ~45 min, roaming                                                                           | §4.6                     |
-| Drop table _(designed)_            | deterministic f(mark seed, species, tier, live snapshot)                                   | §4.4                     |
-| Discovery rate limit               | 20 / hour                                                                                  | `living` router          |
-| Report auto-hide                   | 3 reports                                                                                  | `living` router          |
+| Knob                               | Current                                                                                       | Where                    |
+| ---------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------ |
+| Spawn TTL (linger)                 | 30 min (`LIVING_SPAWN_TTL_MS`)                                                                | `config.ts`              |
+| Spawn rule                         | DOWN → Breaker; rarity≥60min standby                                                          | `darkness.spawnDecision` |
+| Heartless base stats               | Shade 20/4, Wisp 14/3, Breaker 30/6 (+10/+2 per rarity)                                       | `battle.ts`              |
+| Kingdom Hearts HP                  | 42                                                                                            | `battle.ts`              |
+| Moves                              | Strike 9 / Surge 22 (1×) / Guard ½                                                            | `battle.ts`              |
+| Companion ally action              | attacker → foe dmg = atk+(lvl−1); support → heal, same; ×1.5 home / ×1.0 guest / benched away | `battle.fieldParty`      |
+| Party capacity                     | 1 (rank<5) / 2 (5–14) / 3 (≥15)                                                               | `battle.partyCapacity`   |
+| XP economy                         | today: seal +10 / recruit +50 (placeholder); canonical table §4.5                             | `living` router          |
+| Rank curve                         | today: `floor(xp/100)+1` (placeholder); canonical: `100×r` per rank + band trials §4.1        | `living` router          |
+| Escalation thresholds _(designed)_ | ~45 min unsealed → Dusks; ~90 min headliner / 2-down World / cancellation → incursion roll    | §3.4                     |
+| incursion TTL _(designed)_         | ~45 min, roaming                                                                              | §4.6                     |
+| Drop table _(designed)_            | deterministic f(mark seed, species, tier, live snapshot)                                      | §4.4                     |
+| Discovery rate limit               | 20 / hour                                                                                     | `living` router          |
+| Report auto-hide                   | 3 reports                                                                                     | `living` router          |
 
 Balance philosophy: keep the **best rewards behind the hardest-to-fake
 conditions** (live-gated, presence-verified) so spoofing the easy stuff yields
@@ -612,26 +625,28 @@ generate`); run bins via `bun`; filter `category IS NOT NULL` on attractions;
 
 ## 10. Status traceability (what's real vs designed)
 
-| System                                | Space                    | Status                                         |
-| ------------------------------------- | ------------------------ | ---------------------------------------------- |
-| Worlds + geofence lib                 | Worldspace               | ✅ M1                                          |
-| Mark primitive                        | cross-space              | ✅ M2                                          |
-| Darkness engine (DOWN→spawn)          | Enemyspace/Eventspace    | ✅ M2                                          |
-| Discovery pins + react                | Socialspace              | ✅ M3                                          |
-| Map UI (Kingdom Hearts view)          | Interactionspace         | ✅ M3                                          |
-| Encounter + 2D battle                 | Enemyspace/Interaction   | ✅ M4a                                         |
-| Companions: catalog/recruit/roster/XP | Companionspace/Userspace | ✅ M5                                          |
-| Presence verification (sensor fusion) | Userspace/Worldspace     | ⏳ M5b (in-park)                               |
-| AR reveal (8th Wall)                  | Interactionspace         | ⏳ M4b                                         |
-| Logbook / Wrapped                     | Userspace                | ⏳ M6                                          |
-| Rank curve + Mark of Mastery trials   | Userspace                | ⏳ designed §4.1 (linear placeholder shipping) |
-| Journal / defeat-collection           | Userspace                | ⏳ designed §4.2                               |
-| Keyblades & keychains                 | Userspace/Worldspace     | ⏳ designed §4.3                               |
-| Forge: gear, materials, synthesis     | Userspace                | ⏳ designed §4.4                               |
-| Nobodies (escalation tier)            | Enemyspace               | ⏳ designed §3.4                               |
-| Rifts / Organization incursions       | Eventspace/Enemyspace    | ⏳ designed §4.6                               |
-| Convergences, seasons, surges         | Eventspace               | ⏳ later                                       |
-| Cross-park save, trading, co-op       | Socialspace              | ⏳ later                                       |
+| System                                                                | Space                      | Status                                         |
+| --------------------------------------------------------------------- | -------------------------- | ---------------------------------------------- |
+| Worlds + geofence lib                                                 | Worldspace                 | ✅ M1                                          |
+| Mark primitive                                                        | cross-space                | ✅ M2                                          |
+| Darkness engine (DOWN→spawn)                                          | Enemyspace/Eventspace      | ✅ M2                                          |
+| Discovery pins + react                                                | Socialspace                | ✅ M3                                          |
+| Map UI (Kingdom Hearts view)                                          | Interactionspace           | ✅ M3                                          |
+| Encounter + 2D battle                                                 | Enemyspace/Interaction     | ✅ M4a                                         |
+| Companions: catalog/recruit/roster/XP                                 | Companionspace/Userspace   | ✅ M5                                          |
+| Companions acting in battle (ally action + home-World passive)        | Companionspace/Interaction | ✅ M5a (`fieldParty`, §6)                      |
+| Companion proximity tiers wired into play (`tierFor` in `fieldParty`) | Companionspace             | ✅ M5a (battle only; roam/party UI still ⏳)   |
+| Presence verification (sensor fusion)                                 | Userspace/Worldspace       | ⏳ M5b (in-park)                               |
+| AR reveal (8th Wall)                                                  | Interactionspace           | ⏳ M4b                                         |
+| Logbook / Wrapped                                                     | Userspace                  | ⏳ M6                                          |
+| Rank curve + Mark of Mastery trials                                   | Userspace                  | ⏳ designed §4.1 (linear placeholder shipping) |
+| Journal / defeat-collection                                           | Userspace                  | ⏳ designed §4.2                               |
+| Keyblades & keychains                                                 | Userspace/Worldspace       | ⏳ designed §4.3                               |
+| Forge: gear, materials, synthesis                                     | Userspace                  | ⏳ designed §4.4                               |
+| Nobodies (escalation tier)                                            | Enemyspace                 | ⏳ designed §3.4                               |
+| Rifts / Organization incursions                                       | Eventspace/Enemyspace      | ⏳ designed §4.6                               |
+| Convergences, seasons, surges                                         | Eventspace                 | ⏳ later                                       |
+| Cross-park save, trading, co-op                                       | Socialspace                | ⏳ later                                       |
 
 ---
 
@@ -682,6 +697,29 @@ generate`); run bins via `bun`; filter `category IS NOT NULL` on attractions;
 - **2026-07-03 — Balance canon rule.** `battle.ts` had drifted from this doc
   (code 42/9/22 vs a stale 30/6/14 here). Values corrected in §6/§8; henceforth
   any balance change updates the GDD in the same change.
+- **2026-07-04 — Alignment pass (no canon change).** Docs 03/04/05/07/10/14
+  re-aligned to this GDD: purged leftover pre-license framing ("legally-distinct
+  skin", "loose skin"), `Lumen` in design prose, and catch/capture wording
+  (pillar 6); doc 04 now points at §4 for the progression tracks and states the
+  ally-action battle role; future gear tables unified as `keyblade` /
+  `wielder_keyblade` (this glossary's `key_item` corrected to match §2 line for
+  weapon loot). §10 gained explicit rows for the two shipped-adjacent gaps:
+  companions do **not** yet act in battle, and `geofence.tierFor` (proximity
+  tiers) is implemented but unwired.
+- **2026-07-04 — Companions act in battle (M5a shipped).** Implements the
+  2026-07-03 decision: a fielded party member takes one ally action per round
+  (attacker damages the foe, support mends the Wielder) with a home-World
+  passive amplifier (×1.5 home / ×1.0 guest / benched away). `fieldParty` +
+  `partyCapacity` are pure functions in `battle.ts`; `startEncounter` resolves
+  the breach's World from the attraction's land (encounter marks carry no
+  `world_id`) and computes the party server-side. Balance note per the canon
+  rule: this is additive — an empty roster preserves the solo tuning, but a
+  fielded attacker meaningfully shortens a Breaker fight (intended felt power of
+  recruiting), gated by rank capacity. Proximity tiers are wired into **battle
+  only**; the roam map and party UI still ignore the Wielder's live location
+  (that's M5b presence). Open follow-up: the ally-action magnitude is derived
+  from `base_stats.atk` — when the Journal/forge land (§4.2–4.4), companion
+  power should read from gear/level too, not just seed stats.
 
 ### Open questions (decide before the relevant build)
 
