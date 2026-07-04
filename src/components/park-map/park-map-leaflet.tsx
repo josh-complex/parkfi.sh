@@ -642,8 +642,13 @@ export function ParkMapLeaflet({
       opacity: 0.85,
       interactive: false,
     }).addTo(map);
+    // Reserve space for the nav overlays (green turn sign + bottom ETA bar,
+    // tagged `data-map-chrome`) so the route's endpoints land in the visible
+    // band instead of under the UI.
+    const pad = chromePadding(containerRef.current);
     map.flyToBounds(L.latLngBounds(latLngs), {
-      padding: [60, 60],
+      paddingTopLeft: L.point(pad.left, pad.top),
+      paddingBottomRight: L.point(pad.right, pad.bottom),
       maxZoom: 17,
       duration: FLY_SECONDS,
     });

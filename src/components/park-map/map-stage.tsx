@@ -29,6 +29,16 @@ import {
 } from "lucide-react";
 import { createPortal } from "react-dom";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "#/components/ui/alert-dialog.tsx";
 import { playModeStore, setHudExpanded } from "#/components/living/play-mode.ts";
 import { PlayOverlay } from "#/components/living/play-overlay.tsx";
 import { useSelection } from "#/components/park-dashboard/selection-context.tsx";
@@ -535,9 +545,12 @@ export function MapStageProvider({
               <ZoomControl
                 onZoomIn={() => mapRef.current?.zoomIn()}
                 onZoomOut={() => mapRef.current?.zoomOut()}
+                raised={navigating}
               />
             )}
-            {attached && engine && <LocateButton state={geo.state} onClick={geo.locate} />}
+            {attached && engine && (
+              <LocateButton state={geo.state} onClick={geo.locate} raised={navigating} />
+            )}
             {/* Bottom-left cluster (roam, once a park is focused): the park-details
                 shortcut stacked directly on top of the ride filter button. Both are
                 hidden at the all-parks overview — there's no single park to open or
@@ -615,11 +628,25 @@ function PlayHint({ children }: { children: React.ReactNode }) {
  *  split by a divider — driving zoom through the shared MapHandle. Individual
  *  buttons flash their background on press rather than sinking, so the group
  *  reads as one solid piece. */
-function ZoomControl({ onZoomIn, onZoomOut }: { onZoomIn: () => void; onZoomOut: () => void }) {
+function ZoomControl({
+  onZoomIn,
+  onZoomOut,
+  raised,
+}: {
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  /** Lift clear of the bottom nav ETA bar while navigating. */
+  raised?: boolean;
+}) {
   return (
     <div
       data-map-chrome="bottom"
-      className="pointer-events-none absolute right-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+3.75rem)] z-10 md:bottom-[3.75rem]"
+      className={cn(
+        "pointer-events-none absolute right-3 z-10",
+        raised
+          ? "bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+8rem)] md:bottom-[8rem]"
+          : "bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+3.75rem)] md:bottom-[3.75rem]",
+      )}
     >
       <div className="btn-3d-outline border-3d shadow-3d pointer-events-auto flex flex-col overflow-hidden rounded-2xl bg-background/95 backdrop-blur dark:border-border">
         <button
@@ -649,7 +676,16 @@ function ZoomControl({ onZoomIn, onZoomOut }: { onZoomIn: () => void; onZoomOut:
  * it follows the map between routes). Sits clear of the bottom-nav island on
  * mobile and bottom-right on desktop. Tapping it requests/refreshes the fix.
  */
-function LocateButton({ state, onClick }: { state: GeoState; onClick: () => void }) {
+function LocateButton({
+  state,
+  onClick,
+  raised,
+}: {
+  state: GeoState;
+  onClick: () => void;
+  /** Lift clear of the bottom nav ETA bar while navigating. */
+  raised?: boolean;
+}) {
   const prompting = state.status === "prompting";
   const active = state.status === "granted";
   const off = state.status === "denied" || state.status === "unavailable";
@@ -661,7 +697,10 @@ function LocateButton({ state, onClick }: { state: GeoState; onClick: () => void
       title={off ? "Location unavailable — check permissions" : "Show my location"}
       className={cn(
         MAP_CTRL_3D,
-        "absolute right-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] z-10 rounded-full md:bottom-3",
+        "absolute right-3 z-10 rounded-full",
+        raised
+          ? "bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+5rem)] md:bottom-[5rem]"
+          : "bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] md:bottom-3",
         active && "text-blue-600",
         off && "text-muted-foreground",
       )}
@@ -833,7 +872,11 @@ function formatDistance(m: number): string {
   return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`;
 }
 function formatWalk(s: number): string {
-  return `${Math.max(1, Math.round(s / 60))} min walk`;
+  const mins = Math.max(1, Math.round(s / 60));
+  if (mins < 60) return `${mins} min walk`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? `${h} hr walk` : `${h} hr ${m} min walk`;
 }
 
 /**
@@ -909,6 +952,7 @@ function NavOverlay({
   onClear: () => void;
 }) {
   const [expanded, setExpanded] = React.useState(false);
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
   // Steps only make sense on a resolved route; keep the ones with real copy
   // (Valhalla sometimes emits an empty final maneuver).
   const steps = (maneuvers ?? []).filter((m) => m.instruction.trim().length > 0);
@@ -967,7 +1011,10 @@ function NavOverlay({
   return (
     <>
       {/* Top turn sign — sits where the park/category chips were. */}
-      <div className="pointer-events-auto absolute inset-x-3 top-[calc(env(safe-area-inset-top)+5.25rem)] z-10 mx-auto max-w-md overflow-hidden rounded-2xl bg-green-700 text-white shadow-lg ring-1 ring-white/15 md:top-3">
+      <div
+        data-map-chrome="top"
+        className="pointer-events-auto absolute inset-x-3 top-[calc(env(safe-area-inset-top)+5.25rem)] z-10 mx-auto max-w-md overflow-hidden rounded-2xl bg-green-700 text-white shadow-lg ring-1 ring-white/15 md:top-3"
+      >
         {canExpand ? (
           <button
             type="button"
@@ -980,28 +1027,42 @@ function NavOverlay({
         ) : (
           topSign
         )}
-        {expanded && (
-          <ol className="max-h-64 divide-y divide-white/15 overflow-y-auto border-t border-white/15">
-            {steps.map((m, i) => {
-              const Icon = maneuverIcon(m.type);
-              return (
-                <li key={i} className="flex items-start gap-3 px-4 py-2.5 text-sm">
-                  <Icon className="mt-0.5 size-4 shrink-0 text-white/80" aria-hidden />
-                  <span className="min-w-0 flex-1">{m.instruction}</span>
-                  {m.distanceMeters > 0 && (
-                    <span className="shrink-0 text-xs text-white/70 tabular-nums">
-                      {formatDistance(m.distanceMeters)}
-                    </span>
-                  )}
-                </li>
-              );
-            })}
-          </ol>
+        {/* Step list expands/collapses via an animated grid-rows track (0fr↔1fr),
+            so it slides open smoothly instead of popping. */}
+        {canExpand && (
+          <div
+            className={cn(
+              "grid transition-[grid-template-rows] duration-300 ease-out motion-reduce:transition-none",
+              expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+            )}
+          >
+            <div className="overflow-hidden">
+              <ol className="max-h-64 divide-y divide-white/15 overflow-y-auto border-t border-white/15">
+                {steps.map((m, i) => {
+                  const Icon = maneuverIcon(m.type);
+                  return (
+                    <li key={i} className="flex items-start gap-3 px-4 py-2.5 text-sm">
+                      <Icon className="mt-0.5 size-4 shrink-0 text-white/80" aria-hidden />
+                      <span className="min-w-0 flex-1">{m.instruction}</span>
+                      {m.distanceMeters > 0 && (
+                        <span className="shrink-0 text-xs text-white/70 tabular-nums">
+                          {formatDistance(m.distanceMeters)}
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
+          </div>
         )}
       </div>
 
       {/* Bottom ETA bar — sits where the Filter button was. */}
-      <div className="pointer-events-auto absolute inset-x-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] z-10 mx-auto flex max-w-md items-center gap-3 rounded-2xl bg-green-700 px-4 py-2.5 text-white shadow-lg ring-1 ring-white/15 md:bottom-3">
+      <div
+        data-map-chrome="bottom"
+        className="pointer-events-auto absolute inset-x-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] z-10 mx-auto flex max-w-md items-center gap-3 rounded-2xl bg-green-700 px-4 py-2.5 text-white shadow-lg ring-1 ring-white/15 md:bottom-3"
+      >
         <div className="min-w-0 flex-1">
           {routed ? (
             <div className="leading-tight">
@@ -1027,13 +1088,38 @@ function NavOverlay({
         )}
         <button
           type="button"
-          onClick={onClear}
+          onClick={() => setConfirmOpen(true)}
           aria-label="End navigation"
           className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-white/15 transition hover:bg-white/25 active:scale-95"
         >
           <XIcon className="size-4" />
         </button>
       </div>
+
+      {/* Confirm before dropping the route — a mis-tap on the map shouldn't
+          silently end navigation. */}
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>End navigation?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You’ll stop navigating{destName ? ` to ${destName}` : ""} and return to the map.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep navigating</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                setConfirmOpen(false);
+                onClear();
+              }}
+            >
+              End
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

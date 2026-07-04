@@ -525,7 +525,14 @@ export function ParkMap({
     if (route && route.length > 1 && mapRef.current) {
       const b = new maplibregl.LngLatBounds();
       for (const c of route) b.extend(c);
-      mapRef.current.fitBounds(b, { padding: 60, maxZoom: 17, duration: 500 });
+      // Reserve space for the nav overlays (green turn sign + bottom ETA bar,
+      // tagged `data-map-chrome`) so the route's endpoints land in the visible
+      // band instead of under the UI.
+      mapRef.current.fitBounds(b, {
+        padding: chromePadding(containerRef.current),
+        maxZoom: 17,
+        duration: 500,
+      });
     }
   }, [route, ready, ensureRoute]);
 
