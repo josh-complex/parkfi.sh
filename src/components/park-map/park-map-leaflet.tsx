@@ -20,6 +20,7 @@ import {
   buildAttractionEl,
   buildParkBadgeEl,
   buildUserLocationEl,
+  chromePadding,
   DECLUTTER_SIZE,
   getRoamCamera,
   type MapHandle,
@@ -249,9 +250,23 @@ export function ParkMapLeaflet({
         // the visible band, not behind a button. Cap the fit at SPREAD_ZOOM: past
         // it the layout spreads markers apart anyway, so over-zooming a tight
         // two-node group just flings its members to opposite edges.
-        const fit = map.getBoundsZoom(bounds, false, L.point(70, 140));
+        const pad = chromePadding(containerRef.current, { sides: 70 });
+        const fit = map.getBoundsZoom(
+          bounds,
+          false,
+          L.point(pad.left + pad.right, pad.top + pad.bottom),
+        );
         const target = Math.min(SPREAD_ZOOM, Math.max(fit, map.getZoom() + 2));
-        map.flyTo(bounds.getCenter(), target, { duration: FLY_SECONDS });
+        // Offset the center at the target zoom so the group sits in the visible
+        // band — clear of the top chrome and bottom controls — instead of the raw
+        // viewport center (which tucks the top members under the chip rows).
+        const dx = (pad.right - pad.left) / 2;
+        const dy = (pad.bottom - pad.top) / 2;
+        const center =
+          dx || dy
+            ? map.unproject(map.project(bounds.getCenter(), target).add(L.point(dx, dy)), target)
+            : bounds.getCenter();
+        map.flyTo(center, target, { duration: FLY_SECONDS });
       },
       // Any marker click collapses an open ride card before it zooms/activates.
       () => {
@@ -355,12 +370,18 @@ export function ParkMapLeaflet({
     map.setMaxZoom(21);
     map.setMaxBounds(null as unknown as L.LatLngBoundsExpression);
     if (park.bounds) {
+      const pad = chromePadding(containerRef.current);
       map.flyToBounds(
         L.latLngBounds([
           [park.bounds.latMin, park.bounds.lngMin],
           [park.bounds.latMax, park.bounds.lngMax],
         ]),
-        { padding: [60, 60], maxZoom: 17, duration: FLY_SECONDS },
+        {
+          paddingTopLeft: L.point(pad.left, pad.top),
+          paddingBottomRight: L.point(pad.right, pad.bottom),
+          maxZoom: 17,
+          duration: FLY_SECONDS,
+        },
       );
     } else if (park.latitude != null && park.longitude != null) {
       map.flyTo([park.latitude, park.longitude], park.mapZoom ?? 15, { duration: FLY_SECONDS });
@@ -482,6 +503,7 @@ export function ParkMapLeaflet({
           },
           priority: attractionPriority(a),
           kind: attractionKind(a.category),
+          wait: a.status === "OPERATING" && a.standbyWait != null ? a.standbyWait : null,
         });
       }
     }
@@ -714,7 +736,13 @@ export function ParkMapLeaflet({
         [bd.latMax, bd.lngMax],
       ]);
       clearMaxBounds();
-      map.flyToBounds(b, { padding: [60, 60], maxZoom: 17, duration: FLY_SECONDS });
+      const pad = chromePadding(containerRef.current);
+      map.flyToBounds(b, {
+        paddingTopLeft: L.point(pad.left, pad.top),
+        paddingBottomRight: L.point(pad.right, pad.bottom),
+        maxZoom: 17,
+        duration: FLY_SECONDS,
+      });
       map.once("moveend", () => map.setMaxBounds(b.pad(0.6)));
     } else if (park.latitude != null && park.longitude != null) {
       clearMaxBounds();

@@ -21,6 +21,7 @@ import {
   buildParkBadgeEl,
   buildPoiEl,
   buildUserLocationEl,
+  chromePadding,
   DECLUTTER_SIZE,
   escapeHtml,
   getRoamCamera,
@@ -374,12 +375,16 @@ export function ParkMap({
         // SPREAD_ZOOM: past it the layout switches to "spread" (markers just
         // nudge apart, no grouping), so there's no reason to over-zoom a tight
         // two-node group toward max and fling its members to opposite edges.
-        const cam = map.cameraForBounds(b, {
-          padding: { top: 140, bottom: 140, left: 70, right: 70 },
-          maxZoom: SPREAD_ZOOM,
-        });
+        const pad = chromePadding(containerRef.current, { sides: 70 });
+        const cam = map.cameraForBounds(b, { padding: pad, maxZoom: SPREAD_ZOOM });
         const target = Math.min(SPREAD_ZOOM, Math.max(cam?.zoom ?? 0, map.getZoom() + 2));
-        map.easeTo({ center: cam?.center ?? b.getCenter(), zoom: target, duration: 500 });
+        // Pass `pad` (not a pre-offset `cam.center`) to easeTo so the reserve is
+        // applied at the *actual* target zoom: we often force a couple levels past
+        // `cam.zoom` for tight groups, and cam.center's offset — baked for the
+        // shallower cam.zoom — would otherwise let the top members drift back under
+        // the chip rows. Centering the raw group center inside the padded band
+        // keeps it clear at whatever zoom we land on.
+        map.easeTo({ center: b.getCenter(), zoom: target, padding: pad, duration: 500 });
       },
       // Any marker click collapses an open ride card before it zooms/activates.
       () => {
@@ -599,7 +604,11 @@ export function ParkMap({
           [park.bounds.lngMin, park.bounds.latMin],
           [park.bounds.lngMax, park.bounds.latMax],
         ],
-        { padding: 60, maxZoom: 17, duration: MAP_FLY_MS },
+        {
+          padding: chromePadding(containerRef.current),
+          maxZoom: 17,
+          duration: MAP_FLY_MS,
+        },
       );
     } else if (park.latitude != null && park.longitude != null) {
       map.flyTo({
@@ -732,6 +741,7 @@ export function ParkMap({
           },
           priority: attractionPriority(a),
           kind: attractionKind(a.category),
+          wait: a.status === "OPERATING" && a.standbyWait != null ? a.standbyWait : null,
         });
       }
 
@@ -1050,7 +1060,11 @@ export function ParkMap({
           [bounds.lngMin, bounds.latMin],
           [bounds.lngMax, bounds.latMax],
         ],
-        { padding: 60, maxZoom: 17, duration: MAP_FLY_MS },
+        {
+          padding: chromePadding(containerRef.current),
+          maxZoom: 17,
+          duration: MAP_FLY_MS,
+        },
       );
       void map.once("moveend", () => map.setMaxBounds(zoomOutBounds(bounds)));
     } else if (park.latitude != null && park.longitude != null) {

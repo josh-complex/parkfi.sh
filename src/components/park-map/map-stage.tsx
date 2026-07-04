@@ -485,7 +485,10 @@ export function MapStageProvider({
                 toggle chips beneath it. The chip row scrolls horizontally if it
                 can't fit. */}
             {attached && engine && roam && (
-              <div className="pointer-events-none absolute inset-x-3 top-[calc(env(safe-area-inset-top)+5.5rem)] z-10 flex flex-col items-start gap-2 md:top-3">
+              <div
+                data-map-chrome="top"
+                className="pointer-events-none absolute inset-x-3 top-[calc(env(safe-area-inset-top)+5.5rem)] z-10 flex flex-col items-start gap-2 md:top-3"
+              >
                 <ParkChipScroller
                   parks={parksQ.data ?? []}
                   focusSlug={roamFocusSlug}
@@ -567,7 +570,10 @@ function PlayHint({ children }: { children: React.ReactNode }) {
  *  reads as one solid piece. */
 function ZoomControl({ onZoomIn, onZoomOut }: { onZoomIn: () => void; onZoomOut: () => void }) {
   return (
-    <div className="pointer-events-none absolute right-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+3.75rem)] z-10 md:bottom-[3.75rem]">
+    <div
+      data-map-chrome="bottom"
+      className="pointer-events-none absolute right-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+3.75rem)] z-10 md:bottom-[3.75rem]"
+    >
       <div className="btn-3d-outline border-3d shadow-3d pointer-events-auto flex flex-col overflow-hidden rounded-2xl bg-background/95 backdrop-blur dark:border-border">
         <button
           type="button"
@@ -812,7 +818,7 @@ function MapToggleChips() {
   const toggleLayer = (key: keyof MapLayers) =>
     setFilter((f) => ({ ...f, layers: { ...f.layers, [key]: !f.layers[key] } }));
   return (
-    <div className="pointer-events-auto flex max-w-full touch-pan-x gap-1.5 overflow-x-auto overscroll-contain pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="pointer-events-auto -mx-3 flex w-[calc(100%+1.5rem)] touch-pan-x gap-1.5 overflow-x-auto overscroll-contain px-3 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {MAP_TOGGLES.map((t) => {
         const active =
           t.kind === "category"

@@ -35,6 +35,9 @@ export interface DeclutterItem {
   priority: number;
   /** Toggle group this marker belongs to, for the cluster's overflow dots. */
   kind?: MapItemKind;
+  /** Posted standby wait (min), or null when none — aggregated into the head's
+   *  wait badge as a min–max range when this marker joins a cluster. */
+  wait?: number | null;
 }
 
 // Fixed left-to-right order for the overflow dots, so a cluster's composition
@@ -73,6 +76,22 @@ function setClusterDots(detail: HTMLElement, counts: ReadonlyMap<MapItemKind, nu
     badge.classList.add("hidden");
     badge.innerHTML = "";
   }
+}
+
+/**
+ * Point the anchor's wait chip at a group: a lone marker shows its own wait, a
+ * cluster head the min–max range across everyone it absorbed (`20–65 min`). The
+ * chip element only exists when the anchor itself has a posted wait — which the
+ * priority tiers guarantee for any group that contains a wait — so a missing chip
+ * (a group of closed rides / POIs) is a no-op.
+ */
+function setWaitRange(detail: HTMLElement, waits: ReadonlyArray<number>): void {
+  const badge = detail.querySelector<HTMLElement>("[data-wait-badge]");
+  if (!badge || waits.length === 0) return;
+  const lo = Math.min(...waits);
+  const hi = Math.max(...waits);
+  badge.textContent = lo === hi ? `${hi} min` : `${lo}–${hi} min`;
+  badge.classList.remove("hidden");
 }
 
 export class MarkerCluster {
@@ -190,6 +209,12 @@ export class MarkerCluster {
         }
       }
       setClusterDots(q.item.detail, counts);
+      // Head shows the group's wait range; a re-formed lone anchor reverts to its
+      // own single wait (min === max).
+      setWaitRange(
+        q.item.detail,
+        [q.item, ...members].map((m) => m.wait).filter((w): w is number => w != null),
+      );
     }
     // Grouping only guarantees anchors are ≥ clusterDist apart — narrower than the
     // disc, so anchors can still overlap. Nudge them apart too, so overlap never
@@ -216,6 +241,8 @@ export class MarkerCluster {
       }
       it.detail.classList.remove("hidden");
       setClusterDots(it.detail, EMPTY_COUNTS);
+      // No grouping in spread mode — each marker shows only its own wait.
+      if (it.wait != null) setWaitRange(it.detail, [it.wait]);
       nodes.push({ it, x: p.x, y: p.y, ox: 0, oy: 0 });
     }
     this.relax(nodes);

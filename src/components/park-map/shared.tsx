@@ -724,6 +724,46 @@ export function buildPoiEl(poi: PoiItem): { el: HTMLButtonElement; detail: HTMLD
 }
 
 /**
+ * Pixel padding for a fit/zoom so the framed markers land in the *visible* band of
+ * the map — not tucked behind the chrome floating over it (the top search bar +
+ * chip rows and the bottom nav island + zoom/locate controls). We measure the real
+ * overlay elements (tagged `data-map-chrome="top"|"bottom"`) relative to the map
+ * container, so the reserve tracks safe-area insets, breakpoints, and whichever
+ * controls are actually mounted — instead of drifting from hard-coded rem math.
+ * `base`/`sides` are the minimum pad when nothing overlaps a given edge; the result
+ * is clamped so top+bottom / left+right always leave a usable band (maplibre throws
+ * on padding that swallows the viewport).
+ */
+export function chromePadding(
+  container: HTMLElement | null,
+  opts: { base?: number; sides?: number } = {},
+): { top: number; bottom: number; left: number; right: number } {
+  const base = opts.base ?? 48;
+  const sides = opts.sides ?? 24;
+  const air = 12; // a little breathing room past the chrome's edge
+  const pad = { top: base, bottom: base, left: sides, right: sides };
+  if (!container || typeof document === "undefined") return pad;
+  const root = container.getBoundingClientRect();
+  if (root.width === 0 || root.height === 0) return pad;
+  for (const node of document.querySelectorAll<HTMLElement>("[data-map-chrome]")) {
+    // Skip hidden controls (display:none via breakpoints, unmounted HUD).
+    if (node.offsetParent === null && node.getClientRects().length === 0) continue;
+    const r = node.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) continue;
+    if (node.dataset.mapChrome === "top") pad.top = Math.max(pad.top, r.bottom - root.top + air);
+    else if (node.dataset.mapChrome === "bottom")
+      pad.bottom = Math.max(pad.bottom, root.bottom - r.top + air);
+  }
+  const maxV = root.height * 0.4;
+  const maxH = root.width * 0.4;
+  pad.top = Math.min(pad.top, maxV);
+  pad.bottom = Math.min(pad.bottom, maxV);
+  pad.left = Math.min(pad.left, maxH);
+  pad.right = Math.min(pad.right, maxH);
+  return pad;
+}
+
+/**
  * Build an attraction marker's DOM: a root button holding two swappable layers —
  * a full "detail" disc (ride icon + wait badge) and a small "dot" — toggled by
  * the declutter pass. Visual scale lives on the children so hover/selection
@@ -750,9 +790,13 @@ export function buildAttractionEl(
   // ride photo at rest, with a label that slides out on hover.
   const detail = document.createElement("div");
   detail.className = DETAIL_CLASS;
+  // Wait time reads as a larger chip anchored to the disc's bottom edge — kept
+  // clear of the crowd-count dots that cluster along the top so the two numbers
+  // never get mistaken for each other. `data-wait-badge` lets the cluster pass
+  // rewrite it to a min–max range when this marker heads a group.
   const waitBadge =
     operating && a.standbyWait != null
-      ? `<span class="absolute -top-1 -right-1 min-w-[1rem] rounded-full border border-white bg-neutral-900 px-1 text-center text-[9px] leading-[14px] font-bold text-white shadow">${a.standbyWait}</span>`
+      ? `<span data-wait-badge class="absolute -bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-white bg-neutral-900 px-1.5 py-0.5 text-[10px] leading-none font-bold text-white shadow">${a.standbyWait} min</span>`
       : "";
   const disc = discMarkup({
     url: a.meta?.imageThumbUrl ?? a.meta?.imageHeroUrl ?? null,
