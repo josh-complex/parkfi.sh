@@ -285,23 +285,30 @@ export function ParkMap({
 
   // Optional map overlay layers, driven by the shared filter. Markers only
   // render once a park is focused (`effectiveSlug`) and the layer is toggled on
-  // (see the POI block below) — but we start fetching the moment a park is
-  // focused, regardless of the toggle, so the data is already warm when the user
-  // flips "Eats"/"Shops" and the markers appear instantly instead of after a
-  // round trip. The feeds are resort-wide and identical across parks, so this
-  // fetches once and is shared; a long `staleTime` keeps it from refetching as
-  // the user roams between parks (also edge-cached — see CACHEABLE_TRPC_PATHS).
+  // (see the POI block below) — but we start fetching before the toggle, so the
+  // data is already warm when the user flips "Eats"/"Shops" and the markers
+  // appear instantly instead of after a round trip. The feeds are resort-wide
+  // and identical across parks, so this fetches once and is shared; a long
+  // `staleTime` keeps it from refetching as the user roams between parks (also
+  // edge-cached — see CACHEABLE_TRPC_PATHS).
+  //
+  // These are progressive/off-critical-path: they're both large (resort-wide,
+  // ~300 venues) and non-essential to the first paint, so we hold them until
+  // the attraction board has loaded. That lets the ride/show markers — the data
+  // the user is actually waiting on — win the browser's connection budget and
+  // render first, then shops/eats stream in behind them.
   const layers = filter?.layers;
   const POI_STALE_MS = 30 * 60 * 1000;
+  const poisEnabled = !!effectiveSlug && boardQ.isSuccess;
   const diningQ = useQuery({
     ...trpc.parks.dining.queryOptions(),
-    enabled: !!effectiveSlug,
+    enabled: poisEnabled,
     staleTime: POI_STALE_MS,
     gcTime: POI_STALE_MS,
   });
   const shopsQ = useQuery({
     ...trpc.parks.shops.queryOptions(),
-    enabled: !!effectiveSlug,
+    enabled: poisEnabled,
     staleTime: POI_STALE_MS,
     gcTime: POI_STALE_MS,
   });
