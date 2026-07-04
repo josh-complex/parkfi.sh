@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
@@ -80,6 +81,20 @@ export interface MenuItemData {
   currency: string | null;
 }
 
+/**
+ * A recent price move on a menu item (from `dining.menuChanges`). `oldPrice`
+ * null = the item just gained a price ("New price"); `newPrice` null = its price
+ * was pulled; otherwise it's an increase/decrease from old → current.
+ */
+export interface MenuItemChange {
+  oldPrice: number | null;
+  newPrice: number | null;
+  currency: string | null;
+}
+
+/** Map of item slug → its recent price change, for the active meal period. */
+export type MenuChangeMap = Map<string, MenuItemChange>;
+
 export interface RawGroup {
   groupName: string | null;
   itemType: string | null;
@@ -155,16 +170,54 @@ function ItemBadge({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Small "recently updated" indicator shown beneath an item's price: a strike-
+ * through of the old price with an up/down arrow for a move, or a "New price" /
+ * "Price removed" pill for the null-boundary cases.
+ */
+function PriceChangeIndicator({ change }: { change: MenuItemChange }) {
+  const { oldPrice, newPrice, currency } = change;
+  if (oldPrice == null && newPrice != null) {
+    return (
+      <span className="inline-flex items-center rounded border border-emerald-200 px-1 py-px text-[10px] font-medium leading-none text-emerald-600 dark:border-emerald-900">
+        New price
+      </span>
+    );
+  }
+  if (newPrice == null) {
+    return (
+      <span className="inline-flex items-center rounded border border-amber-200 px-1 py-px text-[10px] font-medium leading-none text-amber-600 dark:border-amber-900">
+        Price removed
+      </span>
+    );
+  }
+  const up = newPrice > (oldPrice ?? 0);
+  return (
+    <span
+      title={`Was ${formatPrice(oldPrice, currency) ?? "—"}`}
+      className={cn(
+        "inline-flex items-center gap-0.5 text-[11px] leading-none tabular-nums",
+        up ? "text-destructive" : "text-emerald-600 dark:text-emerald-400",
+      )}
+    >
+      {up ? <TrendingUpIcon className="size-3" /> : <TrendingDownIcon className="size-3" />}
+      <span className="text-muted-foreground line-through">{formatPrice(oldPrice, currency)}</span>
+    </span>
+  );
+}
+
 function MenuItem({
   item,
   allergyFriendly,
   isKids,
   highlight,
+  change,
 }: {
   item: MenuItemData;
   allergyFriendly: boolean;
   isKids: boolean;
   highlight: boolean;
+  change?: MenuItemChange;
 }) {
   const price = formatPrice(item.price, item.currency);
   return (
@@ -192,8 +245,11 @@ function MenuItem({
           </p>
         )}
       </div>
-      {price && (
-        <span className="shrink-0 text-sm tabular-nums text-muted-foreground">{price}</span>
+      {(price || change) && (
+        <div className="flex shrink-0 flex-col items-end gap-0.5">
+          {price && <span className="text-sm tabular-nums text-muted-foreground">{price}</span>}
+          {change && <PriceChangeIndicator change={change} />}
+        </div>
       )}
     </div>
   );
@@ -219,6 +275,7 @@ export function MenuBody({
   twoColumn,
   menuIsLoading,
   highlightSlug,
+  changesBySlug,
 }: {
   periods: Array<{ mealPeriod: string; groups: RawGroup[] }>;
   activePeriodIdx: number;
@@ -231,6 +288,7 @@ export function MenuBody({
   twoColumn: boolean;
   menuIsLoading: boolean;
   highlightSlug?: string | null;
+  changesBySlug?: MenuChangeMap;
 }) {
   const hasMultiplePeriods = periods.length > 1;
   const hasTypeSections = typeSections.length > 1;
@@ -268,15 +326,19 @@ export function MenuBody({
                 {group.groupName}
               </p>
             )}
-            {group.items.map((item, ii) => (
-              <MenuItem
-                key={`${item.title}-${ii}`}
-                item={item}
-                allergyFriendly={group.allergyFriendly}
-                isKids={group.isKids}
-                highlight={!!highlightSlug && slugifyMenuItem(item.title) === highlightSlug}
-              />
-            ))}
+            {group.items.map((item, ii) => {
+              const slug = slugifyMenuItem(item.title);
+              return (
+                <MenuItem
+                  key={`${item.title}-${ii}`}
+                  item={item}
+                  allergyFriendly={group.allergyFriendly}
+                  isKids={group.isKids}
+                  highlight={!!highlightSlug && slug === highlightSlug}
+                  change={changesBySlug?.get(slug)}
+                />
+              );
+            })}
           </div>
         ))}
       </div>
@@ -381,6 +443,11 @@ export function useMenuState(facilityId: string, open: boolean, targetItemSlug?:
     ...trpc.dining.menu.queryOptions({ facilityId }),
     enabled: open,
   });
+  // Recent price moves for this venue, so the menu can flag updated items.
+  const changesQ = useQuery({
+    ...trpc.dining.menuChanges.queryOptions({ facilityId, sinceDays: 30, limit: 200 }),
+    enabled: open,
+  });
 
   const periods = (menuQ.data?.mealPeriods ?? []) as Array<{
     mealPeriod: string;
@@ -395,6 +462,22 @@ export function useMenuState(facilityId: string, open: boolean, targetItemSlug?:
     () => buildTypeSections(currentPeriod?.groups ?? []),
     [currentPeriod],
   );
+
+  // Recent price changes for the meal period on screen, keyed by item slug.
+  const changesBySlug = React.useMemo<MenuChangeMap>(() => {
+    const m: MenuChangeMap = new Map();
+    const period = currentPeriod?.mealPeriod;
+    if (!period) return m;
+    for (const c of changesQ.data ?? []) {
+      if (c.mealPeriod !== period) continue;
+      m.set(slugifyMenuItem(c.title), {
+        oldPrice: c.oldPrice,
+        newPrice: c.newPrice,
+        currency: c.currency,
+      });
+    }
+    return m;
+  }, [changesQ.data, currentPeriod]);
 
   const sectionRefs = React.useRef<Map<string, HTMLElement>>(new Map());
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -440,5 +523,6 @@ export function useMenuState(facilityId: string, open: boolean, targetItemSlug?:
     switchPeriod,
     jumpToType,
     highlightSlug,
+    changesBySlug,
   };
 }

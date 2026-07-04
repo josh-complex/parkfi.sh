@@ -240,9 +240,11 @@ function ReservationsSection({
 export function DiningVenueDetail({
   facilityId,
   targetItemSlug,
+  scrollToMenu,
 }: {
   facilityId: string;
   targetItemSlug?: string | null;
+  scrollToMenu?: boolean;
 }) {
   const trpc = useTRPC();
   const isMobile = useIsMobile();
@@ -250,6 +252,16 @@ export function DiningVenueDetail({
   const venue = venueQ.data;
   const hoursQ = useQuery(trpc.dining.hours.queryOptions({}));
   const state = useMenuState(facilityId, true, targetItemSlug);
+
+  // A bare `#menu` deep link (recently-updated shelf) scrolls to the menu
+  // section once the venue + menu have rendered — a native hash jump would fire
+  // before the async content exists and land at the wrong offset.
+  const menuSectionRef = React.useRef<HTMLElement>(null);
+  const menuReady = !!venue && !state.menuQ.isLoading;
+  React.useEffect(() => {
+    if (!scrollToMenu || !menuReady) return;
+    menuSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [scrollToMenu, menuReady]);
 
   const subtitle = venue
     ? [venue.parkResort, venue.experienceType ?? venue.cuisine].filter(Boolean).join(" · ")
@@ -364,7 +376,7 @@ export function DiningVenueDetail({
 
       {/* Menu */}
       {venue && (
-        <section className="flex flex-col gap-3">
+        <section id="menu" ref={menuSectionRef} className="flex scroll-mt-16 flex-col gap-3">
           <div className="flex items-baseline justify-between gap-3">
             <h2 className="text-lg font-semibold tracking-tight">Menu</h2>
             <p className="text-xs text-muted-foreground">Prices excl. tax &amp; gratuity</p>
@@ -383,6 +395,7 @@ export function DiningVenueDetail({
                 twoColumn={!isMobile}
                 menuIsLoading={state.menuQ.isLoading}
                 highlightSlug={state.highlightSlug}
+                changesBySlug={state.changesBySlug}
               />
             </div>
           ) : (

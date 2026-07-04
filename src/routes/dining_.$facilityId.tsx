@@ -51,9 +51,11 @@ function VenuePage() {
   const { data: venue } = useQuery(trpc.dining.venue.queryOptions({ facilityId }));
 
   // Menu-item deep links arrive as `#menu-<slug>`; pass the slug through so the
-  // detail page scrolls to and highlights that item.
+  // detail page scrolls to and highlights that item. A bare `#menu` (recently
+  // updated shelf) scrolls to the menu section itself.
   const hash = useRouterState({ select: (s) => s.location.hash });
   const targetItemSlug = hash?.startsWith("menu-") ? hash.slice("menu-".length) : null;
+  const scrollToMenu = hash === "menu";
 
   return (
     <SidebarProvider
@@ -87,7 +89,11 @@ function VenuePage() {
           </>
         )}
         <div className="flex flex-1 flex-col">
-          <DiningVenueDetail facilityId={facilityId} targetItemSlug={targetItemSlug} />
+          <DiningVenueDetail
+            facilityId={facilityId}
+            targetItemSlug={targetItemSlug}
+            scrollToMenu={scrollToMenu}
+          />
         </div>
       </AppInset>
     </SidebarProvider>

@@ -150,7 +150,7 @@ export function taxonomyLabel(slug: string): string | null {
 export interface ClientFilters {
   search: string;
   parkResort: string; // "ALL" or an exact park_resort value
-  cuisine: string; // "ALL" or an exact cuisine value
+  cuisine: string; // "ALL" or one core cuisine (matched within the venue's comma-separated list)
   experienceType: string; // "ALL" or an exact experience_type value
   operator: Operator;
   prices: string[]; // selected price tiers ("$", "$$", …); empty = all
@@ -180,6 +180,19 @@ export interface FilterOptions {
   prices: string[];
 }
 
+/**
+ * Catalog `cuisine` values are comma-separated composites ("American, Seafood,
+ * Steakhouse") drawn from a consistent core vocabulary. Split them so filter
+ * options and matching work on the individual cuisines, not the composites.
+ */
+export function cuisineList(cuisine: string | null): Array<string> {
+  if (!cuisine) return [];
+  return cuisine
+    .split(",")
+    .map((c) => c.trim())
+    .filter(Boolean);
+}
+
 /** Leading `$` run of a price-range string ("$$ ($15–$34.99)") → "$$". */
 export function priceTier(priceRange: string | null): string | null {
   if (!priceRange) return null;
@@ -198,7 +211,7 @@ export function deriveOptions(restaurants: Array<Restaurant>): FilterOptions {
   const parks = new Set<string>();
   const disneyParks = new Set<string>();
   const universalParks = new Set<string>();
-  const cuisines = new Set<string>();
+  const cuisineCounts = new Map<string, number>();
   const experiences = new Set<string>();
   const prices = new Set<string>();
   for (const r of restaurants) {
@@ -206,7 +219,7 @@ export function deriveOptions(restaurants: Array<Restaurant>): FilterOptions {
       parks.add(r.parkResort);
       (operatorOf(r.source) === "universal" ? universalParks : disneyParks).add(r.parkResort);
     }
-    if (r.cuisine) cuisines.add(r.cuisine);
+    for (const c of cuisineList(r.cuisine)) cuisineCounts.set(c, (cuisineCounts.get(c) ?? 0) + 1);
     if (r.experienceType) experiences.add(r.experienceType);
     const t = priceTier(r.priceRange);
     if (t) prices.add(t);
@@ -219,7 +232,11 @@ export function deriveOptions(restaurants: Array<Restaurant>): FilterOptions {
       disney: sorted(disneyParks),
       universal: sorted(universalParks),
     },
-    cuisines: [...cuisines].sort((a, b) => a.localeCompare(b)),
+    // Most-common cuisine first (ties broken alphabetically) so the quick-filter
+    // chips surface the highest-signal options and the dropdown leads with them.
+    cuisines: [...cuisineCounts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([c]) => c),
     experiences: [...experiences].sort((a, b) => a.localeCompare(b)),
     prices: [...prices].sort((a, b) => a.length - b.length),
   };
@@ -268,7 +285,7 @@ export function filterRestaurants(
   return restaurants.filter((r) => {
     if (q && !r.name.toLowerCase().includes(q)) return false;
     if (f.parkResort !== "ALL" && r.parkResort !== f.parkResort) return false;
-    if (f.cuisine !== "ALL" && r.cuisine !== f.cuisine) return false;
+    if (f.cuisine !== "ALL" && !cuisineList(r.cuisine).includes(f.cuisine)) return false;
     if (f.experienceType !== "ALL" && r.experienceType !== f.experienceType) return false;
     if (f.operator !== "ALL" && operatorOf(r.source) !== f.operator) return false;
     if (f.prices.length) {

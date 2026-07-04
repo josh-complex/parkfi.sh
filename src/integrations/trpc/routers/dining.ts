@@ -459,6 +459,61 @@ export const diningRouter = {
       }));
     }),
 
+  /**
+   * Venues with recent menu activity — the price-change log rolled up per
+   * facility, newest activity first, carrying the card fields the browse shelf
+   * needs plus a small sample of the changed item titles.
+   */
+  recentlyUpdated: publicProcedure
+    .input(
+      z
+        .object({
+          sinceDays: z.number().int().min(1).max(120).default(30),
+          limit: z.number().int().min(1).max(50).default(12),
+        })
+        .optional(),
+    )
+    .query(async ({ input }) => {
+      const sinceDays = input?.sinceDays ?? 30;
+      const limit = input?.limit ?? 12;
+      const result = await db.execute<{
+        facility_id: string;
+        name: string;
+        cuisine: string | null;
+        park_resort: string | null;
+        price_range: string | null;
+        image_url: string | null;
+        change_count: string;
+        last_changed_at: string;
+        sample_titles: string[] | null;
+      }>(sql`
+        SELECT r.facility_id, r.name, r.cuisine, r.park_resort, r.price_range, r.image_url,
+               count(*) AS change_count,
+               max(c.changed_at) AS last_changed_at,
+               (array_agg(c.title ORDER BY c.changed_at DESC))[1:6] AS sample_titles
+        FROM dining_menu_price_change c
+        JOIN restaurant_dim r ON r.facility_id = c.facility_id
+        WHERE c.changed_at >= now() - make_interval(days => ${sinceDays})
+          AND r.active = true
+        GROUP BY r.facility_id, r.name, r.cuisine, r.park_resort, r.price_range, r.image_url
+        ORDER BY last_changed_at DESC
+        LIMIT ${limit}
+      `);
+      return result.rows.map((r) => ({
+        facilityId: r.facility_id,
+        name: r.name,
+        cuisine: r.cuisine,
+        parkResort: r.park_resort,
+        priceRange: r.price_range,
+        imageUrl: r.image_url,
+        changeCount: Number(r.change_count),
+        lastChangedAt: r.last_changed_at,
+        // The over-fetched sample collapses duplicates (same item across meal
+        // periods) down to a short unique list for the card subtitle.
+        sampleTitles: [...new Set(r.sample_titles ?? [])].slice(0, 3),
+      }));
+    }),
+
   availability: publicProcedure
     .input(
       z.object({

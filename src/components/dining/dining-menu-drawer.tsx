@@ -122,6 +122,7 @@ function DesktopMenuDialog({ facilityId, name }: { facilityId: string; name: str
                     pillsRef={state.pillsRef}
                     twoColumn
                     menuIsLoading={state.menuQ.isLoading}
+                    changesBySlug={state.changesBySlug}
                   />
                 </motion.div>
               </motion.div>
@@ -162,6 +163,7 @@ function MobileMenuDrawer({ facilityId, name }: { facilityId: string; name: stri
           pillsRef={state.pillsRef}
           twoColumn={false}
           menuIsLoading={state.menuQ.isLoading}
+          changesBySlug={state.changesBySlug}
         />
       </DrawerContent>
     </Drawer>

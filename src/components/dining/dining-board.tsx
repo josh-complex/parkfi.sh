@@ -6,7 +6,8 @@ import { useQuery } from "@tanstack/react-query";
 
 import { DiningSearchBar, DiningMobileFAB } from "#/components/dining/dining-search-bar.tsx";
 import { ResultsView } from "#/components/dining/dining-results-view.tsx";
-import { DiningMenuChanges } from "#/components/dining/dining-menu-changes.tsx";
+import { DiningCuisineChips } from "#/components/dining/dining-cuisine-chips.tsx";
+import { DiningRecentlyUpdated } from "#/components/dining/dining-recently-updated.tsx";
 import { DiningPicks } from "#/components/dining/dining-picks.tsx";
 import {
   diningStore,
@@ -57,7 +58,7 @@ function BrowseView({ isLoading }: { isLoading: boolean }) {
   }
   return (
     <div className="flex flex-col gap-6">
-      <DiningMenuChanges />
+      <DiningRecentlyUpdated />
       <DiningPicks />
     </div>
   );
@@ -145,15 +146,16 @@ export function DiningBoard() {
 
   return (
     <div className="relative isolate flex flex-col">
-      {/* Hero wash behind the headline + at-rest pill; scrolls away with the page. */}
+      {/* Hero wash behind the headline + at-rest pill; scrolls away with the
+          page. Desktop only — mobile goes straight into the content. */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-60 bg-[radial-gradient(120%_140%_at_50%_-25%,color-mix(in_oklab,var(--color-sidebar)_26%,transparent),transparent_70%)]"
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 hidden h-60 bg-[radial-gradient(120%_140%_at_50%_-25%,color-mix(in_oklab,var(--color-sidebar)_26%,transparent),transparent_70%)] md:block"
       />
 
-      {/* Short hero — collapses away once the user commits a search. */}
+      {/* Short hero — desktop only, collapses away once the user commits a search. */}
       <div
-        className={`grid transition-all duration-500 ease-in-out ${
+        className={`hidden transition-all duration-500 ease-in-out md:grid ${
           searched ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100"
         }`}
       >
@@ -173,6 +175,9 @@ export function DiningBoard() {
 
       <DiningSearchBar options={options} />
       <DiningMobileFAB options={options} />
+
+      {/* Mobile quick cuisine filters, tucked under the header's omnisearch. */}
+      <DiningCuisineChips options={options} />
 
       <div className="flex flex-col gap-8 p-4 pb-24 lg:px-6">
         {searched ? (

@@ -423,16 +423,17 @@ export function StaysBoard() {
   return (
     <div className="relative isolate flex flex-col">
       {/* Slight radial wash in the sidebar's Disney blue, behind the hero copy
-          and the at-rest search pill; scrolls away with the page. */}
+          and the at-rest search pill; scrolls away with the page. Desktop only —
+          mobile goes straight into the content. */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-60 bg-[radial-gradient(120%_140%_at_50%_-25%,color-mix(in_oklab,var(--color-sidebar)_26%,transparent),transparent_70%)]"
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 hidden h-60 bg-[radial-gradient(120%_140%_at_50%_-25%,color-mix(in_oklab,var(--color-sidebar)_26%,transparent),transparent_70%)] md:block"
       />
 
-      {/* Hero — collapses away once the user commits a search. */}
+      {/* Hero — desktop only, collapses away once the user commits a search. */}
       <div
         className={cn(
-          "grid transition-all duration-500 ease-in-out",
+          "hidden transition-all duration-500 ease-in-out md:grid",
           search ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100",
         )}
       >
