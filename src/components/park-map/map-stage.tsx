@@ -12,6 +12,7 @@ import {
   ArrowUpLeftIcon,
   ArrowUpRightIcon,
   ChevronDownIcon,
+  CompassIcon,
   CornerUpLeftIcon,
   CornerUpRightIcon,
   DramaIcon,
@@ -19,6 +20,7 @@ import {
   LoaderCircleIcon,
   LocateFixedIcon,
   MinusIcon,
+  NavigationIcon,
   PlusIcon,
   RollerCoasterIcon,
   RotateCwIcon,
@@ -293,7 +295,7 @@ export function MapStageProvider({
   const geo = useGeolocation({ watch: true });
   const userLocation =
     geo.state.status === "granted"
-      ? { coords: geo.state.coords, accuracy: geo.state.accuracy }
+      ? { coords: geo.state.coords, accuracy: geo.state.accuracy, heading: geo.state.heading }
       : null;
   // Auto-zoom: the first fix while on the overview jumps into the park the user
   // is standing in (or nearest within ~2km, for parking lots / esplanades).
@@ -335,6 +337,14 @@ export function MapStageProvider({
   type Place = { name: string; coords: [number, number] };
   const [pendingDest, setPendingDest] = React.useState<Dest | null>(null);
   const [trip, setTrip] = React.useState<{ from: Place; to: Place } | null>(null);
+  // Nav phase: a resolved `trip` starts in *preview* (whole route framed); tapping
+  // Start flips `started` → the follow-cam. `following` recenters on the user as
+  // they move (a manual pan clears it); `headingUp` rotates the map to their
+  // facing (GL only); `mapBearing` mirrors the live rotation for the compass.
+  const [started, setStarted] = React.useState(false);
+  const [following, setFollowing] = React.useState(false);
+  const [headingUp, setHeadingUp] = React.useState(false);
+  const [mapBearing, setMapBearing] = React.useState(0);
   const requestDirections = React.useCallback(
     (d: Dest) => {
       const to: Place = { name: d.name, coords: d.coords };
@@ -366,6 +376,9 @@ export function MapStageProvider({
   const clearTrip = React.useCallback(() => {
     setTrip(null);
     setPendingDest(null);
+    setStarted(false);
+    setFollowing(false);
+    setHeadingUp(false);
   }, []);
   const swapEnds = React.useCallback(() => {
     setTrip((t) => (t ? { from: t.to, to: t.from } : t));
@@ -390,6 +403,32 @@ export function MapStageProvider({
   });
   const parkRef = React.useRef<HTMLDivElement>(null);
   const mapRef = React.useRef<MapHandle | null>(null);
+
+  // Fly the camera in close to the user and (re-)engage the follow-cam — shared
+  // by Start and the locate/recenter button while navigating.
+  const flyToUser = React.useCallback(() => {
+    if (geo.state.status !== "granted") return;
+    setFollowing(true);
+    setHeadingUp(true);
+    mapRef.current?.flyToLocation(geo.state.coords, {
+      zoom: 17.5,
+      bearing: geo.state.heading ?? 0,
+    });
+  }, [geo]);
+  const startNav = React.useCallback(() => {
+    setStarted(true);
+    flyToUser();
+  }, [flyToUser]);
+  // Compass tap: toggle heading-up, snapping the map bearing to the heading (or
+  // back to north). GL only — Leaflet's `setBearing` is a no-op.
+  const toggleHeadingUp = React.useCallback(() => {
+    setHeadingUp((up) => {
+      const next = !up;
+      const h = geo.state.status === "granted" ? geo.state.heading : null;
+      mapRef.current?.setBearing(next ? (h ?? 0) : 0);
+      return next;
+    });
+  }, [geo]);
 
   // Park the host in its off-screen home on mount, unless a <MapSlot>'s layout
   // effect (which fires first, child-before-parent) already claimed it.
@@ -493,6 +532,10 @@ export function MapStageProvider({
                   userLocation={userLocation}
                   route={routeQ.data?.coordinates ?? null}
                   onRequestDirections={requestDirections}
+                  follow={following}
+                  headingUp={headingUp}
+                  onBearingChange={setMapBearing}
+                  onUserInteract={() => setFollowing(false)}
                   roam={roam}
                   filter={filter}
                   onRoamFocusChange={setRoamFocusSlug}
@@ -518,6 +561,8 @@ export function MapStageProvider({
                   userLocation={userLocation}
                   route={routeQ.data?.coordinates ?? null}
                   onRequestDirections={requestDirections}
+                  follow={following}
+                  onUserInteract={() => setFollowing(false)}
                   roam={roam}
                   filter={filter}
                   onRoamFocusChange={setRoamFocusSlug}
@@ -549,7 +594,13 @@ export function MapStageProvider({
               />
             )}
             {attached && engine && (
-              <LocateButton state={geo.state} onClick={geo.locate} raised={navigating} />
+              <LocateButton
+                state={geo.state}
+                // While navigating, the locate button doubles as recenter — it
+                // re-engages the follow-cam (and heading-up) after a manual pan.
+                onClick={started ? flyToUser : geo.locate}
+                raised={navigating}
+              />
             )}
             {/* Bottom-left cluster (roam, once a park is focused): the park-details
                 shortcut stacked directly on top of the ride filter button. Both are
@@ -592,6 +643,12 @@ export function MapStageProvider({
                 distanceMeters={routeQ.data?.distanceMeters ?? null}
                 durationSeconds={routeQ.data?.durationSeconds ?? null}
                 maneuvers={routeQ.data?.maneuvers ?? null}
+                started={started}
+                canRotate={engine === "gl"}
+                headingUp={headingUp}
+                bearing={mapBearing}
+                onStart={startNav}
+                onToggleHeadingUp={toggleHeadingUp}
                 onSwap={swapEnds}
                 onClear={clearTrip}
               />
@@ -936,6 +993,12 @@ function NavOverlay({
   distanceMeters,
   durationSeconds,
   maneuvers,
+  started,
+  canRotate,
+  headingUp,
+  bearing,
+  onStart,
+  onToggleHeadingUp,
   onSwap,
   onClear,
 }: {
@@ -948,6 +1011,16 @@ function NavOverlay({
   distanceMeters: number | null;
   durationSeconds: number | null;
   maneuvers: Array<RouteManeuver> | null;
+  /** Preview (route framed) vs navigating (follow-cam). */
+  started: boolean;
+  /** Whether the map can rotate (GL) — gates the compass. */
+  canRotate: boolean;
+  /** Heading-up engaged (compass needle points off-north). */
+  headingUp: boolean;
+  /** Live map bearing in degrees, for the compass needle. */
+  bearing: number;
+  onStart: () => void;
+  onToggleHeadingUp: () => void;
   onSwap: () => void;
   onClear: () => void;
 }) {
@@ -1008,12 +1081,17 @@ function NavOverlay({
     </div>
   );
 
+  const showCompass = started && canRotate;
   return (
     <>
-      {/* Top turn sign — sits where the park/category chips were. */}
+      {/* Top turn sign — sits where the park/category chips were. When the compass
+          shows, cap the right edge so they sit side by side on narrow screens. */}
       <div
         data-map-chrome="top"
-        className="pointer-events-auto absolute inset-x-3 top-[calc(env(safe-area-inset-top)+5.25rem)] z-10 mx-auto max-w-md overflow-hidden rounded-2xl bg-green-700 text-white shadow-lg ring-1 ring-white/15 md:top-3"
+        className={cn(
+          "pointer-events-auto absolute left-3 top-[calc(env(safe-area-inset-top)+5.25rem)] z-10 mx-auto max-w-md overflow-hidden rounded-2xl bg-green-700 text-white shadow-lg ring-1 ring-white/15 md:top-3",
+          showCompass ? "right-16" : "right-3",
+        )}
       >
         {canExpand ? (
           <button
@@ -1058,6 +1136,25 @@ function NavOverlay({
         )}
       </div>
 
+      {/* Compass — right of the top sign (GL only). The needle counter-rotates
+          with the map bearing so it always points to true north; tap to toggle
+          heading-up (snap to your facing) vs north-up. */}
+      {showCompass && (
+        <button
+          type="button"
+          onClick={onToggleHeadingUp}
+          aria-label={headingUp ? "Face north" : "Rotate to my heading"}
+          aria-pressed={headingUp}
+          className="pointer-events-auto absolute right-3 top-[calc(env(safe-area-inset-top)+5.25rem)] z-10 inline-flex size-11 items-center justify-center rounded-full bg-green-700 text-white shadow-lg ring-1 ring-white/15 transition active:scale-95 md:top-3"
+        >
+          <CompassIcon
+            className="size-6 transition-transform"
+            style={{ transform: `rotate(${-bearing}deg)` }}
+            aria-hidden
+          />
+        </button>
+      )}
+
       {/* Bottom ETA bar — sits where the Filter button was. */}
       <div
         data-map-chrome="bottom"
@@ -1076,6 +1173,18 @@ function NavOverlay({
           )}
           <div className="truncate text-xs text-white/70">to {destName}</div>
         </div>
+        {/* Start — the preview→navigate CTA, next to the ETA. White-on-green so
+            it reads as the primary action; hidden once navigating. */}
+        {routed && !started && (
+          <button
+            type="button"
+            onClick={onStart}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-semibold text-green-700 shadow-sm transition hover:bg-white/90 active:scale-95"
+          >
+            <NavigationIcon className="size-4 fill-current" />
+            Start
+          </button>
+        )}
         {!locating && !geoBlocked && (
           <button
             type="button"

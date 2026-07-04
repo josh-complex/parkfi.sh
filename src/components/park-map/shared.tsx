@@ -39,6 +39,14 @@ export type MapHandle = {
   zoomIn: () => void;
   zoomOut: () => void;
   flyToPark: (slug: string) => void;
+  /** Fly the camera to a point at a zoom (and, on GL, a bearing) — the nav
+   *  "Start"/"recenter" close-up. Leaflet ignores `bearing` (it can't rotate). */
+  flyToLocation: (
+    coords: [number, number],
+    opts?: { zoom?: number; bearing?: number; duration?: number },
+  ) => void;
+  /** Rotate the map to a compass bearing (degrees). No-op on Leaflet. */
+  setBearing: (bearing: number, opts?: { duration?: number }) => void;
 };
 
 /**
@@ -585,16 +593,38 @@ export function wireHoverLabelFlip(el: HTMLElement, container: HTMLElement): voi
   });
 }
 
-/** The "you are here" marker: a solid blue dot with a soft pulsing halo. Built
- *  as plain DOM so both engines can drop it on the map like any other marker. */
+/** The "you are here" marker: a solid blue dot with a soft pulsing halo, plus a
+ *  facing cone. Built as plain DOM so both engines can drop it on the map like
+ *  any other marker. Call {@link setUserHeading} to point/hide the cone. */
 export function buildUserLocationEl(): HTMLDivElement {
   const el = document.createElement("div");
   el.className = "relative flex size-4 items-center justify-center";
   el.setAttribute("aria-hidden", "true");
   el.innerHTML =
+    // Facing cone: the wrapper fills the dot box and rotates about its center
+    // (via `setUserHeading`); the triangle is pinned just above center, pointing
+    // up, so rotating the wrapper sweeps it around the dot. Hidden until we have
+    // a heading. Rotation lives on the wrapper, centering on the triangle, so
+    // the two transforms never fight.
+    '<span data-user-cone class="absolute inset-0 hidden" style="transform:rotate(0deg)">' +
+    '<span class="absolute bottom-1/2 left-1/2 mb-1 block size-0 -translate-x-1/2 border-x-[7px] border-b-[11px] border-x-transparent border-b-blue-500/70"></span>' +
+    "</span>" +
     '<span class="absolute inline-flex size-full animate-ping rounded-full bg-blue-500/40"></span>' +
     '<span class="relative inline-flex size-3.5 rounded-full border-2 border-white bg-blue-500 shadow-md"></span>';
   return el;
+}
+
+/** Point the facing cone on a {@link buildUserLocationEl} marker at `deg` (screen
+ *  degrees, clockwise from up), or hide it when `deg` is null (heading unknown). */
+export function setUserHeading(el: HTMLElement, deg: number | null): void {
+  const cone = el.querySelector<HTMLElement>("[data-user-cone]");
+  if (!cone) return;
+  if (deg == null) {
+    cone.classList.add("hidden");
+    return;
+  }
+  cone.classList.remove("hidden");
+  cone.style.transform = `rotate(${deg}deg)`;
 }
 
 /**

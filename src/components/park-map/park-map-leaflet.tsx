@@ -20,6 +20,7 @@ import {
   buildAttractionEl,
   buildParkBadgeEl,
   buildUserLocationEl,
+  setUserHeading,
   chromePadding,
   DECLUTTER_SIZE,
   getRoamCamera,
@@ -137,6 +138,8 @@ export function ParkMapLeaflet({
   userLocation,
   route,
   onRequestDirections,
+  follow = false,
+  onUserInteract,
   roam = false,
   filter,
   onRoamFocusChange,
@@ -150,13 +153,22 @@ export function ParkMapLeaflet({
   /** True only while the map is lent to a visible slot. Camera flies are gated
    *  on it — flying into a 0×0 parked container yields NaN LatLngs and throws. */
   attached?: boolean;
-  /** The user's live position ([lng,lat] + accuracy), drawn as a "you are here"
-   *  dot. Null when location is off/denied. */
-  userLocation?: { coords: [number, number]; accuracy: number } | null;
+  /** The user's live position ([lng,lat] + accuracy + GPS heading), drawn as a
+   *  "you are here" dot with a facing cone. Null when location is off/denied. */
+  userLocation?: { coords: [number, number]; accuracy: number; heading: number | null } | null;
   /** Active walking route geometry ([lng,lat] points) to draw, or null. */
   route?: Array<[number, number]> | null;
   /** A "Directions" tap in an attraction popup — asks the stage to route here. */
   onRequestDirections?: (d: { id: number; name: string; coords: [number, number] }) => void;
+  /** Nav follow-cam: recenter on the user as their position updates. */
+  follow?: boolean;
+  /** Heading-up rotation — accepted for prop parity with the GL renderer, but a
+   *  no-op here (vanilla Leaflet can't rotate). */
+  headingUp?: boolean;
+  /** Accepted for parity with the GL renderer; never called (no rotation). */
+  onBearingChange?: (bearing: number) => void;
+  /** Fires on a real user gesture (drag/zoom) so the stage can drop follow-cam. */
+  onUserInteract?: () => void;
   /** Free-roam mode (`/map`): zoom reveals rides, no route navigation. */
   roam?: boolean;
   /** Shared ride filter — hides ride markers that don't match. */
@@ -192,6 +204,8 @@ export function ParkMapLeaflet({
   const cardRef = React.useRef<{ close: () => void } | null>(null);
   const userMarkerRef = React.useRef<L.Marker | null>(null);
   const boundaryRef = React.useRef<L.GeoJSON | null>(null);
+  const onUserInteractRef = React.useRef(onUserInteract);
+  onUserInteractRef.current = onUserInteract;
   const onSelectRef = React.useRef(onSelectAttraction);
   onSelectRef.current = onSelectAttraction;
   const onDeselectRef = React.useRef(onDeselect);
@@ -275,6 +289,10 @@ export function ParkMapLeaflet({
       },
     );
     map.whenReady(() => setReady(true));
+    // A manual pan drops follow-cam. `dragstart` fires only for pointer drags —
+    // our follow-cam uses panTo/flyTo, which fire `movestart` (not `dragstart`) —
+    // so this cleanly distinguishes the user grabbing the map from our own moves.
+    map.on("dragstart", () => onUserInteractRef.current?.());
     mapRef.current = map;
     onMapRef?.({
       resize: () => {
@@ -286,6 +304,12 @@ export function ParkMapLeaflet({
       zoomIn: () => map.zoomIn(),
       zoomOut: () => map.zoomOut(),
       flyToPark: (slug) => flyToPark(slug),
+      flyToLocation: (coords, opts) =>
+        map.flyTo([coords[1], coords[0]], opts?.zoom ?? map.getZoom(), {
+          duration: (opts?.duration ?? 700) / 1000,
+        }),
+      // Leaflet can't rotate — bearing is meaningless here.
+      setBearing: () => {},
     });
     return () => {
       map.remove();
@@ -626,7 +650,16 @@ export function ParkMapLeaflet({
       });
     }
     userMarkerRef.current.setLatLng(latLng).addTo(map);
-  }, [userLocation, ready]);
+    // Point the facing cone along the GPS heading. Leaflet doesn't rotate, so
+    // there's no map bearing to subtract — screen degrees == heading.
+    const el = userMarkerRef.current.getElement();
+    if (el) setUserHeading(el, userLocation.heading);
+
+    // Follow-cam: recenter on the user as their fix updates (no rotation). A
+    // manual pan clears `follow` upstream; panTo fires `movestart`, not
+    // `dragstart`, so it won't trip the user-interaction guard.
+    if (follow) map.panTo(latLng, { animate: true, duration: 0.5 });
+  }, [userLocation, follow, ready]);
 
   // Draw / update / clear the active walking route, and frame it when it appears.
   React.useEffect(() => {

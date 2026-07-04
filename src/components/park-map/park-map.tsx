@@ -21,6 +21,7 @@ import {
   buildParkBadgeEl,
   buildPoiEl,
   buildUserLocationEl,
+  setUserHeading,
   chromePadding,
   DECLUTTER_SIZE,
   escapeHtml,
@@ -178,6 +179,10 @@ export function ParkMap({
   userLocation,
   route,
   onRequestDirections,
+  follow = false,
+  headingUp = false,
+  onBearingChange,
+  onUserInteract,
   roam = false,
   filter,
   onRoamFocusChange,
@@ -198,13 +203,22 @@ export function ParkMap({
   /** True only while the map is lent to a visible slot. The camera fly is gated
    *  on it so the fit re-runs when returning from a route with no map. */
   attached?: boolean;
-  /** The user's live position ([lng,lat] + accuracy), drawn as a "you are here"
-   *  dot. Null when location is off/denied. */
-  userLocation?: { coords: [number, number]; accuracy: number } | null;
+  /** The user's live position ([lng,lat] + accuracy + GPS heading), drawn as a
+   *  "you are here" dot with a facing cone. Null when location is off/denied. */
+  userLocation?: { coords: [number, number]; accuracy: number; heading: number | null } | null;
   /** Active walking route geometry ([lng,lat] points) to draw, or null. */
   route?: Array<[number, number]> | null;
   /** A "Directions" tap in an attraction popup — asks the stage to route here. */
   onRequestDirections?: (d: { id: number; name: string; coords: [number, number] }) => void;
+  /** Nav follow-cam: recenter on the user as their position updates. */
+  follow?: boolean;
+  /** Rotate the map so the user's heading is "up" (else north-up). */
+  headingUp?: boolean;
+  /** Reports the live map bearing (degrees) so the overlay compass can track it. */
+  onBearingChange?: (bearing: number) => void;
+  /** Fires on a real user gesture (drag/zoom/rotate) so the stage can drop
+   *  follow-cam — distinguished from our programmatic camera moves. */
+  onUserInteract?: () => void;
   /** Free-roam mode (the `/map` page): the map self-manages which park is in
    *  focus from the zoom level + viewport (no route navigation). Zooming into a
    *  park reveals its rides; zooming back out shows park badges again. */
@@ -276,6 +290,13 @@ export function ParkMap({
   onDropDiscoveryRef.current = onDropDiscovery;
   const selectedIdRef = React.useRef(selectedId);
   selectedIdRef.current = selectedId;
+  const onBearingChangeRef = React.useRef(onBearingChange);
+  onBearingChangeRef.current = onBearingChange;
+  const onUserInteractRef = React.useRef(onUserInteract);
+  onUserInteractRef.current = onUserInteract;
+  // Last non-null heading, so a follow-cam rotation holds orientation when the
+  // GPS heading briefly drops to null (common when nearly stationary).
+  const lastHeadingRef = React.useRef<number | null>(null);
 
   const listQ = useQuery(trpc.parks.list.queryOptions());
   const overviewQ = useQuery(trpc.parks.overview.queryOptions());
@@ -393,12 +414,31 @@ export function ParkMap({
       },
     );
     map.on("load", () => setReady(true));
+    // Mirror the live bearing to the overlay compass.
+    map.on("rotate", () => onBearingChangeRef.current?.(map.getBearing()));
+    // A real gesture (has an originalEvent) means the user took the wheel — tell
+    // the stage to drop follow-cam. Our own easeTo/flyTo moves have no
+    // originalEvent, so they don't trip this.
+    const onGesture = (e: { originalEvent?: unknown }) => {
+      if (e.originalEvent) onUserInteractRef.current?.();
+    };
+    map.on("dragstart", onGesture);
+    map.on("zoomstart", onGesture);
+    map.on("rotatestart", onGesture);
     mapRef.current = map;
     onMapRef?.({
       resize: () => map.resize(),
       zoomIn: () => map.zoomIn(),
       zoomOut: () => map.zoomOut(),
       flyToPark: (slug) => flyToPark(slug),
+      flyToLocation: (coords, opts) =>
+        map.easeTo({
+          center: coords,
+          zoom: opts?.zoom ?? map.getZoom(),
+          bearing: opts?.bearing ?? map.getBearing(),
+          duration: opts?.duration ?? 700,
+        }),
+      setBearing: (bearing, opts) => map.easeTo({ bearing, duration: opts?.duration ?? 400 }),
     });
     return () => {
       map.remove();
@@ -921,7 +961,9 @@ export function ParkMap({
 
   // "You are here" marker — created on the first fix, moved on later updates,
   // removed when location turns off. It's a plain DOM marker (not a DeclutterItem)
-  // so the cluster pass never touches it.
+  // so the cluster pass never touches it. The facing cone points along the GPS
+  // heading in *screen* space, so we subtract the map bearing (heading-up keeps
+  // the cone pointing up); it hides when heading is unknown.
   React.useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
@@ -934,7 +976,32 @@ export function ParkMap({
       userMarkerRef.current = new maplibregl.Marker({ element: buildUserLocationEl() });
     }
     userMarkerRef.current.setLngLat(userLocation.coords).addTo(map);
+    if (userLocation.heading != null) lastHeadingRef.current = userLocation.heading;
+    const el = userMarkerRef.current.getElement();
+    const paint = () =>
+      setUserHeading(
+        el,
+        userLocation.heading == null ? null : userLocation.heading - map.getBearing(),
+      );
+    paint();
+    // Re-point the cone as the map rotates (heading-up follow-cam), and clean up.
+    map.on("rotate", paint);
+    return () => {
+      map.off("rotate", paint);
+    };
   }, [userLocation, ready]);
+
+  // Follow-cam: recenter (and, heading-up, rotate) on the user as their fix
+  // updates. Only while `follow` is on — a manual pan clears it upstream. Uses a
+  // short easeTo so walking reads as a smooth glide, not teleports.
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !follow || !userLocation) return;
+    const bearing = headingUp
+      ? (userLocation.heading ?? lastHeadingRef.current ?? map.getBearing())
+      : 0;
+    map.easeTo({ center: userLocation.coords, bearing, duration: 500 });
+  }, [userLocation, follow, headingUp, ready]);
 
   // Kingdom Hearts play layer — render Darkness spawns (tap → battle) and discovery
   // pins (popup with note + reactions) as plain DOM markers over the roam map.
