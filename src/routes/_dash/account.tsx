@@ -50,10 +50,10 @@ function AccountLayout() {
   }
 
   return (
-    <div className="p-6 max-w-2xl space-y-6 max-md:text-sidebar-foreground">
+    <div className="p-6 max-w-2xl space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Account settings</h1>
-        <p className="text-muted-foreground text-sm mt-1 max-md:text-sidebar-foreground/80">
+        <p className="text-muted-foreground text-sm mt-1">
           Manage your profile, security, and connected accounts.
         </p>
       </div>
