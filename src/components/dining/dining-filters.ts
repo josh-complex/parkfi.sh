@@ -193,6 +193,68 @@ export function cuisineList(cuisine: string | null): Array<string> {
     .filter(Boolean);
 }
 
+/**
+ * Keyword → emoji map for cuisine chips. Ordered: the first substring match wins,
+ * so more specific / collision-prone terms ("barbecue" before "bar", "ice cream"
+ * before "cream") come first. National cuisines get flags, dishes get food glyphs.
+ */
+const CUISINE_EMOJI: Array<readonly [string, string]> = [
+  ["american", "🇺🇸"],
+  ["italian", "🇮🇹"],
+  ["mexican", "🇲🇽"],
+  ["cuban", "🇨🇺"],
+  ["chinese", "🇨🇳"],
+  ["japanese", "🇯🇵"],
+  ["korean", "🇰🇷"],
+  ["thai", "🇹🇭"],
+  ["indian", "🇮🇳"],
+  ["french", "🇫🇷"],
+  ["irish", "🇮🇪"],
+  ["british", "🇬🇧"],
+  ["english", "🇬🇧"],
+  ["german", "🇩🇪"],
+  ["spanish", "🇪🇸"],
+  ["greek", "🇬🇷"],
+  ["african", "🌍"],
+  ["caribbean", "🏝️"],
+  ["hawaiian", "🌺"],
+  ["mediterranean", "🫒"],
+  ["latin", "🌮"],
+  ["sushi", "🍣"],
+  ["seafood", "🦞"],
+  ["steak", "🥩"],
+  ["barbecue", "🍖"],
+  ["bbq", "🍖"],
+  ["pizza", "🍕"],
+  ["burger", "🍔"],
+  ["bakery", "🥐"],
+  ["ice cream", "🍦"],
+  ["dessert", "🍰"],
+  ["coffee", "☕"],
+  ["tea", "🍵"],
+  ["café", "☕"],
+  ["cafe", "☕"],
+  ["sandwich", "🥪"],
+  ["deli", "🥪"],
+  ["buffet", "🍽️"],
+  ["vegan", "🥗"],
+  ["vegetarian", "🥗"],
+  ["asian", "🥢"],
+  ["pub", "🍺"],
+  ["lounge", "🍸"],
+  ["bar", "🍸"],
+  ["grill", "🔥"],
+];
+
+/** Best-effort emoji for a cuisine label; falls back to a plate glyph. */
+export function cuisineEmoji(cuisine: string): string {
+  const key = cuisine.toLowerCase();
+  for (const [needle, emoji] of CUISINE_EMOJI) {
+    if (key.includes(needle)) return emoji;
+  }
+  return "🍽️";
+}
+
 /** Leading `$` run of a price-range string ("$$ ($15–$34.99)") → "$$". */
 export function priceTier(priceRange: string | null): string | null {
   if (!priceRange) return null;
