@@ -90,7 +90,12 @@ function setWaitRange(detail: HTMLElement, waits: ReadonlyArray<number>): void {
   if (!badge || waits.length === 0) return;
   const lo = Math.min(...waits);
   const hi = Math.max(...waits);
-  badge.textContent = lo === hi ? `${hi} min` : `${lo}–${hi} min`;
+  // Rewrite only the minutes span, not the whole chip — the chip also holds a
+  // collapsible "standby" subtext (revealed when it flies into the open card), and
+  // setting the chip's textContent would wipe it. Fall back to the chip itself for
+  // any legacy chip without the inner span.
+  const num = badge.querySelector<HTMLElement>("[data-wait-num]") ?? badge;
+  num.textContent = lo === hi ? `${hi} min` : `${lo}–${hi} min`;
   badge.classList.remove("hidden");
 }
 

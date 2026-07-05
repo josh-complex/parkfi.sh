@@ -214,6 +214,34 @@ export function waitLabelFor(a: BoardItem): string {
           : "Closed";
 }
 
+// The live wait pill's appearance, shared verbatim by the marker badge (anchored
+// under the disc) and the expanded card's wait line, so the chip that flies from
+// one to the other on expand is pixel-identical at both ends. Positioning classes
+// (`absolute -bottom-2 …`) live only on the marker instance.
+const WAIT_CHIP_CLASS =
+  "inline-flex items-center whitespace-nowrap rounded-full border border-white bg-neutral-900 px-1.5 py-0.5 text-[10px] leading-none font-bold text-white shadow";
+
+/**
+ * Inner markup of a wait chip: the bold minutes plus a collapsible subtext (the
+ * "standby" tail of the status line). The minutes live in their own
+ * `[data-wait-num]` span because the cluster pass rewrites just that to a range
+ * (see `setWaitRange`) — writing the whole chip's text would wipe the subtext.
+ * The subtext is collapsed on the marker (`expanded=false`) and revealed when the
+ * chip flies into the open card (`expanded=true`), so the pill grows to include it.
+ */
+function waitChipInner(minutes: number, label: string, expanded: boolean): string {
+  const num = `${minutes} min`;
+  const sub = label.startsWith(num) ? label.slice(num.length).trim() : "";
+  const subCls = expanded ? "ml-1 max-w-[8rem] opacity-100" : "max-w-0 opacity-0";
+  // `min-w-0` lets max-w-0 actually collapse the flex child (flex items default to
+  // min-width:auto, which would otherwise keep it at content width). The subtext
+  // inherits the chip's bold white type (no weight/opacity override) so the whole
+  // "5 min standby" line reads as one consistent label; it snaps in quickly.
+  return `<span data-wait-num>${num}</span><span data-wait-sub class="min-w-0 overflow-hidden whitespace-nowrap transition-all duration-200 ease-out ${subCls}">${escapeHtml(
+    sub,
+  )}</span>`;
+}
+
 /**
  * Placement priority for the cluster pass — the highest-priority marker in a
  * group becomes its visible head. Tiered so a ride with a posted wait always
@@ -282,35 +310,53 @@ export function attractionCardBodyHtml(a: BoardItem, waitLabel: string, rideHref
     .filter(Boolean)
     .map(
       (bit, i) =>
-        `<div class="${i === 0 ? "mt-1.5 " : ""}text-[11px] text-muted-foreground">${escapeHtml(bit as string)}</div>`,
+        `<div class="${i === 0 ? "mt-1 " : ""}text-[11px] text-muted-foreground">${escapeHtml(bit as string)}</div>`,
     )
     .join("");
   // "Directions" routes from the user's location to this attraction; the renderer
   // intercepts the click (marked `data-directions`) and reads the destination from
   // the data attributes. Only shown when we have coordinates to route to.
+  // A 3D-embossed button matching our `Button` primitive (border-3d / shadow-3d),
+  // in blue to pair with the "More info" link. We hand-write the classes rather
+  // than mount the React <Button> because the card body is an injected HTML string.
   const directions =
     a.latitude != null && a.longitude != null
-      ? `<button type="button" data-directions data-lng="${a.longitude}" data-lat="${a.latitude}" class="inline-flex items-center gap-1 rounded-full bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white transition hover:bg-blue-700 active:scale-95">Directions</button>`
+      ? `<button type="button" data-directions data-lng="${a.longitude}" data-lat="${a.latitude}" class="relative top-0 inline-flex shrink-0 items-center justify-center gap-1 rounded-full border-3d shadow-3d h-8 px-3.5 text-[12px] font-semibold whitespace-nowrap text-white outline-none select-none bg-blue-600 hover:bg-blue-500 [--btn-3d:var(--color-blue-800)] [--btn-glare:oklch(1_0_0_/_0.28)] transition-[box-shadow,top,background-color] duration-150 ease-out hover:-top-px hover:shadow-3d-hover active:top-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active">Directions</button>`
       : "";
   const moreInfo = `<a href="${escapeHtml(
     rideHref,
   )}" data-spa class="text-[13px] font-medium text-blue-600 hover:underline">More info →</a>`;
-  const actions = `<div class="mt-3 flex items-center gap-2">${directions}${moreInfo}</div>`;
+  const actions = `<div class="mt-2.5 flex items-center gap-2">${directions}${moreInfo}</div>`;
+  // The wait line. When a live wait exists it renders as the very chip the marker
+  // carries — the marker's chip physically flies onto this one on expand (see
+  // openAttractionCard), growing to reveal the "standby" subtext held inside it.
+  // `data-wait-chip` is that flight target. With no posted wait it's plain text.
+  const minutes = a.status === "OPERATING" && a.standbyWait != null ? a.standbyWait : null;
+  const waitLine =
+    minutes != null
+      ? `<div class="mt-0.5 flex text-[12px]"><span data-wait-chip class="${WAIT_CHIP_CLASS}">${waitChipInner(
+          minutes,
+          waitLabel,
+          true,
+        )}</span></div>`
+      : `<div class="mt-0.5 text-[12px] text-muted-foreground">${escapeHtml(waitLabel)}</div>`;
   return `<div class="text-[15px] font-semibold leading-tight text-card-foreground">${escapeHtml(
     a.name,
-  )}</div><div class="mt-1 text-[12px] text-muted-foreground">${escapeHtml(
-    waitLabel,
-  )}</div>${tags}${detail}${actions}`;
+  )}</div>${waitLine}${tags}${detail}${actions}`;
 }
 
 // Expanded-card geometry (px). The disc grows in place into a CARD_W-wide photo
 // header of CARD_HEADER_H tall; the body unfolds below it.
 const CARD_W = 264;
-const CARD_HEADER_H = 148;
+const CARD_HEADER_H = 132;
 const CARD_RADIUS = 16; // matches the card's rounded-2xl (1rem)
 // Morph duration (ms): the disc→card container grow + body/close fade.
 const CARD_MS = 360;
 const CARD_EASE = "cubic-bezier(.16,1,.3,1)"; // smooth ease-out, no overshoot
+// On close, the "dressing" (3d shelf shadow, border, the chip's expanded subtext)
+// clears faster than the geometry collapse so none of it lingers as a wide/heavy
+// artifact once the disc has shrunk back — it's gone well before CARD_MS elapses.
+const CARD_CLOSE_FX_MS = 170;
 
 /** The single card currently expanded (across both engines), so opening one — or
  *  any other interaction — collapses the previous first. */
@@ -349,6 +395,34 @@ export function openAttractionCard(opts: {
   const label = detail.querySelector<HTMLElement>("[data-label]");
   const size = wrap.offsetWidth || 52;
 
+  // The live wait chip doesn't just vanish on expand — it's the shared element that
+  // flies from under the disc up to the card's wait line. Grab it and its resting
+  // screen box now (before any mutation), plus enough to reparent it back on close.
+  const waitEl = wrap.querySelector<HTMLElement>("[data-wait-badge]");
+  const waitStart = waitEl?.getBoundingClientRect() ?? null;
+  const waitRestore = waitEl
+    ? {
+        next: waitEl.nextSibling,
+        style: waitEl.getAttribute("style") ?? "",
+        cls: waitEl.className,
+      }
+    : null;
+
+  // Upgrade the header to the higher-res photo, lazily — only fetched when a card
+  // actually opens. The disc's low-res thumbnail is already decoded and stays put
+  // as the header until the hi-res copy finishes loading, so there's no blank flash;
+  // we swap the src in only on load. It then stays cached for the collapsed disc too.
+  if (fill instanceof HTMLImageElement) {
+    const hires = fill.dataset.hires;
+    if (hires && hires !== fill.currentSrc && hires !== fill.src) {
+      const pre = new Image();
+      pre.addEventListener("load", () => {
+        fill.src = hires;
+      });
+      pre.src = hires;
+    }
+  }
+
   // Suppress the selection ring while open (see applySelected) and lock the detail
   // box so the wrap going position:absolute doesn't collapse it (which would
   // un-center the marker from its point).
@@ -367,7 +441,7 @@ export function openAttractionCard(opts: {
   // hidden (this marker isn't a cluster head) must stay hidden on restore — else it
   // pops back as a phantom "+1" grouping when the card collapses.
   const badges = Array.from(wrap.children)
-    .filter((c): c is HTMLElement => c !== fill)
+    .filter((c): c is HTMLElement => c !== fill && c !== waitEl)
     .map((el) => ({ el, wasHidden: el.classList.contains("hidden") }));
   for (const b of badges) b.el.classList.add("hidden");
 
@@ -375,7 +449,7 @@ export function openAttractionCard(opts: {
   // card width so its wrapped height is correct even while the wrap is still a
   // circle (it's clipped away below the fold until the card is tall enough).
   const card = document.createElement("div");
-  card.className = "bg-card px-4 pt-3 pb-3.5";
+  card.className = "bg-card px-4 pt-3 pb-3.5 text-left";
   card.style.width = `${CARD_W}px`;
   card.style.opacity = "0";
   card.style.transition = "opacity 200ms ease 110ms";
@@ -384,23 +458,76 @@ export function openAttractionCard(opts: {
   wrap.appendChild(card);
   const totalH = CARD_HEADER_H + card.offsetHeight;
 
-  // Placement: header centered on the pin (grow in place), clamped on-screen.
-  // Coords are detail-local — detail's box is the disc, its center the pin.
+  // Placement: the card always settles in the center of the map, so every button
+  // (Directions / More info) is on-screen regardless of where the pin sits — the
+  // disc morphs from its point and slides to center. Still clamped 8px inside the
+  // edges so an unusually tall card can't run off the top. Coords are detail-local
+  // — detail's box is the disc, so we subtract dRect to convert from viewport space.
   const cRect = container.getBoundingClientRect();
   const dRect = detail.getBoundingClientRect();
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(v, hi));
   const topLocal =
     clamp(
-      dRect.top + size / 2 - CARD_HEADER_H / 2,
+      cRect.top + (cRect.height - totalH) / 2,
       cRect.top + 8,
       Math.max(cRect.top + 8, cRect.bottom - 8 - totalH),
     ) - dRect.top;
   const leftLocal =
     clamp(
-      dRect.left + size / 2 - CARD_W / 2,
+      cRect.left + (cRect.width - CARD_W) / 2,
       cRect.left + 8,
       Math.max(cRect.left + 8, cRect.right - 8 - CARD_W),
     ) - dRect.left;
+
+  // Wait-chip flight. Promote the marker's chip out of the (soon overflow-hidden,
+  // transforming) wrap into `detail` — a stable, untransformed box — so it can
+  // travel cleanly from its resting spot under the disc to the card's wait line.
+  // The destination is the transparent placeholder chip in the card body; because
+  // both chips share WAIT_CHIP_CLASS they're the same size, so the landing is exact.
+  const waitTarget = card.querySelector<HTMLElement>("[data-wait-chip]");
+  let flyWait: (() => void) | undefined;
+  let unflyWait: (() => void) | undefined;
+  if (waitEl && waitStart && waitTarget) {
+    const cardRect0 = card.getBoundingClientRect();
+    const tRect0 = waitTarget.getBoundingClientRect();
+    const startLeft = waitStart.left - dRect.left;
+    const startTop = waitStart.top - dRect.top;
+    // The placeholder's offset within the fixed-width card body is layout-stable;
+    // its final on-screen spot is the card's final origin + that offset.
+    const destLeft = leftLocal + (tRect0.left - cardRect0.left);
+    const destTop = topLocal + CARD_HEADER_H + (tRect0.top - cardRect0.top);
+    waitTarget.style.opacity = "0"; // the flown chip is the only visible one
+    waitEl.classList.remove("-bottom-2", "left-1/2", "-translate-x-1/2");
+    Object.assign(waitEl.style, {
+      position: "absolute",
+      left: `${startLeft}px`,
+      top: `${startTop}px`,
+      margin: "0",
+      zIndex: "46",
+      transform: "none",
+      transition: "none",
+    });
+    detail.append(waitEl);
+    void waitEl.offsetWidth; // commit the start transform before animating
+    // The collapsible "standby" tail inside the chip — revealed as the chip flies
+    // up (so the pill grows to include it), re-collapsed as it flies back.
+    const waitSub = waitEl.querySelector<HTMLElement>("[data-wait-sub]");
+    flyWait = () => {
+      waitEl.style.transition = `transform ${CARD_MS}ms ${CARD_EASE}`;
+      if (waitSub) waitSub.style.transition = ""; // reveal at the class default pace
+      waitSub?.classList.remove("max-w-0", "opacity-0");
+      waitSub?.classList.add("ml-1", "max-w-[8rem]", "opacity-100");
+      waitEl.style.transform = `translate(${destLeft - startLeft}px, ${destTop - startTop}px)`;
+    };
+    unflyWait = () => {
+      // The pill travels back with the card (transform stays on CARD_MS), but its
+      // width snaps narrow fast so it isn't left wide well after the disc has formed.
+      waitEl.style.transform = "none";
+      if (waitSub) waitSub.style.transition = `all ${CARD_CLOSE_FX_MS}ms ease`;
+      waitSub?.classList.remove("ml-1", "max-w-[8rem]", "opacity-100");
+      waitSub?.classList.add("max-w-0", "opacity-0");
+    };
+  }
 
   // While open, swallow clicks on the card container so they don't bubble to the
   // marker's own click handler (which would re-fire activate). Removed on close.
@@ -431,8 +558,11 @@ export function openAttractionCard(opts: {
 
   // The one animated box-shadow: disc colour ring → card drop shadow. Kept to three
   // layers on both ends so it interpolates smoothly (no layer-count mismatch jump).
+  // The card end lands on the same 3d "shelf" (`0 3px 0 var(--btn-3d)`) the modals
+  // use via shadow-3d, plus a soft drop shadow — the border-3d classes added below
+  // supply the matching edge. `--btn-3d` comes from btn-3d-outline on the wrap.
   const ringShadow = `0 0 0 3px ${ringColor}, 0 4px 6px -1px rgba(0,0,0,.12), 0 2px 4px -2px rgba(0,0,0,.12)`;
-  const cardShadow = `0 0 0 0px transparent, 0 24px 48px -12px rgba(0,0,0,.28), 0 0 0 0 transparent`;
+  const cardShadow = `0 3px 0 0 var(--btn-3d), 0 24px 48px -12px rgba(0,0,0,.28), 0 0 0 0 transparent`;
 
   // Promote the wrap into the card container, starting *exactly* as the resting
   // disc (52px circle + colour ring), transition off, so the promotion is invisible.
@@ -463,6 +593,18 @@ export function openAttractionCard(opts: {
   void wrap.offsetWidth; // commit the collapsed start state before animating
 
   requestAnimationFrame(() => {
+    // Match the app's modals/popovers: 3d shelf shadow + a plain 1px border (no
+    // thicker top edge). `--btn-3d` (from btn-3d-outline) drives both the shelf
+    // shadow above and the border; in dark mode it goes transparent, so
+    // dark:border-border keeps an edge.
+    wrap.classList.add("border-3d", "btn-3d-outline", "dark:border-border");
+    // Pin the resolved border colour inline. A border-color that lives on a class
+    // (border-3d / dark:border-border) doesn't reliably animate when close()
+    // overrides it to transparent — the edge holds its colour for the whole
+    // collapse and then snaps off when the classes are stripped. Pinning the
+    // concrete value here gives the close transition a real inline start point, so
+    // the border fades out with the shelf instead of popping at the end.
+    wrap.style.borderColor = getComputedStyle(wrap).borderColor;
     wrap.style.transition = ["left", "top", "width", "height", "border-radius", "box-shadow"]
       .map((p) => `${p} ${CARD_MS}ms ${CARD_EASE}`)
       .join(", ");
@@ -480,6 +622,7 @@ export function openAttractionCard(opts: {
     }
     card.style.opacity = "1";
     closeBtn.style.opacity = "1";
+    flyWait?.();
   });
 
   let closed = false;
@@ -488,8 +631,18 @@ export function openAttractionCard(opts: {
     closed = true;
     if (openCard === handle) openCard = null;
     onClose?.();
-    // Reverse: collapse the container back to the disc; ring, radius, photo height
-    // and body opacity all run back together.
+    // Reverse: geometry (position/size/radius) eases back over CARD_MS, but the
+    // shelf shadow and border fade fast (CARD_CLOSE_FX_MS) so the 3d dressing is
+    // gone early rather than popping off when the classes are stripped at the end.
+    wrap.style.transition = [
+      `left ${CARD_MS}ms ${CARD_EASE}`,
+      `top ${CARD_MS}ms ${CARD_EASE}`,
+      `width ${CARD_MS}ms ${CARD_EASE}`,
+      `height ${CARD_MS}ms ${CARD_EASE}`,
+      `border-radius ${CARD_MS}ms ${CARD_EASE}`,
+      `box-shadow ${CARD_CLOSE_FX_MS}ms ease`,
+      `border-color ${CARD_CLOSE_FX_MS}ms ease`,
+    ].join(", ");
     Object.assign(wrap.style, {
       left: "0px",
       top: "0px",
@@ -497,8 +650,10 @@ export function openAttractionCard(opts: {
       height: `${size}px`,
       borderRadius: `${size / 2}px`,
       boxShadow: ringShadow,
+      borderColor: "transparent",
     });
     if (fill) fill.style.height = `${size}px`;
+    unflyWait?.(); // the wait chip flies back down to the disc
     card.style.opacity = "0";
     // Fade the close button out fast (its open transition carried a 140ms delay
     // that otherwise left it hanging in mid-air after the card had collapsed away).
@@ -512,6 +667,12 @@ export function openAttractionCard(opts: {
       wrap.className = wrapClass;
       wrap.setAttribute("style", wrapStyle);
       if (fill) fill.setAttribute("style", fillStyle);
+      // Return the wait chip to its resting spot under the disc, verbatim.
+      if (waitEl && waitRestore) {
+        waitEl.className = waitRestore.cls;
+        waitEl.setAttribute("style", waitRestore.style);
+        wrap.insertBefore(waitEl, waitRestore.next);
+      }
       for (const b of badges) b.el.classList.toggle("hidden", b.wasHidden);
       detail.removeAttribute("data-card-open");
       detail.style.width = "";
@@ -541,6 +702,10 @@ const DETAIL_CLASS =
  *  photo as a wide oval. */
 function discMarkup(opts: {
   url: string | null;
+  /** A higher-res variant of `url`, lazily swapped in when the disc expands into
+   *  the card header (see `openAttractionCard`). Tagged as `data-hires` so the
+   *  small `url` still loads instantly for the tiny disc. */
+  hiResUrl?: string | null;
   alt: string;
   fallbackSvg: string;
   ring: string;
@@ -549,10 +714,12 @@ function discMarkup(opts: {
   badge?: string;
 }): string {
   const ring = `--tw-ring-color:${opts.ring}`;
+  const hires =
+    opts.hiResUrl && opts.hiResUrl !== opts.url ? ` data-hires="${escapeHtml(opts.hiResUrl)}"` : "";
   // `data-face-fill` tags the photo/icon face so the card animator can morph it
   // (border-radius + ring) as the disc flies up into the expanded card header.
   const face = opts.url
-    ? `<img data-face-fill src="${escapeHtml(opts.url)}" alt="${escapeHtml(
+    ? `<img data-face-fill${hires} src="${escapeHtml(opts.url)}" alt="${escapeHtml(
         opts.alt,
       )}" loading="lazy" class="size-full rounded-full object-cover shadow-md ring-[3px]" style="${ring}" />`
     : `<span data-face-fill class="flex size-full items-center justify-center rounded-full text-white shadow-md ring-[3px]" style="background:${opts.bg};${ring}">${opts.fallbackSvg}</span>`;
@@ -826,10 +993,15 @@ export function buildAttractionEl(
   // rewrite it to a min–max range when this marker heads a group.
   const waitBadge =
     operating && a.standbyWait != null
-      ? `<span data-wait-badge class="absolute -bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-white bg-neutral-900 px-1.5 py-0.5 text-[10px] leading-none font-bold text-white shadow">${a.standbyWait} min</span>`
+      ? `<span data-wait-badge class="absolute -bottom-2 left-1/2 -translate-x-1/2 ${WAIT_CHIP_CLASS}">${waitChipInner(
+          a.standbyWait,
+          waitLabelFor(a),
+          false,
+        )}</span>`
       : "";
   const disc = discMarkup({
     url: a.meta?.imageThumbUrl ?? a.meta?.imageHeroUrl ?? null,
+    hiResUrl: a.meta?.imageHeroUrl ?? null,
     alt: a.meta?.imageAlt ?? a.name,
     fallbackSvg: categoryIconSvg(a.category),
     ring: color,
