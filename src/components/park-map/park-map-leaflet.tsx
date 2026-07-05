@@ -212,6 +212,16 @@ export function ParkMapLeaflet({
   onDeselectRef.current = onDeselect;
   const onRequestDirectionsRef = React.useRef(onRequestDirections);
   onRequestDirectionsRef.current = onRequestDirections;
+  // Live mirror of `follow`, read inside effects that must not re-run when it
+  // toggles: engaging follow shouldn't itself recenter (the imperative
+  // `flyToLocation` owns the zoom-in — a panTo fired on the toggle would
+  // interrupt that fly and drop the zoom). It fires on new fixes instead.
+  const followRef = React.useRef(follow);
+  followRef.current = follow;
+  // True while an engage fly (flyToLocation) animates — a GPS fix landing mid-fly
+  // must not fire the zoom-less panTo and interrupt the zoom-in. Cleared on the
+  // fly's moveend.
+  const engagingRef = React.useRef(false);
   const routeRef = React.useRef<L.Polyline | null>(null);
   const selectedIdRef = React.useRef(selectedId);
   selectedIdRef.current = selectedId;
@@ -304,10 +314,20 @@ export function ParkMapLeaflet({
       zoomIn: () => map.zoomIn(),
       zoomOut: () => map.zoomOut(),
       flyToPark: (slug) => flyToPark(slug),
-      flyToLocation: (coords, opts) =>
+      flyToLocation: (coords, opts) => {
+        const dur = opts?.duration ?? 700;
+        engagingRef.current = true;
+        const done = () => {
+          engagingRef.current = false;
+        };
+        // Clear on the fly's end, with a timeout fallback for a no-op move that
+        // never fires `moveend` (a stuck flag would disable the follow-cam).
+        map.once("moveend", done);
+        setTimeout(done, dur + 200);
         map.flyTo([coords[1], coords[0]], opts?.zoom ?? map.getZoom(), {
-          duration: (opts?.duration ?? 700) / 1000,
-        }),
+          duration: dur / 1000,
+        });
+      },
       // Leaflet can't rotate — bearing is meaningless here.
       setBearing: () => {},
     });
@@ -657,9 +677,12 @@ export function ParkMapLeaflet({
 
     // Follow-cam: recenter on the user as their fix updates (no rotation). A
     // manual pan clears `follow` upstream; panTo fires `movestart`, not
-    // `dragstart`, so it won't trip the user-interaction guard.
-    if (follow) map.panTo(latLng, { animate: true, duration: 0.5 });
-  }, [userLocation, follow, ready]);
+    // `dragstart`, so it won't trip the user-interaction guard. Read via ref so
+    // toggling follow doesn't re-run this and interrupt the engage-time fly.
+    if (followRef.current && !engagingRef.current) {
+      map.panTo(latLng, { animate: true, duration: 0.5 });
+    }
+  }, [userLocation, ready]);
 
   // Draw / update / clear the active walking route, and frame it when it appears.
   React.useEffect(() => {
@@ -675,6 +698,9 @@ export function ParkMapLeaflet({
       opacity: 0.85,
       interactive: false,
     }).addTo(map);
+    // Frame the whole route in preview only — while following, a mid-trip
+    // re-route redraws the line without yanking the camera off the user.
+    if (followRef.current) return;
     // Reserve space for the nav overlays (green turn sign + bottom ETA bar,
     // tagged `data-map-chrome`) so the route's endpoints land in the visible
     // band instead of under the UI.

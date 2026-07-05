@@ -43,10 +43,12 @@ import {
 } from "#/components/ui/alert-dialog.tsx";
 import { playModeStore, setHudExpanded } from "#/components/living/play-mode.ts";
 import { PlayOverlay } from "#/components/living/play-overlay.tsx";
+import { DevLocationPanel } from "#/components/park-map/dev-location-panel.tsx";
 import { useSelection } from "#/components/park-dashboard/selection-context.tsx";
 import { RideFilterButton } from "#/components/rides/ride-filter-button.tsx";
 import { type MapLayers, useRideFilter } from "#/components/rides/ride-filter.tsx";
 import { useGeolocation, type GeoState } from "#/hooks/use-geolocation.ts";
+import { useNavTestToolsEnabled } from "#/integrations/posthog/feature-flags.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { cn } from "#/lib/utils.ts";
 import { lazyWithReload } from "#/lib/lazy-with-reload.tsx";
@@ -90,6 +92,11 @@ function useMapStage() {
 // Length of the hero⇄card morph. Snappy, then the camera fly follows (see
 // MORPH_MS in park-map.tsx, kept in lockstep so the fly waits for the box).
 export const MORPH_MS = 420;
+
+// How far (metres) the user must move from the last-routed origin before we
+// recompute the walking route mid-trip. Small enough that turns update promptly,
+// large enough that a jittery GPS fix or a step in place won't re-hit Valhalla.
+const REROUTE_MIN_MOVE_M = 20;
 
 /**
  * The last map-bearing route the user viewed, so a ride page's "back" affordances
@@ -292,7 +299,12 @@ export function MapStageProvider({
   }, [playActive, battleMarkId, dropAt]);
   // One geolocation watch for the whole app, owned here so it survives the map
   // moving between routes. Never auto-prompts — the locate button calls locate().
-  const geo = useGeolocation({ watch: true });
+  const geo = useGeolocation({ watch: true, rememberActive: true });
+  // Nav QA tools (the local-routing destination picker): always on in dev, and
+  // in prod for accounts with the `nav-test-tools` PostHog flag — so it can be
+  // dogfooded on a phone without shipping it to everyone.
+  const navTestTools = useNavTestToolsEnabled();
+  const showNavTest = import.meta.env.DEV || navTestTools;
   const userLocation =
     geo.state.status === "granted"
       ? { coords: geo.state.coords, accuracy: geo.state.accuracy, heading: geo.state.heading }
@@ -383,6 +395,21 @@ export function MapStageProvider({
   const swapEnds = React.useCallback(() => {
     setTrip((t) => (t ? { from: t.to, to: t.from } : t));
   }, []);
+  // Live re-routing. Once navigating (Start tapped), re-key the trip origin to
+  // the user's current position whenever they've walked past REROUTE_MIN_MOVE_M
+  // from where we last routed. Re-keying refetches `routing.route`, so the ETA,
+  // remaining distance, and the "next turn" (== the first maneuver *from here*)
+  // all stay current as they move. Throttled by distance — not every GPS tick —
+  // so we don't spam Valhalla or re-frame; the follow-cam does the smooth
+  // per-tick recenter. Preview (before Start) keeps its frozen snapshot origin.
+  React.useEffect(() => {
+    if (!started || geo.state.status !== "granted") return;
+    const here = geo.state.coords;
+    setTrip((t) => {
+      if (!t || distanceMeters(here, t.from.coords) < REROUTE_MIN_MOVE_M) return t;
+      return { ...t, from: { ...t.from, coords: here } };
+    });
+  }, [geo.state, started]);
   // While navigating (a resolved trip, or waiting on a location fix for a
   // pending one), the green nav UI takes over and the filter chrome hides.
   const navigating = trip != null || pendingDest != null;
@@ -586,6 +613,16 @@ export function MapStageProvider({
                 {roamFocusSlug && <MapToggleChips />}
               </div>
             )}
+            {/* Nav QA tool: quick-destination picker for testing walking
+                directions from your real location. On in dev, and in prod for
+                accounts with the `nav-test-tools` flag (see `showNavTest`). */}
+            {showNavTest && attached && engine && (
+              <DevLocationPanel
+                activeDest={trip?.to ?? null}
+                onNavigate={(d) => requestDirections({ id: -1, name: d.name, coords: d.coords })}
+                onEndNav={clearTrip}
+              />
+            )}
             {attached && engine && (
               <ZoomControl
                 onZoomIn={() => mapRef.current?.zoomIn()}
@@ -598,7 +635,10 @@ export function MapStageProvider({
                 state={geo.state}
                 // While navigating, the locate button doubles as recenter — it
                 // re-engages the follow-cam (and heading-up) after a manual pan.
-                onClick={started ? flyToUser : geo.locate}
+                // Otherwise it's a toggle: on when off, off when already tracking.
+                onClick={
+                  started ? flyToUser : geo.state.status === "granted" ? geo.deactivate : geo.locate
+                }
                 raised={navigating}
               />
             )}
@@ -750,8 +790,15 @@ function LocateButton({
     <button
       type="button"
       onClick={onClick}
-      aria-label="Show my location"
-      title={off ? "Location unavailable — check permissions" : "Show my location"}
+      aria-label={active ? "Hide my location" : "Show my location"}
+      aria-pressed={active}
+      title={
+        off
+          ? "Location unavailable — check permissions"
+          : active
+            ? "Hide my location"
+            : "Show my location"
+      }
       className={cn(
         MAP_CTRL_3D,
         "absolute right-3 z-10 rounded-full",
@@ -1043,8 +1090,10 @@ function NavOverlay({
     if (!canExpand) setExpanded(false);
   }, [canExpand]);
 
-  // Top sign: headline the first maneuver once routed (no live GPS tracking yet,
-  // so "next turn" == first step); otherwise a status line.
+  // Top sign: headline the first maneuver once routed. While navigating the trip
+  // origin re-keys to the live position (see the re-route effect in MapStage), so
+  // the route is recomputed from where you are and its first step *is* the next
+  // turn; otherwise a status line.
   const first = steps[0];
   const HeadIcon = geoBlocked
     ? LocateFixedIcon
@@ -1185,7 +1234,9 @@ function NavOverlay({
             Start
           </button>
         )}
-        {!locating && !geoBlocked && (
+        {/* Swap only in preview — once navigating, the origin re-keys to your
+            live position every fix, so a reversed origin wouldn't stick. */}
+        {!locating && !geoBlocked && !started && (
           <button
             type="button"
             onClick={onSwap}

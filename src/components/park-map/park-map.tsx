@@ -297,6 +297,20 @@ export function ParkMap({
   // Last non-null heading, so a follow-cam rotation holds orientation when the
   // GPS heading briefly drops to null (common when nearly stationary).
   const lastHeadingRef = React.useRef<number | null>(null);
+  // Live mirrors of the follow-cam props, read inside effects that must NOT
+  // re-run when these toggle. Engaging follow shouldn't itself move the camera —
+  // the imperative `flyToLocation` owns the initial zoom-in, and if the per-fix
+  // recenter effect fired on the toggle its zoom-less easeTo would clobber that
+  // fly and snap back to the preview zoom. Reading via refs keeps the recenter
+  // firing only on new fixes.
+  const followRef = React.useRef(follow);
+  followRef.current = follow;
+  const headingUpRef = React.useRef(headingUp);
+  headingUpRef.current = headingUp;
+  // True while an engage fly (flyToLocation) is animating. A GPS fix landing
+  // mid-fly must not fire the zoom-less recenter, which would interrupt the fly
+  // before it reaches the close nav zoom. Cleared on the fly's moveend.
+  const engagingRef = React.useRef(false);
 
   const listQ = useQuery(trpc.parks.list.queryOptions());
   const overviewQ = useQuery(trpc.parks.overview.queryOptions());
@@ -431,13 +445,24 @@ export function ParkMap({
       zoomIn: () => map.zoomIn(),
       zoomOut: () => map.zoomOut(),
       flyToPark: (slug) => flyToPark(slug),
-      flyToLocation: (coords, opts) =>
+      flyToLocation: (coords, opts) => {
+        const dur = opts?.duration ?? 700;
+        engagingRef.current = true;
+        const done = () => {
+          engagingRef.current = false;
+        };
+        // Clear on the fly's end, with a timeout fallback in case the move is a
+        // no-op (already at target) and never fires `moveend` — otherwise a stuck
+        // flag would disable the follow-cam for the rest of the trip.
+        map.once("moveend", done);
+        setTimeout(done, dur + 200);
         map.easeTo({
           center: coords,
           zoom: opts?.zoom ?? map.getZoom(),
           bearing: opts?.bearing ?? map.getBearing(),
-          duration: opts?.duration ?? 700,
-        }),
+          duration: dur,
+        });
+      },
       setBearing: (bearing, opts) => map.easeTo({ bearing, duration: opts?.duration ?? 400 }),
     });
     return () => {
@@ -562,7 +587,10 @@ export function ParkMap({
     routeCoordsRef.current = route ?? null;
     if (!ready) return;
     ensureRoute();
-    if (route && route.length > 1 && mapRef.current) {
+    // Frame the whole route in *preview* only. While following (navigating), a
+    // mid-trip re-route must redraw the line without yanking the camera off the
+    // user — the follow-cam owns the viewport then.
+    if (route && route.length > 1 && mapRef.current && !followRef.current) {
       const b = new maplibregl.LngLatBounds();
       for (const c of route) b.extend(c);
       // Reserve space for the nav overlays (green turn sign + bottom ETA bar,
@@ -1009,15 +1037,17 @@ export function ParkMap({
 
   // Follow-cam: recenter (and, heading-up, rotate) on the user as their fix
   // updates. Only while `follow` is on — a manual pan clears it upstream. Uses a
-  // short easeTo so walking reads as a smooth glide, not teleports.
+  // short easeTo so walking reads as a smooth glide, not teleports. `follow` /
+  // `headingUp` are read via refs (not deps) so toggling them doesn't re-run
+  // this and clobber the engage-time flyToLocation zoom; it fires on new fixes.
   React.useEffect(() => {
     const map = mapRef.current;
-    if (!map || !ready || !follow || !userLocation) return;
-    const bearing = headingUp
+    if (!map || !ready || !followRef.current || !userLocation || engagingRef.current) return;
+    const bearing = headingUpRef.current
       ? (userLocation.heading ?? lastHeadingRef.current ?? map.getBearing())
       : 0;
     map.easeTo({ center: userLocation.coords, bearing, duration: 500 });
-  }, [userLocation, follow, headingUp, ready]);
+  }, [userLocation, ready]);
 
   // Kingdom Hearts play layer — render Darkness spawns (tap → battle) and discovery
   // pins (popup with note + reactions) as plain DOM markers over the roam map.

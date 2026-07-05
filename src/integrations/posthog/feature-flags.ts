@@ -19,6 +19,13 @@ import { useEffect, useState } from "react";
 export const FeatureFlag = {
   /** The in-park location/AR "Living Layer" experience (docs/plans/living-layer). */
   LIVING_LAYER: "living-layer",
+  /**
+   * Nav QA affordances for testing walking directions off-site (e.g. the
+   * quick-destination picker for routing from your real location around home
+   * instead of driving to a park). Target it at your own account to dogfood on
+   * a phone; off for everyone else.
+   */
+  NAV_TEST_TOOLS: "nav-test-tools",
 } as const;
 
 export type FeatureFlagKey = (typeof FeatureFlag)[keyof typeof FeatureFlag];
@@ -45,6 +52,26 @@ export function useLivingLayerEnabled(): boolean {
     const update = () => setEnabled(posthog.isFeatureEnabled(FeatureFlag.LIVING_LAYER) ?? false);
     update();
     // Returns an unsubscribe fn; fires whenever flags (re)load, e.g. post-identify.
+    return posthog.onFeatureFlags?.(update);
+  }, [posthog]);
+
+  return enabled;
+}
+
+/**
+ * True when the nav QA tools should be shown to this user. Same SSR-safe,
+ * effect-evaluated pattern as {@link useLivingLayerEnabled} — starts `false`,
+ * flips once PostHog resolves the `nav-test-tools` flag. Local dev callers can
+ * OR this with `import.meta.env.DEV` so the tools are always on locally.
+ */
+export function useNavTestToolsEnabled(): boolean {
+  const posthog = usePostHog();
+  const [enabled, setEnabled] = useState(false);
+
+  useEffect(() => {
+    if (!posthog || typeof posthog.isFeatureEnabled !== "function") return;
+    const update = () => setEnabled(posthog.isFeatureEnabled(FeatureFlag.NAV_TEST_TOOLS) ?? false);
+    update();
     return posthog.onFeatureFlags?.(update);
   }, [posthog]);
 
