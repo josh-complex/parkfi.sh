@@ -292,6 +292,19 @@ export function poiKind(category: string): MapItemKind {
  * our own ride page (`rideHref`); the renderer intercepts its click (`data-spa`)
  * for client-side navigation.
  */
+/**
+ * The in-card "Directions" button. Routes from the user's location to the point;
+ * the renderer intercepts the click (marked `data-directions`) and reads the
+ * destination from the data attributes. Empty string when we have no coordinates
+ * to route to. A 3D-embossed button matching our `Button` primitive (border-3d /
+ * shadow-3d), in blue to pair with the "More info"/"Details" link. Hand-written
+ * classes rather than the React <Button> because the card body is injected HTML.
+ */
+export function directionsButtonHtml(lng: number | null, lat: number | null): string {
+  if (lng == null || lat == null) return "";
+  return `<button type="button" data-directions data-lng="${lng}" data-lat="${lat}" class="relative top-0 inline-flex shrink-0 items-center justify-center gap-1 rounded-full border-3d shadow-3d h-8 px-3.5 text-[12px] font-semibold whitespace-nowrap text-white outline-none select-none bg-blue-600 hover:bg-blue-500 [--btn-3d:var(--color-blue-800)] [--btn-glare:oklch(1_0_0_/_0.28)] transition-[box-shadow,top,background-color] duration-150 ease-out hover:-top-px hover:shadow-3d-hover active:top-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active">Directions</button>`;
+}
+
 export function attractionCardBodyHtml(a: BoardItem, waitLabel: string, rideHref: string): string {
   const meta = a.meta;
   const tags =
@@ -313,16 +326,7 @@ export function attractionCardBodyHtml(a: BoardItem, waitLabel: string, rideHref
         `<div class="${i === 0 ? "mt-1 " : ""}text-[11px] text-muted-foreground">${escapeHtml(bit as string)}</div>`,
     )
     .join("");
-  // "Directions" routes from the user's location to this attraction; the renderer
-  // intercepts the click (marked `data-directions`) and reads the destination from
-  // the data attributes. Only shown when we have coordinates to route to.
-  // A 3D-embossed button matching our `Button` primitive (border-3d / shadow-3d),
-  // in blue to pair with the "More info" link. We hand-write the classes rather
-  // than mount the React <Button> because the card body is an injected HTML string.
-  const directions =
-    a.latitude != null && a.longitude != null
-      ? `<button type="button" data-directions data-lng="${a.longitude}" data-lat="${a.latitude}" class="relative top-0 inline-flex shrink-0 items-center justify-center gap-1 rounded-full border-3d shadow-3d h-8 px-3.5 text-[12px] font-semibold whitespace-nowrap text-white outline-none select-none bg-blue-600 hover:bg-blue-500 [--btn-3d:var(--color-blue-800)] [--btn-glare:oklch(1_0_0_/_0.28)] transition-[box-shadow,top,background-color] duration-150 ease-out hover:-top-px hover:shadow-3d-hover active:top-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active">Directions</button>`
-      : "";
+  const directions = directionsButtonHtml(a.longitude, a.latitude);
   const moreInfo = `<a href="${escapeHtml(
     rideHref,
   )}" data-spa class="text-[13px] font-medium text-blue-600 hover:underline">More info →</a>`;
@@ -871,7 +875,12 @@ export function poiCardBodyHtml(poi: PoiItem): string {
       : `<a href="/dining/${escapeHtml(poi.id)}" data-spa data-dining-id="${escapeHtml(
           poi.id,
         )}" class="text-[13px] font-medium text-blue-600 hover:underline">Details →</a>`;
-  const actions = link ? `<div class="mt-3 flex items-center gap-2">${link}</div>` : "";
+  // Shops/dining route from the user's location too — same button as rides.
+  const directions = directionsButtonHtml(poi.longitude, poi.latitude);
+  const actions =
+    directions || link
+      ? `<div class="mt-3 flex items-center gap-2">${directions}${link}</div>`
+      : "";
   return `<div class="text-[15px] font-semibold leading-tight text-card-foreground">${escapeHtml(
     poi.name,
   )}</div><div class="mt-1 text-[12px] text-muted-foreground">${escapeHtml(

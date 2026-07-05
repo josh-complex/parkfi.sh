@@ -850,6 +850,22 @@ export function ParkMap({
                   else if (diningId)
                     void navigate({ to: "/dining/$facilityId", params: { facilityId: diningId } });
                 });
+              // "Directions" routes from the user's location to this POI, same as
+              // rides. Negative ids keep POIs clear of the attraction id space.
+              card
+                .querySelector<HTMLButtonElement>("[data-directions]")
+                ?.addEventListener("click", (e) => {
+                  e.preventDefault();
+                  if (poi.longitude != null && poi.latitude != null) {
+                    onRequestDirectionsRef.current?.({
+                      id: -(i + 1),
+                      name: poi.name,
+                      coords: [poi.longitude, poi.latitude],
+                    });
+                  }
+                  close();
+                  cardRef.current = null;
+                });
             },
             // POIs never anchor a cluster over a ride — a nearby ride heads the
             // group, the POI folds under its dot.

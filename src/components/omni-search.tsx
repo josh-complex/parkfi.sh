@@ -57,6 +57,47 @@ const GROUP_ICON: Record<Group, ReactNode> = {
   Blog: <NewspaperIcon />,
 };
 
+// On mobile the drawer is a `vh`-sized bottom sheet, but the on-screen keyboard
+// overlays the layout viewport (Android/iOS) without shrinking it — so an 85vh
+// drawer keeps its full height and its lower half (most of the results) hides
+// behind the keyboard. Track the *visual* viewport and, while the keyboard is
+// up, size the panel to exactly the space above it so every available row shows.
+// Vaul's own `repositionInputs` heuristic underuses that space, so we drive it
+// ourselves and turn vaul's version off (see the `repositionInputs={false}`).
+function useKeyboardAwareDrawer(open: boolean): React.CSSProperties | undefined {
+  const [style, setStyle] = React.useState<React.CSSProperties>();
+
+  React.useEffect(() => {
+    const vv = window.visualViewport;
+    if (!open || !vv) {
+      setStyle(undefined);
+      return;
+    }
+    // Gap kept above the panel so it doesn't run into the status bar.
+    const TOP_GAP = 8;
+    // URL-bar show/hide also resizes the visual viewport; only treat a large
+    // bottom inset as a keyboard so we don't resize on chrome collapse.
+    const KEYBOARD_THRESHOLD = 150;
+    const update = () => {
+      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      if (inset < KEYBOARD_THRESHOLD) {
+        setStyle(undefined); // keyboard closed → fall back to the h-[85vh] class
+        return;
+      }
+      setStyle({ height: `${vv.height - TOP_GAP}px`, bottom: `${inset}px` });
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, [open]);
+
+  return style;
+}
+
 function formatPrice(price: number, currency: string | null): string {
   try {
     return new Intl.NumberFormat("en-US", {
@@ -113,6 +154,7 @@ export function OmniSearch({
   const trpc = useTRPC();
   const isMobile = useIsMobile();
   const listRef = React.useRef<HTMLDivElement>(null);
+  const drawerStyle = useKeyboardAwareDrawer(open && isMobile);
 
   // The palette renders through a portal into `document.body`, which doesn't
   // exist during SSR. Gate it on a client-mounted flag so the server (and the
@@ -437,8 +479,12 @@ export function OmniSearch({
       {/* Mobile: a bottom drawer — easier to reach, full-width, denser type.
           Desktop: the morphing centered palette. */}
       {isMobile ? (
-        <Drawer open={open} onOpenChange={(o) => (o ? setOpen(true) : close())}>
-          <DrawerContent className="h-[85vh]">
+        <Drawer
+          open={open}
+          onOpenChange={(o) => (o ? setOpen(true) : close())}
+          repositionInputs={false}
+        >
+          <DrawerContent className="h-[85vh]" style={drawerStyle}>
             <DrawerTitle className="sr-only">Search</DrawerTitle>
             <DrawerDescription className="sr-only">
               Search across parks, attractions, dining, and posts
