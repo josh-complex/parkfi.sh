@@ -91,7 +91,7 @@ function PickCard({
         {nextAvail && (
           <Badge className="absolute bottom-2 left-2 gap-1 bg-emerald-500 text-white text-xs font-normal border-0 shadow">
             <CalendarDaysIcon className="size-3" />
-            Available {nextAvail}
+            {nextAvail}
           </Badge>
         )}
       </div>
@@ -152,7 +152,7 @@ export function DiningPicks() {
 
   if (picksQ.isLoading) {
     return (
-      <div className="flex flex-col gap-10">
+      <div className="flex flex-col gap-4">
         {Array.from({ length: 3 }).map((_, g) => (
           <div key={g} className="flex flex-col gap-4">
             <Skeleton className="h-6 w-56" />
@@ -171,18 +171,25 @@ export function DiningPicks() {
   if (!shelves.length) return null;
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-4">
       {shelves.map((shelf) => (
-        <Carousel key={shelf.key} opts={{ align: "start", dragFree: true }} className="w-full">
-          <section className="flex flex-col gap-3 py-4">
-            <div className="flex items-end justify-between gap-4">
+        <Carousel
+          key={shelf.key}
+          opts={{ align: "start", dragFree: true }}
+          className="-mx-4 lg:-mx-6"
+        >
+          <section className="flex flex-col gap-3">
+            <div className="flex items-end justify-between gap-4 px-4 lg:px-6">
               <div className="flex flex-col gap-0.5">
                 <h3 className="text-lg font-semibold tracking-tight">{shelf.title}</h3>
                 <p className="text-muted-foreground text-sm">{shelf.subtitle}</p>
               </div>
               <CarouselArrows className="hidden md:flex" />
             </div>
-            <CarouselContent className="-ml-4">
+            <CarouselContent
+              className="-ml-4"
+              viewportClassName="px-4 lg:px-6 [mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%_-_1.5rem),transparent)]"
+            >
               {shelf.venues.map((v) => (
                 <CarouselItem
                   key={v.facilityId}

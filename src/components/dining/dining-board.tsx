@@ -42,7 +42,7 @@ function today(): string {
 function BrowseView({ isLoading }: { isLoading: boolean }) {
   if (isLoading) {
     return (
-      <div className="flex flex-col gap-10">
+      <div className="flex flex-col gap-4">
         {Array.from({ length: 3 }).map((_, g) => (
           <div key={g} className="flex flex-col gap-4">
             <Skeleton className="h-6 w-56" />
@@ -57,7 +57,7 @@ function BrowseView({ isLoading }: { isLoading: boolean }) {
     );
   }
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <DiningRecentlyUpdated />
       <DiningPicks />
     </div>

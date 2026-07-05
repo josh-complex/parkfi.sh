@@ -30,9 +30,9 @@ export function DiningRecentlyUpdated() {
   if (!venues.length) return null;
 
   return (
-    <Carousel opts={{ align: "start", dragFree: true }} className="w-full">
-      <section className="flex flex-col gap-3 py-4">
-        <div className="flex items-end justify-between gap-4">
+    <Carousel opts={{ align: "start", dragFree: true }} className="-mx-4 lg:-mx-6">
+      <section className="flex flex-col gap-3">
+        <div className="flex items-end justify-between gap-4 px-4 lg:px-6">
           <div className="flex flex-col gap-0.5">
             <h3 className="text-lg font-semibold tracking-tight">Recently updated menus</h3>
             <p className="text-muted-foreground text-sm">
@@ -41,7 +41,10 @@ export function DiningRecentlyUpdated() {
           </div>
           <CarouselArrows className="hidden md:flex" />
         </div>
-        <CarouselContent className="-ml-4">
+        <CarouselContent
+          className="-ml-4"
+          viewportClassName="px-4 lg:px-6 [mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%_-_1.5rem),transparent)]"
+        >
           {venues.map((v) => (
             <CarouselItem
               key={v.facilityId}
