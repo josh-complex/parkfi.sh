@@ -110,9 +110,9 @@ export const SORT_LABELS: Record<SortKey, string> = {
 export type Operator = "ALL" | "disney" | "universal";
 
 export const OPERATOR_LABELS: Record<Operator, string> = {
-  ALL: "All parks",
-  disney: "Disney Parks",
-  universal: "Universal Parks",
+  ALL: "All",
+  disney: "Disney",
+  universal: "Universal",
 };
 
 export type AvailabilityFilter = "ALL" | "today" | "window";

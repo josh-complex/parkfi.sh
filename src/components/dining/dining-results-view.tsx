@@ -60,7 +60,6 @@ export function ResultsView({
   availabilityMap,
   hoursMap,
   nowMin,
-  windowDays,
   referenceDate,
   total,
   hasRestaurants,
@@ -76,7 +75,6 @@ export function ResultsView({
   availabilityMap: AvailabilityMap;
   hoursMap: HoursMap;
   nowMin: number;
-  windowDays: number;
   referenceDate: string;
   total: number;
   hasRestaurants: boolean;
@@ -178,7 +176,6 @@ export function ResultsView({
                 key={r.facilityId}
                 restaurant={r}
                 availability={availabilityMap.get(r.facilityId)}
-                windowDays={windowDays}
                 referenceDate={referenceDate}
                 schedules={hoursMap.get(r.facilityId)}
                 nowMin={nowMin}

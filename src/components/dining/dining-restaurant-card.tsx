@@ -18,13 +18,6 @@ import {
   type ScheduleEntry,
 } from "#/components/dining/dining-hours.ts";
 import { Badge } from "#/components/ui/badge.tsx";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "#/components/ui/card.tsx";
 import { cn } from "#/lib/utils.ts";
 
 export function AvailabilityCalendar({
@@ -70,41 +63,42 @@ export function AvailabilityCalendar({
 }
 
 function RestaurantTagBadges({ restaurant }: { restaurant: Restaurant }) {
+  const tag =
+    "border-0 bg-background/85 text-foreground text-[11px] font-medium shadow-sm backdrop-blur-sm";
   return (
     <>
       {restaurant.requiresParkTicket && (
-        <Badge className="bg-yellow-400 text-black text-xs font-normal border-0 shadow-none">
+        <Badge className="bg-yellow-400 text-black text-[11px] font-medium border-0 shadow-sm">
           Needs Park Entry
         </Badge>
       )}
-      {restaurant.characterDining && (
-        <Badge className="bg-black/60 text-white text-xs font-normal border-0 shadow-none backdrop-blur-sm">
-          Characters
-        </Badge>
-      )}
-      {restaurant.dinnerShow && (
-        <Badge className="bg-black/60 text-white text-xs font-normal border-0 shadow-none backdrop-blur-sm">
-          Dinner show
-        </Badge>
-      )}
-      {restaurant.diningPackage && (
-        <Badge className="bg-black/60 text-white text-xs font-normal border-0 shadow-none backdrop-blur-sm">
-          Package
-        </Badge>
-      )}
-      {restaurant.fineDining && (
-        <Badge className="bg-black/60 text-white text-xs font-normal border-0 shadow-none backdrop-blur-sm">
-          Signature
-        </Badge>
-      )}
+      {restaurant.characterDining && <Badge className={tag}>Characters</Badge>}
+      {restaurant.dinnerShow && <Badge className={tag}>Dinner show</Badge>}
+      {restaurant.diningPackage && <Badge className={tag}>Package</Badge>}
+      {restaurant.fineDining && <Badge className={tag}>Signature</Badge>}
     </>
   );
+}
+
+/**
+ * Label for the soonest available day: "Reservations available today", "…this Thu"
+ * (within the next week), or "…Jul 15" (a specific date more than a week out).
+ */
+function nextAvailableLabel(days: Array<DayEntry>, referenceDate: string): string | null {
+  const next = days.find((d) => d.available);
+  if (!next) return null;
+  const prefix = "Reservations available";
+  if (next.date === referenceDate) return `${prefix} today`;
+  const ref = new Date(`${referenceDate}T00:00:00`);
+  const day = new Date(`${next.date}T00:00:00`);
+  const diff = Math.round((day.getTime() - ref.getTime()) / 86_400_000);
+  if (diff < 7) return `${prefix} this ${day.toLocaleDateString("en-US", { weekday: "short" })}`;
+  return `${prefix} ${day.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
 }
 
 export function RestaurantCard({
   restaurant,
   availability,
-  windowDays,
   referenceDate,
   schedules,
   nowMin,
@@ -113,7 +107,6 @@ export function RestaurantCard({
 }: {
   restaurant: Restaurant;
   availability: AvailabilityEntry | undefined;
-  windowDays: number;
   referenceDate: string;
   schedules: Array<ScheduleEntry> | undefined;
   nowMin: number;
@@ -125,6 +118,7 @@ export function RestaurantCard({
     .join(" · ");
   const todayHours = schedules ? hoursLabel(schedules) : null;
   const openNow = schedules ? isOpenNow(schedules, nowMin) : false;
+  const availLabel = availability ? nextAvailableLabel(availability.days, referenceDate) : null;
 
   const hasTags =
     restaurant.requiresParkTicket ||
@@ -134,101 +128,89 @@ export function RestaurantCard({
     restaurant.fineDining;
 
   return (
-    <Card className="@container/card overflow-hidden pt-0 gap-2 pb-2">
-      {restaurant.imageUrl && (
-        <div className="bg-muted relative h-32 w-full overflow-hidden">
+    <div className="group flex gap-3">
+      {/* Uber-style row: compact image on the left, details on the right */}
+      <Link
+        to="/dining/$facilityId"
+        params={{ facilityId: restaurant.facilityId }}
+        className="bg-muted relative block w-[7.5rem] shrink-0 self-stretch overflow-hidden rounded-2xl outline-none sm:w-[9.5rem]"
+      >
+        {restaurant.imageUrl ? (
           <img
             src={restaurant.imageUrl}
             alt={restaurant.name}
             loading="lazy"
-            className="size-full object-cover"
+            className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
           />
-          {restaurant.priceRange && (
-            <Badge className="absolute top-2 left-2 bg-black/60 text-white text-xs font-normal border-0 shadow-none backdrop-blur-sm">
-              {priceTier(restaurant.priceRange)}
-            </Badge>
-          )}
-          {todayHours &&
-            (openNow ? (
-              <Badge className="absolute top-2 right-2 bg-emerald-500 text-white shadow">
-                Open · {todayHours}
-              </Badge>
-            ) : (
-              <Badge variant="secondary" className="absolute top-2 right-2 shadow">
-                Closed · {todayHours}
-              </Badge>
-            ))}
-          {hasTags && (
-            <div className="absolute bottom-2 left-2 flex flex-wrap gap-1">
-              <RestaurantTagBadges restaurant={restaurant} />
-            </div>
-          )}
-        </div>
-      )}
-      <CardHeader
-        className={cn("px-3 sm:px-4 pb-1", restaurant.imageUrl ? "pt-2 sm:pt-3" : "pt-3 sm:pt-4")}
-      >
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <CardTitle className="line-clamp-1 text-base sm:text-lg">
-              <Link
-                to="/dining/$facilityId"
-                params={{ facilityId: restaurant.facilityId }}
-                className="hover:underline"
-              >
-                {restaurant.name}
-              </Link>
-            </CardTitle>
-            <CardDescription className="mt-0.5 line-clamp-1">{subtitle}</CardDescription>
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            {!restaurant.imageUrl && todayHours && openNow && (
-              <Badge className="bg-emerald-500 text-white shrink-0">Open · {todayHours}</Badge>
-            )}
-            <DiningAlertButton
-              facilityId={restaurant.facilityId}
-              restaurantName={restaurant.name}
-              defaultPartySize={defaultPartySize}
-              loggedIn={loggedIn}
-            />
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="px-3 sm:px-4 flex flex-col gap-1 pt-0 pb-2">
-        {availability ? (
-          <AvailabilityCalendar
-            days={availability.days}
-            windowDays={windowDays}
-            referenceDate={referenceDate}
-          />
-        ) : (
-          <p className="text-xs text-muted-foreground">No observations yet</p>
+        ) : null}
+        {restaurant.priceRange && (
+          <Badge
+            variant="secondary"
+            className="absolute top-2 left-2 bg-background/85 text-[11px] font-medium shadow-sm backdrop-blur-sm"
+          >
+            {priceTier(restaurant.priceRange)}
+          </Badge>
         )}
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          {availability ? (
-            <span className="flex items-center gap-1.5">
-              <span className="size-2 rounded-sm bg-primary shrink-0" />
-              Reservations available
-            </span>
-          ) : (
-            <span>No availability data</span>
-          )}
-          {!restaurant.imageUrl && restaurant.priceRange && (
-            <Badge variant="outline" className="font-normal text-xs shrink-0">
-              {priceTier(restaurant.priceRange)}
-            </Badge>
-          )}
-        </div>
-        {!restaurant.imageUrl && hasTags && (
-          <div className="flex flex-wrap gap-1">
+        {hasTags && (
+          <div className="absolute bottom-2 left-2 flex flex-col items-start gap-1">
             <RestaurantTagBadges restaurant={restaurant} />
           </div>
         )}
-        {restaurant.hasMenu && (
-          <DiningMenuDrawer facilityId={restaurant.facilityId} name={restaurant.name} />
+      </Link>
+
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <div className="min-w-0">
+          <Link
+            to="/dining/$facilityId"
+            params={{ facilityId: restaurant.facilityId }}
+            className="line-clamp-1 text-sm font-medium group-hover:underline sm:text-base"
+          >
+            {restaurant.name}
+          </Link>
+          <p className="text-muted-foreground mt-0.5 line-clamp-1 text-xs">{subtitle}</p>
+        </div>
+
+        {todayHours && (
+          <span
+            className={cn(
+              "text-xs font-medium",
+              openNow ? "text-emerald-600" : "text-muted-foreground",
+            )}
+          >
+            {openNow ? "Open" : "Closed"} · {todayHours}
+          </span>
         )}
-      </CardContent>
-    </Card>
+
+        <span className="flex items-center gap-1.5 text-xs">
+          {availLabel ? (
+            <>
+              <span className="bg-primary size-2 shrink-0 rounded-sm" />
+              <span className="font-medium">{availLabel}</span>
+            </>
+          ) : (
+            <span className="text-muted-foreground">
+              {availability ? "No tables in range" : "No observations yet"}
+            </span>
+          )}
+        </span>
+
+        <div className="mt-auto flex items-center gap-2 pt-0.5">
+          {restaurant.hasMenu ? (
+            <div className="flex-1">
+              <DiningMenuDrawer facilityId={restaurant.facilityId} name={restaurant.name} />
+            </div>
+          ) : (
+            <div className="flex-1" />
+          )}
+          <DiningAlertButton
+            facilityId={restaurant.facilityId}
+            restaurantName={restaurant.name}
+            defaultPartySize={defaultPartySize}
+            loggedIn={loggedIn}
+          />
+        </div>
+      </div>
+    </div>
   );
 }
 

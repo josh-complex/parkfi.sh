@@ -58,12 +58,14 @@ const GROUP_ICON: Record<Group, ReactNode> = {
 };
 
 // On mobile the drawer is a `vh`-sized bottom sheet, but the on-screen keyboard
-// overlays the layout viewport (Android/iOS) without shrinking it — so an 85vh
-// drawer keeps its full height and its lower half (most of the results) hides
-// behind the keyboard. Track the *visual* viewport and, while the keyboard is
-// up, size the panel to exactly the space above it so every available row shows.
-// Vaul's own `repositionInputs` heuristic underuses that space, so we drive it
-// ourselves and turn vaul's version off (see the `repositionInputs={false}`).
+// overlays the layout viewport (Android's default `resizes-visual`, iOS) without
+// shrinking it — so an 85vh drawer keeps its full height and its lower half
+// (most of the results) hides behind the keyboard. We size the panel straight
+// off the *visual* viewport instead: when the keyboard is up we fill the whole
+// band above it; otherwise we keep the usual ~85% sheet. Driving both height and
+// the bottom offset ourselves (and turning vaul's own `repositionInputs`
+// heuristic off) is what actually reclaims the space — vaul only shrinks the
+// panel to `visualViewport − 15vh`, leaving a large dead gap up top.
 function useKeyboardAwareDrawer(open: boolean): React.CSSProperties | undefined {
   const [style, setStyle] = React.useState<React.CSSProperties>();
 
@@ -75,16 +77,25 @@ function useKeyboardAwareDrawer(open: boolean): React.CSSProperties | undefined 
     }
     // Gap kept above the panel so it doesn't run into the status bar.
     const TOP_GAP = 8;
-    // URL-bar show/hide also resizes the visual viewport; only treat a large
-    // bottom inset as a keyboard so we don't resize on chrome collapse.
+    // URL-bar show/hide also resizes the visual viewport; only a large bottom
+    // inset (present in `resizes-visual` mode) counts as an open keyboard.
     const KEYBOARD_THRESHOLD = 150;
     const update = () => {
       const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      if (inset < KEYBOARD_THRESHOLD) {
-        setStyle(undefined); // keyboard closed → fall back to the h-[85vh] class
-        return;
-      }
-      setStyle({ height: `${vv.height - TOP_GAP}px`, bottom: `${inset}px` });
+      const keyboardOpen = inset >= KEYBOARD_THRESHOLD;
+      // Keyboard up → fill the visible band above it. Keyboard down → the
+      // familiar tall sheet, but measured off the visual viewport so a collapsed
+      // URL bar (or `resizes-content` mode, where the inset stays ~0) still fits.
+      const height = keyboardOpen ? vv.height - TOP_GAP : Math.round(vv.height * 0.85);
+      setStyle({
+        height: `${height}px`,
+        // `bottom-0` sits behind the keyboard in `resizes-visual`; lift the panel
+        // by the inset so its base rests on the keyboard's top edge.
+        bottom: `${inset}px`,
+        // Defeat the drawer's base `max-h-[80vh]`, which would otherwise cap the
+        // height we just computed.
+        maxHeight: "none",
+      });
     };
     update();
     vv.addEventListener("resize", update);

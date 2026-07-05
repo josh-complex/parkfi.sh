@@ -188,7 +188,6 @@ export function DiningBoard() {
             availabilityMap={availabilityMap}
             hoursMap={hoursMap}
             nowMin={nowMin}
-            windowDays={days}
             referenceDate={referenceDate}
             total={visible.length}
             hasRestaurants={!!restaurants?.length}

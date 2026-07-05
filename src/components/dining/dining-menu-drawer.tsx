@@ -58,7 +58,7 @@ function DesktopMenuDialog({ facilityId, name }: { facilityId: string; name: str
         className={cn(buttonVariants({ variant: "outline", size: "sm" }), "w-full")}
         aria-label={`View menu for ${name}`}
       >
-        View menu
+        Menu
       </motion.button>
 
       {createPortal(
@@ -145,7 +145,7 @@ function MobileMenuDrawer({ facilityId, name }: { facilityId: string; name: stri
     <Drawer open={open} onOpenChange={setOpen}>
       <DrawerTrigger asChild>
         <Button variant="outline" size="sm" className="w-full">
-          View menu
+          Menu
         </Button>
       </DrawerTrigger>
       <DrawerContent className="flex max-h-[90vh] flex-col">
