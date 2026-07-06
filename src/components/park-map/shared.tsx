@@ -20,6 +20,7 @@ import {
   RollerCoasterIcon,
   ShoppingBagIcon,
   SmileIcon,
+  SparklesIcon,
   TicketIcon,
   TreesIcon,
   UtensilsIcon,
@@ -132,6 +133,11 @@ const CATEGORY_ICON = {
   shop: ShoppingBagIcon,
   character: SmileIcon,
   info: InfoIcon,
+  // POI overlay categories (park_poi): entertainment (parades/fireworks/shows)
+  // and hard-ticket events + tours. Guest services use `info`; character meets
+  // reuse `character`.
+  entertainment: SparklesIcon,
+  tour: TicketIcon,
 } as const;
 
 function categoryIconSvg(category: string | null, size = 14): string {
@@ -263,12 +269,22 @@ export function attractionPriority(a: BoardItem): number {
  * toggle pill (`map-stage`) and its cluster overflow dot (`declutter`), so a dot
  * always reads as the same category its chip lit.
  */
-export type MapItemKind = "rides" | "shows" | "shops" | "eats";
+export type MapItemKind =
+  | "rides"
+  | "shows"
+  | "shops"
+  | "eats"
+  | "services"
+  | "entertainment"
+  | "tours";
 export const MAP_TYPE_COLOR: Record<MapItemKind, string> = {
   rides: "#2563eb", // blue
   shows: "#e11d48", // rose
   shops: "#9333ea", // violet — matches the shop POI ring
   eats: "#d97706", // amber — matches the dining POI ring
+  services: "#0d9488", // teal — guest-service POIs
+  entertainment: "#c026d3", // fuchsia — parades/fireworks/character-meet POIs
+  tours: "#059669", // emerald — events + tours POIs
 };
 
 // Attraction categories that roll up into the "Shows" group; everything else
@@ -280,9 +296,27 @@ export function attractionKind(category: string | null): MapItemKind {
   return category && SHOW_KIND_CATEGORIES.has(category) ? "shows" : "rides";
 }
 
-/** Which toggle group a POI belongs to ("Shops" vs "Eats" — dining/characters). */
+/**
+ * Which toggle group a POI belongs to — drives the cluster overflow-dot colour.
+ * Dining venues (`dine`, plus dining character spots keyed `characters`) are
+ * "eats"; shops "shops"; and the `park_poi` overlays map to their own groups:
+ * guest services (`info`) → services, character meets (`character`, singular) +
+ * `entertainment` → entertainment, `tour` → tours.
+ */
 export function poiKind(category: string): MapItemKind {
-  return category === "shop" ? "shops" : "eats";
+  switch (category) {
+    case "shop":
+      return "shops";
+    case "info":
+      return "services";
+    case "tour":
+      return "tours";
+    case "entertainment":
+    case "character":
+      return "entertainment";
+    default:
+      return "eats";
+  }
 }
 
 /**
@@ -877,7 +911,8 @@ export type PoiItem = {
   latitude: number | null;
   longitude: number | null;
   land: string | null;
-  /** finder map-pin: 'dine' | 'characters' | 'shop'. */
+  /** Map-pin class: 'dine' | 'characters' | 'shop' (facility layers) or an
+   *  overlay POI class 'info' | 'entertainment' | 'character' | 'tour'. */
   category: string;
   imageUrl: string | null;
   detailUrl?: string | null;
@@ -895,14 +930,34 @@ export type PoiItem = {
  * target ids in data attributes; the renderer intercepts it for client-side nav.
  * Lives in themed DOM (reads correctly in dark).
  */
+// Subtitle label per POI category. `characters` (plural) is a dining character
+// spot; `character` (singular) is a park_poi meet-and-greet.
+const POI_KIND_LABEL: Record<string, string> = {
+  shop: "Shop",
+  characters: "Character Spot",
+  dine: "Dining",
+  info: "Guest Service",
+  entertainment: "Entertainment",
+  character: "Character Meet",
+  tour: "Tour & Event",
+};
+// The park_poi overlay categories: no internal detail page — link out to the
+// operator's own page (new tab) instead of an in-app route.
+const POI_OVERLAY_CATEGORIES = new Set(["info", "entertainment", "character", "tour"]);
+
 export function poiCardBodyHtml(poi: PoiItem): string {
-  const kindLabel =
-    poi.category === "shop" ? "Shop" : poi.category === "characters" ? "Character Spot" : "Dining";
+  const kindLabel = POI_KIND_LABEL[poi.category] ?? "Dining";
   const subtitle = [kindLabel, poi.land].filter(Boolean).join(" · ");
   // Shops key their page on the finder slug; dining on the facility id (our
-  // `/dining/$facilityId` route). A shop missing its slug has no page to link.
-  const link =
-    poi.category === "shop"
+  // `/dining/$facilityId` route); overlay POIs (guest services / entertainment /
+  // tours) have no in-app page, so they link out to the operator's page.
+  const link = POI_OVERLAY_CATEGORIES.has(poi.category)
+    ? poi.detailUrl
+      ? `<a href="${escapeHtml(
+          poi.detailUrl,
+        )}" target="_blank" rel="noopener noreferrer" class="text-[13px] font-medium text-blue-600 hover:underline">Details ↗</a>`
+      : ""
+    : poi.category === "shop"
       ? poi.slug
         ? `<a href="/shop/${escapeHtml(poi.slug)}" data-spa data-shop-slug="${escapeHtml(
             poi.slug,
@@ -931,6 +986,12 @@ const POI_COLOR: Record<string, string> = {
   dine: "#d97706",
   characters: "#db2777",
   shop: "#9333ea",
+  // park_poi overlay categories. `character` (singular) is a meet-and-greet POI,
+  // distinct from dining's `characters` (plural) character-dining spot.
+  info: "#0d9488", // teal — guest services
+  entertainment: "#c026d3", // fuchsia — parades/fireworks/shows
+  character: "#db2777", // pink — character meets
+  tour: "#059669", // emerald — events + tours
 };
 
 /**
@@ -952,13 +1013,19 @@ export function buildPoiEl(poi: PoiItem): { el: HTMLButtonElement; detail: HTMLD
 
   const detail = document.createElement("div");
   detail.className = DETAIL_CLASS;
+  // Photo-less POIs — guest-service utility pins (restrooms, ATMs, chargers)
+  // and the shops/venues the feed carries no image for — render as a small icon
+  // dot (28px) rather than the full 52px disc the photo markers use, so a bare
+  // glyph never sits at the same weight as a real attraction/venue photo.
+  const iconOnly = !poi.imageUrl;
+  const px = iconOnly ? 28 : 52;
   const disc = discMarkup({
     url: poi.imageUrl,
     alt: poi.name,
-    fallbackSvg: categoryIconSvg(iconKey),
+    fallbackSvg: categoryIconSvg(iconKey, iconOnly ? 13 : 14),
     ring: color,
     bg: color,
-    px: 52,
+    px,
   });
   detail.innerHTML = `${disc}${labelMarkup(poi.name, escapeHtml(poi.land ?? ""))}`;
   el.append(detail);

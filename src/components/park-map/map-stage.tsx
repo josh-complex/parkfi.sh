@@ -18,6 +18,7 @@ import {
   CornerUpRightIcon,
   DramaIcon,
   FlagIcon,
+  InfoIcon,
   LoaderCircleIcon,
   LocateFixedIcon,
   MinusIcon,
@@ -26,6 +27,8 @@ import {
   RollerCoasterIcon,
   RotateCwIcon,
   ShoppingBagIcon,
+  SparklesIcon,
+  TicketIcon,
   UtensilsIcon,
   XIcon,
   type LucideIcon,
@@ -1033,6 +1036,15 @@ const MAP_TOGGLES: ReadonlyArray<MapToggle> = [
   { kind: "category", label: "Shows", Icon: DramaIcon, keys: SHOW_CATEGORY_KEYS, color: "shows" },
   { kind: "layer", key: "shops", label: "Shops", Icon: ShoppingBagIcon, color: "shops" },
   { kind: "layer", key: "dining", label: "Eats", Icon: UtensilsIcon, color: "eats" },
+  {
+    kind: "layer",
+    key: "entertainment",
+    label: "Live",
+    Icon: SparklesIcon,
+    color: "entertainment",
+  },
+  { kind: "layer", key: "tours", label: "Tours", Icon: TicketIcon, color: "tours" },
+  { kind: "layer", key: "services", label: "Services", Icon: InfoIcon, color: "services" },
 ];
 
 function MapToggleChips() {

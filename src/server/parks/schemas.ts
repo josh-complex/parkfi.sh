@@ -114,6 +114,14 @@ const DisneyParkMarker = z.object({
   lat: z.union([z.number(), z.string()]).optional(),
   lng: z.union([z.number(), z.string()]).optional(),
   pin: z.string().nullable().optional(),
+  // Marker `type` ('attractions' | 'dining' | 'shops' | 'guest-services' |
+  // 'entertainment' | 'events-tours') + the marker's own `point-of-interest` id
+  // and location-specific display name. Used to land the non-facility markers
+  // (guest-services / entertainment / events-tours) into `park_poi`; the
+  // attraction enrichment path keys off `card.id` and ignores these.
+  type: z.string().nullable().optional(),
+  id: z.string().optional(),
+  name: z.string().nullable().optional(),
   // Three-group array-of-arrays of human-readable labels: experience tags,
   // cuisines/price, and a trailing `[park, land]` location group. Ordering is
   // heuristic (see parseDisneyFacets) so we stay tolerant of shape drift; null
@@ -125,6 +133,8 @@ const DisneyParkMarker = z.object({
     .object({
       id: z.string().optional(),
       name: z.string().optional(),
+      // Finder slug ("first-aid") — keys the operator detail page for POIs.
+      urlFriendlyId: z.string().optional(),
       // `desktop` is the ~90px thumbnail (resizable to hero via its
       // mwImage/1/{w}/{h}/ segment); `url` is the relative attraction-page path.
       media: z

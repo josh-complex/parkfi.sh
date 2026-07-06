@@ -6,7 +6,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as L from "leaflet";
 import { useTheme } from "next-themes";
 
-import { rideMatchesFilter, type RideFilter } from "#/components/rides/ride-filter.tsx";
+import {
+  anyMapLayerActive,
+  rideMatchesFilter,
+  type RideFilter,
+} from "#/components/rides/ride-filter.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { pointInPolygon } from "#/server/living/geofence.ts";
 
@@ -20,7 +24,10 @@ import {
   buildAttractionEl,
   buildDevSpotEl,
   buildParkBadgeEl,
+  buildPoiEl,
   buildUserLocationEl,
+  poiCardBodyHtml,
+  poiKind,
   sameCoords,
   setUserHeading,
   chromePadding,
@@ -271,6 +278,32 @@ export function ParkMapLeaflet({
   const boardQ = useQuery({
     ...trpc.parks.board.queryOptions({ parkSlug: effectiveSlug ?? "" }),
     enabled: !!effectiveSlug,
+  });
+
+  // Optional map overlay layers (dining / shops / POIs), driven by the shared
+  // filter — same as the GL engine. Resort-wide feeds, fetched once a park is
+  // focused and the board has loaded, then clipped to the park boundary at
+  // render; a long staleTime keeps them warm as the user roams.
+  const layers = filter?.layers;
+  const POI_STALE_MS = 30 * 60 * 1000;
+  const poisEnabled = !!effectiveSlug && boardQ.isSuccess;
+  const diningQ = useQuery({
+    ...trpc.parks.dining.queryOptions(),
+    enabled: poisEnabled,
+    staleTime: POI_STALE_MS,
+    gcTime: POI_STALE_MS,
+  });
+  const shopsQ = useQuery({
+    ...trpc.parks.shops.queryOptions(),
+    enabled: poisEnabled,
+    staleTime: POI_STALE_MS,
+    gcTime: POI_STALE_MS,
+  });
+  const poiQ = useQuery({
+    ...trpc.parks.poi.queryOptions(),
+    enabled: poisEnabled,
+    staleTime: POI_STALE_MS,
+    gcTime: POI_STALE_MS,
   });
 
   const parks = listQ.data;
@@ -531,7 +564,7 @@ export function ParkMapLeaflet({
             // (Shops/Eats), deselecting every ride group hides the rides
             // instead of falling back to showing them all. With nothing
             // selected at all we keep the default rides+shows.
-            { emptyCategoriesMatchNone: roam && (filter.layers.shops || filter.layers.dining) },
+            { emptyCategoriesMatchNone: roam && anyMapLayerActive(filter.layers) },
           )
         )
           continue;
@@ -599,6 +632,91 @@ export function ParkMapLeaflet({
           wait: a.status === "OPERATING" && a.standbyWait != null ? a.standbyWait : null,
         });
       }
+
+      // Optional POI overlay layers (dining / shops / guest-services /
+      // entertainment / tours), folded into the SAME cluster as the rides so
+      // they group + collision-avoid together. Clipped to the focused park's
+      // boundary (the resort-wide feed scoped to this park); no boundary → plot
+      // nothing. Negative ids keep them clear of the attraction/park id space.
+      const boundary = parks?.find((p) => p.slug === effectiveSlug)?.boundary ?? null;
+      if (boundary && layers && anyMapLayerActive(layers)) {
+        // The park_poi feed carries all three overlay categories; pick the ones
+        // whose layer is lit (Live folds entertainment + character meets).
+        const overlayPoi = (poiQ.data ?? []).filter(
+          (p) =>
+            (layers.services && p.category === "info") ||
+            (layers.entertainment &&
+              (p.category === "entertainment" || p.category === "character")) ||
+            (layers.tours && p.category === "tour"),
+        );
+        const pois = [
+          ...(layers.dining ? (diningQ.data ?? []) : []),
+          ...(layers.shops ? (shopsQ.data ?? []) : []),
+          ...overlayPoi,
+        ];
+        pois.forEach((poi, i) => {
+          if (poi.latitude == null || poi.longitude == null) return;
+          const lngLat: [number, number] = [poi.longitude, poi.latitude];
+          if (!pointInPolygon(lngLat, boundary)) return;
+          // Actively navigating: show only the destination, hide every other POI.
+          if (navDest && !sameCoords(lngLat, navDest)) return;
+          const latLng: [number, number] = [poi.latitude, poi.longitude];
+          const { el, detail } = buildPoiEl(poi);
+          const marker = L.marker(latLng, { icon: pointIcon(el) }).addTo(map);
+          const raise = makeRaise(el, marker);
+          if (containerRef.current) wireHoverLabelFlip(el, containerRef.current);
+          markersRef.current.push(marker);
+          items.push({
+            id: -(i + 1),
+            point: () => map.latLngToLayerPoint(latLng),
+            detail,
+            raise,
+            onActivate: () => {
+              cardRef.current?.close();
+              if (!containerRef.current) return;
+              raise(true);
+              const { card, close } = openAttractionCard({
+                detail,
+                container: containerRef.current,
+                bodyHtml: poiCardBodyHtml(poi),
+                wasSelected: false,
+                onClose: () => raise(false),
+              });
+              cardRef.current = { close };
+              // Internal shop/dining links carry data-spa; overlay POIs link out
+              // to the operator (a plain target=_blank anchor the browser handles).
+              card
+                .querySelector<HTMLAnchorElement>("[data-spa]")
+                ?.addEventListener("click", (e) => {
+                  e.preventDefault();
+                  const link = e.currentTarget as HTMLAnchorElement;
+                  const shopSlug = link.getAttribute("data-shop-slug");
+                  const diningId = link.getAttribute("data-dining-id");
+                  if (shopSlug) void navigate({ to: "/shop/$slug", params: { slug: shopSlug } });
+                  else if (diningId)
+                    void navigate({ to: "/dining/$facilityId", params: { facilityId: diningId } });
+                });
+              card
+                .querySelector<HTMLButtonElement>("[data-directions]")
+                ?.addEventListener("click", (e) => {
+                  e.preventDefault();
+                  if (poi.longitude != null && poi.latitude != null) {
+                    onRequestDirectionsRef.current?.({
+                      id: -(i + 1),
+                      name: poi.name,
+                      coords: [poi.longitude, poi.latitude],
+                    });
+                  }
+                  close();
+                  cardRef.current = null;
+                });
+            },
+            // POIs never anchor a cluster over a ride; they fold under its dot.
+            priority: 0,
+            kind: poiKind(poi.category),
+          });
+        });
+      }
     }
 
     layer.setItems(items);
@@ -626,6 +744,10 @@ export function ParkMapLeaflet({
     effectiveSlug,
     overview,
     board,
+    parks,
+    diningQ.data,
+    shopsQ.data,
+    poiQ.data,
     ready,
     navigate,
     clearMarkers,

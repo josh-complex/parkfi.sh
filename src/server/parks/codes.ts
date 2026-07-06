@@ -194,6 +194,29 @@ export function categoryFromDisneyPin(pin?: string | null): MapCategory | null {
 }
 
 /**
+ * Class a non-facility Disney finder POI marker (guest-services / entertainment
+ * / events-tours) into the map-pin category the client plots it as. Distinct
+ * from `categoryFromDisneyPin` (attractions): these feed the `park_poi` table
+ * and its own overlay layers, so the vocabulary is the four POI groups —
+ *   info          guest services (restrooms, first aid, transport, lockers…)
+ *   character     character meet-and-greets (pin 'characters')
+ *   entertainment parades / fireworks / stage shows / streetmosphere
+ *   tour          hard-ticket events + guided tours (the events-tours markers)
+ * `poiType` is the marker `type`; `pin` is its raw finder pin.
+ */
+export type PoiCategory = "info" | "character" | "entertainment" | "tour";
+export function categoryFromDisneyPoi(
+  pin: string | null | undefined,
+  poiType: string | null | undefined,
+): PoiCategory {
+  if (poiType === "guest-services") return "info";
+  if (poiType === "events-tours") return "tour";
+  // entertainment: split character meets out from the rest (parades, fireworks,
+  // shows, cavalcades/streetmosphere which carry the generic 'activities' pin).
+  return (pin ?? "").toLowerCase().includes("character") ? "character" : "entertainment";
+}
+
+/**
  * Rewrite a Disney finder thumbnail URL's resize segment to a larger hero size.
  * The finder serves ~90px thumbnails via a `/resize/mwImage/1/{w}/{h}/75/`
  * segment; Disney's own `transcodeTemplate` reuses the same `{width}/{height}`

@@ -611,6 +611,65 @@ export const shopDim = pgTable("shop_dim", {
 });
 
 /**
+ * (F.4) Non-facility map POIs — the guest-services, entertainment and
+ * events-tours markers the Disney finder plots that don't belong to
+ * `attractions` / `restaurant_dim` / `shop_dim`. One row per marker
+ * `point-of-interest` id (physical location), keyed on its numeric prefix
+ * (`poi_id`), enriched by the monthly geo cron from the SAME
+ * `details-entity-simple` marker array it already fetches for pins — so no new
+ * upstream. `category` is the client map-pin class (`info` guest services |
+ * `entertainment` parades/fireworks/shows | `character` meet-and-greets |
+ * `tour` hard-ticket events + tours); `map_pin` keeps the raw finder pin.
+ * Soft-delete (active=false) scoped by (park_id, source) on drop, like the dims.
+ * `entity_id` is the underlying card entity ("guest-service"/"Entertainment"/
+ * "Event"/"tour"); several physical POIs can share one entity (e.g. many
+ * restrooms), so the plottable key is the marker's own `poi_id`, not `entity_id`.
+ */
+export const parkPoi = pgTable(
+  "park_poi",
+  {
+    // Numeric prefix of the marker `id` ("16943183;entityType=point-of-interest").
+    poiId: text("poi_id").primaryKey(),
+    parkId: bigint("park_id", { mode: "number" })
+      .notNull()
+      .references(() => parks.id),
+    // Finder marker `type`: 'guest-services' | 'entertainment' | 'events-tours'.
+    poiType: text("poi_type").notNull(),
+    // Client map-pin class: 'info' | 'entertainment' | 'character' | 'tour'.
+    category: text("category"),
+    // Raw finder marker `pin` (info | characters | fireworks | parades | shows | activities).
+    mapPin: text("map_pin"),
+    // Location-specific marker name ("First Aid at Magic Kingdom Park").
+    name: text("name").notNull(),
+    // Generic underlying entity name ("First Aid") + its numeric card id.
+    entityName: text("entity_name"),
+    entityId: text("entity_id"),
+    // Finder slug ("first-aid") — keys the operator detail page.
+    urlFriendlyId: text("url_friendly_id"),
+    latitude: doublePrecision("latitude"),
+    longitude: doublePrecision("longitude"),
+    land: text("land"),
+    // Card thumbnail (null for guest-service icon PNGs, which fall back to the
+    // category glyph); the operator's detail page URL.
+    imageUrl: text("image_url"),
+    detailUrl: text("detail_url"),
+    source: smallint("source")
+      .notNull()
+      .default(3)
+      .references(() => refSource.id),
+    active: boolean("active").notNull().default(true),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("park_poi_active_coords_idx")
+      .on(t.active)
+      .where(sql`latitude IS NOT NULL AND longitude IS NOT NULL`),
+    index("park_poi_park_idx").on(t.parkId),
+  ],
+);
+
+/**
  * (F.2) Per-venue operating hours, enriched weekly by the `dining-facilities`
  * cron from `details-entity-simple` (`structuredData.openingHoursSpecification`).
  * One row per (venue, date, schedule type, start). `schedule_type` is

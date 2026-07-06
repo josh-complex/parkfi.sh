@@ -28,9 +28,10 @@ loadEnv({ path: [".env.local", ".env"] });
 import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
-import { attractionMeta, externalIds } from "#/db/schema.ts";
+import { attractionMeta, externalIds, parkPoi } from "#/db/schema.ts";
 import {
   categoryFromDisneyPin,
+  categoryFromDisneyPoi,
   categoryFromEntityType,
   categoryFromUniversalPlace,
   disneyHeroUrl,
@@ -196,6 +197,63 @@ function resolveDetailUrl(url?: string | null): string | null {
   if (!url) return null;
   if (/^https?:\/\//i.test(url)) return url;
   return `${config.disneyTicketBase}${url.startsWith("/") ? "" : "/"}${url}`;
+}
+
+// The finder marker `type`s that aren't attractions/dining/shops — the
+// non-facility POIs we land into `park_poi` (dining/shops have their own
+// catalog dims; attractions are enriched onto `attraction_meta`).
+const POI_MARKER_TYPES = new Set(["guest-services", "entertainment", "events-tours"]);
+
+/** Upsert park POIs, refreshing every field (and re-activating) on re-crawl. */
+async function upsertParkPoi(rows: Array<typeof parkPoi.$inferInsert>): Promise<void> {
+  for (let i = 0; i < rows.length; i += 500) {
+    await db
+      .insert(parkPoi)
+      .values(rows.slice(i, i + 500))
+      .onConflictDoUpdate({
+        target: parkPoi.poiId,
+        set: {
+          parkId: sql`excluded.park_id`,
+          poiType: sql`excluded.poi_type`,
+          category: sql`excluded.category`,
+          mapPin: sql`excluded.map_pin`,
+          name: sql`excluded.name`,
+          entityName: sql`excluded.entity_name`,
+          entityId: sql`excluded.entity_id`,
+          urlFriendlyId: sql`excluded.url_friendly_id`,
+          latitude: sql`excluded.latitude`,
+          longitude: sql`excluded.longitude`,
+          land: sql`excluded.land`,
+          imageUrl: sql`excluded.image_url`,
+          detailUrl: sql`excluded.detail_url`,
+          source: sql`excluded.source`,
+          active: sql`true`,
+          lastSeenAt: sql`now()`,
+          updatedAt: sql`now()`,
+        },
+      });
+  }
+}
+
+/**
+ * Soft-delete this park's Disney POIs that fell out of the latest marker set
+ * (active=false, keep the row + history), scoped by (park_id, source) so it
+ * never touches another park's or operator's rows. An empty `seenIds` (park has
+ * no POIs this run) deactivates all of them.
+ */
+async function deactivateStaleParkPoi(parkId: number, seenIds: Array<string>): Promise<void> {
+  const notSeen =
+    seenIds.length > 0
+      ? sql`AND poi_id NOT IN (${sql.join(
+          seenIds.map((id) => sql`${id}`),
+          sql`, `,
+        )})`
+      : sql``;
+  await db.execute(sql`
+    UPDATE park_poi
+    SET active = false, updated_at = now()
+    WHERE park_id = ${parkId} AND source = ${Source.DISNEY_DIRECT} AND active = true ${notSeen}
+  `);
 }
 
 interface Bounds {
@@ -397,7 +455,40 @@ async function enrichDisneyPark(
 
   const overrides: Array<{ id: number; category: MapCategory }> = [];
   const metaRows: Array<typeof attractionMeta.$inferInsert> = [];
+  // Non-facility POIs (guest-services / entertainment / events-tours), deduped
+  // by their own point-of-interest id (park-center entries repeat across a few
+  // guest services — last wins, which is fine: they collapse to one info pin).
+  const poiById = new Map<string, typeof parkPoi.$inferInsert>();
   for (const marker of loc?.markers ?? []) {
+    if (POI_MARKER_TYPES.has(marker.type ?? "")) {
+      const poiId = marker.id?.split(";")[0];
+      if (!poiId) continue;
+      const thumb = marker.card?.media?.desktop ?? null;
+      const { land } = parseDisneyFacets(marker.facets);
+      poiById.set(poiId, {
+        poiId,
+        parkId: park.id,
+        poiType: marker.type ?? "",
+        category: categoryFromDisneyPoi(marker.pin, marker.type),
+        mapPin: marker.pin ?? null,
+        name: marker.name ?? marker.card?.name ?? poiId,
+        entityName: marker.card?.name ?? null,
+        entityId: marker.card?.id?.split(";")[0] ?? null,
+        urlFriendlyId: marker.card?.urlFriendlyId ?? null,
+        latitude: toNum(marker.lat),
+        longitude: toNum(marker.lng),
+        // The trailing facet group is [park, land]; for park-wide guest services
+        // it degrades to the park name — acceptable as a subtitle.
+        land,
+        // Guest-service thumbs are flat icon PNGs (look wrong in a photo disc) —
+        // drop them so the client renders the category glyph instead. Real
+        // entertainment/tour photos are upsized to a crisp hero.
+        imageUrl: marker.type === "guest-services" ? null : (disneyHeroUrl(thumb) ?? thumb),
+        detailUrl: resolveDetailUrl(marker.card?.url),
+        source: Source.DISNEY_DIRECT,
+      });
+      continue;
+    }
     // card.id is "80010199;entityType=Attraction" — the numeric prefix joins back.
     const numeric = marker.card?.id?.split(";")[0];
     if (!numeric) continue;
@@ -423,8 +514,11 @@ async function enrichDisneyPark(
   }
   if (overrides.length > 0) await overrideCategories(overrides);
   if (metaRows.length > 0) await upsertAttractionMeta(metaRows);
+  const poiRows = [...poiById.values()];
+  if (poiRows.length > 0) await upsertParkPoi(poiRows);
+  await deactivateStaleParkPoi(park.id, [...poiById.keys()]);
   console.log(
-    `[geo] ${park.slug}: ${overrides.length} categories enriched, ${metaRows.length} meta rows from Disney finder`,
+    `[geo] ${park.slug}: ${overrides.length} categories enriched, ${metaRows.length} meta rows, ${poiRows.length} POIs from Disney finder`,
   );
 }
 

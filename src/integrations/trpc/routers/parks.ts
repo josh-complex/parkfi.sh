@@ -416,6 +416,43 @@ export const parksRouter = {
   }),
 
   /**
+   * Non-facility POIs plottable on the map — every active `park_poi` row with
+   * coordinates (resort-wide; the map clips to the focused park by boundary, as
+   * dining/shops do). Drives the optional Services / Entertainment / Tours
+   * overlay layers. `category` is the client map-pin class ('info' |
+   * 'entertainment' | 'character' | 'tour'); `detailUrl` links the operator page.
+   */
+  poi: publicProcedure.query(async () => {
+    const result = await db.execute<{
+      poi_id: string;
+      name: string;
+      latitude: number | null;
+      longitude: number | null;
+      land: string | null;
+      category: string | null;
+      image_url: string | null;
+      detail_url: string | null;
+    }>(sql`
+      SELECT poi_id, name, latitude, longitude, land, category, image_url, detail_url
+      FROM park_poi
+      WHERE active = true AND latitude IS NOT NULL AND longitude IS NOT NULL
+      ORDER BY name
+    `);
+    return result.rows.map((r) => ({
+      id: r.poi_id,
+      name: r.name,
+      // No internal detail page for these; the POI card links out via detailUrl.
+      slug: null,
+      latitude: r.latitude,
+      longitude: r.longitude,
+      land: r.land,
+      category: r.category ?? "info",
+      imageUrl: r.image_url,
+      detailUrl: r.detail_url,
+    }));
+  }),
+
+  /**
    * One shop by its finder slug (`url_friendly_id`) — backs the `/shop/$slug`
    * detail page (deep-linking + SEO). Returns null when the slug is unknown or
    * the shop has gone inactive.

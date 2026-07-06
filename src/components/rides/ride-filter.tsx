@@ -16,6 +16,12 @@ export interface MapLayers {
   dining: boolean;
   /** Plot shops (shop_dim) as markers. */
   shops: boolean;
+  /** Plot guest-service POIs (park_poi, category 'info') as markers. */
+  services: boolean;
+  /** Plot entertainment POIs (parades/fireworks/shows/character meets) as markers. */
+  entertainment: boolean;
+  /** Plot events + tours POIs (park_poi, category 'tour') as markers. */
+  tours: boolean;
 }
 
 export interface RideFilter {
@@ -36,7 +42,7 @@ export const EMPTY_RIDE_FILTER: RideFilter = {
   openOnly: false,
   maxWait: null,
   noHeightReq: false,
-  layers: { dining: false, shops: false },
+  layers: { dining: false, shops: false, services: false, entertainment: false, tours: false },
 };
 
 /** Selectable categories (matches the marker icon set in park-map/shared.tsx). */
@@ -52,6 +58,11 @@ export const RIDE_CATEGORIES: ReadonlyArray<{ key: string; label: string }> = [
 
 /** The standby thresholds offered by the "max wait" control. */
 export const MAX_WAIT_OPTIONS: ReadonlyArray<number> = [15, 30, 45, 60];
+
+/** True when any optional POI overlay layer (dining/shops/services/…) is on. */
+export function anyMapLayerActive(layers: MapLayers): boolean {
+  return layers.dining || layers.shops || layers.services || layers.entertainment || layers.tours;
+}
 
 export function rideFilterActive(f: RideFilter): boolean {
   return f.categories.size > 0 || f.openOnly || f.maxWait != null || f.noHeightReq;

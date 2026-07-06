@@ -6,7 +6,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import maplibregl from "maplibre-gl";
 import { useTheme } from "next-themes";
 
-import { rideMatchesFilter, type RideFilter } from "#/components/rides/ride-filter.tsx";
+import {
+  anyMapLayerActive,
+  rideMatchesFilter,
+  type RideFilter,
+} from "#/components/rides/ride-filter.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { distanceMeters, pointInPolygon } from "#/server/living/geofence.ts";
 
@@ -462,6 +466,16 @@ export function ParkMap({
   });
   const shopsQ = useQuery({
     ...trpc.parks.shops.queryOptions(),
+    enabled: poisEnabled,
+    staleTime: POI_STALE_MS,
+    gcTime: POI_STALE_MS,
+  });
+  // Non-facility POIs (guest services / entertainment / events-tours) — the
+  // Services / Live / Tours overlay layers. Same resort-wide-fetch-once,
+  // clip-by-boundary treatment as dining/shops; one feed covers all three
+  // layers, filtered by category at render.
+  const poiQ = useQuery({
+    ...trpc.parks.poi.queryOptions(),
     enabled: poisEnabled,
     staleTime: POI_STALE_MS,
     gcTime: POI_STALE_MS,
@@ -954,7 +968,7 @@ export function ParkMap({
             // (Shops/Eats), deselecting every ride group hides the rides
             // instead of falling back to showing them all. With nothing
             // selected at all we keep the default rides+shows.
-            { emptyCategoriesMatchNone: roam && (filter.layers.shops || filter.layers.dining) },
+            { emptyCategoriesMatchNone: roam && anyMapLayerActive(filter.layers) },
           )
         )
           continue;
@@ -1034,10 +1048,20 @@ export function ParkMap({
       // dumping every WDW venue here. Negative ids keep them clear of the
       // positive attraction/park id space the cluster + selection use.
       const boundary = parks?.find((p) => p.slug === effectiveSlug)?.boundary ?? null;
-      if (boundary && (layers?.dining || layers?.shops)) {
+      if (boundary && layers && anyMapLayerActive(layers)) {
+        // The park_poi feed carries all three overlay categories; pick the ones
+        // whose layer is lit (Live folds entertainment + character meets).
+        const overlayPoi = (poiQ.data ?? []).filter(
+          (p) =>
+            (layers?.services && p.category === "info") ||
+            (layers?.entertainment &&
+              (p.category === "entertainment" || p.category === "character")) ||
+            (layers?.tours && p.category === "tour"),
+        );
         const pois = [
           ...(layers?.dining ? (diningQ.data ?? []) : []),
           ...(layers?.shops ? (shopsQ.data ?? []) : []),
+          ...overlayPoi,
         ];
         pois.forEach((poi, i) => {
           if (poi.latitude == null || poi.longitude == null) return;
@@ -1136,6 +1160,7 @@ export function ParkMap({
     parks,
     diningQ.data,
     shopsQ.data,
+    poiQ.data,
     ready,
     navigate,
     clearMarkers,

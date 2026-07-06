@@ -42,7 +42,15 @@ export interface DeclutterItem {
 
 // Fixed left-to-right order for the overflow dots, so a cluster's composition
 // always reads the same way regardless of which marker anchored it.
-const DOT_ORDER: ReadonlyArray<MapItemKind> = ["rides", "shows", "shops", "eats"];
+const DOT_ORDER: ReadonlyArray<MapItemKind> = [
+  "rides",
+  "shows",
+  "shops",
+  "eats",
+  "services",
+  "entertainment",
+  "tours",
+];
 const EMPTY_COUNTS: ReadonlyMap<MapItemKind, number> = new Map();
 
 /**
