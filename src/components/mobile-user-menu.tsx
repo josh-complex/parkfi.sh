@@ -59,7 +59,7 @@ export function MobileUserMenu({ showDot = false }: { showDot?: boolean }) {
     <Drawer>
       <DrawerTrigger
         aria-label="Account menu"
-        className="border-3d btn-3d-outline shadow-3d relative top-0 inline-flex size-11 shrink-0 self-center items-center justify-center rounded-full bg-background text-foreground transition-[top,box-shadow] duration-150 active:top-[3px] active:shadow-3d-active dark:border-border"
+        className="border-3d btn-3d-outline shadow-3d relative top-0 inline-flex size-13 shrink-0 self-center items-center justify-center rounded-full bg-background text-foreground transition-[top,box-shadow] duration-150 active:top-[3px] active:shadow-3d-active dark:border-border"
       >
         {user?.image ? (
           <img

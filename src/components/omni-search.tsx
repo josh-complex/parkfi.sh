@@ -29,10 +29,20 @@ import type { ReactNode } from "react";
 const RADIUS = 18;
 const SPRING = { type: "spring" as const, stiffness: 420, damping: 34, mass: 0.9 };
 
+// Snappier + springier than the palette morph — the mobile search bar sweeping
+// over/off the avatar wants a quick pop with a touch of overshoot, not a settle.
+const INLINE_SPRING = { type: "spring" as const, stiffness: 700, damping: 26, mass: 0.7 };
+
 // The 3D outline-button surface, reused so the open palette reads as the trigger
 // grown large.
 const SURFACE =
   "bg-background border-3d btn-3d-outline shadow-[0_4px_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)] dark:bg-popover dark:border-border dark:ring-1 dark:ring-foreground/10";
+
+// The inset-input pill shared by the mobile inline trigger and its open search
+// bar, so the two morph into one another with no chrome delta. Matches the look
+// the SiteHeader wrapper used to carry (thicker top border, like our inputs).
+const INLINE_PILL =
+  "border border-t-[3px] border-[color-mix(in_oklch,var(--border),black_12%)] bg-background/95 backdrop-blur dark:border-border";
 
 const GROUP_ORDER = ["Parks", "Attractions", "Dining", "Menu", "Resorts", "Blog"] as const;
 type Group = (typeof GROUP_ORDER)[number];
@@ -109,6 +119,36 @@ function useKeyboardAwareDrawer(open: boolean): React.CSSProperties | undefined 
   return style;
 }
 
+// The inline overlay is top-anchored (search bar up top, results below), so —
+// unlike the bottom drawer — it must fit *between* the status bar and the
+// keyboard. Size the whole overlay to the visual viewport: `top`/`height` track
+// the visible band, and the results panel (flex-1) fills whatever is left above
+// the keyboard. Without this the fixed overlay measures the layout viewport and
+// its lower half hides behind the keyboard.
+function useVisualViewportBox(open: boolean): React.CSSProperties | undefined {
+  const [style, setStyle] = React.useState<React.CSSProperties>();
+
+  React.useEffect(() => {
+    const vv = window.visualViewport;
+    if (!open || !vv) {
+      setStyle(undefined);
+      return;
+    }
+    const update = () => {
+      setStyle({ top: `${vv.offsetTop}px`, height: `${vv.height}px` });
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, [open]);
+
+  return style;
+}
+
 function formatPrice(price: number, currency: string | null): string {
   try {
     return new Intl.NumberFormat("en-US", {
@@ -165,7 +205,9 @@ export function OmniSearch({
   const trpc = useTRPC();
   const isMobile = useIsMobile();
   const listRef = React.useRef<HTMLDivElement>(null);
-  const drawerStyle = useKeyboardAwareDrawer(open && isMobile);
+  const inline = variant === "inline";
+  const drawerStyle = useKeyboardAwareDrawer(open && isMobile && !inline);
+  const inlineBox = useVisualViewportBox(open && inline);
 
   // The palette renders through a portal into `document.body`, which doesn't
   // exist during SSR. Gate it on a client-mounted flag so the server (and the
@@ -402,39 +444,49 @@ export function OmniSearch({
 
   return (
     <>
-      {variant === "inline" ? (
-        // Bare, transparent trigger meant to sit inside a custom inset bar (the
-        // mobile header). No own border/3D — the wrapper supplies the inset look —
-        // and it never fades on open, so the bar stays put while the drawer is up.
-        <button
+      {inline ? (
+        // The mobile header search: an inset pill sized to match the avatar
+        // beside it. Carries the shared `layoutId` so opening springs it out to
+        // the full-width search bar in the overlay (sweeping over the avatar);
+        // closing morphs it back and the placeholder resumes morphing. Fades out
+        // while the overlay is up so only the morph target shows.
+        <motion.button
+          layoutId={panelId}
           type="button"
           onClick={() => setOpen(true)}
           aria-label="Search parks, rides, dining…"
+          initial={false}
+          animate={{ opacity: open ? 0 : 1 }}
+          transition={{
+            layout: INLINE_SPRING,
+            opacity: { duration: open ? 0.05 : 0.14, delay: open ? 0 : 0.12 },
+          }}
+          style={{ borderRadius: 9999, opacity: 1 }}
           className={cn(
-            // Icon stays left (in flow); the placeholder text centers in the space
-            // after it — which runs right up to the avatar — so it reads centered
-            // between the icon and the avatar.
-            "flex h-full min-w-0 flex-1 items-center gap-2 bg-transparent text-[15px] leading-6 font-normal text-muted-foreground outline-none",
+            // Icon and morphing subject both sit left — the text reads left-aligned
+            // in the bar rather than floating centered.
+            "flex h-13 min-w-0 items-center gap-2 px-4 text-left text-[15px] leading-6 font-normal text-muted-foreground outline-none",
+            INLINE_PILL,
             className,
           )}
         >
           <SearchIcon className="size-5 shrink-0" />
           {placeholderTexts && placeholderTexts.length > 0 ? (
-            // Morphing subject, centered in the space after the icon.
-            <span className="flex min-w-0 flex-1 items-center justify-center">
+            <span className="flex min-w-0 flex-1 items-center overflow-visible">
               <MorphingText
                 texts={placeholderTexts}
                 smooth
                 fit
+                fitStart
                 morphDuration={0.7}
                 pauseDuration={2}
                 className="h-6 text-[15px] leading-6 font-normal"
               />
             </span>
           ) : (
-            <span className="flex-1 truncate text-center">Search parks, rides…</span>
+            <span className="flex-1 truncate">Search parks, rides…</span>
           )}
-        </button>
+        </motion.button>
       ) : variant === "icon" ? (
         // Same 3D outline surface as the bar, collapsed to a circle. Carries the
         // shared `layoutId` so the palette morphs out of *this* button.
@@ -487,9 +539,96 @@ export function OmniSearch({
         </motion.button>
       )}
 
-      {/* Mobile: a bottom drawer — easier to reach, full-width, denser type.
-          Desktop: the morphing centered palette. */}
-      {isMobile ? (
+      {/* Inline (mobile header): a top-anchored overlay whose search bar IS the
+          real input, morphed out of the header pill and floated above the blurred
+          backdrop so what you type stays crisp. Bottom drawer otherwise on mobile;
+          the morphing centered palette on desktop. */}
+      {inline ? (
+        mounted &&
+        createPortal(
+          <AnimatePresence>
+            {open && (
+              <>
+                <motion.div
+                  className="fixed inset-0 z-40 bg-black/40 supports-backdrop-filter:backdrop-blur-sm"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1, transition: { duration: 0.14 } }}
+                  exit={{ opacity: 0, transition: { duration: 0.1 } }}
+                  onClick={close}
+                />
+
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Search"
+                  className="fixed inset-x-0 top-0 z-50 flex flex-col"
+                  style={{
+                    ...inlineBox,
+                    paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)",
+                    paddingBottom: "calc(env(safe-area-inset-bottom) + 0.75rem)",
+                    paddingLeft: "0.75rem",
+                    paddingRight: "0.75rem",
+                  }}
+                >
+                  {/* Morph target for the header pill — same chrome and radius so
+                        it grows out to full width (over the avatar) with no jump. */}
+                  <motion.div
+                    layoutId={panelId}
+                    style={{ borderRadius: 9999 }}
+                    transition={{ layout: INLINE_SPRING }}
+                    className={cn("flex h-13 shrink-0 items-center gap-2 px-4", INLINE_PILL)}
+                  >
+                    <SearchIcon className="size-5 shrink-0 text-muted-foreground" />
+                    <input
+                      autoFocus
+                      value={query}
+                      onChange={(e) => {
+                        setQuery(e.target.value);
+                        setActive(0);
+                      }}
+                      onKeyDown={onKeyDown}
+                      placeholder="Search parks, rides, dining…"
+                      className="min-w-0 flex-1 bg-transparent text-left text-[15px] leading-6 text-foreground outline-none placeholder:text-muted-foreground"
+                    />
+                    <button
+                      type="button"
+                      onClick={close}
+                      className="shrink-0 text-sm font-medium text-muted-foreground"
+                    >
+                      Cancel
+                    </button>
+                  </motion.div>
+
+                  {/* Results fade/slide in under the bar once it has sprung out. */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0, transition: { delay: 0.08, duration: 0.16 } }}
+                    exit={{ opacity: 0, transition: { duration: 0.08 } }}
+                    className={cn(
+                      "relative mt-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl",
+                      INLINE_PILL,
+                    )}
+                  >
+                    <SearchBody
+                      compact
+                      hideInput
+                      query={query}
+                      setQuery={setQuery}
+                      setActive={setActive}
+                      onKeyDown={onKeyDown}
+                      listRef={listRef}
+                      showLoading={showLoading}
+                      items={items}
+                      active={active}
+                    />
+                  </motion.div>
+                </div>
+              </>
+            )}
+          </AnimatePresence>,
+          document.body,
+        )
+      ) : isMobile ? (
         <Drawer
           open={open}
           onOpenChange={(o) => (o ? setOpen(true) : close())}
@@ -577,6 +716,7 @@ export function OmniSearch({
  *  spacing for the mobile drawer. */
 function SearchBody({
   compact = false,
+  hideInput = false,
   query,
   setQuery,
   setActive,
@@ -587,6 +727,9 @@ function SearchBody({
   active,
 }: {
   compact?: boolean;
+  // When the search box lives outside this body (the inline overlay's own bar is
+  // the input), skip the input row entirely so the results reclaim the height.
+  hideInput?: boolean;
   query: string;
   setQuery: (v: string) => void;
   setActive: (n: number) => void;
@@ -598,30 +741,32 @@ function SearchBody({
 }) {
   return (
     <>
-      <div
-        className={cn(
-          "flex shrink-0 items-center gap-2 border-b",
-          compact ? "px-3 py-2.5" : "px-4 py-3.5",
-        )}
-      >
-        <SearchIcon
-          className={cn("shrink-0 text-muted-foreground", compact ? "size-4" : "size-5")}
-        />
-        <input
-          autoFocus
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setActive(0);
-          }}
-          onKeyDown={onKeyDown}
-          placeholder="Search parks, attractions, dining, blog posts…"
+      {!hideInput && (
+        <div
           className={cn(
-            "w-full bg-transparent text-foreground outline-none placeholder:text-muted-foreground",
-            compact ? "text-sm" : "text-base md:text-sm",
+            "flex shrink-0 items-center gap-2 border-b",
+            compact ? "px-3 py-2.5" : "px-4 py-3.5",
           )}
-        />
-      </div>
+        >
+          <SearchIcon
+            className={cn("shrink-0 text-muted-foreground", compact ? "size-4" : "size-5")}
+          />
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setActive(0);
+            }}
+            onKeyDown={onKeyDown}
+            placeholder="Search parks, attractions, dining, blog posts…"
+            className={cn(
+              "w-full bg-transparent text-foreground outline-none placeholder:text-muted-foreground",
+              compact ? "text-sm" : "text-base md:text-sm",
+            )}
+          />
+        </div>
+      )}
 
       <div
         ref={listRef}

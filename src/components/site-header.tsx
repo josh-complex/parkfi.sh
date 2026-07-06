@@ -101,10 +101,11 @@ export function SiteHeader({
       <div className="relative px-3 py-3 md:px-4 md:py-2 lg:px-6">
         <div className="relative flex w-full items-center gap-2">
           {isMobile ? (
-            // Mobile: one full-width inset search bar (thicker top border, like
-            // our inputs) with a morphing placeholder, and the account avatar
-            // tucked inside on the right — raised in 3D so it pops off the inset.
-            <div className="pointer-events-auto flex h-16 w-full items-center gap-2 rounded-full border border-t-[3px] border-[color-mix(in_oklch,var(--border),black_12%)] bg-background/95 pr-2 pl-4 backdrop-blur dark:border-border">
+            // Mobile: an inset search pill (morphing placeholder, thicker top
+            // border like our inputs) sitting inline next to the account avatar.
+            // The search owns its own pill chrome now — while typing it springs
+            // out to full width and covers the avatar (see OmniSearch inline).
+            <div className="pointer-events-auto flex w-full items-center gap-2">
               <OmniSearch variant="inline" placeholderTexts={SEARCH_HINTS} className="flex-1" />
               <MobileUserMenu showDot={hasAlerts} />
             </div>

@@ -103,6 +103,12 @@ interface MorphingTextProps {
    * a "Search for" prefix) rather than left-aligned in a fixed-width box.
    */
   fit?: boolean;
+  /**
+   * With `fit`, anchor every word to the box's left edge instead of centering it.
+   * The box still hugs the widest word, so short words no longer drift right as
+   * they morph — the left edge stays put (e.g. a left-aligned search placeholder).
+   */
+  fitStart?: boolean;
 }
 
 const Texts: React.FC<{
@@ -149,11 +155,15 @@ export const MorphingText: React.FC<MorphingTextProps> = ({
   morphDuration = 1.5,
   pauseDuration = 0.5,
   fit,
+  fitStart,
 }) => (
   <div
     className={cn(
       fit
-        ? "relative inline-grid place-items-center font-sans leading-none"
+        ? cn(
+            "relative inline-grid items-center font-sans leading-none",
+            fitStart ? "justify-items-start" : "justify-items-center",
+          )
         : "relative mx-auto h-16 w-full max-w-3xl text-center font-sans text-[40pt] leading-none font-bold md:h-24 lg:text-[6rem]",
       smooth ? "filter-none" : "filter-[url(#threshold)_blur(0.6px)]",
       className,
