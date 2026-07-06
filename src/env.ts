@@ -4,6 +4,9 @@ import { z } from "zod";
 export const env = createEnv({
   server: {
     SERVER_URL: z.string().url().optional(),
+    // Server-side PostHog for the tRPC handler (see src/server/posthog.ts). The
+    // VITE_POSTHOG_KEY is used as a fallback there; this is the non-prefixed name.
+    POSTHOG_KEY: z.string().optional(),
   },
 
   /**

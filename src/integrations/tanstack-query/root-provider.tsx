@@ -1,12 +1,46 @@
 import type { ReactNode } from "react";
-import { QueryClient } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
 import superjson from "superjson";
-import { createTRPCClient, httpBatchStreamLink, httpLink, splitLink } from "@trpc/client";
+import {
+  createTRPCClient,
+  httpBatchStreamLink,
+  httpLink,
+  splitLink,
+  TRPCClientError,
+} from "@trpc/client";
 import { createTRPCOptionsProxy } from "@trpc/tanstack-react-query";
 
 import type { TRPCRouter } from "#/integrations/trpc/router";
 import { TRPCProvider } from "#/integrations/trpc/react";
 import { CACHEABLE_TRPC_PATHS } from "#/lib/cache.ts";
+import { reportError } from "#/lib/report-error.ts";
+
+// Type the `meta` bag so call sites get `errorToast` autocompletion and the
+// global sinks below read it type-safely.
+declare module "@tanstack/react-query" {
+  interface Register {
+    queryMeta: { errorToast?: string | false };
+    mutationMeta: { errorToast?: string | false };
+  }
+}
+
+// tRPC codes that are control flow ("render the empty/login state"), not
+// exceptions. On a query we treat these as `expected` telemetry, never a toast.
+const EXPECTED_TRPC_CODES = new Set([
+  "NOT_FOUND",
+  "BAD_REQUEST",
+  "UNAUTHORIZED",
+  "FORBIDDEN",
+  "TOO_MANY_REQUESTS",
+]);
+
+function trpcErrorCode(error: unknown): string | undefined {
+  if (error instanceof TRPCClientError) {
+    const code = (error.data as { code?: string } | null | undefined)?.code;
+    return typeof code === "string" ? code : undefined;
+  }
+  return undefined;
+}
 
 function getUrl() {
   const base = (() => {
@@ -38,9 +72,53 @@ export const trpcClient = createTRPCClient<TRPCRouter>({
 
 export function getContext() {
   const queryClient = new QueryClient({
+    queryCache: new QueryCache({
+      onError: (error, query) => {
+        const code = trpcErrorCode(error);
+        const meta = query.meta;
+        // Expected control-flow codes → clean event, no exception/toast — unless
+        // a caller explicitly forces a toast message via meta.errorToast.
+        const expected =
+          code !== undefined &&
+          EXPECTED_TRPC_CODES.has(code) &&
+          typeof meta?.errorToast !== "string";
+        // Background refetch failure keeps showing cached data — degraded. Only
+        // the initial load (no cached data) is flow-blocking → critical.
+        const initialLoad = query.state.data === undefined;
+        reportError(error, {
+          source: "query",
+          severity: expected ? "expected" : initialLoad ? "critical" : "degraded",
+          context: {
+            queryKey: JSON.stringify(query.queryKey),
+            ...(code ? { trpcCode: code } : {}),
+          },
+          toast: meta?.errorToast === false ? false : meta?.errorToast,
+          toastId: query.queryHash,
+        });
+      },
+    }),
+    mutationCache: new MutationCache({
+      onError: (error, _vars, _ctx, mutation) => {
+        // The existing per-mutation onError handlers already toast a tailored
+        // message. The global sink ALWAYS captures, but only toasts when the
+        // mutation has no handler of its own — no double toasts.
+        const hasLocalHandler = Boolean(mutation.options.onError);
+        const meta = mutation.meta;
+        reportError(error, {
+          source: "mutation",
+          severity: "critical",
+          context: { mutationKey: JSON.stringify(mutation.options.mutationKey ?? null) },
+          toast: hasLocalHandler || meta?.errorToast === false ? false : meta?.errorToast,
+        });
+      },
+    }),
     defaultOptions: {
       dehydrate: { serializeData: superjson.serialize },
       hydrate: { deserializeData: superjson.deserialize },
+      queries: {
+        // One retry for transient blips on reads; mutations stay retry-free.
+        retry: 1,
+      },
     },
   });
 

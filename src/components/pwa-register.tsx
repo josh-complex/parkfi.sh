@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import posthog from "posthog-js";
 
 import { installPreloadErrorReload } from "#/lib/lazy-with-reload.tsx";
 
@@ -18,8 +19,13 @@ export function PWARegister() {
     void navigator.serviceWorker
       .register("/sw.js", { updateViaCache: "none" })
       .then((reg) => reg.update())
-      .catch(() => {
+      .catch((err: unknown) => {
         // A failed registration must not take the app down — push is best-effort.
+        // Keep it non-throwing, but stop losing the signal (push silently breaks
+        // for these users otherwise).
+        posthog.capture("sw_registration_failed", {
+          message: err instanceof Error ? err.message : String(err),
+        });
       });
   }, []);
 

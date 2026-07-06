@@ -1,4 +1,7 @@
 import * as React from "react";
+import posthog from "posthog-js";
+
+import { reportError } from "#/lib/report-error.ts";
 
 // After a redeploy the hashed chunk filenames change, but a client still running
 // the previous build's HTML (or holding a stale service-worker precache) keeps
@@ -41,6 +44,10 @@ function reloadOnce(id: string): boolean {
     // Private mode / storage disabled — fall through; a reload is still better
     // than a hard error, and worst case the loop guard just doesn't engage.
   }
+  // sendBeacon so the event survives the imminent navigation — posthog's normal
+  // batch queue would be dropped by the reload. This graphs stale-chunk
+  // frequency per deploy (the known Cloudflare stale-HTML issue).
+  posthog.capture("chunk_reload", { chunk: id }, { transport: "sendBeacon" });
   window.location.reload();
   return true;
 }
@@ -66,6 +73,16 @@ export function lazyWithReload<T extends React.ComponentType<any>>(
         // Reload is underway; keep this promise pending so React's Suspense
         // boundary shows the fallback (not the error) until the page navigates.
         return new Promise<{ default: T }>(() => {});
+      }
+      if (isModuleLoadError(err)) {
+        // Already reloaded once for this chunk — a genuinely broken build, not a
+        // stale client. Hard signal + an actionable toast before it surfaces.
+        reportError(err, {
+          source: "chunk-load",
+          severity: "critical",
+          toast: "App update failed to load — please refresh",
+          context: { chunk: id },
+        });
       }
       throw err;
     }),

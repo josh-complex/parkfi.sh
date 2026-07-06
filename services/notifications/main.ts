@@ -10,6 +10,9 @@
 import { config as loadEnv } from "dotenv";
 loadEnv({ path: [".env.local", ".env"] });
 
+// Imported after loadEnv so the module-level PostHog client sees POSTHOG_KEY.
+import { flushTelemetry, reportServiceError } from "../shared/telemetry.ts";
+
 import { createServer } from "node:http";
 import { Worker } from "bullmq";
 
@@ -63,7 +66,13 @@ worker.on("ready", () => {
   console.log("[notifications] worker ready");
 });
 worker.on("failed", (job, err) => {
-  console.error(`[notifications] job=${job?.id} failed:`, err);
+  // Only capture the terminal failure (retries exhausted) so BullMQ's per-attempt
+  // retries don't flood Error Tracking; intermediate attempts just log.
+  if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
+    reportServiceError("notifications", "push", err ?? new Error("push job failed"));
+  } else {
+    console.error(`[notifications] job=${job?.id} failed (attempt ${job?.attemptsMade}):`, err);
+  }
 });
 
 // Second worker: durable stay-alert email. Low concurrency — a slow provider
@@ -85,6 +94,7 @@ stayWorker.on("failed", (job, err) => {
   // On the final attempt, record the terminal failure on the notification row.
   if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
     void markStayNotificationFailed(job.data.notificationId, err?.message ?? String(err));
+    reportServiceError("notifications", "stay-alert", err ?? new Error("stay-alert job failed"));
   }
 });
 
@@ -105,6 +115,11 @@ diningWorker.on("failed", (job, err) => {
   console.error(`[dining-alerts] job=${job?.id} failed:`, err);
   if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
     void markDiningNotificationFailed(job.data.notificationId, err?.message ?? String(err));
+    reportServiceError(
+      "notifications",
+      "dining-alert",
+      err ?? new Error("dining-alert job failed"),
+    );
   }
 });
 
@@ -122,6 +137,7 @@ createServer((req, res) => {
 async function shutdown(sig: string) {
   console.log(`[notifications] ${sig} received, closing workers…`);
   await Promise.all([worker.close(), stayWorker.close(), diningWorker.close()]);
+  await flushTelemetry();
   console.log("[notifications] drained, exiting");
   process.exit(0);
 }

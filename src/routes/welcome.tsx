@@ -744,6 +744,15 @@ function SiteFooter() {
                 Privacy
               </Link>
               <span>&copy; {new Date().getFullYear()} ParkFi</span>
+              {/* Required attribution for the free animated status icons (toasts). */}
+              <a
+                href="https://lordicon.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-primary"
+              >
+                Icons by Lordicon.com
+              </a>
             </div>
           </div>
         </div>

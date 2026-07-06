@@ -25,6 +25,9 @@
 import { config as loadEnv } from "dotenv";
 loadEnv({ path: [".env.local", ".env"] });
 
+// Imported after loadEnv so the module-level PostHog client sees POSTHOG_KEY.
+import { flushTelemetry, reportServiceError } from "../shared/telemetry.ts";
+
 import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
@@ -661,7 +664,9 @@ async function runStep(label: string, fn: () => Promise<void>): Promise<void> {
   try {
     await fn();
   } catch (err) {
-    console.error(`[cron-geo] ${label} failed:`, err instanceof Error ? err.message : err);
+    // reportServiceError also logs to stderr, so this keeps the prior console
+    // output while adding PostHog capture for every step failure.
+    reportServiceError("geo", label, err);
   }
 }
 
@@ -716,8 +721,12 @@ async function main() {
 }
 
 main()
-  .then(() => process.exit(0))
   .catch((err) => {
-    console.error(err);
-    process.exit(1);
+    reportServiceError("geo", "main", err);
+    process.exitCode = 1;
+  })
+  // Flush queued PostHog events BEFORE exiting — process.exit would drop them.
+  .finally(async () => {
+    await flushTelemetry();
+    process.exit(process.exitCode ?? 0);
   });

@@ -1,4 +1,5 @@
 import * as React from "react";
+import posthog from "posthog-js";
 
 // Shortest signed delta from `a` to `b` on the 0–360 compass circle, in
 // (-180, 180] — so smoothing/thresholds take the short way across the 0/360 seam
@@ -41,7 +42,8 @@ export function useDeviceHeading(enabled: boolean): {
     // events flow once we attach the listeners below.
     if (D && typeof D.requestPermission === "function") {
       D.requestPermission().catch(() => {
-        /* denied / dismissed — heading stays null and the cone falls back to GPS */
+        // denied / dismissed — heading stays null and the cone falls back to GPS
+        posthog.capture("heading_permission_denied");
       });
     }
   }, []);

@@ -25,6 +25,9 @@
 import { config as loadEnv } from "dotenv";
 loadEnv({ path: [".env.local", ".env"] });
 
+// Imported after loadEnv so the module-level PostHog client sees POSTHOG_KEY.
+import { flushTelemetry, reportServiceError } from "../shared/telemetry.ts";
+
 import { randomUUID } from "node:crypto";
 
 import { GoogleGenAI } from "@google/genai";
@@ -466,8 +469,12 @@ async function main() {
 }
 
 main()
-  .then(() => process.exit(0))
   .catch((err) => {
-    console.error(err);
-    process.exit(1);
+    reportServiceError("pin-catalog", "main", err);
+    process.exitCode = 1;
+  })
+  // Flush queued PostHog events BEFORE exiting — process.exit would drop them.
+  .finally(async () => {
+    await flushTelemetry();
+    process.exit(process.exitCode ?? 0);
   });

@@ -2,6 +2,8 @@
 
 import * as React from "react";
 
+import { reportError } from "#/lib/report-error.ts";
+
 /**
  * Contains a render/commit crash in a heavy client-only widget (the visx
  * charts) so a failure there can't abort the whole page. React forwards
@@ -22,6 +24,15 @@ export class ChartErrorBoundary extends React.Component<
   componentDidCatch(error: unknown, info: React.ErrorInfo) {
     // eslint-disable-next-line no-console
     console.error(`[CHART-CRASH:${this.props.label}]`, error, info.componentStack);
+    // Degraded: the rest of the dashboard stays interactive, so no toast — but
+    // this is exactly the class of bug (recharts "r is not a function") that
+    // previously shipped to prod undetected, so it must be captured.
+    reportError(error, {
+      source: "render",
+      severity: "degraded",
+      toast: false,
+      context: { chart: this.props.label },
+    });
   }
 
   render() {

@@ -10,6 +10,9 @@
 import { config as loadEnv } from "dotenv";
 loadEnv({ path: [".env.local", ".env"] });
 
+// Imported after loadEnv so the module-level PostHog client sees POSTHOG_KEY.
+import { flushTelemetry, reportServiceError } from "../shared/telemetry.ts";
+
 import { createServer } from "node:http";
 
 import { config } from "#/server/parks/config.ts";
@@ -61,7 +64,7 @@ async function tick(): Promise<void> {
         }
       } catch (err) {
         errors++;
-        console.error(`[ingest] park ${parkId} threw:`, err);
+        reportServiceError("worker", `ingest:${parkId}`, err);
       }
     });
 
@@ -71,7 +74,7 @@ async function tick(): Promise<void> {
     try {
       alertsFired = await evaluateAlerts();
     } catch (err) {
-      console.error("[alerts] eval failed:", err);
+      reportServiceError("worker", "alerts", err);
     }
 
     // Living Layer (M2) — reconcile the Darkness game layer to the live park
@@ -85,7 +88,7 @@ async function tick(): Promise<void> {
         const r = await reconcileDarkness();
         darkness = ` darkness(+${r.spawned}/-${r.expired})`;
       } catch (err) {
-        console.error("[living] darkness reconcile failed:", err);
+        reportServiceError("worker", "living-darkness", err);
       }
     }
 
@@ -95,7 +98,7 @@ async function tick(): Promise<void> {
       `[tick] parks=${parkIds.length} entities=${entities} statusΔ=${statusChanges} queueRows=${queueRows} alerts=${alertsFired} degraded=${degraded} errors=${errors}${darkness} ${ms}ms`,
     );
   } catch (err) {
-    console.error("[tick] failed:", err);
+    reportServiceError("worker", "tick", err);
   } finally {
     inFlight = false;
   }
@@ -130,15 +133,18 @@ createServer((req, res) => {
 function shutdown(sig: string) {
   console.log(`[worker] ${sig} received, draining…`);
   shuttingDown = true;
+  // Flush queued PostHog events, then exit — awaited so tick failures captured
+  // on the final loop aren't dropped by the process teardown.
+  const exit = () => void flushTelemetry().finally(() => process.exit(0));
   const t = setInterval(() => {
     if (!inFlight) {
       clearInterval(t);
       console.log("[worker] drained, exiting");
-      process.exit(0);
+      exit();
     }
   }, 200);
   // hard cap so Railway's SIGKILL grace window isn't exceeded
-  setTimeout(() => process.exit(0), 8_000);
+  setTimeout(exit, 8_000);
 }
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));

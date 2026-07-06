@@ -14,6 +14,9 @@
 import { config as loadEnv } from "dotenv";
 loadEnv({ path: [".env.local", ".env"] });
 
+// Imported after loadEnv so the module-level PostHog client sees POSTHOG_KEY.
+import { flushTelemetry, reportServiceError } from "../shared/telemetry.ts";
+
 import { createServer } from "node:http";
 
 import { Worker } from "bullmq";
@@ -119,8 +122,21 @@ scanWorker.on("ready", () => {
   ready = true;
   console.log("[pin-identify] workers ready");
 });
-scanWorker.on("failed", (job, err) => console.error(`[pin-scan] job=${job?.id} failed:`, err));
-embedWorker.on("failed", (job, err) => console.error(`[pin-embed] job=${job?.id} failed:`, err));
+// Capture only the terminal failure so BullMQ retries don't flood Error Tracking.
+scanWorker.on("failed", (job, err) => {
+  if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
+    reportServiceError("pin-identify", "pin-scan", err ?? new Error("pin-scan job failed"));
+  } else {
+    console.error(`[pin-scan] job=${job?.id} failed (attempt ${job?.attemptsMade}):`, err);
+  }
+});
+embedWorker.on("failed", (job, err) => {
+  if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
+    reportServiceError("pin-identify", "pin-embed", err ?? new Error("pin-embed job failed"));
+  } else {
+    console.error(`[pin-embed] job=${job?.id} failed (attempt ${job?.attemptsMade}):`, err);
+  }
+});
 
 const port = Number(process.env.PORT ?? 8080);
 createServer((req, res) => {
@@ -136,6 +152,7 @@ createServer((req, res) => {
 async function shutdown(sig: string) {
   console.log(`[pin-identify] ${sig} received, closing workers…`);
   await Promise.all([scanWorker.close(), embedWorker.close()]);
+  await flushTelemetry();
   console.log("[pin-identify] drained, exiting");
   process.exit(0);
 }

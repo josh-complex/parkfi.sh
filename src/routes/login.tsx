@@ -3,6 +3,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { KeyRoundIcon } from "lucide-react";
 
 import { authClient } from "#/lib/auth-client.ts";
+import { reportError } from "#/lib/report-error.ts";
 import { Button } from "#/components/ui/button.tsx";
 import {
   Card,
@@ -139,8 +140,17 @@ function LoginPage() {
     setPasskeyPending(true);
     try {
       const { error } = await authClient.signIn.passkey();
-      if (error) setError(error.message ?? "Passkey sign-in failed");
-      else await navigate({ to: "/" });
+      if (error) {
+        const message = error.message ?? "Passkey sign-in failed";
+        setError(message);
+        // Flow-blocking but already surfaced inline — telemetry only, no toast.
+        reportError(new Error(message), {
+          source: "auth",
+          severity: "critical",
+          toast: false,
+          context: { flow: "passkey", code: "code" in error ? error.code : undefined },
+        });
+      } else await navigate({ to: "/" });
     } finally {
       setPasskeyPending(false);
     }
@@ -159,13 +169,27 @@ function LoginPage() {
       if (mode === "signup") {
         const result = await authClient.signUp.email({ email, password, name }, fetchOptions);
         if (result.error) {
-          setError(result.error.message ?? "Sign up failed");
+          const message = result.error.message ?? "Sign up failed";
+          setError(message);
+          reportError(new Error(message), {
+            source: "auth",
+            severity: "critical",
+            toast: false,
+            context: { flow: "signup", code: result.error.code },
+          });
           return;
         }
       } else {
         const result = await authClient.signIn.email({ email, password }, fetchOptions);
         if (result.error) {
-          setError(result.error.message ?? "Sign in failed");
+          const message = result.error.message ?? "Sign in failed";
+          setError(message);
+          reportError(new Error(message), {
+            source: "auth",
+            severity: "critical",
+            toast: false,
+            context: { flow: "password", code: result.error.code },
+          });
           return;
         }
       }

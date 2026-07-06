@@ -20,6 +20,12 @@ if (typeof window !== "undefined" && import.meta.env.VITE_POSTHOG_KEY) {
     // hydration mismatch around the SSR-rendered JsonLd <script>. Re-enable if we
     // ever adopt PostHog surveys.
     disable_surveys: true,
+    // Auto-capture uncaught errors + unhandled promise rejections into Error
+    // Tracking. This is the backstop for everything the explicit instrumentation
+    // (router onCatch, query/mutation sinks, targeted call sites) doesn't cover.
+    // Note: `lazyWithReload` keeps its rejected import pending during its one-shot
+    // reload, so no unhandled rejection fires on the recoverable stale-chunk path.
+    capture_exceptions: true,
     defaults: "2025-11-30",
   });
 }

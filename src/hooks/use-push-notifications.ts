@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
+import posthog from "posthog-js";
 
 import { useTRPC } from "#/integrations/trpc/react";
 import { authClient } from "#/lib/auth-client.ts";
+import { reportError } from "#/lib/report-error.ts";
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
 
@@ -60,7 +62,12 @@ export function usePushNotifications() {
         setSubscribed(true);
         toast.success("Push notifications enabled");
       },
-      onError: () => toast.error("Failed to enable notifications"),
+      onError: (error) => {
+        toast.error("Failed to enable notifications");
+        // The toast is the user surface; also count the failure. Degraded, not
+        // critical — push is an opt-in extra, the app keeps working without it.
+        reportError(error, { source: "device", severity: "degraded", toast: false });
+      },
     }),
   );
 
@@ -100,6 +107,8 @@ export function usePushNotifications() {
     setPermission(result);
     if (result !== "granted") {
       toast.error("Notification permission denied");
+      // Expected user choice — a named event, not an exception.
+      posthog.capture("notification_permission_denied", { permission: result });
       return false;
     }
 

@@ -13,6 +13,7 @@ import {
 } from "#/components/rides/ride-filter.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { distanceMeters, pointInPolygon } from "#/server/living/geofence.ts";
+import { reportError } from "#/lib/report-error.ts";
 
 import { MarkerCluster, type DeclutterItem } from "./declutter.ts";
 import {
@@ -357,6 +358,10 @@ export function ParkMap({
   const navDestKey = navDest ? `${navDest[0]},${navDest[1]}` : "";
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<maplibregl.Map | null>(null);
+  // The map is a singleton that survives navigation, so this ref is effectively
+  // per-session: only the first map error toasts + reports as critical; the rest
+  // (tile-fetch blips, etc.) are counted as degraded without a toast tower.
+  const mapErrorReportedRef = React.useRef(false);
   const markersRef = React.useRef<Array<maplibregl.Marker>>([]);
   // Kingdom Hearts play-mode markers (Darkness spawns + discovery pins), kept in their
   // own set so they never touch the ride cluster's marker bookkeeping.
@@ -516,13 +521,27 @@ export function ParkMap({
   // Init map once.
   React.useEffect(() => {
     if (!mounted || !containerRef.current || mapRef.current) return;
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: basemapStyleUrl(dark),
-      center: ORLANDO_CENTER,
-      zoom: ORLANDO_ZOOM,
-      attributionControl: { compact: true },
-    });
+    let map: maplibregl.Map;
+    try {
+      map = new maplibregl.Map({
+        container: containerRef.current,
+        style: basemapStyleUrl(dark),
+        center: ORLANDO_CENTER,
+        zoom: ORLANDO_ZOOM,
+        attributionControl: { compact: true },
+      });
+    } catch (err) {
+      // The WebGL probe passed but MapLibre still couldn't get a context — the
+      // map is THE core surface, so a silent failure is the worst flow-block.
+      reportError(err, {
+        source: "map",
+        severity: "critical",
+        toast: "The map failed to load — try reloading",
+        toastId: "map",
+        context: { parkSlug: activeSlug, renderer: "gl" },
+      });
+      return;
+    }
     // No native NavigationControl — our own 3D zoom buttons (in the stage) drive
     // zoom via the MapHandle below, so the map's controls match the app.
     layerRef.current = new MarkerCluster(
@@ -560,6 +579,21 @@ export function ParkMap({
       },
     );
     map.on("load", () => setReady(true));
+    // MapLibre surfaces runtime failures (style/source load, WebGL context loss,
+    // per-tile fetch errors) on the "error" event. First one per session is
+    // treated as flow-blocking (toast once, keyed "map"); the rest are degraded
+    // and silent so a flurry of tile errors can't stack toasts.
+    map.on("error", (e: { error?: Error }) => {
+      const first = !mapErrorReportedRef.current;
+      mapErrorReportedRef.current = true;
+      reportError(e.error ?? new Error("MapLibre error"), {
+        source: "map",
+        severity: first ? "critical" : "degraded",
+        toast: first ? "The map failed to load — try reloading" : false,
+        toastId: "map",
+        context: { parkSlug: activeSlug, renderer: "gl" },
+      });
+    });
     // Mirror the live bearing to the overlay compass.
     map.on("rotate", () => onBearingChangeRef.current?.(map.getBearing()));
     // A real gesture (has an originalEvent) means the user took the wheel — tell

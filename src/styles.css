@@ -379,3 +379,71 @@
   --btn-glare: oklch(1 0 0 / 0.08);
   --btn-glare-hover: oklch(1 0 0 / 0.18);
 }
+
+/* ── Toasts (sonner) ──────────────────────────────────────────────────────── *
+ * Fully-rounded pill (radius set via --border-radius in sonner.tsx) with the
+ * app's 3D "shelf" shadow, a bolder heading + lighter subtext, a springy
+ * entrance, and animated Lordicon status icons for error/warning. Selectors
+ * carry `[data-sonner-toast]` (+ the `.cn-toast` class we set via toastOptions),
+ * and the base rule adds `[data-styled="true"]`, so they beat sonner's own
+ * injected rules (its runtime <style> loads after ours); the icon-size overrides
+ * still need `!important` to win. ----------------------------------------- */
+/* `[data-styled="true"]` bumps specificity above sonner's own injected
+   `[data-sonner-toast][data-styled='true']` box-shadow rule (same specificity,
+   but its runtime <style> loads after ours and would otherwise win the tie). */
+[data-sonner-toast][data-styled="true"].cn-toast {
+  --btn-3d: color-mix(in oklch, var(--border), black 12%);
+  --btn-glare: oklch(1 0 0 / 0.6);
+  border-color: var(--btn-3d);
+  /* Extra horizontal padding so the copy clears the fully-rounded ends. */
+  padding-left: 1.25rem;
+  padding-right: 1.5rem;
+  /* Same 3D shelf as the app's buttons (shelf edge + top glare), plus a soft
+     ambient drop like the dialogs so it lifts off the map. */
+  box-shadow:
+    0 3px 0 0 var(--btn-3d),
+    inset 0 1px 0 0 var(--btn-glare),
+    0 10px 30px -12px oklch(0 0 0 / 0.28);
+  /* Springy entrance: quick in, snappy overshoot as it settles. Sonner drives
+     the enter/exit purely by transitioning `transform` (its `--y`), so a fast
+     back-out curve on a short duration is all it takes. */
+  transition:
+    transform 300ms cubic-bezier(0.22, 1.7, 0.36, 1),
+    opacity 170ms ease,
+    height 320ms ease,
+    box-shadow 200ms;
+}
+:is(.dark) [data-sonner-toast][data-styled="true"].cn-toast {
+  --btn-3d: color-mix(in oklch, var(--border), white 8%);
+  --btn-glare: oklch(1 0 0 / 0.08);
+}
+
+/* Heading: thicker + a touch larger. Subtext: lighter, smaller, muted. */
+[data-sonner-toast].cn-toast [data-title] {
+  font-weight: 700;
+  font-size: 0.9375rem;
+  line-height: 1.2;
+}
+[data-sonner-toast].cn-toast [data-description] {
+  margin-top: 0.125rem;
+  font-weight: 400;
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  color: var(--muted-foreground);
+}
+
+/* Error + warning: the animated Lordicon status icon, sized as a tidy square
+   that reads at a glance next to the two-line copy. */
+[data-sonner-toast].cn-toast[data-type="error"] [data-icon],
+[data-sonner-toast].cn-toast[data-type="warning"] [data-icon] {
+  align-self: center !important;
+  width: auto !important;
+  height: auto !important;
+  margin: -0.25rem 0.5rem -0.25rem -0.125rem !important;
+}
+[data-sonner-toast].cn-toast[data-type="error"] [data-icon] > img,
+[data-sonner-toast].cn-toast[data-type="warning"] [data-icon] > img {
+  width: 2.75rem !important;
+  height: 2.75rem !important;
+  object-fit: contain;
+}

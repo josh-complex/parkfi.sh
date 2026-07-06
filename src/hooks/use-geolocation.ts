@@ -1,4 +1,5 @@
 import * as React from "react";
+import posthog from "posthog-js";
 
 /**
  * Discriminated geolocation state. Coords follow the project's [lng, lat]
@@ -106,10 +107,16 @@ export function useGeolocation(opts?: { watch?: boolean; rememberActive?: boolea
     };
     const onError = (err: GeolocationPositionError) => {
       if (err.code === err.PERMISSION_DENIED) {
+        // Expected user choice — an event (never an exception). Living Layer
+        // depends on this funnel to see how many users grant location.
+        posthog.capture("geolocation_denied");
         // Permission is gone — drop the flag so we don't keep trying to resume.
         if (rememberActive) writeActiveFlag(false);
         setState({ status: "denied" });
-      } else setState({ status: "error", message: err.message });
+      } else {
+        posthog.capture("geolocation_error", { code: err.code, message: err.message });
+        setState({ status: "error", message: err.message });
+      }
     };
     if (watch) {
       stop();

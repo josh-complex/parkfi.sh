@@ -14,8 +14,10 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { TRPCRouter } from "#/integrations/trpc/router";
 import type { TRPCOptionsProxy } from "@trpc/tanstack-react-query";
 import { TooltipProvider } from "#/components/ui/tooltip";
+import { Toaster } from "#/components/ui/sonner";
 import { FaviconSync } from "#/components/favicon-sync.tsx";
 import { PWARegister } from "#/components/pwa-register";
+import { RouteErrorFallback } from "#/components/route-error-fallback";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
 import { seo, websiteJsonLd } from "#/lib/seo.ts";
 
@@ -70,6 +72,9 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
       ],
     };
   },
+  // Shell-level errors (above `_dash`) get the same full-pane fallback as every
+  // other route; the capture is centralized in the router's `defaultOnCatch`.
+  errorComponent: RouteErrorFallback,
   shellComponent: RootDocument,
 });
 
@@ -104,6 +109,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
                 ]}
               />
             </TooltipProvider>
+            <Toaster position="top-center" />
           </ThemeProvider>
         </PostHogProvider>
         <PWARegister />

@@ -120,6 +120,7 @@
     "nitro": "npm:nitro-nightly@latest",
     "pg": "^8.16.3",
     "posthog-js": "^1.358.1",
+    "posthog-node": "^5.39.4",
     "puppeteer-core": "^24.0.0",
     "qrcode": "^1.5.4",
     "radix-ui": "^1.4.3",

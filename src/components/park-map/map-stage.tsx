@@ -34,6 +34,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { createPortal } from "react-dom";
+import posthog from "posthog-js";
 
 import {
   AlertDialog,
@@ -575,7 +576,16 @@ export function MapStageProvider({
   // paint render no engine (the host stays an empty box) and there's no
   // server/client engine mismatch to hydrate.
   const [engine, setEngine] = React.useState<"gl" | "leaflet" | null>(null);
-  React.useEffect(() => setEngine(hasWebGl() ? "gl" : "leaflet"), []);
+  const engineDetectedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (engineDetectedRef.current) return;
+    engineDetectedRef.current = true;
+    const gl = hasWebGl();
+    setEngine(gl ? "gl" : "leaflet");
+    // Expected on old/hardened devices, but worth trending — a rising share means
+    // more users are stuck on the degraded raster renderer.
+    if (!gl) posthog.capture("map_fallback_leaflet", { parkSlug: activeSlug });
+  }, [activeSlug]);
   // Whether the singleton map is currently lent to a visible slot. While false
   // it's parked in the 0×0 off-screen home, where camera flies must not run —
   // Leaflet computes NaN coordinates fitting bounds into a zero-size container
