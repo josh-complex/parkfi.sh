@@ -81,9 +81,14 @@ function PrivacyPage() {
                 avatar. Uploaded images are stored on our servers.
               </li>
               <li>
-                <strong>OAuth provider IDs</strong> — if you sign in with Google or Apple we store
-                the opaque account identifier returned by that provider. We do not store Google or
-                Apple access tokens beyond what is needed to complete sign-in.
+                <strong>OAuth provider IDs</strong> — if you sign in with Google, Apple, or
+                Microsoft we store the opaque account identifier returned by that provider. We do
+                not store provider access tokens beyond what is needed to complete sign-in. If you
+                sign in with a Microsoft work or school account, we also store your
+                organization&rsquo;s Microsoft tenant identifier — a non-secret ID that tells us
+                which organization you belong to — so that we can offer verified employees of the
+                theme parks we cover access to features intended for them. We do not receive your
+                Microsoft password.
               </li>
               <li>
                 <strong>Session data</strong> — a secure session token tied to your account, along
@@ -215,6 +220,12 @@ function PrivacyPage() {
               </li>
               <li>
                 <strong>Apple ID</strong> — same as above for Sign in with Apple.
+              </li>
+              <li>
+                <strong>Microsoft</strong> — if you choose to sign in with Microsoft, your browser
+                communicates with Microsoft&rsquo;s servers to authenticate you. Microsoft may
+                process your email address, account identifiers, and organization per their own
+                privacy policy.
               </li>
               <li>
                 <strong>Cloudflare Turnstile</strong> — the CAPTCHA widget on the sign-in, sign-up,

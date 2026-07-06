@@ -9,8 +9,10 @@ import {
   oneTap,
   twoFactor,
 } from "better-auth/plugins";
+import { genericOAuth, microsoftEntraId } from "better-auth/plugins/generic-oauth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
+import { eq } from "drizzle-orm";
 import { db } from "#/db/index.ts";
 import {
   account,
@@ -22,9 +24,67 @@ import {
 } from "#/db/auth-schema.ts";
 import { generateBotAvatar } from "#/lib/avatar.ts";
 import { cleanupUserData } from "#/server/accountCleanup.ts";
+import { claimsFromToken, roleForTenant, tenantIdFromToken } from "#/server/auth/org-role.ts";
+
+/**
+ * The Disney-tenant-locked generic-OAuth provider id (see the `genericOAuth`
+ * plugin below). Its authorization/token endpoints are pinned to Disney's Entra
+ * tenant, so Microsoft itself rejects any non-Disney account — a successful
+ * sign-in through it is proof of Disney membership.
+ */
+const DISNEY_PROVIDER_ID = "microsoft-disney";
+
+/**
+ * Elevate a user's role from a linked Microsoft account.
+ *
+ * Runs whenever a Microsoft `account` row is created or updated (initial link,
+ * and every subsequent sign-in / token refresh). Two entry points, one rule —
+ * grant `cast_member` to Disney, never downgrade, never block sign-in:
+ *
+ *  - `microsoft-disney` (tenant-locked button): the endpoint already guarantees
+ *    Disney, so any successful sign-in elevates. No tid check needed.
+ *  - `microsoft` (open-to-all button): elevate only if the token's tenant id is
+ *    on the allowlist; otherwise it's just a normal user from some other org.
+ *
+ * Any other provider is ignored.
+ */
+async function syncOrgRoleFromMicrosoft(acct: {
+  providerId: string;
+  userId: string;
+  idToken?: string | null;
+}): Promise<void> {
+  const set: { orgTenantId?: string; role?: string } = {};
+  if (acct.providerId === DISNEY_PROVIDER_ID) {
+    set.role = "cast_member";
+    const tid = tenantIdFromToken(acct.idToken);
+    if (tid) set.orgTenantId = tid;
+  } else if (acct.providerId === "microsoft") {
+    const tid = tenantIdFromToken(acct.idToken);
+    if (tid) set.orgTenantId = tid;
+    if (roleForTenant(tid)) set.role = "cast_member";
+  } else {
+    return;
+  }
+  if (Object.keys(set).length === 0) return;
+  try {
+    await db
+      .update(user)
+      .set({ ...set, updatedAt: new Date() })
+      .where(eq(user.id, acct.userId));
+  } catch (err) {
+    console.error("[auth] failed to sync org role from Microsoft sign-in", err);
+  }
+}
 
 export const auth = betterAuth({
   user: {
+    // Server-managed fields. `input: false` is load-bearing: it stops a user
+    // from setting their own role/orgTenantId through the sign-up or update-user
+    // API — they're only ever written by syncOrgRoleFromMicrosoft below.
+    additionalFields: {
+      role: { type: "string", required: false, defaultValue: "user", input: false },
+      orgTenantId: { type: "string", required: false, input: false },
+    },
     deleteUser: {
       enabled: true,
       // DB cascades on the user row remove sessions, accounts/providers, 2FA,
@@ -46,6 +106,20 @@ export const auth = betterAuth({
         }),
       },
     },
+    // Detect org membership from a linked Microsoft account's Entra tenant, on
+    // both first link (create) and every subsequent sign-in (update).
+    account: {
+      create: {
+        after: async (acct) => {
+          await syncOrgRoleFromMicrosoft(acct);
+        },
+      },
+      update: {
+        after: async (acct) => {
+          await syncOrgRoleFromMicrosoft(acct);
+        },
+      },
+    },
   },
   database: drizzleAdapter(db, {
     provider: "pg",
@@ -64,7 +138,12 @@ export const auth = betterAuth({
   account: {
     accountLinking: {
       enabled: true,
-      trustedProviders: ["google", "apple"],
+      // "microsoft-disney" is the tenant-locked generic-OAuth provider: Microsoft
+      // only issues its tokens for the Disney tenant, so the email is org-verified
+      // — safe to trust for auto-linking an existing account by email. Without it,
+      // better-auth refuses to link (account_not_linked) since the generic
+      // provider isn't trusted and Entra tokens carry no email_verified claim.
+      trustedProviders: ["google", "apple", "microsoft", "microsoft-disney"],
       requireLocalEmailVerified: false,
     },
   },
@@ -78,6 +157,21 @@ export const auth = betterAuth({
       clientId: process.env.APPLE_CLIENT_ID!,
       clientSecret: process.env.APPLE_CLIENT_SECRET!,
       appBundleIdentifier: process.env.APPLE_BUNDLE_ID,
+    },
+    // Multi-tenant Entra ("common") so any Microsoft 365 org can sign in. The
+    // `tid` claim on the returned token is what syncOrgRoleFromMicrosoft matches
+    // against the org allowlist to grant elevated roles.
+    microsoft: {
+      clientId: process.env.MICROSOFT_CLIENT_ID!,
+      clientSecret: process.env.MICROSOFT_CLIENT_SECRET!,
+      tenantId: "common",
+      // Entra omits the `email` claim for accounts without a mailbox (many org
+      // and test users), which makes better-auth reject sign-in with
+      // `email_not_found`. Fall back to `preferred_username` — the UPN, which is
+      // email-shaped for workforce accounts (e.g. someone@disney.com).
+      mapProfileToUser: (profile) => ({
+        email: profile.email ?? profile.preferred_username,
+      }),
     },
   },
   plugins: [
@@ -101,6 +195,38 @@ export const auth = betterAuth({
     twoFactor(),
     // WebAuthn passkeys
     passkey(),
+    // Disney-only Microsoft sign-in, separate from the open `microsoft` social
+    // provider above. Same Entra app, but the authority is pinned to Disney's
+    // tenant GUID, so Microsoft's own login rejects non-Disney accounts and a
+    // successful sign-in is proof of Disney membership. Uses the generic-OAuth
+    // callback path: /api/auth/oauth2/callback/microsoft-disney.
+    genericOAuth({
+      config: [
+        {
+          ...microsoftEntraId({
+            clientId: process.env.MICROSOFT_CLIENT_ID!,
+            clientSecret: process.env.MICROSOFT_CLIENT_SECRET!,
+            tenantId: process.env.MICROSOFT_DISNEY_TENANT_ID!,
+          }),
+          providerId: DISNEY_PROVIDER_ID,
+          // The helper's default getUserInfo hits Microsoft's userinfo endpoint,
+          // which omits `preferred_username` — so mailbox-less accounts fail with
+          // `email_is_missing`. Read the id_token instead (it carries both `email`
+          // and the UPN), mirroring the social `microsoft` provider's fallback.
+          getUserInfo: (tokens) => {
+            const claims = claimsFromToken(tokens.idToken);
+            const email = (claims?.email ?? claims?.preferred_username) as string | undefined;
+            if (!claims || !email) return Promise.resolve(null);
+            return Promise.resolve({
+              id: claims.sub as string,
+              name: (claims.name as string | undefined) ?? email,
+              email,
+              emailVerified: false,
+            });
+          },
+        },
+      ],
+    }),
     // Cookie integration MUST be last so it forwards Set-Cookie headers set by
     // any preceding plugin's `hooks.after` to the framework cookie store.
     tanstackStartCookies(),

@@ -16,6 +16,13 @@ export const user = pgTable("user", {
   emailVerified: boolean("email_verified").notNull().default(false),
   image: text("image"),
   twoFactorEnabled: boolean("two_factor_enabled").default(false),
+  // Privilege tier. "user" for everyone; elevated (e.g. "cast_member") only when
+  // a linked Microsoft account's tenant id matches an org allowlist. Set solely
+  // server-side (better-auth `input: false`) — never writable via the user API.
+  role: text("role").notNull().default("user"),
+  // Microsoft Entra tenant id (`tid` claim) of the org a user authenticated
+  // through, if any. Stable per-organization GUID; the source of `role`.
+  orgTenantId: text("org_tenant_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

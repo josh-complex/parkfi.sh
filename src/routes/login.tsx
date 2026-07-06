@@ -1,6 +1,6 @@
 import * as React from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { KeyRoundIcon } from "lucide-react";
+import { KeyRoundIcon, SparklesIcon } from "lucide-react";
 
 import { authClient } from "#/lib/auth-client.ts";
 import { reportError } from "#/lib/report-error.ts";
@@ -62,6 +62,27 @@ function AppleIcon() {
     <svg viewBox="0 0 24 24" className="size-4 shrink-0 fill-current" aria-hidden>
       <path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.54 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701" />
     </svg>
+  );
+}
+
+function MicrosoftIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4 shrink-0" aria-hidden>
+      <path d="M11.4 11.4H2V2h9.4v9.4z" fill="#F25022" />
+      <path d="M22 11.4h-9.4V2H22v9.4z" fill="#7FBA00" />
+      <path d="M11.4 22H2v-9.4h9.4V22z" fill="#00A4EF" />
+      <path d="M22 22h-9.4v-9.4H22V22z" fill="#FFB900" />
+    </svg>
+  );
+}
+
+function OrDivider() {
+  return (
+    <div className="relative flex items-center gap-3">
+      <div className="flex-1 border-t border-border" />
+      <span className="text-xs text-muted-foreground">or</span>
+      <div className="flex-1 border-t border-border" />
+    </div>
   );
 }
 
@@ -227,26 +248,38 @@ function LoginPage() {
                 <Button
                   variant="outline"
                   type="button"
-                  className="flex-1 gap-2"
+                  aria-label="Sign in with Google"
+                  className="flex-1"
                   disabled={!captchaReady}
                   onClick={() =>
                     void authClient.signIn.social({ provider: "google", callbackURL: "/" })
                   }
                 >
                   <GoogleIcon />
-                  Google
                 </Button>
                 <Button
                   variant="outline"
                   type="button"
-                  className="flex-1 gap-2"
+                  aria-label="Sign in with Apple"
+                  className="flex-1"
                   disabled={!captchaReady}
                   onClick={() =>
                     void authClient.signIn.social({ provider: "apple", callbackURL: "/" })
                   }
                 >
                   <AppleIcon />
-                  Apple
+                </Button>
+                <Button
+                  variant="outline"
+                  type="button"
+                  aria-label="Sign in with Microsoft"
+                  className="flex-1"
+                  disabled={!captchaReady}
+                  onClick={() =>
+                    void authClient.signIn.social({ provider: "microsoft", callbackURL: "/" })
+                  }
+                >
+                  <MicrosoftIcon />
                 </Button>
               </div>
               {mode === "signin" && (
@@ -263,11 +296,28 @@ function LoginPage() {
               )}
             </div>
 
-            <div className="relative flex items-center gap-3">
-              <div className="flex-1 border-t border-border" />
-              <span className="text-xs text-muted-foreground">or</span>
-              <div className="flex-1 border-t border-border" />
+            <OrDivider />
+
+            {/* Disney cast-member sign-in */}
+            <div className="flex flex-col items-center gap-1">
+              <Button
+                type="button"
+                className="w-full gap-2 bg-[#1a3c8f] text-white hover:bg-[#152f70]"
+                disabled={!captchaReady}
+                onClick={() =>
+                  void authClient.signIn.oauth2({
+                    providerId: "microsoft-disney",
+                    callbackURL: "/",
+                  })
+                }
+              >
+                <SparklesIcon className="size-4" />
+                Sign in with your Disney account
+              </Button>
+              <p className="text-xs text-muted-foreground">For Walt Disney Company cast members</p>
             </div>
+
+            <OrDivider />
 
             {/* Email / password */}
             <form onSubmit={(e) => void handleSubmit(e)} className="flex flex-col gap-4">
