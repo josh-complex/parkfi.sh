@@ -81,9 +81,18 @@ export function useDeviceHeading(enabled: boolean): {
       }
       if (raw == null || Number.isNaN(raw)) return;
       raw = ((raw % 360) + 360) % 360;
-      // Circular exponential smoothing toward the raw reading — calm but
-      // responsive, taking the short way around the seam.
-      smoothed = smoothed == null ? raw : (smoothed + angleDelta(smoothed, raw) * 0.15 + 360) % 360;
+      // Adaptive circular low-pass toward the raw reading, taking the short way
+      // around the seam. The gain scales with how far the reading has moved:
+      // tiny frame-to-frame deltas (sensor jitter while holding still) are damped
+      // hard for a calm arrow, while a real turn opens the gain up so it still
+      // swings around promptly instead of lagging behind the user.
+      if (smoothed == null) {
+        smoothed = raw;
+      } else {
+        const delta = angleDelta(smoothed, raw);
+        const alpha = 0.06 + 0.34 * Math.min(1, Math.abs(delta) / 60);
+        smoothed = (smoothed + delta * alpha + 360) % 360;
+      }
       pending = smoothed;
       if (!raf) raf = requestAnimationFrame(flush);
     };

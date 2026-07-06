@@ -147,6 +147,8 @@ export function ParkMapLeaflet({
   userLocation,
   deviceHeading = null,
   route,
+  traveled = null,
+  animateRoute = false,
   onRequestDirections,
   navDest = null,
   devDestinations = EMPTY_DEV_DESTINATIONS,
@@ -174,6 +176,11 @@ export function ParkMapLeaflet({
   deviceHeading?: number | null;
   /** Active walking route geometry ([lng,lat] points) to draw, or null. */
   route?: Array<[number, number]> | null;
+  /** Breadcrumb of where the user has already walked ([lng,lat]) — a grayed trail
+   *  behind the remaining route. Null when not navigating. */
+  traveled?: Array<[number, number]> | null;
+  /** March the route dashes toward the destination (active nav); static otherwise. */
+  animateRoute?: boolean;
   /** A "Directions" tap in an attraction popup — asks the stage to route here. */
   onRequestDirections?: (d: { id: number; name: string; coords: [number, number] }) => void;
   /** While actively navigating, the destination's [lng,lat]. Set, it hides every
@@ -255,6 +262,7 @@ export function ParkMapLeaflet({
   // fly's moveend.
   const engagingRef = React.useRef(false);
   const routeRef = React.useRef<L.Polyline | null>(null);
+  const traveledRef = React.useRef<L.Polyline | null>(null);
   const selectedIdRef = React.useRef(selectedId);
   selectedIdRef.current = selectedId;
 
@@ -752,18 +760,34 @@ export function ParkMapLeaflet({
     if (el) setUserHeading(el, deviceHeading ?? userLocation?.heading ?? null);
   }, [deviceHeading, userLocation]);
 
-  // Draw / update / clear the active walking route, and frame it when it appears.
+  // Draw / update / clear the active walking route (+ grayed traveled trail), and
+  // frame it when it appears.
   React.useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
     routeRef.current?.remove();
     routeRef.current = null;
+    traveledRef.current?.remove();
+    traveledRef.current = null;
+    // Where you've been — a solid gray trail, drawn first so the live route sits
+    // on top of it.
+    if (traveled && traveled.length > 1) {
+      traveledRef.current = L.polyline(
+        traveled.map(([lng, lat]) => [lat, lng] as [number, number]),
+        { color: "#94a3b8", weight: 5, opacity: 0.6, interactive: false },
+      ).addTo(map);
+    }
     if (!route || route.length < 2) return;
     const latLngs = route.map(([lng, lat]) => [lat, lng] as [number, number]);
     routeRef.current = L.polyline(latLngs, {
       color: "#2563eb",
-      weight: 5,
-      opacity: 0.85,
+      weight: 6,
+      opacity: 0.9,
+      // Short round-capped dashes; the CSS class marches them toward the
+      // destination via an animated stroke-dashoffset while navigating.
+      dashArray: "1 10",
+      lineCap: "round",
+      className: animateRoute ? "route-antpath" : undefined,
       interactive: false,
     }).addTo(map);
     // Frame the whole route in preview only — while following, a mid-trip
@@ -779,7 +803,7 @@ export function ParkMapLeaflet({
       maxZoom: 17,
       duration: FLY_SECONDS,
     });
-  }, [route, ready]);
+  }, [route, traveled, animateRoute, ready]);
 
   // Draw the park outline(s): all parks on the overview, just the active park in
   // a park view. Lives in the overlayPane (above tiles, below markers) and is

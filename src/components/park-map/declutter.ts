@@ -187,13 +187,26 @@ export class MarkerCluster {
         continue;
       }
       // The selected marker is never absorbed — it always stays its own anchor.
+      // Radial (not axis-aligned box) proximity: a box merges only up to
+      // clusterDist on each axis but leaves diagonal neighbors ~1.4× further out
+      // un-merged, so two near-coincident markers offset mostly on one axis stay
+      // separate anchors and overlap after `relax`. Center-distance catches them.
+      //
+      // Priority-weighted reach: a wait-time anchor pulls in a *no-wait* neighbour
+      // (a closed/interactive attraction, or a POI) from ~1.6× further out. Those
+      // carry no wait worth surfacing, so they should fold under the nearby
+      // wait-time ride that heads the group rather than linger as their own lead
+      // anchor — which, sitting just outside the plain radius, would overlap the
+      // real cluster and steal its tap. Scoped to no-wait candidates so two real
+      // rides still use the plain radius and neither swallows the other early.
       const anchor =
         it.id === sel
           ? undefined
-          : placed.find(
-              (q) =>
-                Math.abs(p.x - q.x) < this.clusterDist && Math.abs(p.y - q.y) < this.clusterDist,
-            );
+          : placed.find((q) => {
+              const defers = it.wait == null && q.item.priority > it.priority;
+              const reach = defers ? this.clusterDist * 1.6 : this.clusterDist;
+              return Math.hypot(p.x - q.x, p.y - q.y) < reach;
+            });
       if (anchor) {
         this.members.get(anchor.item.id)?.push(it);
         it.detail.classList.add("hidden");

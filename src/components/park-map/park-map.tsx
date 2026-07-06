@@ -8,7 +8,7 @@ import { useTheme } from "next-themes";
 
 import { rideMatchesFilter, type RideFilter } from "#/components/rides/ride-filter.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
-import { pointInPolygon } from "#/server/living/geofence.ts";
+import { distanceMeters, pointInPolygon } from "#/server/living/geofence.ts";
 
 import { MarkerCluster, type DeclutterItem } from "./declutter.ts";
 import {
@@ -44,23 +44,20 @@ import {
 
 import "maplibre-gl/dist/maplibre-gl.css";
 
-import type { FeatureCollection, LineString } from "geojson";
+import type { FeatureCollection, LineString, Point } from "geojson";
 
 // MapTiler API key (client-side, domain-restricted — safe to expose via VITE_).
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY as string | undefined;
 
 /**
- * Vector basemap, per the app theme. We use MapTiler's OpenMapTiles-schema GL
- * styles — vector, not raster, so their labels live in addressable `symbol`
- * layers we can selectively strip (see `stripLabels`) instead of being baked
- * into tile pixels:
- *  - **light** → OpenStreetMap — MapTiler's vector rendition of the classic,
- *    vivid OSM Standard look (in-park detail, bold labels).
- *  - **dark** → OpenStreetMap Dark — its dark sibling.
+ * Vector basemap, per the app theme. We use a custom MapTiler GL style —
+ * vector, not raster, so its labels live in addressable `symbol` layers we can
+ * selectively strip (see `stripLabels`) instead of being baked into tile pixels.
  */
-function basemapStyleUrl(dark: boolean): string {
-  const style = dark ? "openstreetmap-dark" : "openstreetmap";
-  return `https://api.maptiler.com/maps/${style}/style.json?key=${MAPTILER_KEY}`;
+const MAPTILER_STYLE_ID = "019f3593-8a6f-771b-96d5-db0fec38726e";
+
+function basemapStyleUrl(_dark: boolean): string {
+  return `https://api.maptiler.com/maps/${MAPTILER_STYLE_ID}/style.json?key=${MAPTILER_KEY}`;
 }
 
 /**
@@ -140,6 +137,68 @@ function livingMarkerEl(kind: "darkness" | "discovery"): HTMLElement {
 // back to park badges). Park-bounds fits land around 15–16, comfortably above.
 const ROAM_RIDE_ZOOM = 14;
 
+// Route styling. The remaining route is drawn as short dashes marching toward
+// the destination (Google's pedestrian style); the already-walked breadcrumb
+// sits behind it as a solid gray trail.
+const ROUTE_COLOR = "#2563eb";
+const TRAVELED_COLOR = "#94a3b8"; // slate-400 — a muted "where you've been" gray
+const TRAVELED_WIDTH = 5;
+// The remaining route is drawn as a row of round dots marching toward the
+// destination (Google pedestrian style). MapLibre can't animate a dash offset —
+// round-capped dashes leave a stray dot pinned at the line origin and double up
+// mid-line — so instead we sample discrete points along the route and render them
+// as a `circle` layer. A phase offset that creeps forward each tick slides every
+// dot toward the destination. The spacing is derived from the current zoom (a
+// fixed on-screen gap), so the dots read the same density whether the map is
+// zoomed in tight or pulled back.
+const DOT_SPACING_PX = 22; // on-screen gap between dot centers
+const DOT_STEP_FRAC = 0.04; // fraction of a spacing advanced per tick (slow crawl)
+const DOT_TICK_MS = 70; // animation cadence
+const DOT_RADIUS = 3.75;
+
+/** Metres per screen pixel at a given latitude + MapLibre zoom (Web Mercator).
+ *  MapLibre uses 512px tiles, so the world is `512 · 2^zoom` px wide — hence the
+ *  earth circumference / 512 constant (half the 256-tile value Leaflet/Google use;
+ *  using the 256 constant makes every spacing come out 2× too large). */
+function metersPerPixel(lat: number, zoom: number): number {
+  return (78271.5169 * Math.cos((lat * Math.PI) / 180)) / 2 ** zoom;
+}
+
+/** Sample [lng,lat] points every `spacingM` metres along the polyline, the first
+ *  `offsetM` metres in — advancing `offsetM` (0…spacing) marches the whole row of
+ *  dots forward, toward the destination. */
+function dotsAlongRoute(
+  coords: Array<[number, number]> | null,
+  spacingM: number,
+  offsetM: number,
+): FeatureCollection<Point> {
+  const features: FeatureCollection<Point>["features"] = [];
+  if (coords && coords.length > 1 && spacingM > 0) {
+    let target = offsetM > 1e-6 ? offsetM : spacingM;
+    let acc = 0;
+    for (let i = 1; i < coords.length; i++) {
+      const a = coords[i - 1];
+      const b = coords[i];
+      const segLen = distanceMeters(a, b);
+      if (segLen <= 1e-6) continue;
+      while (target <= acc + segLen) {
+        const t = (target - acc) / segLen;
+        features.push({
+          type: "Feature",
+          properties: {},
+          geometry: {
+            type: "Point",
+            coordinates: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t],
+          },
+        });
+        target += spacingM;
+      }
+      acc += segLen;
+    }
+  }
+  return { type: "FeatureCollection", features };
+}
+
 // Stable default for the `devDestinations` prop, so the dev-marker effect's deps
 // don't churn when the caller omits it.
 const EMPTY_DEV_DESTINATIONS: ReadonlyArray<{
@@ -189,6 +248,8 @@ export function ParkMap({
   userLocation,
   deviceHeading = null,
   route,
+  traveled = null,
+  animateRoute = false,
   onRequestDirections,
   navDest = null,
   devDestinations = EMPTY_DEV_DESTINATIONS,
@@ -225,6 +286,13 @@ export function ParkMap({
   deviceHeading?: number | null;
   /** Active walking route geometry ([lng,lat] points) to draw, or null. */
   route?: Array<[number, number]> | null;
+  /** Breadcrumb of where the user has already walked this trip ([lng,lat]),
+   *  drawn as a grayed trail behind the remaining route. Null when not
+   *  navigating / before there's a trail. */
+  traveled?: Array<[number, number]> | null;
+  /** Animate the route as marching dots toward the destination (active nav).
+   *  Off in preview and once arrived — the line renders static then. */
+  animateRoute?: boolean;
   /** A "Directions" tap in an attraction popup — asks the stage to route here. */
   onRequestDirections?: (d: { id: number; name: string; coords: [number, number] }) => void;
   /** While actively navigating (Start tapped), the destination's [lng,lat]. Set,
@@ -305,6 +373,15 @@ export function ParkMap({
   const cardRef = React.useRef<{ close: () => void } | null>(null);
   const userMarkerRef = React.useRef<maplibregl.Marker | null>(null);
   const routeCoordsRef = React.useRef<Array<[number, number]> | null>(null);
+  const traveledCoordsRef = React.useRef<Array<[number, number]> | null>(null);
+  // Dot-march animation: an interval that advances the phase offset and re-samples
+  // the route dots so they crawl toward the destination. `dotTimerRef` holds the
+  // interval id (0 when idle); `dotAnimateRef` mirrors the `animateRoute` prop so
+  // the loop can be read without re-subscribing; `dotPhaseRef` is the running
+  // offset in metres.
+  const dotTimerRef = React.useRef(0);
+  const dotAnimateRef = React.useRef(false);
+  const dotPhaseRef = React.useRef(0);
   // Park-outline FeatureCollection + a (re-)installer. The basemap is rebuilt on
   // theme swap (setStyle wipes custom sources/layers), so we re-add on styledata.
   const boundaryFCRef = React.useRef(boundaryFeatureCollection([]));
@@ -546,9 +623,43 @@ export function ParkMap({
     });
   }, []);
 
-  // Install/refresh the active route as a GeoJSON line layer. Like the
-  // boundaries, it must re-install on `styledata` (a theme swap's setStyle wipes
-  // custom sources/layers). An empty FeatureCollection clears the line in place.
+  // Re-sample the route dots and push them to the source. Spacing is derived from
+  // the live zoom so the on-screen gap stays constant; the running phase (a
+  // fraction of one spacing) offsets where the row starts.
+  const paintDots = React.useCallback(() => {
+    const map = mapRef.current;
+    const src = map?.getSource("route-dots");
+    if (!map || !src) return;
+    const spacingM = DOT_SPACING_PX * metersPerPixel(map.getCenter().lat, map.getZoom());
+    (src as maplibregl.GeoJSONSource).setData(
+      dotsAlongRoute(routeCoordsRef.current, spacingM, dotPhaseRef.current * spacingM),
+    );
+  }, []);
+
+  // Start/stop the marching-dots timer to match the current mode. Runs only while
+  // `animateRoute` is on and there's a real route; each tick nudges the phase and
+  // re-samples so the dots crawl toward the destination. Idempotent — safe to call
+  // on every route/mode change and after a style swap.
+  const syncDotAnimation = React.useCallback(() => {
+    const shouldRun = dotAnimateRef.current && (routeCoordsRef.current?.length ?? 0) > 1;
+    if (shouldRun && dotTimerRef.current === 0) {
+      dotTimerRef.current = window.setInterval(() => {
+        // Advancing the phase moves the first dot to a larger distance-along, i.e.
+        // toward the destination (the coords run origin → destination).
+        dotPhaseRef.current = (dotPhaseRef.current + DOT_STEP_FRAC) % 1;
+        paintDots();
+      }, DOT_TICK_MS);
+    } else if (!shouldRun && dotTimerRef.current !== 0) {
+      clearInterval(dotTimerRef.current);
+      dotTimerRef.current = 0;
+    }
+  }, [paintDots]);
+
+  // Install/refresh the grayed traveled trail (a line) and the remaining route
+  // (a row of dots) as GeoJSON layers. Like the boundaries, they must re-install
+  // on `styledata` (a theme swap's setStyle wipes custom sources/layers). Empty
+  // collections clear them in place. The traveled trail is added first so the
+  // route dots draw on top of it.
   const ensureRoute = React.useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -556,34 +667,57 @@ export function ParkMap({
       map.once("styledata", ensureRoute);
       return;
     }
-    const coords = routeCoordsRef.current;
-    const fc: FeatureCollection<LineString> = {
+
+    const traveled = traveledCoordsRef.current;
+    const traveledFC: FeatureCollection<LineString> = {
       type: "FeatureCollection",
       features:
-        coords && coords.length > 1
+        traveled && traveled.length > 1
           ? [
               {
                 type: "Feature",
                 properties: {},
-                geometry: { type: "LineString", coordinates: coords },
+                geometry: { type: "LineString", coordinates: traveled },
               },
             ]
           : [],
     };
-    const src = map.getSource("route");
-    if (src) {
-      (src as maplibregl.GeoJSONSource).setData(fc);
-      return;
+    const traveledSrc = map.getSource("route-traveled");
+    if (traveledSrc) {
+      (traveledSrc as maplibregl.GeoJSONSource).setData(traveledFC);
+    } else {
+      map.addSource("route-traveled", { type: "geojson", data: traveledFC });
+      map.addLayer({
+        id: "route-traveled-line",
+        type: "line",
+        source: "route-traveled",
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-color": TRAVELED_COLOR, "line-width": TRAVELED_WIDTH, "line-opacity": 0.6 },
+      });
     }
-    map.addSource("route", { type: "geojson", data: fc });
-    map.addLayer({
-      id: "route-line",
-      type: "line",
-      source: "route",
-      layout: { "line-cap": "round", "line-join": "round" },
-      paint: { "line-color": "#2563eb", "line-width": 5, "line-opacity": 0.85 },
-    });
-  }, []);
+
+    if (!map.getSource("route-dots")) {
+      map.addSource("route-dots", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer({
+        id: "route-dots",
+        type: "circle",
+        source: "route-dots",
+        paint: {
+          "circle-radius": DOT_RADIUS,
+          "circle-color": ROUTE_COLOR,
+          "circle-opacity": 0.95,
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 1.25,
+          "circle-stroke-opacity": 0.9,
+        },
+      });
+    }
+    paintDots(); // fills the source at the current zoom + phase
+    syncDotAnimation();
+  }, [paintDots, syncDotAnimation]);
 
   // Hide the basemap's own POI / building / house-number labels so our node
   // labels don't fight them, while keeping street + water names. Runs once the
@@ -623,9 +757,12 @@ export function ParkMap({
     if (ready) stripLabels();
   }, [ready, stripLabels]);
 
-  // Draw / update / clear the active walking route, and frame it when it appears.
+  // Draw / update / clear the active walking route (+ traveled trail), and frame
+  // it when it appears.
   React.useEffect(() => {
     routeCoordsRef.current = route ?? null;
+    traveledCoordsRef.current = traveled ?? null;
+    dotAnimateRef.current = animateRoute;
     if (!ready) return;
     ensureRoute();
     // Frame the whole route in *preview* only. While following (navigating), a
@@ -643,7 +780,27 @@ export function ParkMap({
         duration: 500,
       });
     }
-  }, [route, ready, ensureRoute]);
+  }, [route, traveled, animateRoute, ready, ensureRoute]);
+
+  // Reflow the dot spacing to the new zoom while zooming — the march timer already
+  // repaints during navigation, but this keeps the density right in preview (and
+  // during a pinch) too. Stop the march timer on unmount so it can't outlive the map.
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    map.on("zoom", paintDots);
+    return () => {
+      map.off("zoom", paintDots);
+    };
+  }, [ready, paintDots]);
+  React.useEffect(() => {
+    return () => {
+      if (dotTimerRef.current !== 0) {
+        clearInterval(dotTimerRef.current);
+        dotTimerRef.current = 0;
+      }
+    };
+  }, []);
 
   // Recompute the park outline(s) and (re)install the layers: all parks on the
   // overview, just the active park in a park view.

@@ -79,12 +79,15 @@ export const MAP_FLY_MS = 800;
 // box settles frames the view for the wrong size. Layout first, then zoom.
 export const MORPH_MS = 420;
 
-// Square (px) reserved around a full marker for collision avoidance. Two markers
-// whose projected centers fall within this on both axes can't both stay expanded;
-// the lower-priority one is absorbed into the anchor's cluster (a tap on which
-// zooms in). Just under the photo disc (52px) so markers group as soon as their
-// discs meaningfully overlap (a cluster tap still zooms in enough to split them).
-export const DECLUTTER_SIZE = 56;
+// Center-to-center px radius reserved around a full marker for collision
+// avoidance. Two markers whose projected centers fall within this of each other
+// can't both stay expanded; the lower-priority one is absorbed into the anchor's
+// cluster (a tap on which zooms in). Sized a touch past the photo disc (52px) so
+// markers group as soon as their discs overlap — including diagonal neighbors the
+// old axis-aligned box test left ~1.4× further out and un-merged (which let a
+// near-coincident marker sit atop a cluster and steal its tap). A cluster tap
+// still zooms in enough to split them.
+export const DECLUTTER_SIZE = 64;
 
 // At/above this zoom a park view stops clustering entirely and switches to the
 // "spread" layout — every marker stays visible, overlapping ones just nudge

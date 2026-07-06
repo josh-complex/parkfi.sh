@@ -4,3 +4,21 @@
   background: transparent;
   border: none;
 }
+
+/* Marching-dash "ant path" for the active walking route: animate the SVG path's
+   stroke-dashoffset so the dashes crawl toward the destination (the direction to
+   walk), matching the GL renderer's dot march. The dashArray is set on the
+   polyline; a negative offset sweep moves the dashes forward along the path. */
+@keyframes route-antpath-march {
+  to {
+    stroke-dashoffset: -22;
+  }
+}
+.route-antpath {
+  animation: route-antpath-march 1s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .route-antpath {
+    animation: none;
+  }
+}
