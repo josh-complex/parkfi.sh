@@ -2,6 +2,7 @@ import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeftIcon, ExternalLinkIcon, MapPinIcon, ShoppingBagIcon } from "lucide-react";
 
+import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { seo } from "#/lib/seo.ts";
 
@@ -54,13 +55,18 @@ function ShopPage() {
 
   return (
     <div className="mx-auto w-full max-w-2xl p-4 sm:p-6">
-      <Link
-        to="/map"
-        className="text-muted-foreground hover:text-foreground mb-3 inline-flex items-center gap-1.5 text-sm font-medium transition-colors max-md:text-white/90 max-md:hover:text-white"
-      >
-        <ArrowLeftIcon className="size-4" />
-        Back to map
-      </Link>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <Link
+          to="/map"
+          className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm font-medium transition-colors max-md:text-white/90 max-md:hover:text-white"
+        >
+          <ArrowLeftIcon className="size-4" />
+          Back to map
+        </Link>
+        {shop && (
+          <RemovalRequestDialog entityType="shop" entityId={shop.id} entityName={shop.name} />
+        )}
+      </div>
 
       {/* Self-contained card so the page reads correctly on any inset surface
           (the mobile dashboard gutter is colored; bg-card owns its own contrast). */}

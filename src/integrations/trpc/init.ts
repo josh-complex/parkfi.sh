@@ -6,6 +6,8 @@ import { auth } from "#/lib/auth.ts";
 export interface TRPCContext {
   userId?: string;
   userEmail?: string;
+  userRole?: string;
+  orgTenantId?: string;
 }
 
 // Resolve the Better-auth session from the request cookies. `getSession`
@@ -13,7 +15,15 @@ export interface TRPCContext {
 // public procedures keep working (they fall back to "anonymous").
 export async function createTRPCContext(opts: { req: Request }): Promise<TRPCContext> {
   const session = await auth.api.getSession({ headers: opts.req.headers });
-  return { userId: session?.user.id, userEmail: session?.user.email };
+  const user = session?.user as
+    | { id: string; email: string; role?: string; orgTenantId?: string }
+    | undefined;
+  return {
+    userId: user?.id,
+    userEmail: user?.email,
+    userRole: user?.role,
+    orgTenantId: user?.orgTenantId,
+  };
 }
 
 /**
@@ -48,4 +58,17 @@ export const adminProcedure = t.procedure.use(({ ctx, next }) => {
     throw new TRPCError({ code: "FORBIDDEN" });
   }
   return next({ ctx: { userId: ctx.userId } });
+});
+
+/**
+ * Requires the caller to be a verified cast member (role granted server-side
+ * from a Microsoft Entra tenant; see `src/server/auth/org-role.ts`). The role is
+ * write-protected (`input: false`), so it can't be self-assigned via the API.
+ */
+export const castMemberProcedure = t.procedure.use(({ ctx, next }) => {
+  if (!ctx.userId) throw new TRPCError({ code: "UNAUTHORIZED" });
+  if (ctx.userRole !== "cast_member") throw new TRPCError({ code: "FORBIDDEN" });
+  return next({
+    ctx: { userId: ctx.userId, userEmail: ctx.userEmail, orgTenantId: ctx.orgTenantId },
+  });
 });

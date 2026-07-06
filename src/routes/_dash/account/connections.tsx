@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { CheckIcon, ChevronRightIcon } from "lucide-react";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -6,6 +6,7 @@ import { authClient } from "#/lib/auth-client.ts";
 import { accountsQueryOptions } from "#/lib/auth-queries.ts";
 import { seo } from "#/lib/seo.ts";
 import { ConfirmButton } from "#/components/account/confirm-button.tsx";
+import { AppleIcon, GoogleIcon, MicrosoftIcon } from "#/components/account/provider-icons.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import {
   Card,
@@ -27,11 +28,18 @@ export const Route = createFileRoute("/_dash/account/connections")({
     }),
 });
 
+type SocialProviderId = "google" | "apple" | "microsoft";
+
 const PROVIDERS = [
-  { id: "google", label: "Google", abbrev: "G" },
-  { id: "apple", label: "Apple", abbrev: "" },
-  { id: "credential", label: "Email & Password", abbrev: "@" },
+  { id: "google", label: "Google", Icon: GoogleIcon, kind: "social" },
+  { id: "apple", label: "Apple", Icon: AppleIcon, kind: "social" },
+  { id: "microsoft", label: "Microsoft", Icon: MicrosoftIcon, kind: "social" },
+  { id: "credential", label: "Email & Password", Icon: AtIcon, kind: "credential" },
 ] as const;
+
+function AtIcon() {
+  return <span className="text-xs font-bold">@</span>;
+}
 
 function formatDate(d: Date | string | null | undefined) {
   if (!d) return "—";
@@ -52,7 +60,7 @@ type LinkedAccount = {
 function ConnectionsSkeleton() {
   return (
     <div className="space-y-2">
-      {[1, 2, 3].map((i) => (
+      {[1, 2, 3, 4].map((i) => (
         <div key={i} className="flex items-center gap-3 px-3 py-2.5">
           <Skeleton className="size-7 rounded-full shrink-0" />
           <div className="flex-1 space-y-1.5">
@@ -70,7 +78,7 @@ function ConnectionsPage() {
   const queryClient = useQueryClient();
   const opts = accountsQueryOptions();
   const { data: accounts = [], isLoading } = useQuery(opts);
-  const [linkingGoogle, setLinkingGoogle] = useState(false);
+  const [linking, setLinking] = useState<SocialProviderId | null>(null);
 
   const linkedProviders = new Set((accounts as LinkedAccount[]).map((a) => a.providerId));
 
@@ -85,14 +93,17 @@ function ConnectionsPage() {
     }
   };
 
-  const handleLinkGoogle = async () => {
-    setLinkingGoogle(true);
+  const handleLink = async (provider: SocialProviderId, label: string) => {
+    setLinking(provider);
+    // Redirects to the provider and back to this page; no need to clear on success.
     const { error } = await authClient.linkSocial({
-      provider: "google",
+      provider,
       callbackURL: "/account/connections",
     });
-    setLinkingGoogle(false);
-    if (error) toast.error(error.message ?? "Failed to link Google");
+    if (error) {
+      setLinking(null);
+      toast.error(error.message ?? `Failed to link ${label}`);
+    }
   };
 
   return (
@@ -106,7 +117,7 @@ function ConnectionsPage() {
           <ConnectionsSkeleton />
         ) : (
           <ul className="space-y-1">
-            {PROVIDERS.map(({ id, label, abbrev }) => {
+            {PROVIDERS.map(({ id, label, Icon, kind }) => {
               const linked = linkedProviders.has(id);
               const acct = (accounts as LinkedAccount[]).find((a) => a.providerId === id);
               return (
@@ -115,8 +126,8 @@ function ConnectionsPage() {
                   className="flex items-center justify-between rounded-2xl bg-muted/50 px-3 py-2.5"
                 >
                   <div className="flex items-center gap-2.5">
-                    <span className="size-7 rounded-full bg-background border flex items-center justify-center text-xs font-bold shrink-0">
-                      {abbrev}
+                    <span className="size-7 rounded-full bg-background border flex items-center justify-center shrink-0">
+                      <Icon />
                     </span>
                     <div>
                       <p className="text-sm font-medium">{label}</p>
@@ -140,18 +151,21 @@ function ConnectionsPage() {
                         />
                       )}
                     </div>
-                  ) : id === "google" ? (
+                  ) : kind === "social" ? (
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => void handleLinkGoogle()}
-                      disabled={linkingGoogle}
+                      onClick={() => void handleLink(id as SocialProviderId, label)}
+                      disabled={linking !== null}
                     >
                       <ChevronRightIcon />
-                      Connect
+                      {linking === id ? "Connecting…" : "Connect"}
                     </Button>
                   ) : (
-                    <span className="text-xs text-muted-foreground">—</span>
+                    <Button size="sm" variant="outline" render={<Link to="/account/security" />}>
+                      Set up
+                      <ChevronRightIcon />
+                    </Button>
                   )}
                 </li>
               );

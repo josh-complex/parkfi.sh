@@ -31,6 +31,7 @@ import {
 } from "#/components/ui/select.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useIsMobile } from "#/hooks/use-mobile.ts";
+import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
 import { cn } from "#/lib/utils.ts";
@@ -289,22 +290,33 @@ export function DiningVenueDetail({
       {/* Tuck the breadcrumb tight under the header, matching the eats search /
           cuisine-chip rhythm. The header (py-3) + wrapper (pt-2) leave ~20px
           above it, so trim the section gap to leave the same below. */}
-      <nav className="-mb-1 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
-        <Link to="/dining" search={{}} className="inline-flex items-center gap-1.5 hover:underline">
-          <ArrowLeftIcon className="size-3.5" />
-          All dining
-        </Link>
-        {trail.map((label, i) => (
-          <React.Fragment key={`${label}-${i}`}>
-            <span aria-hidden>/</span>
-            {/* Every crumb returns to the same filtered list — the facets are
+      <div className="-mb-1 flex items-center justify-between gap-3">
+        <nav className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+          <Link
+            to="/dining"
+            search={{}}
+            className="inline-flex items-center gap-1.5 hover:underline"
+          >
+            <ArrowLeftIcon className="size-3.5" />
+            All dining
+          </Link>
+          {trail.map((label, i) => (
+            <React.Fragment key={`${label}-${i}`}>
+              <span aria-hidden>/</span>
+              {/* Every crumb returns to the same filtered list — the facets are
                 parallel, so there's no deeper level to drill into. */}
-            <Link to="/dining" search={search} className="hover:underline">
-              {label}
-            </Link>
-          </React.Fragment>
-        ))}
-      </nav>
+              <Link to="/dining" search={search} className="hover:underline">
+                {label}
+              </Link>
+            </React.Fragment>
+          ))}
+        </nav>
+        <RemovalRequestDialog
+          entityType="restaurant"
+          entityId={facilityId}
+          entityName={venue?.name}
+        />
+      </div>
 
       {/* Header */}
       {venueQ.isLoading ? (

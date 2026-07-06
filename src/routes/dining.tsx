@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { AppInset } from "#/components/app-inset.tsx";
 import { AppSidebar } from "#/components/app-sidebar.tsx";
+import { MaintenanceGate } from "#/components/maintenance-gate.tsx";
 import { DiningBoard } from "#/components/dining/dining-board.tsx";
 import { validateDiningSearch } from "#/components/dining/dining-search-params.ts";
 import { SiteHeader } from "#/components/site-header.tsx";
@@ -35,11 +36,13 @@ function DiningPage() {
       <AppSidebar variant="inset" />
       <AppInset>
         <SiteHeader title="Dining Reservations" />
-        <div className="flex flex-1 flex-col">
-          <div className="@container/main flex flex-1 flex-col gap-2">
-            <DiningBoard />
+        <MaintenanceGate feature="dining" title="Dining is under maintenance">
+          <div className="flex flex-1 flex-col">
+            <div className="@container/main flex flex-1 flex-col gap-2">
+              <DiningBoard />
+            </div>
           </div>
-        </div>
+        </MaintenanceGate>
       </AppInset>
     </SidebarProvider>
   );

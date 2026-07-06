@@ -7,6 +7,7 @@ import { ScanLineIcon, SearchIcon } from "lucide-react";
 
 import { AppInset } from "#/components/app-inset.tsx";
 import { AppSidebar } from "#/components/app-sidebar.tsx";
+import { MaintenanceGate } from "#/components/maintenance-gate.tsx";
 import { PageContainer } from "#/components/page-container.tsx";
 import { PinCard, type PinCardData } from "#/components/pins/pin-card.tsx";
 import { SiteHeader } from "#/components/site-header.tsx";
@@ -119,131 +120,133 @@ function PinsPage() {
       <AppSidebar variant="inset" />
       <AppInset>
         <SiteHeader title="Pins" />
-        <div className="flex flex-1 flex-col">
-          <div className="@container/main flex flex-1 flex-col gap-2">
-            <PageContainer className="space-y-5 py-8">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h1 className="text-xl font-semibold">Pin catalog</h1>
-                  <p className="text-muted-foreground text-sm">
-                    Browse Disney trading pins, track your collection, and find trades.
-                  </p>
+        <MaintenanceGate feature="pins" title="Pins is under maintenance">
+          <div className="flex flex-1 flex-col">
+            <div className="@container/main flex flex-1 flex-col gap-2">
+              <PageContainer className="space-y-5 py-8">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h1 className="text-xl font-semibold">Pin catalog</h1>
+                    <p className="text-muted-foreground text-sm">
+                      Browse Disney trading pins, track your collection, and find trades.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button variant="outline" size="sm" render={<Link to="/pins/collection" />}>
+                      My collection
+                    </Button>
+                    <Button variant="outline" size="sm" render={<Link to="/pins/trades" />}>
+                      Trades
+                    </Button>
+                    <Button size="sm" render={<Link to="/pins/scan" />}>
+                      <ScanLineIcon />
+                      Scan a pin
+                    </Button>
+                  </div>
                 </div>
+
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button variant="outline" size="sm" render={<Link to="/pins/collection" />}>
-                    My collection
-                  </Button>
-                  <Button variant="outline" size="sm" render={<Link to="/pins/trades" />}>
-                    Trades
-                  </Button>
-                  <Button size="sm" render={<Link to="/pins/scan" />}>
-                    <ScanLineIcon />
-                    Scan a pin
-                  </Button>
+                  <div className="relative min-w-56 flex-1">
+                    <SearchIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+                    <Input
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      placeholder="Search pins…"
+                      className="pl-9"
+                    />
+                  </div>
+                  <Select
+                    value={series}
+                    onValueChange={(v) => v && setSeries(v as string)}
+                    items={seriesItems}
+                  >
+                    <SelectTrigger size="sm" aria-label="Series">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(seriesItems).map(([v, label]) => (
+                        <SelectItem key={v} value={v}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={character}
+                    onValueChange={(v) => v && setCharacter(v as string)}
+                    items={characterItems}
+                  >
+                    <SelectTrigger size="sm" aria-label="Character">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(characterItems).map(([v, label]) => (
+                        <SelectItem key={v} value={v}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={sort}
+                    onValueChange={(v) => v && setSort(v as "name" | "year_desc" | "value_desc")}
+                    items={SORT_LABEL}
+                  >
+                    <SelectTrigger size="sm" aria-label="Sort">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(SORT_LABEL).map(([v, label]) => (
+                        <SelectItem key={v} value={v}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="relative min-w-56 flex-1">
-                  <SearchIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-                  <Input
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search pins…"
-                    className="pl-9"
-                  />
-                </div>
-                <Select
-                  value={series}
-                  onValueChange={(v) => v && setSeries(v as string)}
-                  items={seriesItems}
-                >
-                  <SelectTrigger size="sm" aria-label="Series">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(seriesItems).map(([v, label]) => (
-                      <SelectItem key={v} value={v}>
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select
-                  value={character}
-                  onValueChange={(v) => v && setCharacter(v as string)}
-                  items={characterItems}
-                >
-                  <SelectTrigger size="sm" aria-label="Character">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(characterItems).map(([v, label]) => (
-                      <SelectItem key={v} value={v}>
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select
-                  value={sort}
-                  onValueChange={(v) => v && setSort(v as "name" | "year_desc" | "value_desc")}
-                  items={SORT_LABEL}
-                >
-                  <SelectTrigger size="sm" aria-label="Sort">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(SORT_LABEL).map(([v, label]) => (
-                      <SelectItem key={v} value={v}>
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {isLoading ? (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                  {Array.from({ length: 10 }).map((_, i) => (
-                    <Skeleton key={i} className="aspect-[3/4] w-full rounded-2xl" />
-                  ))}
-                </div>
-              ) : pins.length === 0 ? (
-                <Empty>
-                  <EmptyTitle>No pins found</EmptyTitle>
-                  <EmptyDescription>
-                    {searching
-                      ? "Try a different search term."
-                      : "Try clearing a filter, or scan a pin to add it."}
-                  </EmptyDescription>
-                  <Button className="mt-4" render={<Link to="/pins/scan" />}>
-                    Scan a pin
-                  </Button>
-                </Empty>
-              ) : (
-                <>
+                {isLoading ? (
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                    {pins.map((pin) => (
-                      <PinCard key={pin.id} pin={pin} />
+                    {Array.from({ length: 10 }).map((_, i) => (
+                      <Skeleton key={i} className="aspect-[3/4] w-full rounded-2xl" />
                     ))}
                   </div>
-                  {nextCursor != null ? (
-                    <div className="flex justify-center pt-2">
-                      <Button
-                        variant="outline"
-                        disabled={browseQ.isFetching}
-                        onClick={() => setCursor(nextCursor)}
-                      >
-                        {browseQ.isFetching ? "Loading…" : "Load more"}
-                      </Button>
+                ) : pins.length === 0 ? (
+                  <Empty>
+                    <EmptyTitle>No pins found</EmptyTitle>
+                    <EmptyDescription>
+                      {searching
+                        ? "Try a different search term."
+                        : "Try clearing a filter, or scan a pin to add it."}
+                    </EmptyDescription>
+                    <Button className="mt-4" render={<Link to="/pins/scan" />}>
+                      Scan a pin
+                    </Button>
+                  </Empty>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                      {pins.map((pin) => (
+                        <PinCard key={pin.id} pin={pin} />
+                      ))}
                     </div>
-                  ) : null}
-                </>
-              )}
-            </PageContainer>
+                    {nextCursor != null ? (
+                      <div className="flex justify-center pt-2">
+                        <Button
+                          variant="outline"
+                          disabled={browseQ.isFetching}
+                          onClick={() => setCursor(nextCursor)}
+                        >
+                          {browseQ.isFetching ? "Loading…" : "Load more"}
+                        </Button>
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </PageContainer>
+            </div>
           </div>
-        </div>
+        </MaintenanceGate>
       </AppInset>
     </SidebarProvider>
   );

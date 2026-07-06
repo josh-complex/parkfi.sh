@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { db } from "#/db/index.ts";
 import { QueueState, QueueType } from "#/server/parks/codes.ts";
+import { suppressedFields } from "#/server/content/suppression.ts";
 import { publicProcedure } from "../init.ts";
 
 import type { GeoPolygon } from "#/db/schema.ts";
@@ -478,13 +479,16 @@ export const parksRouter = {
     `);
     const r = result.rows[0];
     if (!r) return null;
+    // Reversible content suppression from the removal-request flow.
+    const suppressed = await suppressedFields("shop", r.facility_id);
+    if (suppressed.has("*")) return null;
     return {
       id: r.facility_id,
       name: r.name,
       slug: r.url_friendly_id,
       land: r.land,
       parkResort: r.park_resort,
-      imageUrl: r.image_url,
+      imageUrl: suppressed.has("image") ? null : r.image_url,
       detailUrl: r.detail_url,
       merchandise: r.merchandise ?? [],
       latitude: r.latitude,
@@ -786,6 +790,10 @@ export const parksRouter = {
       `);
       const r = result.rows[0];
       if (!r) return null;
+      // Reversible content suppression from the removal-request flow.
+      const suppressed = await suppressedFields("attraction", String(r.id));
+      if (suppressed.has("*")) return null;
+      const hideImage = suppressed.has("image");
       return {
         id: Number(r.id),
         name: r.name,
@@ -824,8 +832,8 @@ export const parksRouter = {
           r.meta_height_requirement != null ||
           (r.meta_tags != null && r.meta_tags.length > 0)
             ? {
-                imageThumbUrl: r.meta_image_thumb_url,
-                imageHeroUrl: r.meta_image_hero_url,
+                imageThumbUrl: hideImage ? null : r.meta_image_thumb_url,
+                imageHeroUrl: hideImage ? null : r.meta_image_hero_url,
                 imageAlt: r.meta_image_alt,
                 detailUrl: r.meta_detail_url,
                 land: r.meta_land,

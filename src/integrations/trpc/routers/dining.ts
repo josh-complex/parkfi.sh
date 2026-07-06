@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "#/db/index.ts";
+import { suppressedFields } from "#/server/content/suppression.ts";
 import { publicProcedure } from "../init.ts";
 
 import type { TRPCRouterRecord } from "@trpc/server";
@@ -132,6 +133,9 @@ export const diningRouter = {
     `);
     const r = result.rows[0];
     if (!r) return null;
+    // Reversible content suppression from the removal-request flow.
+    const suppressed = await suppressedFields("restaurant", input.facilityId);
+    if (suppressed.has("*")) return null;
     return {
       facilityId: r.facility_id,
       name: r.name,
@@ -139,7 +143,7 @@ export const diningRouter = {
       experienceType: r.experience_type,
       priceRange: r.price_range,
       parkResort: r.park_resort,
-      imageUrl: r.image_url,
+      imageUrl: suppressed.has("image") ? null : r.image_url,
       detailUrl: r.detail_url,
       urlFriendlyId: r.url_friendly_id,
       dinnerShow: r.entity_type === "dinner-show",

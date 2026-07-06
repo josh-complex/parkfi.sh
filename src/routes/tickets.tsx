@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { AppInset } from "#/components/app-inset.tsx";
 import { AppSidebar } from "#/components/app-sidebar.tsx";
+import { MaintenanceGate } from "#/components/maintenance-gate.tsx";
 import { SiteHeader } from "#/components/site-header.tsx";
 import { PricingCalendar } from "#/components/ticket-pricing/pricing-calendar.tsx";
 import { SidebarProvider } from "#/components/ui/sidebar.tsx";
@@ -33,11 +34,13 @@ function TicketsPage() {
       <AppSidebar variant="inset" />
       <AppInset>
         <SiteHeader title="Ticket Pricing" />
-        <div className="flex flex-1 flex-col">
-          <div className="@container/main flex flex-1 flex-col gap-2">
-            <PricingCalendar />
+        <MaintenanceGate feature="tickets" title="Ticket pricing is under maintenance">
+          <div className="flex flex-1 flex-col">
+            <div className="@container/main flex flex-1 flex-col gap-2">
+              <PricingCalendar />
+            </div>
           </div>
-        </div>
+        </MaintenanceGate>
       </AppInset>
     </SidebarProvider>
   );

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 
+import { CastAvatarBadge } from "#/components/cast-member-badge.tsx";
 import {
   Drawer,
   DrawerClose,
@@ -74,6 +75,7 @@ export function MobileUserMenu({ showDot = false }: { showDot?: boolean }) {
         {showDot && (
           <span className="bg-primary absolute top-0.5 right-0.5 size-2 rounded-full ring-2 ring-background" />
         )}
+        <CastAvatarBadge />
       </DrawerTrigger>
       <DrawerContent>
         <DrawerHeader className="border-b pb-4">

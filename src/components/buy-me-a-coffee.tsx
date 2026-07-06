@@ -25,7 +25,7 @@ export const BuyMeACoffee: FC<{ className?: string; style?: CSSProperties }> = (
       aria-label="Buy me a coffee"
       style={style}
       className={cn(
-        "shrink-0 overflow-hidden border-amber-500/60 bg-amber-400 p-0 hover:bg-amber-300 [--btn-3d:var(--color-amber-600)]",
+        "shrink-0 overflow-hidden bg-amber-400 p-0 hover:bg-amber-300 [--btn-3d:var(--color-amber-600)]",
         className,
       )}
     >

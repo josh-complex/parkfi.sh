@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowLeftIcon, ExternalLinkIcon } from "lucide-react";
 
 import { getLastMapView } from "#/components/park-map/map-stage.tsx";
+import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Card, CardContent } from "#/components/ui/card.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
@@ -98,19 +99,26 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-6 lg:px-6">
-      <nav className="text-sm text-muted-foreground">
-        {back.to === "/map" ? (
-          <Link to="/map" className={backClass}>
-            <ArrowLeftIcon className="size-3.5" />
-            {ride.park.name}
-          </Link>
-        ) : (
-          <Link to="/park/$slug" params={back.params} className={backClass}>
-            <ArrowLeftIcon className="size-3.5" />
-            {ride.park.name}
-          </Link>
-        )}
-      </nav>
+      <div className="flex items-center justify-between gap-3">
+        <nav className="text-sm text-muted-foreground">
+          {back.to === "/map" ? (
+            <Link to="/map" className={backClass}>
+              <ArrowLeftIcon className="size-3.5" />
+              {ride.park.name}
+            </Link>
+          ) : (
+            <Link to="/park/$slug" params={back.params} className={backClass}>
+              <ArrowLeftIcon className="size-3.5" />
+              {ride.park.name}
+            </Link>
+          )}
+        </nav>
+        <RemovalRequestDialog
+          entityType="attraction"
+          entityId={String(ride.id)}
+          entityName={ride.name}
+        />
+      </div>
 
       <header className="flex flex-col gap-4">
         {heroImage && (

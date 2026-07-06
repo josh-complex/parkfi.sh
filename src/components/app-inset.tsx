@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import { BuyMeACoffee } from "#/components/buy-me-a-coffee.tsx";
+import { CastMemberHeadline } from "#/components/cast-member-badge.tsx";
 import { MobileBottomNav } from "#/components/mobile-bottom-nav.tsx";
 import { OmniSearch } from "#/components/omni-search.tsx";
 import { SidebarInset } from "#/components/ui/sidebar.tsx";
@@ -38,6 +39,7 @@ export function AppInset({ children, className }: { children: ReactNode; classNa
           the support link is dropped entirely. */}
       <div className="hidden h-(--toolbar-height) shrink-0 items-center gap-3 px-4 py-2 text-white md:flex lg:px-6">
         <OmniSearch />
+        <CastMemberHeadline />
         <BuyMeACoffee className="ml-auto" />
       </div>
       {/* White content card. Transparent on mobile so the blue shell shows through.

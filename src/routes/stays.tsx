@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { AppInset } from "#/components/app-inset.tsx";
 import { AppSidebar } from "#/components/app-sidebar.tsx";
+import { MaintenanceGate } from "#/components/maintenance-gate.tsx";
 import { SiteHeader } from "#/components/site-header.tsx";
 import { StaysBoard } from "#/components/stays/stays-board.tsx";
 import { SidebarProvider } from "#/components/ui/sidebar.tsx";
@@ -33,11 +34,13 @@ function StaysPage() {
       <AppSidebar variant="inset" />
       <AppInset>
         <SiteHeader title="Stays" />
-        <div className="flex flex-1 flex-col">
-          <div className="@container/main flex flex-1 flex-col gap-2">
-            <StaysBoard />
+        <MaintenanceGate feature="stays" title="Stays is under maintenance">
+          <div className="flex flex-1 flex-col">
+            <div className="@container/main flex flex-1 flex-col gap-2">
+              <StaysBoard />
+            </div>
           </div>
-        </div>
+        </MaintenanceGate>
       </AppInset>
     </SidebarProvider>
   );

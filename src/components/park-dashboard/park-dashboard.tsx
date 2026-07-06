@@ -7,6 +7,7 @@ import { useTRPC } from "#/integrations/trpc/react.ts";
 
 import { MapSlot } from "#/components/park-map/map-stage.tsx";
 import { NotificationPrompt } from "#/components/notifications/notification-prompt.tsx";
+import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
 import { ChartErrorBoundary } from "#/components/chart-error-boundary.tsx";
 import { lazyWithReload } from "#/lib/lazy-with-reload.tsx";
 import { useHydrated } from "#/lib/use-hydrated.ts";
@@ -99,6 +100,11 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
               })()}
           </p>
         </div>
+        <RemovalRequestDialog
+          entityType="park"
+          entityId={activeSlug}
+          entityName={parks?.find((p) => p.slug === activeSlug)?.name}
+        />
       </div>
 
       <div className="order-1 flex flex-col gap-4 px-4 lg:px-6">

@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { AppInset } from "#/components/app-inset.tsx";
 import { AppSidebar } from "#/components/app-sidebar.tsx";
+import { MaintenanceGate } from "#/components/maintenance-gate.tsx";
 import { PredictionsDashboard } from "#/components/predictions/predictions-dashboard.tsx";
 import { SiteHeader } from "#/components/site-header.tsx";
 import { SidebarProvider } from "#/components/ui/sidebar.tsx";
@@ -33,11 +34,13 @@ function PredictionsPage() {
       <AppSidebar variant="inset" />
       <AppInset>
         <SiteHeader title="Forecasts" />
-        <div className="flex flex-1 flex-col">
-          <div className="@container/main flex flex-1 flex-col gap-2">
-            <PredictionsDashboard />
+        <MaintenanceGate feature="predictions" title="Forecasts are under maintenance">
+          <div className="flex flex-1 flex-col">
+            <div className="@container/main flex flex-1 flex-col gap-2">
+              <PredictionsDashboard />
+            </div>
           </div>
-        </div>
+        </MaintenanceGate>
       </AppInset>
     </SidebarProvider>
   );

@@ -8,6 +8,7 @@ import { type DateRange } from "react-day-picker";
 import { ArrowLeftIcon, CalendarIcon, ExternalLinkIcon } from "lucide-react";
 
 import { LocationMap } from "#/components/maps/location-map.tsx";
+import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
 import { ResortPriceChart } from "#/components/stays/resort-price-chart.tsx";
 import { StayAlertButton } from "#/components/stays/stay-alert-button.tsx";
 import { reasonLabel, TIER_LABEL, TIER_META } from "#/components/stays/stays-filters.ts";
@@ -412,13 +413,16 @@ export function ResortDetail({ slug }: { slug: string }) {
     : "";
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-6 lg:px-6">
-      <nav className="text-sm text-muted-foreground">
-        <Link to="/stays" className="inline-flex items-center gap-1.5 hover:underline">
-          <ArrowLeftIcon className="size-3.5" />
-          All resorts
-        </Link>
-      </nav>
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 pt-2 pb-6 lg:px-6">
+      <div className="flex items-center justify-between gap-3">
+        <nav className="text-sm text-muted-foreground">
+          <Link to="/stays" className="inline-flex items-center gap-1.5 hover:underline">
+            <ArrowLeftIcon className="size-3.5" />
+            All resorts
+          </Link>
+        </nav>
+        <RemovalRequestDialog entityType="resort" entityId={resort.slug} entityName={resort.name} />
+      </div>
 
       {resort.image && (
         <div className="relative h-56 w-full overflow-hidden rounded-2xl bg-muted sm:h-80">

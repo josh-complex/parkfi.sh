@@ -1738,3 +1738,54 @@ export const markReaction = pgTable(
   },
   (t) => [primaryKey({ columns: [t.markId, t.userId, t.kind] })],
 );
+
+/**
+ * Cast-member content removal / correction requests — see
+ * `docs/plans/cast-member-removal-requests.md`. An audit trail of who asked to
+ * remove or correct what; requester/resolver FKs are ON DELETE SET NULL so the
+ * takedown record outlives the account (minus the PII link).
+ */
+export const removalRequest = pgTable(
+  "removal_request",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    requesterId: text("requester_id").references(() => user.id, { onDelete: "set null" }),
+    orgTenantId: text("org_tenant_id"),
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    targetField: text("target_field"),
+    reason: text("reason").notNull(),
+    note: text("note"),
+    status: text("status").notNull().default("open"),
+    resolvedById: text("resolved_by_id").references(() => user.id, { onDelete: "set null" }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolutionNote: text("resolution_note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("removal_request_status_idx").on(t.status, t.createdAt),
+    index("removal_request_entity_idx").on(t.entityType, t.entityId),
+    index("removal_request_requester_idx").on(t.requesterId),
+  ],
+);
+
+/**
+ * Reversible enforcement overlay for removal requests: one row per (entity,
+ * field) currently hidden from read paths. `field = '*'` suppresses the whole
+ * listing; a field name (e.g. "image") suppresses just that. Lifting is a single
+ * `active = false`.
+ */
+export const contentSuppression = pgTable(
+  "content_suppression",
+  {
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    field: text("field").notNull(),
+    active: boolean("active").notNull().default(true),
+    sourceRequestId: bigint("source_request_id", { mode: "number" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.entityType, t.entityId, t.field] })],
+);
