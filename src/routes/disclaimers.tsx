@@ -38,7 +38,7 @@ function DisclaimersPage() {
             <ShieldAlertIcon className="size-8 text-muted-foreground shrink-0" />
             <div>
               <h1 className="text-2xl font-bold">Disclaimers &amp; Legal Notice</h1>
-              <p className="text-sm text-muted-foreground">Last updated: June 10, 2026</p>
+              <p className="text-sm text-muted-foreground">Last updated: July 6, 2026</p>
             </div>
           </div>
 
@@ -73,10 +73,10 @@ function DisclaimersPage() {
           <Section title="Data Sources &amp; Accuracy">
             <p>
               All information on parkfi.sh — including wait times and ride status, ticket prices,
-              dining reservation availability, and resort room availability and nightly rates — is
-              aggregated, derived, or estimated from publicly available sources and unofficial APIs.
-              It is collected by automated systems on a periodic basis and is presented &ldquo;as
-              is.&rdquo; This data:
+              dining reservation availability, resort room availability and nightly rates, crowd
+              forecasts, and maps and walking routes — is aggregated, derived, or estimated from
+              publicly available sources and unofficial APIs. It is collected by automated systems
+              on a periodic basis and is presented &ldquo;as is.&rdquo; This data:
             </p>
             <ul className="list-disc list-inside space-y-1 text-sm">
               <li>May be delayed, cached, inaccurate, incomplete, or out of date.</li>
@@ -106,6 +106,62 @@ function DisclaimersPage() {
               standby waits frequently differ from real-world queue times. Nothing on parkfi.sh
               should be treated as a guarantee that any attraction will be operating or available
               during your visit.
+            </p>
+          </Section>
+
+          <Section title="Maps, Navigation &amp; Walking Directions">
+            <p>
+              The interactive map and walking-directions features are provided as a planning
+              convenience only. Routes, distances, and estimated walking times are computed by our
+              own routing engine from{" "}
+              <a
+                href="https://www.openstreetmap.org/copyright"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-foreground underline underline-offset-4"
+              >
+                OpenStreetMap
+              </a>{" "}
+              data, which is community-maintained and may be incomplete, outdated, or simply wrong.
+              A suggested route:
+            </p>
+            <ul className="list-disc list-inside space-y-1 text-sm">
+              <li>
+                May not reflect temporary closures, parade routes, crowd-control measures,
+                construction walls, or restricted and cast-member-only areas.
+              </li>
+              <li>
+                May show your position inaccurately — GPS inside theme parks is frequently degraded
+                by buildings, structures, and crowds.
+              </li>
+              <li>Is an estimate, not a guarantee that a path is open, safe, or fastest.</li>
+            </ul>
+            <p>
+              <strong>
+                Posted signage, physical barriers, and instructions from park staff always override
+                anything shown in this app.
+              </strong>{" "}
+              Please keep your eyes on your surroundings — not on your screen — while walking,
+              especially in crowds and around vehicles, strollers, and parade routes. parkfi.sh is
+              not suitable for emergency use; in an emergency, follow park staff instructions and
+              official park channels.
+            </p>
+            <p>
+              Map data &copy; OpenStreetMap contributors, rendered via MapTiler. Attribution is also
+              displayed on the map itself.
+            </p>
+          </Section>
+
+          <Section title="Crowd Forecasts &amp; Wait-Time Predictions">
+            <p>
+              Crowd calendars, crowd-level scores, predicted wait-time curves, and any figures
+              labeled as forecasts or predictions are <strong>statistical estimates</strong>{" "}
+              produced by models trained on historical data. Ranges and confidence bands describe
+              the model&rsquo;s uncertainty — they are not promises about what will happen.
+              Forecasts can be materially wrong, particularly around holidays, special events,
+              weather disruptions, new attraction openings, and anything else history does not
+              predict well. Where we show accuracy statistics, they describe past performance only.
+              Do not make plans that depend on a forecast being right.
             </p>
           </Section>
 
@@ -164,7 +220,8 @@ function DisclaimersPage() {
               when a watched attraction&rsquo;s wait time changes or its status updates). These
               alerts are provided on a <strong>best-effort basis only</strong> and depend on the
               timing and accuracy of upstream data, background processing, and notification delivery
-              by your browser, device, or operating system.
+              by your browser, device, operating system, or email provider — none of which we
+              control.
             </p>
             <ul className="list-disc list-inside space-y-1 text-sm">
               <li>
@@ -217,6 +274,15 @@ function DisclaimersPage() {
               &copy; {new Date().getFullYear()} parkfi.sh contributors. Park names, attraction
               names, and all associated intellectual property remain the sole property of their
               respective owners. No copyright in park-owned content is claimed by parkfi.sh.
+            </p>
+            <p>
+              Some photographs, artwork, menu descriptions, and similar media shown on this site
+              (for example, restaurant, shop, and attraction imagery) are sourced from the
+              parks&rsquo; own publicly available listings and are displayed solely to help you
+              identify the real-world locations and offerings they depict. All rights in that
+              material remain with their respective owners; no ownership is claimed by parkfi.sh. If
+              you are a rights holder and would like any of it removed, see the contact section
+              below — we will act promptly.
             </p>
           </Section>
 

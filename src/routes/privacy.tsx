@@ -37,7 +37,7 @@ function PrivacyPage() {
             <ScrollTextIcon className="size-8 text-muted-foreground shrink-0" />
             <div>
               <h1 className="text-2xl font-bold">Privacy Policy &amp; Terms of Use</h1>
-              <p className="text-sm text-muted-foreground">Last updated: June 13, 2026</p>
+              <p className="text-sm text-muted-foreground">Last updated: July 6, 2026</p>
             </div>
           </div>
 
@@ -103,6 +103,34 @@ function PrivacyPage() {
             </p>
           </Section>
 
+          <Section title="Location">
+            <p>
+              The live map and walking-directions features can use your device&rsquo;s location, but
+              only if you grant permission when your browser asks. Here is exactly what happens with
+              it:
+            </p>
+            <ul className="list-disc list-inside space-y-1 text-sm">
+              <li>
+                Your position and compass heading are used in your browser to show where you are on
+                the map.
+              </li>
+              <li>
+                When you request walking directions, your current coordinates are sent to our own
+                routing server (which we host — not a third party) to compute the route. They are
+                used only for that request and are not stored or linked to your account.
+              </li>
+              <li>
+                A flag is saved in your browser&rsquo;s local storage so the map remembers that you
+                turned location on. Your coordinates themselves are never written to storage.
+              </li>
+            </ul>
+            <p>
+              We do not keep a history of your location, and we never share location data with
+              anyone. You can revoke location permission at any time in your browser or device
+              settings.
+            </p>
+          </Section>
+
           <Section title="How We Use Your Data">
             <ul className="list-disc list-inside space-y-1 text-sm">
               <li>To authenticate you and keep your account secure.</li>
@@ -110,16 +138,67 @@ function PrivacyPage() {
                 To deliver alerts and notifications for attractions, dining slots, or resort
                 availability you have set up.
               </li>
-              <li>To send transactional emails — password resets, security notices.</li>
+              <li>
+                To send you email — alert notifications you have set up (delivered through Resend,
+                our email provider) and transactional messages such as password resets and security
+                notices.
+              </li>
               <li>
                 To detect and prevent abuse, including automated sign-up bots (via Cloudflare
-                Turnstile CAPTCHA verification on the login page).
+                Turnstile CAPTCHA verification on the sign-in, sign-up, and password-reset forms).
+              </li>
+              <li>
+                To understand how the site is used in aggregate and to find and fix errors, using
+                the analytics described in the next section.
               </li>
             </ul>
             <p>
-              We do <strong>not</strong> use your data for advertising, behavioral tracking,
-              analytics profiling, or any commercial purpose. We do not sell, rent, or share your
-              personal information with third parties, except as described in the section below.
+              We do <strong>not</strong> use your data for advertising or any commercial purpose,
+              and we do not sell, rent, or share your personal information with third parties,
+              except for the service providers described below.
+            </p>
+          </Section>
+
+          <Section title="Analytics &amp; Error Reporting">
+            <p>
+              We use{" "}
+              <a
+                href="https://posthog.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-foreground underline underline-offset-4"
+              >
+                PostHog
+              </a>{" "}
+              (hosted in the United States) for basic product analytics and error tracking, so we
+              can tell which features are used and fix things when they break. In the interest of
+              full transparency, here is what it captures:
+            </p>
+            <ul className="list-disc list-inside space-y-1 text-sm">
+              <li>
+                <strong>Page views</strong> — which pages on parkfi.sh you visit and when you leave
+                them.
+              </li>
+              <li>
+                <strong>Errors</strong> — crash and error reports, which may include the error
+                message and the page you were on, so we can reproduce and fix bugs.
+              </li>
+              <li>
+                <strong>Feature events</strong> — a small number of specific events, such as a map
+                falling back to a simpler renderer or a location/notification permission being
+                denied. These never include your coordinates.
+              </li>
+              <li>
+                <strong>Who you are, if signed in</strong> — analytics events from signed-in users
+                are linked to your account ID, name, and email so we can investigate problems you
+                report. If you are not signed in, events are not tied to a person profile.
+              </li>
+            </ul>
+            <p>
+              What we deliberately do <strong>not</strong> do: no session recording (we cannot
+              replay your screen), no surveys, no advertising or cross-site tracking, and no sharing
+              or selling of analytics data to anyone. Analytics exist so the site works well, not to
+              monetize you.
             </p>
           </Section>
 
@@ -138,23 +217,60 @@ function PrivacyPage() {
                 <strong>Apple ID</strong> — same as above for Sign in with Apple.
               </li>
               <li>
-                <strong>Cloudflare Turnstile</strong> — the CAPTCHA widget on the sign-in page sends
-                a challenge token to Cloudflare to verify that you are human. No personal account
-                data is shared; Cloudflare may collect browser signals per their privacy policy.
+                <strong>Cloudflare Turnstile</strong> — the CAPTCHA widget on the sign-in, sign-up,
+                and password-reset forms sends a challenge token to Cloudflare to verify that you
+                are human. No personal account data is shared; Cloudflare may collect browser
+                signals per their privacy policy.
               </li>
               <li>
                 <strong>Have I Been Pwned</strong> — when you set a password, the first 5 characters
                 of a hash of your password are sent to the HIBP k‑anonymity API to check whether it
                 appears in a known breach. Your full password and password hash are never sent.
               </li>
+              <li>
+                <strong>PostHog</strong> — receives the analytics and error events described in the
+                &ldquo;Analytics &amp; Error Reporting&rdquo; section above, including your account
+                ID, name, and email if you are signed in.
+              </li>
+              <li>
+                <strong>Resend</strong> — delivers our email. Resend processes your email address
+                and the contents of the messages we send you (for example, which resort or
+                restaurant an alert is about).
+              </li>
+              <li>
+                <strong>Cloudflare R2</strong> — stores uploaded profile avatars. Avatars are served
+                from a public URL, so do not upload an image you would not want to be publicly
+                reachable.
+              </li>
             </ul>
           </Section>
 
           <Section title="Cookies &amp; Local Storage">
+            <p>Here is everything parkfi.sh stores in your browser:</p>
+            <ul className="list-disc list-inside space-y-1 text-sm">
+              <li>
+                <strong>Session cookie</strong> — keeps you signed in. Essential.
+              </li>
+              <li>
+                <strong>Sidebar preference cookie</strong> — remembers whether you collapsed the
+                sidebar, for 7 days.
+              </li>
+              <li>
+                <strong>PostHog identifier</strong> — a first-party cookie and local-storage entry
+                holding a random device ID so the analytics described above can count you once
+                rather than as a new visitor on every page. It is never used for advertising and is
+                not readable by other websites.
+              </li>
+              <li>
+                <strong>Local UI preferences</strong> — local-storage entries for things like your
+                dining party size, your preferred wait-times view, whether you enabled the location
+                feature, and whether you dismissed the notification prompt. These never leave your
+                browser.
+              </li>
+            </ul>
             <p>
-              parkfi.sh uses a single session cookie to keep you signed in. We do not use
-              advertising cookies, cross-site tracking cookies, or third-party analytics cookies. No
-              consent banner is shown because we do not use non-essential cookies.
+              We do not use advertising cookies, cross-site tracking cookies, or any third-party
+              tracking. Nothing stored in your browser follows you to other sites.
             </p>
           </Section>
 
@@ -182,6 +298,11 @@ function PrivacyPage() {
               .
             </p>
             <p>
+              While your account exists we also keep a log of the alert notifications we have sent
+              you (so you can see what fired and we can debug delivery problems). This log is
+              deleted along with your account.
+            </p>
+            <p>
               You can permanently delete your account from the{" "}
               <a
                 href="/account/profile"
@@ -189,8 +310,15 @@ function PrivacyPage() {
               >
                 Profile
               </a>{" "}
-              page. Deletion removes your name, email, avatar, credentials, sessions, linked
-              providers, 2FA data, and all alert preferences. This action is irreversible.
+              page. Deletion removes your name, email, avatar (including the stored image file),
+              credentials, sessions, linked providers, 2FA data, all alert preferences and saved
+              alert searches, push notification subscriptions, and notification history, and we
+              request deletion of your analytics profile and events from PostHog. This action is
+              irreversible.
+            </p>
+            <p>
+              You can also email us at any time to request a copy of the data we hold about you, or
+              to have it corrected or deleted.
             </p>
           </Section>
 
