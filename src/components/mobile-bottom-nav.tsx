@@ -6,12 +6,14 @@ import {
   MapIcon,
   SwordsIcon,
   TicketIcon,
+  TrafficConeIcon,
   UtensilsIcon,
 } from "lucide-react";
 
 import { useStore } from "@tanstack/react-store";
 
 import { playModeStore, setPlayMode } from "#/components/living/play-mode.ts";
+import { useMaintenanceFeatures } from "#/components/maintenance-gate.tsx";
 import { useLivingLayerEnabled } from "#/integrations/posthog/feature-flags.ts";
 import { cn } from "#/lib/utils.ts";
 
@@ -29,27 +31,58 @@ const SEG_ACTIVE =
   "z-10 top-[3px] bg-primary text-primary-foreground [--btn-3d:color-mix(in_oklch,var(--primary),black_32%)] [--btn-glare:var(--btn-3d)] shadow-3d-active hover:top-[3px] hover:shadow-3d-active";
 const SEG_IDLE = "text-foreground";
 
+/**
+ * Overlaid on a segment whose feature is in maintenance: faint caution stripes
+ * across the key plus a cone chip in the corner. The key stays tappable (the
+ * destination shows the full `MaintenanceScreen`) — we surface the state, not
+ * hide the button.
+ */
+function MaintenanceOverlay() {
+  return (
+    <>
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 rounded-[inherit] opacity-20"
+        style={{
+          backgroundImage: "repeating-linear-gradient(45deg, #f59e0b 0 6px, #1c1917 6px 12px)",
+        }}
+      />
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -top-1.5 left-1/2 z-30 flex size-4 -translate-x-1/2 items-center justify-center rounded-full bg-amber-500 text-white shadow ring-2 ring-background"
+      >
+        <TrafficConeIcon className="size-2.5" />
+      </span>
+      <span className="sr-only"> (under maintenance)</span>
+    </>
+  );
+}
+
 function Seg({
   to,
   active,
   icon,
   label,
+  offline,
   className,
 }: {
   to: string;
   active: boolean;
   icon: React.ReactNode;
   label: string;
+  offline?: boolean;
   className?: string;
 }) {
   return (
     <Link
       to={to}
       aria-current={active ? "page" : undefined}
+      data-maintenance={offline ? "" : undefined}
       className={cn(SEG_BASE, active ? SEG_ACTIVE : SEG_IDLE, className)}
     >
       {icon}
       <span>{label}</span>
+      {offline ? <MaintenanceOverlay /> : null}
     </Link>
   );
 }
@@ -119,6 +152,7 @@ function PlayButton() {
 export function MobileBottomNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const livingEnabled = useLivingLayerEnabled();
+  const offline = useMaintenanceFeatures();
   // Only the free-roam `/map` hub lights the Map key. A park (or ride) detail page
   // is a drill-down, not the map surface, so it leaves the key unselected.
   const mapActive = pathname === "/map";
@@ -145,6 +179,7 @@ export function MobileBottomNav() {
           active={pathname.startsWith("/tickets")}
           icon={<TicketIcon />}
           label="Tickets"
+          offline={offline.has("tickets")}
         />
         <MapButton active={mapActive} />
         <Seg
@@ -152,12 +187,14 @@ export function MobileBottomNav() {
           active={pathname.startsWith("/dining")}
           icon={<UtensilsIcon />}
           label="Eats"
+          offline={offline.has("dining")}
         />
         <Seg
           to="/stays"
           active={pathname.startsWith("/stays")}
           icon={<BedDoubleIcon />}
           label="Stays"
+          offline={offline.has("stays")}
           className="rounded-r-3xl"
         />
       </div>

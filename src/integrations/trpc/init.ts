@@ -38,6 +38,11 @@ const ADMIN_EMAILS = new Set(
     .filter(Boolean),
 );
 
+/** True if `email` is on the owner allowlist. Fail-closed on missing email. */
+export function isAdminEmail(email: string | undefined | null): boolean {
+  return !!email && ADMIN_EMAILS.has(email.toLowerCase());
+}
+
 const t = initTRPC.context<TRPCContext>().create({
   transformer: superjson,
 });
@@ -54,7 +59,7 @@ export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
 /** Requires the caller to be an owner (email in ADMIN_EMAILS). */
 export const adminProcedure = t.procedure.use(({ ctx, next }) => {
   if (!ctx.userId) throw new TRPCError({ code: "UNAUTHORIZED" });
-  if (!ctx.userEmail || !ADMIN_EMAILS.has(ctx.userEmail.toLowerCase())) {
+  if (!isAdminEmail(ctx.userEmail)) {
     throw new TRPCError({ code: "FORBIDDEN" });
   }
   return next({ ctx: { userId: ctx.userId } });

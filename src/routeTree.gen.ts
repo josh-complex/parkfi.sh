@@ -34,7 +34,9 @@ import { Route as BlogRssDotxmlRouteImport } from './routes/blog/rss[.]xml'
 import { Route as BlogSlugRouteImport } from './routes/blog/$slug'
 import { Route as DashMapRouteImport } from './routes/_dash/map'
 import { Route as DashAlertsRouteImport } from './routes/_dash/alerts'
+import { Route as DashAdminRouteImport } from './routes/_dash/admin'
 import { Route as DashAccountRouteImport } from './routes/_dash/account'
+import { Route as DashAdminIndexRouteImport } from './routes/_dash/admin.index'
 import { Route as DashAccountIndexRouteImport } from './routes/_dash/account/index'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
 import { Route as ApiPushSubscribeRouteImport } from './routes/api/push/subscribe'
@@ -177,10 +179,20 @@ const DashAlertsRoute = DashAlertsRouteImport.update({
   path: '/alerts',
   getParentRoute: () => DashRoute,
 } as any)
+const DashAdminRoute = DashAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => DashRoute,
+} as any)
 const DashAccountRoute = DashAccountRouteImport.update({
   id: '/account',
   path: '/account',
   getParentRoute: () => DashRoute,
+} as any)
+const DashAdminIndexRoute = DashAdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => DashAdminRoute,
 } as any)
 const DashAccountIndexRoute = DashAccountIndexRouteImport.update({
   id: '/',
@@ -214,14 +226,14 @@ const DashParkSlugRoute = DashParkSlugRouteImport.update({
 } as any)
 const DashAdminRemovalRequestsRoute =
   DashAdminRemovalRequestsRouteImport.update({
-    id: '/admin/removal-requests',
-    path: '/admin/removal-requests',
-    getParentRoute: () => DashRoute,
+    id: '/removal-requests',
+    path: '/removal-requests',
+    getParentRoute: () => DashAdminRoute,
   } as any)
 const DashAdminBlogRoute = DashAdminBlogRouteImport.update({
-  id: '/admin/blog',
-  path: '/admin/blog',
-  getParentRoute: () => DashRoute,
+  id: '/blog',
+  path: '/blog',
+  getParentRoute: () => DashAdminRoute,
 } as any)
 const DashAccountSecurityRoute = DashAccountSecurityRouteImport.update({
   id: '/security',
@@ -286,6 +298,7 @@ export interface FileRoutesByFullPath {
   '/unsubscribe': typeof UnsubscribeRoute
   '/welcome': typeof WelcomeRoute
   '/account': typeof DashAccountRouteWithChildren
+  '/admin': typeof DashAdminRouteWithChildren
   '/alerts': typeof DashAlertsRoute
   '/map': typeof DashMapRoute
   '/blog/$slug': typeof BlogSlugRoute
@@ -310,6 +323,7 @@ export interface FileRoutesByFullPath {
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/account/': typeof DashAccountIndexRoute
+  '/admin/': typeof DashAdminIndexRoute
   '/og/dining/$facilityId/card.png': typeof OgDiningFacilityIdCardDotpngRoute
   '/og/park/$slug/card.png': typeof OgParkSlugCardDotpngRoute
   '/og/resort/$slug/card.png': typeof OgResortSlugCardDotpngRoute
@@ -353,6 +367,7 @@ export interface FileRoutesByTo {
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/account': typeof DashAccountIndexRoute
+  '/admin': typeof DashAdminIndexRoute
   '/og/dining/$facilityId/card.png': typeof OgDiningFacilityIdCardDotpngRoute
   '/og/park/$slug/card.png': typeof OgParkSlugCardDotpngRoute
   '/og/resort/$slug/card.png': typeof OgResortSlugCardDotpngRoute
@@ -374,6 +389,7 @@ export interface FileRoutesById {
   '/unsubscribe': typeof UnsubscribeRoute
   '/welcome': typeof WelcomeRoute
   '/_dash/account': typeof DashAccountRouteWithChildren
+  '/_dash/admin': typeof DashAdminRouteWithChildren
   '/_dash/alerts': typeof DashAlertsRoute
   '/_dash/map': typeof DashMapRoute
   '/blog/$slug': typeof BlogSlugRoute
@@ -399,6 +415,7 @@ export interface FileRoutesById {
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/_dash/account/': typeof DashAccountIndexRoute
+  '/_dash/admin/': typeof DashAdminIndexRoute
   '/og/dining/$facilityId/card.png': typeof OgDiningFacilityIdCardDotpngRoute
   '/og/park/$slug/card.png': typeof OgParkSlugCardDotpngRoute
   '/og/resort/$slug/card.png': typeof OgResortSlugCardDotpngRoute
@@ -421,6 +438,7 @@ export interface FileRouteTypes {
     | '/unsubscribe'
     | '/welcome'
     | '/account'
+    | '/admin'
     | '/alerts'
     | '/map'
     | '/blog/$slug'
@@ -445,6 +463,7 @@ export interface FileRouteTypes {
     | '/api/push/subscribe'
     | '/api/trpc/$'
     | '/account/'
+    | '/admin/'
     | '/og/dining/$facilityId/card.png'
     | '/og/park/$slug/card.png'
     | '/og/resort/$slug/card.png'
@@ -488,6 +507,7 @@ export interface FileRouteTypes {
     | '/api/push/subscribe'
     | '/api/trpc/$'
     | '/account'
+    | '/admin'
     | '/og/dining/$facilityId/card.png'
     | '/og/park/$slug/card.png'
     | '/og/resort/$slug/card.png'
@@ -508,6 +528,7 @@ export interface FileRouteTypes {
     | '/unsubscribe'
     | '/welcome'
     | '/_dash/account'
+    | '/_dash/admin'
     | '/_dash/alerts'
     | '/_dash/map'
     | '/blog/$slug'
@@ -533,6 +554,7 @@ export interface FileRouteTypes {
     | '/api/push/subscribe'
     | '/api/trpc/$'
     | '/_dash/account/'
+    | '/_dash/admin/'
     | '/og/dining/$facilityId/card.png'
     | '/og/park/$slug/card.png'
     | '/og/resort/$slug/card.png'
@@ -749,12 +771,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashAlertsRouteImport
       parentRoute: typeof DashRoute
     }
+    '/_dash/admin': {
+      id: '/_dash/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof DashAdminRouteImport
+      parentRoute: typeof DashRoute
+    }
     '/_dash/account': {
       id: '/_dash/account'
       path: '/account'
       fullPath: '/account'
       preLoaderRoute: typeof DashAccountRouteImport
       parentRoute: typeof DashRoute
+    }
+    '/_dash/admin/': {
+      id: '/_dash/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof DashAdminIndexRouteImport
+      parentRoute: typeof DashAdminRoute
     }
     '/_dash/account/': {
       id: '/_dash/account/'
@@ -800,17 +836,17 @@ declare module '@tanstack/react-router' {
     }
     '/_dash/admin/removal-requests': {
       id: '/_dash/admin/removal-requests'
-      path: '/admin/removal-requests'
+      path: '/removal-requests'
       fullPath: '/admin/removal-requests'
       preLoaderRoute: typeof DashAdminRemovalRequestsRouteImport
-      parentRoute: typeof DashRoute
+      parentRoute: typeof DashAdminRoute
     }
     '/_dash/admin/blog': {
       id: '/_dash/admin/blog'
-      path: '/admin/blog'
+      path: '/blog'
       fullPath: '/admin/blog'
       preLoaderRoute: typeof DashAdminBlogRouteImport
-      parentRoute: typeof DashRoute
+      parentRoute: typeof DashAdminRoute
     }
     '/_dash/account/security': {
       id: '/_dash/account/security'
@@ -898,13 +934,28 @@ const DashAccountRouteWithChildren = DashAccountRoute._addFileChildren(
   DashAccountRouteChildren,
 )
 
+interface DashAdminRouteChildren {
+  DashAdminBlogRoute: typeof DashAdminBlogRoute
+  DashAdminRemovalRequestsRoute: typeof DashAdminRemovalRequestsRoute
+  DashAdminIndexRoute: typeof DashAdminIndexRoute
+}
+
+const DashAdminRouteChildren: DashAdminRouteChildren = {
+  DashAdminBlogRoute: DashAdminBlogRoute,
+  DashAdminRemovalRequestsRoute: DashAdminRemovalRequestsRoute,
+  DashAdminIndexRoute: DashAdminIndexRoute,
+}
+
+const DashAdminRouteWithChildren = DashAdminRoute._addFileChildren(
+  DashAdminRouteChildren,
+)
+
 interface DashRouteChildren {
   DashAccountRoute: typeof DashAccountRouteWithChildren
+  DashAdminRoute: typeof DashAdminRouteWithChildren
   DashAlertsRoute: typeof DashAlertsRoute
   DashMapRoute: typeof DashMapRoute
   DashIndexRoute: typeof DashIndexRoute
-  DashAdminBlogRoute: typeof DashAdminBlogRoute
-  DashAdminRemovalRequestsRoute: typeof DashAdminRemovalRequestsRoute
   DashParkSlugRoute: typeof DashParkSlugRoute
   DashShopSlugRoute: typeof DashShopSlugRoute
   DashParkSlugRideRideSlugRoute: typeof DashParkSlugRideRideSlugRoute
@@ -912,11 +963,10 @@ interface DashRouteChildren {
 
 const DashRouteChildren: DashRouteChildren = {
   DashAccountRoute: DashAccountRouteWithChildren,
+  DashAdminRoute: DashAdminRouteWithChildren,
   DashAlertsRoute: DashAlertsRoute,
   DashMapRoute: DashMapRoute,
   DashIndexRoute: DashIndexRoute,
-  DashAdminBlogRoute: DashAdminBlogRoute,
-  DashAdminRemovalRequestsRoute: DashAdminRemovalRequestsRoute,
   DashParkSlugRoute: DashParkSlugRoute,
   DashShopSlugRoute: DashShopSlugRoute,
   DashParkSlugRideRideSlugRoute: DashParkSlugRideRideSlugRoute,
