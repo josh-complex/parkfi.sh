@@ -37,6 +37,19 @@ export async function removeStale(userId: string, endpoint: string): Promise<voi
   return removeSub(userId, endpoint);
 }
 
+/**
+ * Purge every push subscription for a user (account deletion). Deletes each
+ * referenced `push:sub:{hash}` blob plus the `push:user:{userId}` set itself,
+ * so hashes whose blob already expired are cleaned up too.
+ */
+export async function removeAllSubs(userId: string): Promise<void> {
+  const r = getRedis();
+  const userKey = `push:user:${userId}`;
+  const hashes = await r.smembers(userKey);
+  const keys = hashes.map((h) => `push:sub:${h}`);
+  await r.del(...keys, userKey);
+}
+
 export async function getSubsForUser(userId: string): Promise<PushSub[]> {
   const r = getRedis();
   const hashes = await r.smembers(`push:user:${userId}`);

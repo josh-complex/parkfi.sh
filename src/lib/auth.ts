@@ -21,8 +21,23 @@ import {
   verification,
 } from "#/db/auth-schema.ts";
 import { generateBotAvatar } from "#/lib/avatar.ts";
+import { cleanupUserData } from "#/server/accountCleanup.ts";
 
 export const auth = betterAuth({
+  user: {
+    deleteUser: {
+      enabled: true,
+      // DB cascades on the user row remove sessions, accounts/providers, 2FA,
+      // passkeys, and alerts; this hook removes the personal data they can't
+      // reach — R2 avatar, Redis push subs, orphaned stay queries, PostHog
+      // person. Runs before the row delete so the user's alerts still exist
+      // (the stay-query step needs them) and a mid-cleanup crash stays
+      // retryable. Best-effort inside — it never blocks the deletion.
+      beforeDelete: async (userToDelete) => {
+        await cleanupUserData(userToDelete.id);
+      },
+    },
+  },
   databaseHooks: {
     user: {
       create: {
