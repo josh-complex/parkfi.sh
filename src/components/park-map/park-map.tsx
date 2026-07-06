@@ -177,6 +177,7 @@ export function ParkMap({
   onMapRef,
   attached = true,
   userLocation,
+  deviceHeading = null,
   route,
   onRequestDirections,
   follow = false,
@@ -206,6 +207,10 @@ export function ParkMap({
   /** The user's live position ([lng,lat] + accuracy + GPS heading), drawn as a
    *  "you are here" dot with a facing cone. Null when location is off/denied. */
   userLocation?: { coords: [number, number]; accuracy: number; heading: number | null } | null;
+  /** Live device-compass heading (degrees clockwise from north), preferred over
+   *  the GPS course-over-ground for the facing cone + heading-up rotation since
+   *  it works while standing still. Null when unavailable. */
+  deviceHeading?: number | null;
   /** Active walking route geometry ([lng,lat] points) to draw, or null. */
   route?: Array<[number, number]> | null;
   /** A "Directions" tap in an attraction popup — asks the stage to route here. */
@@ -297,6 +302,15 @@ export function ParkMap({
   // Last non-null heading, so a follow-cam rotation holds orientation when the
   // GPS heading briefly drops to null (common when nearly stationary).
   const lastHeadingRef = React.useRef<number | null>(null);
+  // Live compass heading, read inside the marker/follow effects without making
+  // them re-run at sensor rate (only the dedicated repaint/rotate effects below
+  // key off `deviceHeading`).
+  const deviceHeadingRef = React.useRef(deviceHeading);
+  deviceHeadingRef.current = deviceHeading;
+  // Repaints the facing cone with the current heading + map bearing. Set by the
+  // marker effect; called both there and by the compass-repaint effect so a new
+  // sensor reading re-points the cone without rebuilding the marker.
+  const paintConeRef = React.useRef<() => void>(() => {});
   // Live mirrors of the follow-cam props, read inside effects that must NOT
   // re-run when these toggle. Engaging follow shouldn't itself move the camera —
   // the imperative `flyToLocation` owns the initial zoom-in, and if the per-fix
@@ -1005,15 +1019,17 @@ export function ParkMap({
 
   // "You are here" marker — created on the first fix, moved on later updates,
   // removed when location turns off. It's a plain DOM marker (not a DeclutterItem)
-  // so the cluster pass never touches it. The facing cone points along the GPS
-  // heading in *screen* space, so we subtract the map bearing (heading-up keeps
-  // the cone pointing up); it hides when heading is unknown.
+  // so the cluster pass never touches it. The facing cone points along the heading
+  // in *screen* space, so we subtract the map bearing (heading-up keeps the cone
+  // pointing up). Heading prefers the live device compass (works standing still)
+  // and falls back to GPS course-over-ground; it hides when both are unknown.
   React.useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
     if (!userLocation) {
       userMarkerRef.current?.remove();
       userMarkerRef.current = null;
+      paintConeRef.current = () => {};
       return;
     }
     if (!userMarkerRef.current) {
@@ -1022,18 +1038,25 @@ export function ParkMap({
     userMarkerRef.current.setLngLat(userLocation.coords).addTo(map);
     if (userLocation.heading != null) lastHeadingRef.current = userLocation.heading;
     const el = userMarkerRef.current.getElement();
-    const paint = () =>
-      setUserHeading(
-        el,
-        userLocation.heading == null ? null : userLocation.heading - map.getBearing(),
-      );
+    const paint = () => {
+      const h = deviceHeadingRef.current ?? userLocation.heading;
+      setUserHeading(el, h == null ? null : h - map.getBearing());
+    };
+    paintConeRef.current = paint;
     paint();
     // Re-point the cone as the map rotates (heading-up follow-cam), and clean up.
     map.on("rotate", paint);
     return () => {
       map.off("rotate", paint);
+      paintConeRef.current = () => {};
     };
   }, [userLocation, ready]);
+
+  // Re-point the facing cone on each new compass reading — cheap DOM write, no
+  // marker rebuild — so it tracks a turn-in-place even without a new GPS fix.
+  React.useEffect(() => {
+    paintConeRef.current();
+  }, [deviceHeading]);
 
   // Follow-cam: recenter (and, heading-up, rotate) on the user as their fix
   // updates. Only while `follow` is on — a manual pan clears it upstream. Uses a
@@ -1044,10 +1067,26 @@ export function ParkMap({
     const map = mapRef.current;
     if (!map || !ready || !followRef.current || !userLocation || engagingRef.current) return;
     const bearing = headingUpRef.current
-      ? (userLocation.heading ?? lastHeadingRef.current ?? map.getBearing())
+      ? (deviceHeadingRef.current ??
+        userLocation.heading ??
+        lastHeadingRef.current ??
+        map.getBearing())
       : 0;
     map.easeTo({ center: userLocation.coords, bearing, duration: 500 });
   }, [userLocation, ready]);
+
+  // Heading-up live rotation: while following with heading-up on, rotate the map
+  // to the compass as the user turns in place — the recenter effect above only
+  // fires on GPS fixes, which don't arrive when standing still. Keyed on
+  // `deviceHeading` (already smoothed + ~1°-thresholded upstream) so it tracks a
+  // turn without spamming; a short easeTo keeps it a glide. Skips while an engage
+  // fly is animating so it can't fight the initial zoom-in.
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !followRef.current || !headingUpRef.current) return;
+    if (deviceHeading == null || engagingRef.current) return;
+    map.easeTo({ bearing: deviceHeading, duration: 300 });
+  }, [deviceHeading, ready]);
 
   // Kingdom Hearts play layer — render Darkness spawns (tap → battle) and discovery
   // pins (popup with note + reactions) as plain DOM markers over the roam map.

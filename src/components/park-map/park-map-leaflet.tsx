@@ -136,6 +136,7 @@ export function ParkMapLeaflet({
   onMapRef,
   attached = true,
   userLocation,
+  deviceHeading = null,
   route,
   onRequestDirections,
   follow = false,
@@ -156,6 +157,10 @@ export function ParkMapLeaflet({
   /** The user's live position ([lng,lat] + accuracy + GPS heading), drawn as a
    *  "you are here" dot with a facing cone. Null when location is off/denied. */
   userLocation?: { coords: [number, number]; accuracy: number; heading: number | null } | null;
+  /** Live device-compass heading (degrees clockwise from north), preferred over
+   *  GPS course-over-ground for the facing cone since it works standing still.
+   *  Null when unavailable. */
+  deviceHeading?: number | null;
   /** Active walking route geometry ([lng,lat] points) to draw, or null. */
   route?: Array<[number, number]> | null;
   /** A "Directions" tap in an attraction popup — asks the stage to route here. */
@@ -218,6 +223,10 @@ export function ParkMapLeaflet({
   // interrupt that fly and drop the zoom). It fires on new fixes instead.
   const followRef = React.useRef(follow);
   followRef.current = follow;
+  // Live compass heading, read inside the marker effect without re-running it at
+  // sensor rate; a dedicated repaint effect keys off `deviceHeading` instead.
+  const deviceHeadingRef = React.useRef(deviceHeading);
+  deviceHeadingRef.current = deviceHeading;
   // True while an engage fly (flyToLocation) animates — a GPS fix landing mid-fly
   // must not fire the zoom-less panTo and interrupt the zoom-in. Cleared on the
   // fly's moveend.
@@ -670,10 +679,12 @@ export function ParkMapLeaflet({
       });
     }
     userMarkerRef.current.setLatLng(latLng).addTo(map);
-    // Point the facing cone along the GPS heading. Leaflet doesn't rotate, so
-    // there's no map bearing to subtract — screen degrees == heading.
+    // Point the facing cone along the heading — the live device compass when we
+    // have it (works standing still), else GPS course-over-ground. Leaflet
+    // doesn't rotate, so there's no map bearing to subtract — screen degrees ==
+    // heading.
     const el = userMarkerRef.current.getElement();
-    if (el) setUserHeading(el, userLocation.heading);
+    if (el) setUserHeading(el, deviceHeadingRef.current ?? userLocation.heading);
 
     // Follow-cam: recenter on the user as their fix updates (no rotation). A
     // manual pan clears `follow` upstream; panTo fires `movestart`, not
@@ -683,6 +694,13 @@ export function ParkMapLeaflet({
       map.panTo(latLng, { animate: true, duration: 0.5 });
     }
   }, [userLocation, ready]);
+
+  // Re-point the facing cone on each new compass reading — cheap DOM write, no
+  // marker rebuild — so it tracks a turn-in-place even without a new GPS fix.
+  React.useEffect(() => {
+    const el = userMarkerRef.current?.getElement();
+    if (el) setUserHeading(el, deviceHeading ?? userLocation?.heading ?? null);
+  }, [deviceHeading, userLocation]);
 
   // Draw / update / clear the active walking route, and frame it when it appears.
   React.useEffect(() => {

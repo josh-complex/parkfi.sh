@@ -47,6 +47,7 @@ import { DevLocationPanel } from "#/components/park-map/dev-location-panel.tsx";
 import { useSelection } from "#/components/park-dashboard/selection-context.tsx";
 import { RideFilterButton } from "#/components/rides/ride-filter-button.tsx";
 import { type MapLayers, useRideFilter } from "#/components/rides/ride-filter.tsx";
+import { useDeviceHeading } from "#/hooks/use-device-heading.ts";
 import { useGeolocation, type GeoState } from "#/hooks/use-geolocation.ts";
 import { useNavTestToolsEnabled } from "#/integrations/posthog/feature-flags.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
@@ -300,15 +301,31 @@ export function MapStageProvider({
   // One geolocation watch for the whole app, owned here so it survives the map
   // moving between routes. Never auto-prompts — the locate button calls locate().
   const geo = useGeolocation({ watch: true, rememberActive: true });
+  // Live compass heading from the device magnetometer, only while location is on.
+  // Prefer it over GPS course-over-ground (which is null unless moving) so the
+  // facing cone points the right way even standing still. iOS needs a permission
+  // grant from a gesture — hung off the locate tap below.
+  const compass = useDeviceHeading(geo.state.status === "granted");
+  // Read the compass heading inside callbacks via a ref, so they aren't recreated
+  // on every sensor tick (they'd otherwise churn effects that list them as deps).
+  const compassHeadingRef = React.useRef<number | null>(null);
+  compassHeadingRef.current = compass.heading;
   // Nav QA tools (the local-routing destination picker): always on in dev, and
   // in prod for accounts with the `nav-test-tools` PostHog flag — so it can be
   // dogfooded on a phone without shipping it to everyone.
   const navTestTools = useNavTestToolsEnabled();
   const showNavTest = import.meta.env.DEV || navTestTools;
-  const userLocation =
-    geo.state.status === "granted"
-      ? { coords: geo.state.coords, accuracy: geo.state.accuracy, heading: geo.state.heading }
-      : null;
+  // Memoized so its identity only changes on a new GPS fix — not on every compass
+  // tick — keeping the renderers' `userLocation`-keyed effects (follow-cam, marker
+  // create) from re-running at sensor rate. The live compass heading rides down
+  // separately as `deviceHeading`.
+  const userLocation = React.useMemo(
+    () =>
+      geo.state.status === "granted"
+        ? { coords: geo.state.coords, accuracy: geo.state.accuracy, heading: geo.state.heading }
+        : null,
+    [geo.state],
+  );
   // Auto-zoom: the first fix while on the overview jumps into the park the user
   // is standing in (or nearest within ~2km, for parking lots / esplanades).
   // Fires once so it never fights the user re-opening the overview.
@@ -435,23 +452,35 @@ export function MapStageProvider({
   // by Start and the locate/recenter button while navigating.
   const flyToUser = React.useCallback(() => {
     if (geo.state.status !== "granted") return;
+    // Also (re-)request compass access here: this fires from the Start / recenter
+    // taps, so it covers the iOS case where location auto-resumed from a past
+    // session (no locate tap) and the per-gesture orientation grant was never
+    // asked for. A no-op once already granted / off iOS.
+    compass.requestPermission();
     setFollowing(true);
     setHeadingUp(true);
     mapRef.current?.flyToLocation(geo.state.coords, {
       zoom: 17.5,
-      bearing: geo.state.heading ?? 0,
+      bearing: compassHeadingRef.current ?? geo.state.heading ?? 0,
     });
-  }, [geo]);
+  }, [geo, compass.requestPermission]);
   const startNav = React.useCallback(() => {
     setStarted(true);
     flyToUser();
   }, [flyToUser]);
+  // Turning on locate is the natural gesture to also grant compass access (iOS
+  // gates the magnetometer behind a per-gesture prompt); no-op elsewhere.
+  const activateLocate = React.useCallback(() => {
+    compass.requestPermission();
+    geo.locate();
+  }, [compass.requestPermission, geo.locate]);
   // Compass tap: toggle heading-up, snapping the map bearing to the heading (or
   // back to north). GL only — Leaflet's `setBearing` is a no-op.
   const toggleHeadingUp = React.useCallback(() => {
     setHeadingUp((up) => {
       const next = !up;
-      const h = geo.state.status === "granted" ? geo.state.heading : null;
+      const h =
+        compassHeadingRef.current ?? (geo.state.status === "granted" ? geo.state.heading : null);
       mapRef.current?.setBearing(next ? (h ?? 0) : 0);
       return next;
     });
@@ -557,6 +586,7 @@ export function MapStageProvider({
                   onMapRef={onMapRef}
                   attached={attached}
                   userLocation={userLocation}
+                  deviceHeading={compass.heading}
                   route={routeQ.data?.coordinates ?? null}
                   onRequestDirections={requestDirections}
                   follow={following}
@@ -586,6 +616,7 @@ export function MapStageProvider({
                   onMapRef={onMapRef}
                   attached={attached}
                   userLocation={userLocation}
+                  deviceHeading={compass.heading}
                   route={routeQ.data?.coordinates ?? null}
                   onRequestDirections={requestDirections}
                   follow={following}
@@ -637,7 +668,11 @@ export function MapStageProvider({
                 // re-engages the follow-cam (and heading-up) after a manual pan.
                 // Otherwise it's a toggle: on when off, off when already tracking.
                 onClick={
-                  started ? flyToUser : geo.state.status === "granted" ? geo.deactivate : geo.locate
+                  started
+                    ? flyToUser
+                    : geo.state.status === "granted"
+                      ? geo.deactivate
+                      : activateLocate
                 }
                 raised={navigating}
               />
