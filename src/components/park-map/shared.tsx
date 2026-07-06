@@ -785,6 +785,39 @@ export function buildUserLocationEl(): HTMLDivElement {
   return el;
 }
 
+/** Two [lng,lat] points are the "same" destination — a tiny epsilon (~0.1 m)
+ *  absorbs float round-trips between a trip's destination and a marker's coords,
+ *  so the navigating-marker gate matches even if the values took different paths. */
+export function sameCoords(a: [number, number], b: [number, number]): boolean {
+  return Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) < 1e-6;
+}
+
+/**
+ * A temporary dev-destination pin — the `nav-test-tools` picker's spots, drawn on
+ * the map only while actively navigating so a dev target (which isn't a real
+ * attraction) is still visible. Fuchsia to match the dev panel; the one we're
+ * routing to (`active`) gets a pulse ring and a name label. Bottom-anchored so
+ * the dot tip sits on the coordinate.
+ */
+export function buildDevSpotEl(label: string, active: boolean): HTMLElement {
+  const el = document.createElement("div");
+  el.className = "relative flex flex-col items-center";
+  el.setAttribute("aria-hidden", "true");
+  el.innerHTML =
+    (active
+      ? '<span class="absolute top-0 inline-flex size-5 animate-ping rounded-full bg-fuchsia-500/50"></span>'
+      : "") +
+    '<span class="relative inline-flex items-center justify-center rounded-full border-2 border-white shadow-md ' +
+    (active ? "size-5 bg-fuchsia-600" : "size-3.5 bg-fuchsia-700/90") +
+    '"><span class="block size-1.5 rounded-full bg-white/90"></span></span>' +
+    (active
+      ? '<span class="mt-1 whitespace-nowrap rounded-full bg-fuchsia-600 px-2 py-0.5 text-[10px] font-semibold text-white shadow">' +
+        escapeHtml(label) +
+        "</span>"
+      : "");
+  return el;
+}
+
 /** Point the facing cone on a {@link buildUserLocationEl} marker at `deg` (screen
  *  degrees, clockwise from up), or hide it when `deg` is null (heading unknown). */
 export function setUserHeading(el: HTMLElement, deg: number | null): void {

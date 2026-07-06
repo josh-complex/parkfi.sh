@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { AppInset } from "#/components/app-inset.tsx";
 import { AppSidebar } from "#/components/app-sidebar.tsx";
+import { validateDiningSearch } from "#/components/dining/dining-search-params.ts";
 import { DiningVenueDetail } from "#/components/dining/dining-venue-detail.tsx";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
 import { SiteHeader } from "#/components/site-header.tsx";
@@ -12,6 +13,9 @@ import { breadcrumbJsonLd, restaurantJsonLd, seo } from "#/lib/seo.ts";
 
 export const Route = createFileRoute("/dining_/$facilityId")({
   component: VenuePage,
+  // Carries the dining search that led here (cuisine, park, …) so the breadcrumb
+  // can show the full trail and link back to the filtered list.
+  validateSearch: validateDiningSearch,
   // SSR-prefetch the venue header + its menu so the rendered HTML carries the
   // indexable content (and the menu deep-link target is present before JS runs).
   loader: async ({ context, params }) => {

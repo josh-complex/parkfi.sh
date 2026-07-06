@@ -4,6 +4,7 @@ import { useStore } from "@tanstack/react-store";
 
 import { FiltersModal } from "#/components/dining/dining-filters-modal.tsx";
 import { RestaurantCard } from "#/components/dining/dining-restaurant-card.tsx";
+import { stateToSearch } from "#/components/dining/dining-search-params.ts";
 import {
   clearExtraFilters,
   diningStore,
@@ -85,7 +86,13 @@ export function ResultsView({
   defaultPartySize: number;
 }) {
   const sortKey = useStore(diningStore, (s) => s.sortKey);
+  const filters = useStore(diningStore, (s) => s.filters);
+  const page = useStore(diningStore, (s) => s.page);
   const extraCount = useStore(diningStore, (s) => countExtraFilters(s.filters));
+
+  // The committed search that got us here, carried onto each restaurant link so
+  // the detail-page breadcrumb can show the trail and return to this exact list.
+  const linkSearch = stateToSearch({ filters, searched: true, sortKey, page });
 
   const countLabel = isLoading
     ? "Searching restaurants…"
@@ -181,6 +188,7 @@ export function ResultsView({
                 nowMin={nowMin}
                 loggedIn={loggedIn}
                 defaultPartySize={defaultPartySize}
+                linkSearch={linkSearch}
               />
             ))}
           </div>

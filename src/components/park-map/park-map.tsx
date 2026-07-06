@@ -18,9 +18,11 @@ import {
   attractionPriority,
   boundaryFeatureCollection,
   buildAttractionEl,
+  buildDevSpotEl,
   buildParkBadgeEl,
   buildPoiEl,
   buildUserLocationEl,
+  sameCoords,
   setUserHeading,
   chromePadding,
   DECLUTTER_SIZE,
@@ -138,6 +140,14 @@ function livingMarkerEl(kind: "darkness" | "discovery"): HTMLElement {
 // back to park badges). Park-bounds fits land around 15–16, comfortably above.
 const ROAM_RIDE_ZOOM = 14;
 
+// Stable default for the `devDestinations` prop, so the dev-marker effect's deps
+// don't churn when the caller omits it.
+const EMPTY_DEV_DESTINATIONS: ReadonlyArray<{
+  id: string;
+  label: string;
+  coords: [number, number];
+}> = [];
+
 // How long the map must sit still before the cluster pass re-runs. Re-clustering
 // on every frame of a zoom made markers flicker in/out as they crossed the
 // grouping threshold; debouncing coalesces a whole gesture into one relayout
@@ -180,6 +190,8 @@ export function ParkMap({
   deviceHeading = null,
   route,
   onRequestDirections,
+  navDest = null,
+  devDestinations = EMPTY_DEV_DESTINATIONS,
   follow = false,
   headingUp = false,
   onBearingChange,
@@ -215,6 +227,14 @@ export function ParkMap({
   route?: Array<[number, number]> | null;
   /** A "Directions" tap in an attraction popup — asks the stage to route here. */
   onRequestDirections?: (d: { id: number; name: string; coords: [number, number] }) => void;
+  /** While actively navigating (Start tapped), the destination's [lng,lat]. Set,
+   *  it hides every other marker so only the destination + route remain; null in
+   *  preview / when idle (all markers show as normal). */
+  navDest?: [number, number] | null;
+  /** The dev picker's test destinations — drawn as temporary pins while
+   *  navigating so a dev target (not a real attraction) is visible on the map.
+   *  Empty for normal users. */
+  devDestinations?: ReadonlyArray<{ id: string; label: string; coords: [number, number] }>;
   /** Nav follow-cam: recenter on the user as their position updates. */
   follow?: boolean;
   /** Rotate the map so the user's heading is "up" (else north-up). */
@@ -259,12 +279,19 @@ export function ParkMap({
   const effectiveSlug = roam ? focusSlug : activeSlug;
   const effectiveSlugRef = React.useRef<string | null>(effectiveSlug);
   effectiveSlugRef.current = effectiveSlug;
+  // Stable dep for the marker effect: it rebuilds when navigation starts/ends (or
+  // the destination changes) so the non-destination markers hide/return, but not
+  // on every re-route/GPS tick (the destination coords hold steady through those).
+  const navDestKey = navDest ? `${navDest[0]},${navDest[1]}` : "";
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<maplibregl.Map | null>(null);
   const markersRef = React.useRef<Array<maplibregl.Marker>>([]);
   // Kingdom Hearts play-mode markers (Darkness spawns + discovery pins), kept in their
   // own set so they never touch the ride cluster's marker bookkeeping.
   const playMarkersRef = React.useRef<Array<maplibregl.Marker>>([]);
+  // Dev-destination pins (the nav QA tools' test spots), likewise kept apart from
+  // the ride cluster — they're a temporary overlay shown only while navigating.
+  const devMarkersRef = React.useRef<Array<maplibregl.Marker>>([]);
   // Attraction marker detail-layer elements by id, so selection highlight can
   // update in place without rebuilding (rebuilding would close an open popup).
   const markerElsRef = React.useRef<Map<number, HTMLElement>>(new Map());
@@ -726,6 +753,8 @@ export function ParkMap({
       for (const p of overview?.parks ?? []) {
         if (p.latitude == null || p.longitude == null) continue;
         const lngLat: [number, number] = [p.longitude, p.latitude];
+        // Actively navigating: show only the destination, hide everything else.
+        if (navDest && !sameCoords(lngLat, navDest)) continue;
         const { el, detail } = buildParkBadgeEl(p);
         const raise = makeRaise(el);
         if (containerRef.current) wireHoverLabelFlip(el, containerRef.current);
@@ -773,6 +802,8 @@ export function ParkMap({
         )
           continue;
         const lngLat: [number, number] = [a.longitude, a.latitude];
+        // Actively navigating: show only the destination, hide every other ride.
+        if (navDest && !sameCoords(lngLat, navDest)) continue;
         const { el, detail } = buildAttractionEl(a, a.id === selectedIdRef.current);
         const raise = makeRaise(el);
         if (containerRef.current) wireHoverLabelFlip(el, containerRef.current);
@@ -855,6 +886,8 @@ export function ParkMap({
           if (poi.latitude == null || poi.longitude == null) return;
           const lngLat: [number, number] = [poi.longitude, poi.latitude];
           if (!pointInPolygon(lngLat, boundary)) return;
+          // Actively navigating: show only the destination, hide every other POI.
+          if (navDest && !sameCoords(lngLat, navDest)) return;
           const { el, detail } = buildPoiEl(poi);
           const raise = makeRaise(el);
           if (containerRef.current) wireHoverLabelFlip(el, containerRef.current);
@@ -956,6 +989,7 @@ export function ParkMap({
     flyToPark,
     queryClient,
     trpc,
+    navDestKey,
   ]);
 
   // Free-roam focus watcher: after each pan/zoom, reveal a park's rides once the
@@ -1139,6 +1173,27 @@ export function ParkMap({
       playMarkersRef.current.push(marker);
     }
   }, [play, marksQ.data, ready]);
+
+  // Dev-destination pins — the nav QA tools' test spots (near home), drawn as
+  // temporary markers only while actively navigating so a dev target, which isn't
+  // a real attraction on the map, is still visible. The spot we're routing to is
+  // highlighted + labeled. Plain DOM markers, kept out of the ride cluster;
+  // cleared the moment navigation ends. No-op for normal users (empty list).
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    for (const m of devMarkersRef.current) m.remove();
+    devMarkersRef.current = [];
+    if (!navDest || devDestinations.length === 0) return;
+    for (const spot of devDestinations) {
+      const el = buildDevSpotEl(spot.label, sameCoords(spot.coords, navDest));
+      const marker = new maplibregl.Marker({ element: el, anchor: "bottom" })
+        .setLngLat(spot.coords)
+        .addTo(map);
+      devMarkersRef.current.push(marker);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navDestKey, devDestinations, ready]);
 
   // Play mode: a tap on the bare map (not a marker) asks the stage to open the
   // discovery-drop sheet at that point. Marker taps land on their own DOM element

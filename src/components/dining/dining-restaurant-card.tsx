@@ -11,6 +11,7 @@ import {
   type DayEntry,
   type Restaurant,
 } from "#/components/dining/dining-filters.ts";
+import { type DiningSearch } from "#/components/dining/dining-search-params.ts";
 import {
   hoursLabel,
   isOpenNow,
@@ -104,6 +105,7 @@ export function RestaurantCard({
   nowMin,
   loggedIn,
   defaultPartySize,
+  linkSearch,
 }: {
   restaurant: Restaurant;
   availability: AvailabilityEntry | undefined;
@@ -112,6 +114,8 @@ export function RestaurantCard({
   nowMin: number;
   loggedIn: boolean;
   defaultPartySize: number;
+  /** The committed dining search, carried to the detail page for its breadcrumb. */
+  linkSearch?: DiningSearch;
 }) {
   const subtitle = [restaurant.parkResort, restaurant.experienceType ?? restaurant.cuisine]
     .filter(Boolean)
@@ -133,6 +137,7 @@ export function RestaurantCard({
       <Link
         to="/dining/$facilityId"
         params={{ facilityId: restaurant.facilityId }}
+        search={linkSearch}
         className="bg-muted relative block w-[7.5rem] shrink-0 self-stretch overflow-hidden rounded-2xl outline-none sm:w-[9.5rem]"
       >
         {restaurant.imageUrl ? (
@@ -163,6 +168,7 @@ export function RestaurantCard({
           <Link
             to="/dining/$facilityId"
             params={{ facilityId: restaurant.facilityId }}
+            search={linkSearch}
             className="line-clamp-1 text-sm font-medium group-hover:underline sm:text-base"
           >
             {restaurant.name}

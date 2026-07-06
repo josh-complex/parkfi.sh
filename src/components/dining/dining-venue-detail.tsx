@@ -1,13 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { Link } from "@tanstack/react-router";
+import { getRouteApi, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { ArrowLeftIcon, ExternalLinkIcon, MapPinIcon } from "lucide-react";
 
 import { DiningAlertButton } from "#/components/dining/dining-alert-button.tsx";
 import { taxonomyLabel } from "#/components/dining/dining-filters.ts";
+import { diningTrail } from "#/components/dining/dining-search-params.ts";
 import {
   hoursLabel,
   openStatus,
@@ -33,6 +34,8 @@ import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
 import { cn } from "#/lib/utils.ts";
+
+const venueRoute = getRouteApi("/dining_/$facilityId");
 
 /** A venue's attribute badges — price, format, dining plan, discounts, perks. */
 function VenueBadges({
@@ -248,6 +251,9 @@ export function DiningVenueDetail({
 }) {
   const trpc = useTRPC();
   const isMobile = useIsMobile();
+  // The dining search carried in via the results link — powers the breadcrumb.
+  const search = venueRoute.useSearch();
+  const trail = diningTrail(search);
   const venueQ = useQuery(trpc.dining.venue.queryOptions({ facilityId }));
   const venue = venueQ.data;
   const hoursQ = useQuery(trpc.dining.hours.queryOptions({}));
@@ -279,12 +285,25 @@ export function DiningVenueDetail({
   const hasMenu = state.periods.length > 0;
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6 lg:px-6">
-      <nav className="text-sm text-muted-foreground">
-        <Link to="/dining" className="inline-flex items-center gap-1.5 hover:underline">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 pt-2 pb-6 lg:px-6">
+      {/* Tuck the breadcrumb tight under the header, matching the eats search /
+          cuisine-chip rhythm. The header (py-3) + wrapper (pt-2) leave ~20px
+          above it, so trim the section gap to leave the same below. */}
+      <nav className="-mb-1 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+        <Link to="/dining" search={{}} className="inline-flex items-center gap-1.5 hover:underline">
           <ArrowLeftIcon className="size-3.5" />
           All dining
         </Link>
+        {trail.map((label, i) => (
+          <React.Fragment key={`${label}-${i}`}>
+            <span aria-hidden>/</span>
+            {/* Every crumb returns to the same filtered list — the facets are
+                parallel, so there's no deeper level to drill into. */}
+            <Link to="/dining" search={search} className="hover:underline">
+              {label}
+            </Link>
+          </React.Fragment>
+        ))}
       </nav>
 
       {/* Header */}

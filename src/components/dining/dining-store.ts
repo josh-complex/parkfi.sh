@@ -53,6 +53,26 @@ export function patchFilters(patch: Partial<ClientFilters>) {
   diningStore.setState((s) => ({ ...s, filters: { ...s.filters, ...patch }, page: 0 }));
 }
 
+/**
+ * Overwrite the URL-backed slice of state (filters + searched + sort + page) in
+ * one shot — used to hydrate the board from the route's search params. Leaves
+ * party size (localStorage-backed) and the sticky-bar flag untouched.
+ */
+export function applySearch(state: {
+  filters: ClientFilters;
+  searched: boolean;
+  sortKey: SortKey;
+  page: number;
+}) {
+  diningStore.setState((s) => ({
+    ...s,
+    filters: state.filters,
+    searched: state.searched,
+    sortKey: state.sortKey,
+    page: state.page,
+  }));
+}
+
 export function clearExtraFilters() {
   diningStore.setState((s) => ({
     ...s,

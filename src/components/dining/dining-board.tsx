@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { getRouteApi } from "@tanstack/react-router";
 import { useStore } from "@tanstack/react-store";
 import { useQuery } from "@tanstack/react-query";
 
@@ -10,6 +11,12 @@ import { DiningCuisineChips } from "#/components/dining/dining-cuisine-chips.tsx
 import { DiningRecentlyUpdated } from "#/components/dining/dining-recently-updated.tsx";
 import { DiningPicks } from "#/components/dining/dining-picks.tsx";
 import {
+  diningSearchKey,
+  searchToState,
+  stateToSearch,
+} from "#/components/dining/dining-search-params.ts";
+import {
+  applySearch,
   diningStore,
   hydratePartySize,
   resetDiningStore,
@@ -33,6 +40,8 @@ import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
 
 const PAGE_SIZE = 12;
+
+const diningRoute = getRouteApi("/dining");
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -81,6 +90,41 @@ export function DiningBoard() {
     hydratePartySize();
     return resetDiningStore;
   }, []);
+
+  // The committed search is mirrored into the URL so it survives navigation:
+  // tap a cuisine chip → open a restaurant → Back lands on the filtered results
+  // (not the browse home), and a filtered search is a shareable link.
+  const urlSearch = diningRoute.useSearch();
+  const navigate = diningRoute.useNavigate();
+  const searchKey = diningSearchKey(urlSearch);
+  const hydratedRef = React.useRef(false);
+
+  // URL → store: hydrate on mount and whenever the URL changes (Back/Forward,
+  // shared links). Runs before the reflect effect below so the initial params
+  // are applied before we consider writing back.
+  React.useEffect(() => {
+    applySearch(searchToState(urlSearch));
+    hydratedRef.current = true;
+  }, [searchKey, urlSearch]);
+
+  // store → URL: reflect committed filter/sort/page changes back into the URL,
+  // replacing rather than pushing so filter tweaks don't pile up in history.
+  // Read live store state (not the render-time slices) so the mount tick — where
+  // the URL→store effect above has just applied the params synchronously — sees
+  // the hydrated values and doesn't clobber the URL back to defaults.
+  React.useEffect(() => {
+    if (!hydratedRef.current) return;
+    const s = diningStore.state;
+    const next = stateToSearch({
+      filters: s.filters,
+      searched: s.searched,
+      sortKey: s.sortKey,
+      page: s.page,
+    });
+    if (diningSearchKey(next) !== searchKey) {
+      void navigate({ to: "/dining", search: next, replace: true });
+    }
+  }, [filters, searched, sortKey, page, searchKey, navigate]);
 
   // The pill rides a hero wash at rest, then flips to a translucent bar once it
   // sticks over the scrolling content. A flow sentinel marks the hand-off.

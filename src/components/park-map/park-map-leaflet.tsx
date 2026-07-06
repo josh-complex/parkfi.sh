@@ -18,8 +18,10 @@ import {
   attractionPriority,
   boundaryFeatureCollection,
   buildAttractionEl,
+  buildDevSpotEl,
   buildParkBadgeEl,
   buildUserLocationEl,
+  sameCoords,
   setUserHeading,
   chromePadding,
   DECLUTTER_SIZE,
@@ -43,6 +45,13 @@ const FLY_SECONDS = MAP_FLY_MS / 1000;
 
 // Zoom at/above which free-roam reveals a park's rides (mirrors the GL renderer).
 const ROAM_RIDE_ZOOM = 14;
+
+// Stable default for the `devDestinations` prop (see the GL renderer).
+const EMPTY_DEV_DESTINATIONS: ReadonlyArray<{
+  id: string;
+  label: string;
+  coords: [number, number];
+}> = [];
 
 // How long the map must sit still before the cluster pass re-runs — debounced so
 // markers don't flicker in/out across the grouping threshold on every pan/zoom
@@ -139,6 +148,8 @@ export function ParkMapLeaflet({
   deviceHeading = null,
   route,
   onRequestDirections,
+  navDest = null,
+  devDestinations = EMPTY_DEV_DESTINATIONS,
   follow = false,
   onUserInteract,
   roam = false,
@@ -165,6 +176,12 @@ export function ParkMapLeaflet({
   route?: Array<[number, number]> | null;
   /** A "Directions" tap in an attraction popup — asks the stage to route here. */
   onRequestDirections?: (d: { id: number; name: string; coords: [number, number] }) => void;
+  /** While actively navigating, the destination's [lng,lat]. Set, it hides every
+   *  other marker so only the destination + route remain; null when idle. */
+  navDest?: [number, number] | null;
+  /** The dev picker's test destinations — temporary pins shown while navigating
+   *  so a dev target (not a real attraction) is visible. Empty for normal users. */
+  devDestinations?: ReadonlyArray<{ id: string; label: string; coords: [number, number] }>;
   /** Nav follow-cam: recenter on the user as their position updates. */
   follow?: boolean;
   /** Heading-up rotation — accepted for prop parity with the GL renderer, but a
@@ -196,10 +213,16 @@ export function ParkMapLeaflet({
   const effectiveSlug = roam ? focusSlug : activeSlug;
   const effectiveSlugRef = React.useRef<string | null>(effectiveSlug);
   effectiveSlugRef.current = effectiveSlug;
+  // Stable dep for the marker effect — rebuilds when navigation starts/ends or
+  // the destination changes, but not on every re-route/GPS tick (see GL renderer).
+  const navDestKey = navDest ? `${navDest[0]},${navDest[1]}` : "";
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<L.Map | null>(null);
   const tileRef = React.useRef<L.TileLayer | null>(null);
   const markersRef = React.useRef<Array<L.Marker>>([]);
+  // Dev-destination pins (nav QA tools' test spots), a temporary overlay shown
+  // only while navigating — kept apart from the ride cluster's bookkeeping.
+  const devMarkersRef = React.useRef<Array<L.Marker>>([]);
   const markerElsRef = React.useRef<Map<number, HTMLElement>>(new Map());
   // Cluster controller (shared with the MapLibre renderer); see park-map.tsx.
   const layerRef = React.useRef<MarkerCluster | null>(null);
@@ -458,6 +481,8 @@ export function ParkMapLeaflet({
       cardRef.current = null;
       for (const p of overview?.parks ?? []) {
         if (p.latitude == null || p.longitude == null) continue;
+        // Actively navigating: show only the destination, hide everything else.
+        if (navDest && !sameCoords([p.longitude, p.latitude], navDest)) continue;
         const latLng: [number, number] = [p.latitude, p.longitude];
         const { el, detail } = buildParkBadgeEl(p);
         const marker = L.marker(latLng, { icon: pointIcon(el) }).addTo(map);
@@ -502,6 +527,8 @@ export function ParkMapLeaflet({
           )
         )
           continue;
+        // Actively navigating: show only the destination, hide every other ride.
+        if (navDest && !sameCoords([a.longitude, a.latitude], navDest)) continue;
         const latLng: [number, number] = [a.latitude, a.longitude];
         const { el, detail } = buildAttractionEl(a, a.id === selectedIdRef.current);
         const waitLabel = waitLabelFor(a);
@@ -601,7 +628,30 @@ export function ParkMapLeaflet({
     flyToPark,
     queryClient,
     trpc,
+    navDestKey,
   ]);
+
+  // Dev-destination pins — the nav QA tools' test spots, drawn as temporary
+  // markers only while actively navigating so a dev target (not a real
+  // attraction) is visible; the one we're routing to is highlighted + labeled.
+  // Cleared the moment navigation ends. No-op for normal users (empty list).
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    for (const m of devMarkersRef.current) m.remove();
+    devMarkersRef.current = [];
+    if (!navDest || devDestinations.length === 0) return;
+    for (const spot of devDestinations) {
+      const el = buildDevSpotEl(spot.label, sameCoords(spot.coords, navDest));
+      const marker = L.marker([spot.coords[1], spot.coords[0]], {
+        icon: pointIcon(el),
+        interactive: false,
+        zIndexOffset: 400,
+      }).addTo(map);
+      devMarkersRef.current.push(marker);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navDestKey, devDestinations, ready]);
 
   // Free-roam focus watcher: reveal a park's rides once zoomed in over it; fall
   // back to park badges when zoomed out (mirrors the GL renderer).

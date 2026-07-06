@@ -51,6 +51,7 @@ import { useDeviceHeading } from "#/hooks/use-device-heading.ts";
 import { useGeolocation, type GeoState } from "#/hooks/use-geolocation.ts";
 import { useNavTestToolsEnabled } from "#/integrations/posthog/feature-flags.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
+import { DEV_SPOTS } from "#/lib/dev-location.ts";
 import { cn } from "#/lib/utils.ts";
 import { lazyWithReload } from "#/lib/lazy-with-reload.tsx";
 import { distanceMeters, pointInPolygon } from "#/server/living/geofence.ts";
@@ -98,6 +99,10 @@ export const MORPH_MS = 420;
 // recompute the walking route mid-trip. Small enough that turns update promptly,
 // large enough that a jittery GPS fix or a step in place won't re-hit Valhalla.
 const REROUTE_MIN_MOVE_M = 20;
+
+// Stable empty list for the dev-destination pins when the nav QA tools are off,
+// so the renderer's dev-marker effect sees an unchanging identity (no churn).
+const EMPTY_DEV_SPOTS: typeof DEV_SPOTS = [];
 
 /**
  * The last map-bearing route the user viewed, so a ride page's "back" affordances
@@ -315,6 +320,15 @@ export function MapStageProvider({
   // dogfooded on a phone without shipping it to everyone.
   const navTestTools = useNavTestToolsEnabled();
   const showNavTest = import.meta.env.DEV || navTestTools;
+  // The dev picker's test destinations, handed to the renderer so it can drop
+  // temporary pins for them while navigating (they aren't real attractions, so
+  // they'd otherwise have no marker). Empty for normal users, so nothing extra
+  // renders in prod. Memoized to a stable identity so it doesn't churn the
+  // renderer's dev-marker effect on every compass tick.
+  const devDestinations = React.useMemo(
+    () => (showNavTest ? DEV_SPOTS : EMPTY_DEV_SPOTS),
+    [showNavTest],
+  );
   // Memoized so its identity only changes on a new GPS fix — not on every compass
   // tick — keeping the renderers' `userLocation`-keyed effects (follow-cam, marker
   // create) from re-running at sensor rate. The live compass heading rides down
@@ -589,6 +603,8 @@ export function MapStageProvider({
                   deviceHeading={compass.heading}
                   route={routeQ.data?.coordinates ?? null}
                   onRequestDirections={requestDirections}
+                  navDest={started && trip ? trip.to.coords : null}
+                  devDestinations={devDestinations}
                   follow={following}
                   headingUp={headingUp}
                   onBearingChange={setMapBearing}
@@ -619,6 +635,8 @@ export function MapStageProvider({
                   deviceHeading={compass.heading}
                   route={routeQ.data?.coordinates ?? null}
                   onRequestDirections={requestDirections}
+                  navDest={started && trip ? trip.to.coords : null}
+                  devDestinations={devDestinations}
                   follow={following}
                   onUserInteract={() => setFollowing(false)}
                   roam={roam}

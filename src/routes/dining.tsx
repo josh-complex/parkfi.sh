@@ -3,12 +3,14 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AppInset } from "#/components/app-inset.tsx";
 import { AppSidebar } from "#/components/app-sidebar.tsx";
 import { DiningBoard } from "#/components/dining/dining-board.tsx";
+import { validateDiningSearch } from "#/components/dining/dining-search-params.ts";
 import { SiteHeader } from "#/components/site-header.tsx";
 import { SidebarProvider } from "#/components/ui/sidebar.tsx";
 import { seo } from "#/lib/seo.ts";
 
 export const Route = createFileRoute("/dining")({
   component: DiningPage,
+  validateSearch: validateDiningSearch,
   head: () =>
     seo({
       title: "Dining Reservations & Availability — ParkFi",
