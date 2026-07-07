@@ -459,7 +459,14 @@ export function OmniSearch({
           animate={{ opacity: open ? 0 : 1 }}
           transition={{
             layout: INLINE_SPRING,
-            opacity: { duration: open ? 0.05 : 0.14, delay: open ? 0 : 0.12 },
+            // No delay on the close fade-in: this button is the persistent
+            // shared-`layoutId` element, so on close it becomes the lead and
+            // springs its box back from the overlay's full-width bar to the
+            // little pill. Delaying its reveal made that return morph run while
+            // the button was still opacity 0 — the pill vanished, morphed home
+            // invisibly, then popped in. Fading in from frame 0 keeps it visible
+            // the whole way so it reads as one pill shrinking back.
+            opacity: { duration: open ? 0.05 : 0.14, delay: 0 },
           }}
           style={{ borderRadius: 9999, opacity: 1 }}
           className={cn(
@@ -499,7 +506,11 @@ export function OmniSearch({
           animate={{ opacity: open ? 0 : 1 }}
           transition={{
             layout: SPRING,
-            opacity: { duration: open ? 0.06 : 0.18, delay: open ? 0 : 0.2 },
+            // Delay 0 on close: this button leads the shared-`layoutId` morph
+            // back to the collapsed trigger, so it must be visible the whole
+            // return — a delayed fade-in left the pill morphing home invisibly,
+            // then popping in at the end.
+            opacity: { duration: open ? 0.06 : 0.18, delay: 0 },
           }}
           // Match the palette's corner radius so the shared-layout morph has no
           // border-radius delta to animate (a circle → 18px delta bounces).
@@ -520,7 +531,11 @@ export function OmniSearch({
           animate={{ opacity: open ? 0 : 1 }}
           transition={{
             layout: SPRING,
-            opacity: { duration: open ? 0.06 : 0.18, delay: open ? 0 : 0.2 },
+            // Delay 0 on close: this button leads the shared-`layoutId` morph
+            // back to the collapsed trigger, so it must be visible the whole
+            // return — a delayed fade-in left the pill morphing home invisibly,
+            // then popping in at the end.
+            opacity: { duration: open ? 0.06 : 0.18, delay: 0 },
           }}
           // A concrete `opacity` in `style` gives Motion's layout-animation
           // keyframe resolver a defined base to read — without it the shared

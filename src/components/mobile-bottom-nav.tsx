@@ -65,6 +65,7 @@ function Seg({
   label,
   offline,
   className,
+  contentClassName,
 }: {
   to: string;
   active: boolean;
@@ -72,6 +73,7 @@ function Seg({
   label: string;
   offline?: boolean;
   className?: string;
+  contentClassName?: string;
 }) {
   return (
     <Link
@@ -80,8 +82,14 @@ function Seg({
       data-maintenance={offline ? "" : undefined}
       className={cn(SEG_BASE, active ? SEG_ACTIVE : SEG_IDLE, className)}
     >
-      {icon}
-      <span>{label}</span>
+      {/* Tickets/Eats extend under the Map key via negative margin on the outer
+          link; that widens their box on the Map-facing side, so the icon+label
+          are re-centered here to counter it and stay visually aligned under the
+          segment's visible (non-overlapped) width. */}
+      <span className={cn("flex flex-col items-center gap-1", contentClassName)}>
+        {icon}
+        <span>{label}</span>
+      </span>
       {offline ? <MaintenanceOverlay /> : null}
     </Link>
   );
@@ -180,6 +188,8 @@ export function MobileBottomNav() {
           icon={<TicketIcon />}
           label="Tickets"
           offline={offline.has("tickets")}
+          className="-mr-4"
+          contentClassName="-translate-x-2"
         />
         <MapButton active={mapActive} />
         <Seg
@@ -188,6 +198,8 @@ export function MobileBottomNav() {
           icon={<UtensilsIcon />}
           label="Eats"
           offline={offline.has("dining")}
+          className="-ml-4"
+          contentClassName="translate-x-2"
         />
         <Seg
           to="/stays"
