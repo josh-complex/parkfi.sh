@@ -399,16 +399,21 @@
   --toast-hue: 235;
   /* Type-tinted 3D shelf so the depth reads as part of the pill, not a stray
      gray edge under it. */
-  --btn-3d: oklch(0.76 0.09 var(--toast-hue));
-  --btn-glare: oklch(1 0 0 / 0.7);
-  border-color: var(--btn-3d);
-  /* Cute tinted glow: a bright center falling off to clearly-colored rounded
-     ends, so the radial actually reads instead of whispering. */
-  background: radial-gradient(
-    120% 220% at 50% 40%,
-    oklch(0.97 0.025 var(--toast-hue)) 0%,
-    oklch(0.93 0.055 var(--toast-hue)) 62%,
-    oklch(0.88 0.085 var(--toast-hue)) 100%
+  --btn-3d: oklch(0.5 0.14 var(--toast-hue));
+  --btn-glare: oklch(1 0 0 / 0.35);
+  /* Vibrant, deliberately theme-independent dressing — the same saturated,
+     white-on-color treatment as the achievement/level-up cards, so a toast
+     reads as bold in BOTH light and dark instead of washed-out pastel (light)
+     or dimmed-into-the-background (dark). One hue drives the whole pill,
+     re-pointed per type below. */
+  color: #fff;
+  border-color: transparent;
+  /* Near-horizontal blend with a brighter centerline, mirroring .achv-card. */
+  background: linear-gradient(
+    100deg,
+    oklch(0.63 0.17 var(--toast-hue)) 0%,
+    oklch(0.71 0.15 var(--toast-hue)) 50%,
+    oklch(0.61 0.18 var(--toast-hue)) 100%
   );
   /* Extra horizontal padding so the copy clears the fully-rounded ends. */
   padding-left: 1.25rem;
@@ -418,7 +423,7 @@
   box-shadow:
     0 3px 0 0 var(--btn-3d),
     inset 0 1px 0 0 var(--btn-glare),
-    0 10px 30px -12px oklch(0.4 0.09 var(--toast-hue) / 0.35);
+    0 12px 34px -12px oklch(0.5 0.16 var(--toast-hue) / 0.55);
   /* Springy entrance: quick in, snappy overshoot as it settles. Sonner drives
      the enter/exit purely by transitioning `transform` (its `--y`), so a fast
      back-out curve on a short duration is all it takes. */
@@ -458,64 +463,88 @@
     animation: none;
   }
 }
-:is(.dark) [data-sonner-toast][data-styled="true"].cn-toast {
-  --btn-3d: oklch(0.42 0.07 var(--toast-hue));
-  --btn-glare: oklch(1 0 0 / 0.12);
-  /* Same glow, night mode: a deep tinted center settling into the popover dark. */
-  background: radial-gradient(
-    120% 220% at 50% 40%,
-    oklch(0.37 0.055 var(--toast-hue)) 0%,
-    oklch(0.3 0.035 var(--toast-hue)) 62%,
-    oklch(0.26 0.02 var(--toast-hue)) 100%
-  );
-  box-shadow:
-    0 3px 0 0 var(--btn-3d),
-    inset 0 1px 0 0 var(--btn-glare),
-    0 10px 30px -12px oklch(0 0 0 / 0.5);
-}
+/* No dark-mode override: the dressing above is intentionally theme-independent
+   (fixed high-chroma oklch, not the popover palette) so the pill stays just as
+   vibrant at night as it is by day — same rationale as the achievement cards. */
 
 /* Per-type tint: the hue re-points the whole dressing (gradient, shelf, border,
-   ambient shadow) in one move. Info + standard toasts keep the base blue. */
+   ambient shadow) in one move. Info + standard toasts keep the base blue. Each
+   is a rich, saturated color now — no longer the old faded pastels. */
 [data-sonner-toast].cn-toast[data-type="error"] {
-  /* Light faded red. */
+  /* Vibrant red. */
   --toast-hue: 25;
 }
 [data-sonner-toast].cn-toast[data-type="warning"] {
-  /* Light faded orange-yellow. */
-  --toast-hue: 80;
+  /* Vibrant orange — nudged warm of the old yellow so white copy stays legible. */
+  --toast-hue: 65;
 }
 [data-sonner-toast].cn-toast[data-type="success"] {
-  /* Green — success and (soon) achievement unlocks. */
+  /* Vibrant green — success and achievement unlocks. */
   --toast-hue: 150;
 }
 
-/* Heading: thicker + a touch larger. Subtext: lighter, smaller, muted. */
+/* Heading: thicker + a touch larger, white with a soft shadow so it reads
+   crisply on the saturated pill (matching the achievement card title). */
 [data-sonner-toast].cn-toast [data-title] {
   font-weight: 700;
   font-size: 0.9375rem;
   line-height: 1.2;
+  color: #fff;
+  text-shadow: 0 1px 2px oklch(0 0 0 / 0.28);
 }
 [data-sonner-toast].cn-toast [data-description] {
   margin-top: 0.125rem;
   font-weight: 400;
   font-size: 0.8125rem;
   line-height: 1.3;
-  color: var(--muted-foreground);
+  color: oklch(1 0 0 / 0.85);
+}
+/* Action/cancel buttons: a white chip with hue-tinted ink so they pop off the
+   colored pill instead of inheriting sonner's neutral defaults. */
+[data-sonner-toast].cn-toast [data-button] {
+  background: #fff;
+  color: oklch(0.45 0.15 var(--toast-hue));
+  font-weight: 600;
+}
+/* Close button: a tinted-dark circle with a white glyph, legible on the pill. */
+[data-sonner-toast].cn-toast [data-close-button] {
+  background: var(--btn-3d);
+  color: #fff;
+  border-color: transparent;
 }
 
-/* Error + warning: the animated Lordicon status icon, sized as a tidy square
-   that reads at a glance next to the two-line copy. */
+/* Error + warning: the animated Lordicon status icon, seated on a white "coin"
+   so the red/orange glyph reads at a glance instead of blending into the
+   same-hue vibrant pill behind it. The disc keeps the pill's vibrance while
+   giving the icon its own high-contrast field. */
 [data-sonner-toast].cn-toast[data-type="error"] [data-icon],
 [data-sonner-toast].cn-toast[data-type="warning"] [data-icon] {
   align-self: center !important;
-  width: auto !important;
-  height: auto !important;
-  margin: -0.25rem 0.5rem -0.25rem -0.125rem !important;
+  /* Flex-center the glyph in the coin. (Vertical margins zeroed so the coin
+     can't drift off the row's center line.) */
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem !important;
+  height: 2.5rem !important;
+  margin: 0 0.625rem 0 -0.125rem !important;
+  padding: 0 !important;
+  background: #fff;
+  border-radius: 9999px;
+  /* Top glare + soft ambient drop so the coin reads as a raised chip, matching
+     the pill's own 3D shelf. */
+  box-shadow:
+    inset 0 1px 0 0 oklch(1 0 0 / 0.7),
+    0 2px 8px -2px oklch(0 0 0 / 0.4);
 }
 [data-sonner-toast].cn-toast[data-type="error"] [data-icon] > img,
 [data-sonner-toast].cn-toast[data-type="warning"] [data-icon] > img {
-  width: 2.75rem !important;
-  height: 2.75rem !important;
+  /* `block` kills the inline baseline gap that otherwise nudges the glyph up
+     and leaves a sliver of white at the bottom of the coin. */
+  display: block;
+  width: 2.15rem !important;
+  height: 2.15rem !important;
+  margin: 0 !important;
   object-fit: contain;
 }
 
@@ -529,7 +558,10 @@
 .achv-card {
   position: relative;
   isolation: isolate;
-  overflow: hidden;
+  /* Visible (not hidden) so the oversized icon can break out past the top-left
+     corner. The gradient fill still clips to the rounded box on its own —
+     background painting always respects border-radius. */
+  overflow: visible;
   width: 100%;
   border-radius: 1.5rem;
   padding: 0.875rem 1.125rem;
@@ -580,9 +612,10 @@
    surface). Same entrance AND exit feel as every other toast; the level-up +
    unlock pair stagger simply by being fired a beat apart. */
 [data-sonner-toast].cn-toast.achv-toast {
-  /* Custom (unstyled) toasts don't get sonner's fixed width on desktop, so a
-     short card (the gold level-up) shrinks to its content and reads narrower
-     than the green unlock chip. Pin both to the toast width. */
+  /* Custom (unstyled) toasts don't inherit sonner's own width rule, so a short
+     card (the gold level-up) would shrink to its content and read narrower than
+     the green unlock chip. Pin both to the shared `--width` (set responsively in
+     sonner.tsx) so they match the standard toasts at every breakpoint. */
   width: var(--width);
   max-width: 100%;
   transition:
@@ -619,6 +652,33 @@
 }
 .achv-card--gold .achv-card__title {
   text-shadow: 0 1px 1px oklch(1 0 0 / 0.4);
+}
+
+/* Oversized icon that breaks out past the card's top-left corner and cants back
+   at a jaunty angle — a playful "sticker" motif. `z-index: 0` keeps it above the
+   card fill but below the corner sparkle (z-index: 1), so the twinkle still
+   reads on top of it. The card's `pl-12` reserves room so the copy clears it. */
+.achv-card__icon {
+  position: absolute;
+  top: -0.55rem;
+  left: -0.3rem;
+  z-index: 0;
+  font-size: 3.5rem;
+  line-height: 1;
+  transform: rotate(-25deg);
+  transform-origin: 50% 50%;
+  filter: drop-shadow(0 4px 5px oklch(0 0 0 / 0.35));
+  pointer-events: none;
+}
+/* Level-up variant: the number rides in a round coin instead of a bare emoji,
+   so it needs an explicit box + readable type in place of the emoji font-size. */
+.achv-card__icon--coin {
+  top: -0.4rem;
+  left: -0.4rem;
+  width: 3.1rem;
+  height: 3.1rem;
+  font-size: 1.5rem;
+  filter: drop-shadow(0 4px 6px oklch(0 0 0 / 0.28));
 }
 
 .achv-sparkle {

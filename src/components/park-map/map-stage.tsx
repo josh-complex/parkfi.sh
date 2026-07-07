@@ -5,6 +5,7 @@ import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useStore } from "@tanstack/react-store";
 import { createPortal } from "react-dom";
+import { toast } from "sonner";
 import posthog from "posthog-js";
 
 import { playModeStore, setHudExpanded } from "#/components/living/play-mode.ts";
@@ -256,8 +257,17 @@ export function MapStageProvider({
   // re-fetch/re-frame on every GPS tick) and routes to the destination via the
   // `routing.route` query. If location isn't granted yet, the store parks the
   // destination and the effect below fulfills it once a fix arrives.
-  const { pendingDest, trip, started, following, headingUp, arrived, traveled, mapBearing } =
-    useStore(navStore);
+  const {
+    pendingDest,
+    trip,
+    started,
+    following,
+    headingUp,
+    arrived,
+    summary,
+    traveled,
+    mapBearing,
+  } = useStore(navStore);
   const requestDirections = React.useCallback(
     (d: NavDest) => {
       requestNavDirections(d, geo.state.status === "granted" ? geo.state.coords : null);
@@ -288,9 +298,25 @@ export function MapStageProvider({
   // Live fixes drive the trip: arrival detection, the traveled breadcrumb
   // (snapped to the routed path), and the mid-trip re-route throttle — all in
   // one store transition per fix (see recordNavFix).
+  const durationSeconds = routeQ.data?.durationSeconds ?? null;
   React.useEffect(() => {
-    if (geo.state.status === "granted") recordNavFix(geo.state.coords, routeCoords);
-  }, [geo.state, routeCoords]);
+    if (geo.state.status === "granted")
+      recordNavFix(geo.state.coords, routeCoords, durationSeconds);
+  }, [geo.state, routeCoords, durationSeconds]);
+  // Announce the finish once, when arrival first latches (the summary card takes
+  // over the overlay at the same moment). Reset when a fresh trip clears it.
+  const arrivedToastRef = React.useRef(false);
+  React.useEffect(() => {
+    if (arrived && !arrivedToastRef.current) {
+      arrivedToastRef.current = true;
+      const name = navStore.state.trip?.to.name;
+      toast.success("You’ve completed your navigation!", {
+        description: name ? `You’ve arrived at ${name}.` : "You’ve arrived at your destination.",
+      });
+    } else if (!arrived) {
+      arrivedToastRef.current = false;
+    }
+  }, [arrived]);
   // While navigating (a resolved trip, or waiting on a location fix for a
   // pending one), the green nav UI takes over and the filter chrome hides.
   const navigating = trip != null || pendingDest != null;
@@ -600,8 +626,9 @@ export function MapStageProvider({
                 // needs the manual Retry.
                 error={routeQ.isError && !routeQ.data}
                 arrived={arrived}
+                summary={summary}
                 distanceMeters={routeQ.data?.distanceMeters ?? null}
-                durationSeconds={routeQ.data?.durationSeconds ?? null}
+                durationSeconds={durationSeconds}
                 maneuvers={routeQ.data?.maneuvers ?? null}
                 started={started}
                 canRotate={engine === "gl"}

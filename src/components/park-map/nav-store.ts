@@ -16,6 +16,8 @@ import { extendSnappedTrail } from "./nav-geometry.ts";
 export type NavDest = { id: number; name: string; coords: [number, number] };
 export type NavPlace = { name: string; coords: [number, number] };
 export type NavTrip = { from: NavPlace; to: NavPlace };
+/** Snapshot of the finished trip, frozen at arrival for the completion card. */
+export type NavSummary = { walkedMeters: number; elapsedSeconds: number };
 
 // How far (metres) the user must move from the last-routed origin before we
 // recompute the walking route mid-trip. Small enough that turns update promptly,
@@ -28,6 +30,12 @@ const REROUTE_MIN_MOVE_M = 10;
 // arrival state and stops re-routing/following. Generous enough to absorb GPS
 // wobble at walking speed so we don't sit one fix short of "arrived".
 const ARRIVE_RADIUS_M = 15;
+
+// …or once the live ETA drops to within this many seconds of the destination.
+// The trip is effectively done at this point — the last few metres don't need
+// turn-by-turn — so we flip straight to the completion summary rather than make
+// the user watch the ETA tick to zero.
+const ARRIVE_ETA_S = 30;
 
 // Minimum move (metres) between the raw fixes that extend the traveled
 // breadcrumb. Keeps the "where you've been" trail from densifying with jittery
@@ -45,9 +53,14 @@ interface NavState {
   following: boolean;
   /** Rotate the map to the user's facing (GL only). */
   headingUp: boolean;
-  /** Latched within ARRIVE_RADIUS_M of the destination — stops re-routing /
-   *  following and swaps the nav UI for the completion card. */
+  /** Latched within ARRIVE_RADIUS_M (or ARRIVE_ETA_S) of the destination — stops
+   *  re-routing / following and swaps the nav UI for the completion card. */
   arrived: boolean;
+  /** Wall-clock (ms) that Start was tapped, for the completion card's elapsed
+   *  time. Null until navigating. */
+  startedAt: number | null;
+  /** Frozen trip stats, snapshotted the moment `arrived` latches. */
+  summary: NavSummary | null;
   /** Where the user has walked since Start — snapped to the routed path (see
    *  extendSnappedTrail), drawn as a gray dotted trail behind the live route. */
   traveled: Array<[number, number]>;
@@ -64,6 +77,8 @@ const IDLE: NavState = {
   following: false,
   headingUp: false,
   arrived: false,
+  startedAt: null,
+  summary: null,
   traveled: [],
   trailAnchor: null,
   mapBearing: 0,
@@ -71,13 +86,27 @@ const IDLE: NavState = {
 
 export const navStore = new Store<NavState>(IDLE);
 
-// Reset the per-trip bookkeeping (arrival latch + breadcrumb) folded into a new
-// destination, so a new trip never inherits the last one's "arrived" or trail.
-const freshProgress: Pick<NavState, "arrived" | "traveled" | "trailAnchor"> = {
+// Reset the per-trip bookkeeping (arrival latch + breadcrumb + summary) folded
+// into a new destination, so a new trip never inherits the last one's "arrived",
+// trail, or completion stats.
+const freshProgress: Pick<
+  NavState,
+  "arrived" | "startedAt" | "summary" | "traveled" | "trailAnchor"
+> = {
   arrived: false,
+  startedAt: null,
+  summary: null,
   traveled: [],
   trailAnchor: null,
 };
+
+/** Total length (metres) of a polyline — the distance actually walked, summed
+ *  over the snapped breadcrumb. */
+function pathLength(points: Array<[number, number]>): number {
+  let total = 0;
+  for (let i = 1; i < points.length; i++) total += distanceMeters(points[i - 1], points[i]);
+  return total;
+}
 
 /** A "Directions" tap: snapshot the user's location as the trip origin, or park
  *  the destination until a fix arrives (the caller triggers `locate()`). */
@@ -110,7 +139,13 @@ export function resolvePendingDest(origin: [number, number]) {
 /** Start tapped — flip to navigating with the follow-cam engaged (the stage
  *  drives the actual camera fly). */
 export function startNav() {
-  navStore.setState((s) => ({ ...s, started: true, following: true, headingUp: true }));
+  navStore.setState((s) => ({
+    ...s,
+    started: true,
+    following: true,
+    headingUp: true,
+    startedAt: Date.now(),
+  }));
 }
 
 /** (Re-)engage the follow-cam + heading-up — Start and the recenter button. */
@@ -144,18 +179,34 @@ export function swapNavEnds() {
 /**
  * Feed a live GPS fix into the trip. While navigating (and not yet arrived)
  * this drives, in one update:
- *  - arrival: within ARRIVE_RADIUS_M of the destination, latch `arrived` and
- *    drop the follow-cam so the completion card can frame the finish;
+ *  - arrival: within ARRIVE_RADIUS_M of the destination *or* with the live ETA
+ *    (`etaSeconds`) inside ARRIVE_ETA_S, latch `arrived`, drop the follow-cam,
+ *    and freeze the trip summary so the completion card can frame the finish;
  *  - the traveled breadcrumb: fixes at least TRAIL_MIN_MOVE_M apart extend the
  *    trail, snapped onto `route` so it hugs the walked path (see nav-geometry);
  *  - re-routing: once the user is REROUTE_MIN_MOVE_M from the last-routed
  *    origin, re-key the trip origin so the route query refetches from here.
  */
-export function recordNavFix(fix: [number, number], route: Array<[number, number]> | null) {
+export function recordNavFix(
+  fix: [number, number],
+  route: Array<[number, number]> | null,
+  etaSeconds: number | null,
+) {
   navStore.setState((s) => {
     if (!s.started || s.arrived || !s.trip) return s;
-    if (distanceMeters(fix, s.trip.to.coords) <= ARRIVE_RADIUS_M) {
-      return { ...s, arrived: true, following: false };
+    const withinRadius = distanceMeters(fix, s.trip.to.coords) <= ARRIVE_RADIUS_M;
+    const withinEta = etaSeconds != null && etaSeconds <= ARRIVE_ETA_S;
+    if (withinRadius || withinEta) {
+      // Fold this final fix into the trail before measuring, so the walked
+      // distance covers the whole approach.
+      const walked = pathLength(extendSnappedTrail(s.traveled, route, fix));
+      const elapsedSeconds = s.startedAt ? Math.round((Date.now() - s.startedAt) / 1000) : 0;
+      return {
+        ...s,
+        arrived: true,
+        following: false,
+        summary: { walkedMeters: walked, elapsedSeconds },
+      };
     }
     let next = s;
     if (!s.trailAnchor || distanceMeters(fix, s.trailAnchor) >= TRAIL_MIN_MOVE_M) {

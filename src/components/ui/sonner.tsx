@@ -75,6 +75,11 @@ const Toaster = ({ ...props }: ToasterProps) => {
           "--normal-border": "var(--border)",
           // Fully rounded pill, matching the app's chip/button language.
           "--border-radius": "9999px",
+          // Every toast width (standard + the custom achievement/level-up cards)
+          // derives from `--width`. Sonner defaults it to a cramped 356px, which
+          // read as "cut short" — fill the available width with a small side
+          // gutter instead, capped at a comfortable max on wide desktops.
+          "--width": "min(30rem, calc(100vw - 2rem))",
         } as React.CSSProperties
       }
       toastOptions={{

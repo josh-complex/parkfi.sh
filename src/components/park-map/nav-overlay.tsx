@@ -10,10 +10,12 @@ import {
   ArrowUpRightIcon,
   ChevronDownIcon,
   CircleCheckBigIcon,
+  ClockIcon,
   CompassIcon,
   CornerUpLeftIcon,
   CornerUpRightIcon,
   FlagIcon,
+  FootprintsIcon,
   LoaderCircleIcon,
   LocateFixedIcon,
   NavigationIcon,
@@ -33,6 +35,7 @@ import {
   AlertDialogTitle,
 } from "#/components/ui/alert-dialog.tsx";
 import { cn } from "#/lib/utils.ts";
+import type { NavSummary } from "#/components/park-map/nav-store.ts";
 import type { RouteManeuver } from "#/server/routing/valhalla.ts";
 
 function formatDistance(m: number): string {
@@ -44,6 +47,14 @@ function formatWalk(s: number): string {
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return m === 0 ? `${h} hr walk` : `${h} hr ${m} min walk`;
+}
+/** Elapsed walk time for the completion summary — seconds under a minute, else
+ *  minutes (with trailing seconds when it isn't a clean minute). */
+function formatElapsed(s: number): string {
+  if (s < 60) return `${Math.max(1, s)} sec`;
+  const mins = Math.floor(s / 60);
+  const secs = s % 60;
+  return secs === 0 ? `${mins} min` : `${mins} min ${secs} sec`;
 }
 
 /**
@@ -105,6 +116,7 @@ export function NavOverlay({
   maneuvers,
   started,
   arrived,
+  summary,
   canRotate,
   headingUp,
   bearing,
@@ -122,6 +134,8 @@ export function NavOverlay({
   error: boolean;
   /** Reached the destination — swap the nav UI for the completion card. */
   arrived: boolean;
+  /** Frozen trip stats for the completion card (walked distance + elapsed). */
+  summary: NavSummary | null;
   distanceMeters: number | null;
   durationSeconds: number | null;
   maneuvers: Array<RouteManeuver> | null;
@@ -198,27 +212,66 @@ export function NavOverlay({
     </div>
   );
 
-  // Arrival — replace the whole nav UI with a completion card. No confirm on
-  // Done: the trip is finished, so ending it isn't a destructive mis-tap.
+  // Arrival — replace the whole nav UI with a completion summary: how far you
+  // walked and how long it took, plus a single Exit button. No confirm on Exit:
+  // the trip is finished, so ending it isn't a destructive mis-tap.
   if (arrived) {
+    const showWalked = summary != null && summary.walkedMeters >= 1;
+    const showElapsed = summary != null && summary.elapsedSeconds >= 1;
     return (
       <div
         data-map-chrome="bottom"
-        className="pointer-events-auto absolute inset-x-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] z-10 mx-auto flex max-w-md items-center gap-3 rounded-2xl bg-green-700 px-4 py-3 text-white shadow-lg ring-1 ring-white/15 md:bottom-3"
+        className="pointer-events-auto absolute inset-x-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] z-10 mx-auto flex max-w-md flex-col gap-3 rounded-2xl bg-green-700 px-4 py-4 text-white shadow-lg ring-1 ring-white/15 md:bottom-3"
       >
-        <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-white/15">
-          <CircleCheckBigIcon className="size-6" aria-hidden />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold leading-tight">You’ve arrived</div>
-          {destName && <div className="truncate text-sm text-white/80">{destName}</div>}
+        <div className="flex items-center gap-3">
+          <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-white/15">
+            <CircleCheckBigIcon className="size-6" aria-hidden />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold leading-tight">You’ve completed your navigation!</div>
+            {destName && (
+              <div className="truncate text-sm text-white/80">Arrived at {destName}</div>
+            )}
+          </div>
         </div>
+        {/* Trip summary — only the stats we actually captured (a quick hop right
+            next to the destination may have neither). */}
+        {(showWalked || showElapsed) && (
+          <div className="flex gap-2">
+            {showElapsed && (
+              <div className="flex flex-1 items-center gap-2 rounded-xl bg-white/10 px-3 py-2">
+                <ClockIcon className="size-4 shrink-0 text-white/70" aria-hidden />
+                <div className="min-w-0">
+                  <div className="text-[0.65rem] font-medium tracking-wide text-white/60 uppercase">
+                    Time
+                  </div>
+                  <div className="truncate text-sm font-semibold tabular-nums">
+                    {formatElapsed(summary.elapsedSeconds)}
+                  </div>
+                </div>
+              </div>
+            )}
+            {showWalked && (
+              <div className="flex flex-1 items-center gap-2 rounded-xl bg-white/10 px-3 py-2">
+                <FootprintsIcon className="size-4 shrink-0 text-white/70" aria-hidden />
+                <div className="min-w-0">
+                  <div className="text-[0.65rem] font-medium tracking-wide text-white/60 uppercase">
+                    Distance
+                  </div>
+                  <div className="truncate text-sm font-semibold tabular-nums">
+                    {formatDistance(summary.walkedMeters)}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         <button
           type="button"
           onClick={onClear}
-          className="inline-flex shrink-0 items-center rounded-full bg-white px-4 py-1.5 text-sm font-semibold text-green-700 shadow-sm transition hover:bg-white/90 active:scale-95"
+          className="inline-flex w-full items-center justify-center rounded-full bg-white px-4 py-2 text-sm font-semibold text-green-700 shadow-sm transition hover:bg-white/90 active:scale-95"
         >
-          Done
+          Exit
         </button>
       </div>
     );

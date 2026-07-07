@@ -83,7 +83,7 @@ export function MobileUserMenu({ showDot = false }: { showDot?: boolean }) {
           <LevelBadge
             level={userLevel.level.level}
             size="sm"
-            className="absolute -right-1 -bottom-1 ring-2 ring-background"
+            className="absolute -top-1 -right-1 ring-2 ring-background"
           />
         )}
         <CastAvatarBadge />
