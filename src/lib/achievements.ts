@@ -25,7 +25,12 @@ export type StatKey =
   | "streak_best" // longest consecutive-day visit streak
   | "best_day_distance_m" // most meters walked in one park-day
   | "best_day_queue_seconds" // most queue time in one park-day
-  | "park_seconds" // lifetime seconds inside parks (Σ last_seen-first_seen)
+  | "park_seconds" // lifetime seconds inside parks (Σ gap-bounded presence)
+  | "weekend_days" // park days landing on Sat/Sun (local)
+  | "full_days" // park days flagged both rope_drop AND night_owl
+  // cross-table (aggregated from other user tables, not day-rows/counters)
+  | "attractions_unique" // distinct attractions with a ≥8-min dwell (≈ ridden)
+  | "pins_owned" // distinct pins in the user's collection (pin_have)
   // event counters (client-reported via achievements.track)
   | "pin_scans"
   | "alerts_created"
@@ -89,7 +94,7 @@ function fam(
   };
 }
 
-/** 18 families, 63 tiers. Order is the display order on the achievements page. */
+/** 22 families, 77 tiers. Order is the display order on the achievements page. */
 export const ACHIEVEMENTS: AchievementFamily[] = [
   fam("gate", "Through the Turnstiles", "park_days", "count", "🎟️", [
     [
@@ -129,6 +134,12 @@ export const ACHIEVEMENTS: AchievementFamily[] = [
     [50, 200, "Adrenaline Adjacent", "Fifty rides. Your lanyard jingles when you walk."],
     [200, 400, "Lap Bar Legend", "Two hundred rides. You brace before the photo automatically."],
     [500, 800, "Human Rollercoaster", "Five hundred rides. You ARE the attraction."],
+  ]),
+  fam("explorer", "Ride Explorer", "attractions_unique", "count", "🗺️", [
+    [5, 75, "Sampler", "Five different attractions ridden. Variety is the spice of the queue."],
+    [15, 150, "Well-Rounded", "Fifteen distinct rides. You don't play favorites."],
+    [30, 300, "The Grand Tour", "Thirty different attractions. You've seen the whole map."],
+    [50, 600, "Nothing Left to Ride", "Fifty distinct attractions conquered. What's next?"],
   ]),
   fam("ropedrop", "Dawn Patrol", "rope_drops", "count", "🌅", [
     [1, 75, "Rope Dropper", "In the park before 9:30 AM. The headliners never saw you coming."],
@@ -192,10 +203,26 @@ export const ACHIEVEMENTS: AchievementFamily[] = [
     [720_000, 200, "Full-Timer", "200 hours. That's a job. This is better."],
     [1_800_000, 400, "Just Get a Nametag", "500 hours inside the berm. HR would like a word."],
   ]),
+  fam("weekender", "Weekend Warrior", "weekend_days", "count", "🗓️", [
+    [2, 75, "Saturday Starter", "Two weekend park days. The work week can wait."],
+    [8, 150, "Weekend Regular", "Eight weekend visits. Mondays are for recovering."],
+    [25, 300, "Weekends Booked Solid", "Twenty-five weekend days. Your calendar has a theme."],
+  ]),
+  fam("fullday", "Dawn to Dusk", "full_days", "count", "🌇", [
+    [1, 100, "Open to Close", "One park day from rope drop to closing time. Iron feet."],
+    [5, 250, "Full Value Extractor", "Five open-to-close days. You get your money's worth."],
+    [15, 500, "The Marathoner", "Fifteen dawn-to-dusk days. The park is your cardio."],
+  ]),
   fam("pins", "Pin Pals", "pin_scans", "count", "📌", [
     [1, 50, "Pin Curious", "First pin scanned."],
     [10, 100, "Lanyard Loaded", "Ten pins scanned."],
     [50, 200, "Sharp Collector", "Fifty pins scanned. Airport security hates your lanyard."],
+  ]),
+  fam("collector", "Pin Collector", "pins_owned", "count", "🧷", [
+    [1, 50, "First Pin", "One pin in the collection. It begins."],
+    [10, 100, "Lanyard Started", "Ten pins owned. The lanyard has weight now."],
+    [50, 200, "Serious Collector", "Fifty pins collected. You know a keeper when you see one."],
+    [150, 400, "Pinventory", "One hundred fifty pins. A museum, honestly."],
   ]),
   fam("alerts", "On High Alert", "alerts_created", "count", "🚨", [
     [1, 50, "First Watch", "First wait-time alert armed."],

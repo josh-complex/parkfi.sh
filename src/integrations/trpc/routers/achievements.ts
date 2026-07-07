@@ -3,13 +3,21 @@ import { and, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "#/db/index.ts";
-import { user, userAchievement, userGeoState, userParkDay, userStat } from "#/db/schema.ts";
+import {
+  pinHave,
+  user,
+  userAchievement,
+  userGeoState,
+  userParkDay,
+  userStat,
+} from "#/db/schema.ts";
 import { TRACK_EVENTS, levelForXp, xpForTierIds, type TrackEvent } from "#/lib/achievements.ts";
 import {
   bumpEventStat,
   computeStats,
   devResetMine,
   devUnlockNext,
+  evaluateAndUnlock,
   ingestPing,
 } from "#/server/achievements/engine.ts";
 import { adminProcedure, protectedProcedure } from "../init.ts";
@@ -33,15 +41,18 @@ export const achievementsRouter = {
     .input(z.object({ event: z.enum(TRACK_EVENT_KEYS) }))
     .mutation(({ ctx, input }) => bumpEventStat(ctx.userId, input.event)),
 
-  /** Full progress for the achievements page: stats + unlocked ids + xp/level. */
+  /** Full progress for the achievements page: stats + unlocked ids + xp/level.
+   *  Persists any tiers the current stats already satisfy — so catalog
+   *  additions and stats that changed without a ping/track (e.g. pins added to
+   *  the collection) unlock on page load instead of waiting on the next ping. */
   progress: protectedProcedure.query(async ({ ctx }) => {
     const stats = await computeStats(ctx.userId);
+    const { xp, level } = await evaluateAndUnlock(ctx.userId, stats);
     const unlocked = await db
       .select({ id: userAchievement.achievementId, unlockedAt: userAchievement.unlockedAt })
       .from(userAchievement)
       .where(eq(userAchievement.userId, ctx.userId));
-    const xp = xpForTierIds(unlocked.map((u) => u.id));
-    return { stats, unlocked, xp, level: levelForXp(xp) };
+    return { stats, unlocked, xp, level };
   }),
 
   /**
@@ -163,4 +174,21 @@ export const achievementsRouter = {
       }
       return { ok: true };
     }),
+
+  /**
+   * Backfill: re-evaluate every user who has any achievement-relevant data
+   * against the current catalog, persisting newly-satisfied tiers. Run once
+   * after adding families/tiers so existing (and dormant) users get credit
+   * without waiting on their next ping. Sequential — it's an admin one-shot.
+   */
+  adminReevaluateAll: adminProcedure.mutation(async () => {
+    const sources = await Promise.all([
+      db.selectDistinct({ userId: userParkDay.userId }).from(userParkDay),
+      db.selectDistinct({ userId: userStat.userId }).from(userStat),
+      db.selectDistinct({ userId: pinHave.userId }).from(pinHave),
+    ]);
+    const ids = new Set(sources.flat().map((r) => r.userId));
+    for (const userId of ids) await evaluateAndUnlock(userId);
+    return { evaluated: ids.size };
+  }),
 } satisfies TRPCRouterRecord;

@@ -1812,6 +1812,10 @@ export const userParkDay = pgTable(
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
     pings: integer("pings").notNull().default(0),
     distanceM: doublePrecision("distance_m").notNull().default(0),
+    // Presence time (`park_seconds`): Σ of gap-bounded inter-ping deltas while in
+    // this park, NOT last_seen−first_seen (which counts hotel naps / closed-app
+    // gaps as "inside the park"). Accrued incrementally in ingestPing.
+    presentSeconds: integer("present_seconds").notNull().default(0),
     queueSeconds: integer("queue_seconds").notNull().default(0),
     rides: integer("rides").notNull().default(0),
     ropeDrop: boolean("rope_drop").notNull().default(false),
@@ -1867,5 +1871,33 @@ export const userAchievement = pgTable(
   (t) => [
     primaryKey({ columns: [t.userId, t.achievementId] }),
     index("user_achievement_user_idx").on(t.userId),
+  ],
+);
+
+/**
+ * Distinct attractions a user has "ridden" — one row per (user, attraction),
+ * written when a queue dwell settles (≥ QUEUE_MIN_DWELL_S near the attraction).
+ * Powers `attractions_unique` (and, later, per-park completion). The scalar
+ * `user_park_day.rides` count remains the source for the `rides` stat.
+ */
+export const userAttraction = pgTable(
+  "user_attraction",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    attractionId: bigint("attraction_id", { mode: "number" })
+      .notNull()
+      .references(() => attractions.id),
+    parkId: bigint("park_id", { mode: "number" })
+      .notNull()
+      .references(() => parks.id),
+    firstRiddenAt: timestamp("first_ridden_at", { withTimezone: true }).notNull().defaultNow(),
+    lastRiddenAt: timestamp("last_ridden_at", { withTimezone: true }).notNull().defaultNow(),
+    rideCount: integer("ride_count").notNull().default(0),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.attractionId] }),
+    index("user_attraction_user_idx").on(t.userId),
   ],
 );

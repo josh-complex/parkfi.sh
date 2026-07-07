@@ -7,13 +7,15 @@
  * (`src/lib/achievements.ts`) against the user's aggregated stats. Deliberately
  * independent of the Living Layer — no imports from `src/server/living/**`.
  */
-import { and, desc, eq, gt, isNotNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, isNotNull, sql } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
 import {
   attractions,
   parks,
+  pinHave,
   userAchievement,
+  userAttraction,
   userGeoState,
   userParkDay,
   userStat,
@@ -147,6 +149,34 @@ function parkForPoint(p: LngLat, allParks: CachedPark[]): { id: number; timezone
   return null;
 }
 
+/**
+ * Gap-bounded presence seconds contributed by one ping — the delta since the
+ * previous ping, but only when that ping was in the *same* park and recent
+ * enough to trust as continuous presence. Anything longer than `maxGapS` (app
+ * backgrounded, left the park and came back) contributes nothing, which is what
+ * keeps `park_seconds` honest. Pure so it can be unit-tested.
+ */
+export function presenceDelta(
+  sameParkAsState: boolean,
+  elapsed: number | null,
+  maxGapS: number,
+): number {
+  if (!sameParkAsState || elapsed == null || elapsed <= 0 || elapsed > maxGapS) return 0;
+  return elapsed;
+}
+
+/**
+ * The park-local day a queue dwell settles to: the day of the last confirmed
+ * anchored ping (`anchorAt`), NOT `now`. A dwell that ends after a local-day
+ * rollover — or after the app was closed and the next ping lands outside the
+ * park the following morning — must credit the day it actually happened, which
+ * is the only day guaranteed to have a `user_park_day` row for the settle
+ * UPDATE to hit. Falls back to `now` if the cursor lacks a timestamp. Pure.
+ */
+export function settleDay(anchorAt: Date | null | undefined, now: Date, timeZone: string): string {
+  return localParts(anchorAt ?? now, timeZone).day;
+}
+
 /** Park-local calendar day + clock time, via Intl (en-CA gives YYYY-MM-DD). */
 function localParts(now: Date, timeZone: string): { day: string; hour: number; minute: number } {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -186,12 +216,14 @@ async function isRainyNow(parkId: number): Promise<boolean> {
 }
 
 /** Bump today's queue_seconds/rides on settle — shared by the same-park exit
- *  case and the cross-park/left-park case (§ ingestPing steps 4 & 7). */
+ *  case and the cross-park/left-park case (§ ingestPing steps 4 & 7). Also
+ *  records the distinct attraction (powers `attractions_unique`). */
 async function settleAnchorRow(
   userId: string,
   parkId: number,
   day: string,
   anchorSeconds: number,
+  attractionId: number,
 ): Promise<void> {
   if (anchorSeconds < QUEUE_MIN_DWELL_S) return;
   await db
@@ -203,6 +235,13 @@ async function settleAnchorRow(
     .where(
       and(eq(userParkDay.userId, userId), eq(userParkDay.parkId, parkId), eq(userParkDay.day, day)),
     );
+  await db
+    .insert(userAttraction)
+    .values({ userId, attractionId, parkId, rideCount: 1 })
+    .onConflictDoUpdate({
+      target: [userAttraction.userId, userAttraction.attractionId],
+      set: { rideCount: sql`${userAttraction.rideCount} + 1`, lastRiddenAt: new Date() },
+    });
 }
 
 /**
@@ -233,8 +272,14 @@ export async function ingestPing(
   if (state?.anchorAttractionId != null && (!park || park.id !== state.parkId)) {
     const oldPark = allParks.find((p) => p.id === state.parkId);
     if (oldPark) {
-      const { day: oldDay } = localParts(now, oldPark.timezone);
-      await settleAnchorRow(userId, oldPark.id, oldDay, state.anchorSeconds);
+      const oldDay = settleDay(state.at, now, oldPark.timezone);
+      await settleAnchorRow(
+        userId,
+        oldPark.id,
+        oldDay,
+        state.anchorSeconds,
+        state.anchorAttractionId,
+      );
     }
   }
 
@@ -276,6 +321,7 @@ export async function ingestPing(
     state?.lat != null
       ? Math.min(distanceMeters([state.lng, state.lat], point), WALK_SPEED_CAP_MS * elapsed)
       : 0;
+  const present = presenceDelta(sameParkAsState, elapsed, PING_MAX_GAP_S);
   const ropeDrop =
     hour < ROPE_DROP_BEFORE.h || (hour === ROPE_DROP_BEFORE.h && minute < ROPE_DROP_BEFORE.m);
   const nightOwl = hour >= NIGHT_OWL_AFTER_H;
@@ -289,6 +335,7 @@ export async function ingestPing(
       day,
       pings: 1,
       distanceM: moved,
+      presentSeconds: Math.round(present),
       ropeDrop,
       nightOwl,
       rainy,
@@ -299,6 +346,7 @@ export async function ingestPing(
         lastSeenAt: now,
         pings: sql`${userParkDay.pings} + 1`,
         distanceM: sql`${userParkDay.distanceM} + ${moved}`,
+        presentSeconds: sql`${userParkDay.presentSeconds} + ${Math.round(present)}`,
         ropeDrop: sql`${userParkDay.ropeDrop} OR ${ropeDrop}`,
         nightOwl: sql`${userParkDay.nightOwl} OR ${nightOwl}`,
         rainy: sql`${userParkDay.rainy} OR ${rainy}`,
@@ -332,7 +380,8 @@ export async function ingestPing(
     anchorSeconds = priorAnchorSeconds + Math.min(elapsed ?? 0, PING_MAX_GAP_S);
   } else {
     // Settle a dwell we just walked away from, then see if we entered a new one.
-    if (priorAnchorId != null) await settleAnchorRow(userId, park.id, day, priorAnchorSeconds);
+    if (priorAnchorId != null)
+      await settleAnchorRow(userId, park.id, day, priorAnchorSeconds, priorAnchorId);
     if (nearest && nearest.d <= QUEUE_ENTER_RADIUS_M) {
       anchorAttractionId = nearest.id;
       anchorSince = now;
@@ -388,24 +437,33 @@ export async function ingestPing(
   };
 }
 
-/** Aggregate every geo day-row + event counter into the catalog's stat shape. */
-export async function computeStats(userId: string): Promise<Stats> {
-  const dayRows = await db
-    .select({
-      parkId: userParkDay.parkId,
-      day: userParkDay.day,
-      distanceM: userParkDay.distanceM,
-      queueSeconds: userParkDay.queueSeconds,
-      rides: userParkDay.rides,
-      ropeDrop: userParkDay.ropeDrop,
-      nightOwl: userParkDay.nightOwl,
-      rainy: userParkDay.rainy,
-      firstSeenAt: userParkDay.firstSeenAt,
-      lastSeenAt: userParkDay.lastSeenAt,
-    })
-    .from(userParkDay)
-    .where(eq(userParkDay.userId, userId));
+/** One `user_park_day` row, narrowed to the fields the stat math needs. */
+export interface DayStatRow {
+  parkId: number;
+  day: string; // park-local YYYY-MM-DD
+  distanceM: number;
+  presentSeconds: number;
+  queueSeconds: number;
+  rides: number;
+  ropeDrop: boolean;
+  nightOwl: boolean;
+  rainy: boolean;
+}
 
+/** Sat/Sun in the row's own park-local calendar (`day` is already local
+ *  YYYY-MM-DD). Parsed at UTC noon so the weekday can't shift across a boundary. */
+function isWeekend(day: string): boolean {
+  const dow = new Date(`${day}T12:00:00Z`).getUTCDay();
+  return dow === 0 || dow === 6;
+}
+
+/**
+ * Pure: fold the user's park-day rows into the day-derived slice of Stats.
+ * DB-free so the arithmetic (sums, distinct sets, streaks, weekday buckets) is
+ * unit-testable without a database. `computeStats` layers the cross-table and
+ * event-counter stats on top.
+ */
+export function aggregateDayRows(dayRows: DayStatRow[]): Stats {
   const stats: Stats = {
     park_days: dayRows.length,
     parks_unique: new Set(dayRows.map((r) => r.parkId)).size,
@@ -417,10 +475,9 @@ export async function computeStats(userId: string): Promise<Stats> {
     rain_days: dayRows.filter((r) => r.rainy).length,
     best_day_distance_m: dayRows.reduce((m, r) => Math.max(m, r.distanceM), 0),
     best_day_queue_seconds: dayRows.reduce((m, r) => Math.max(m, r.queueSeconds), 0),
-    park_seconds: dayRows.reduce(
-      (s, r) => s + (r.lastSeenAt.getTime() - r.firstSeenAt.getTime()) / 1000,
-      0,
-    ),
+    park_seconds: dayRows.reduce((s, r) => s + r.presentSeconds, 0),
+    full_days: dayRows.filter((r) => r.ropeDrop && r.nightOwl).length,
+    weekend_days: dayRows.filter((r) => isWeekend(r.day)).length,
   };
 
   const byDay = new Map<string, Set<number>>();
@@ -445,6 +502,40 @@ export async function computeStats(userId: string): Promise<Stats> {
   }
   stats.streak_best = best;
 
+  return stats;
+}
+
+/** Aggregate every day-row + cross-table count + event counter into the
+ *  catalog's stat shape. */
+export async function computeStats(userId: string): Promise<Stats> {
+  const dayRows = await db
+    .select({
+      parkId: userParkDay.parkId,
+      day: userParkDay.day,
+      distanceM: userParkDay.distanceM,
+      presentSeconds: userParkDay.presentSeconds,
+      queueSeconds: userParkDay.queueSeconds,
+      rides: userParkDay.rides,
+      ropeDrop: userParkDay.ropeDrop,
+      nightOwl: userParkDay.nightOwl,
+      rainy: userParkDay.rainy,
+    })
+    .from(userParkDay)
+    .where(eq(userParkDay.userId, userId));
+
+  const stats = aggregateDayRows(dayRows);
+
+  // Cross-table counts (not day-rows, not event counters).
+  const [attractionRow] = await db
+    .select({ n: count() })
+    .from(userAttraction)
+    .where(eq(userAttraction.userId, userId));
+  stats.attractions_unique = attractionRow?.n ?? 0;
+
+  const [pinRow] = await db.select({ n: count() }).from(pinHave).where(eq(pinHave.userId, userId));
+  stats.pins_owned = pinRow?.n ?? 0;
+
+  // Client-reported event counters.
   const statRows = await db.select().from(userStat).where(eq(userStat.userId, userId));
   for (const row of statRows) {
     stats[row.stat as StatKey] = row.value;
@@ -458,8 +549,9 @@ export async function computeStats(userId: string): Promise<Stats> {
  *  path (see `adminRevoke` in the tRPC router). */
 export async function evaluateAndUnlock(
   userId: string,
+  precomputed?: Stats,
 ): Promise<{ newlyUnlocked: UnlockDTO[]; xp: number; level: LevelInfo }> {
-  const stats = await computeStats(userId);
+  const stats = precomputed ?? (await computeStats(userId));
   const deserved = satisfiedTierIds(stats);
 
   let newlyUnlocked: UnlockDTO[] = [];
