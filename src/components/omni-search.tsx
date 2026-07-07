@@ -36,13 +36,13 @@ const INLINE_SPRING = { type: "spring" as const, stiffness: 700, damping: 26, ma
 // The 3D outline-button surface, reused so the open palette reads as the trigger
 // grown large.
 const SURFACE =
-  "bg-background border-3d btn-3d-outline shadow-[0_4px_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)] dark:bg-popover dark:border-border dark:ring-1 dark:ring-foreground/10";
+  "bg-background border-3d btn-3d-outline shadow-[0_4px_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)] dark:bg-popover dark:border-[color-mix(in_oklch,var(--border),white_25%)] dark:ring-1 dark:ring-foreground/10";
 
 // The inset-input pill shared by the mobile inline trigger and its open search
 // bar, so the two morph into one another with no chrome delta. Matches the look
 // the SiteHeader wrapper used to carry (thicker top border, like our inputs).
 const INLINE_PILL =
-  "border border-t-[3px] border-[color-mix(in_oklch,var(--border),black_12%)] bg-background/95 backdrop-blur dark:border-border";
+  "border border-t-[3px] border-[color-mix(in_oklch,var(--border),black_12%)] bg-background/95 dark:bg-muted/95 backdrop-blur dark:border-[color-mix(in_oklch,var(--border),white_25%)]";
 
 const GROUP_ORDER = ["Parks", "Attractions", "Dining", "Menu", "Resorts", "Blog"] as const;
 type Group = (typeof GROUP_ORDER)[number];

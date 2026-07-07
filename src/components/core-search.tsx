@@ -13,7 +13,7 @@ export type SegPos = "first" | "middle" | "last";
  * bar's buttons use, so the open popover reads as part of the same surface.
  */
 export const coreSearchPopoverClass =
-  "border-3d shadow-[0_3px_0_0_var(--btn-3d)] ring-0 btn-3d-outline dark:border-border dark:shadow-none";
+  "border-3d shadow-[0_3px_0_0_var(--btn-3d)] ring-0 btn-3d-outline dark:border-[color-mix(in_oklch,var(--border),white_25%)] dark:shadow-none";
 
 /**
  * Close an open search popover when the page scrolls (a sticky bar would
@@ -46,7 +46,7 @@ export function useCloseOnScroll(open: boolean, close: () => void) {
 export function coreSegClass(pos: SegPos, active: boolean) {
   return cn(
     "group relative top-0 flex min-w-0 flex-col justify-center gap-0.5 border-3d shadow-3d bg-background px-5 py-2.5 text-left align-top text-sm whitespace-nowrap outline-none after:absolute after:inset-x-0 after:top-0 after:-bottom-1 after:rounded-[inherit] after:content-[''] transition-[box-shadow,top,background-color,border-color,color] duration-150 ease-out",
-    "btn-3d-outline dark:border-border dark:bg-input/30",
+    "btn-3d-outline dark:border-[color-mix(in_oklch,var(--border),white_25%)] dark:bg-input/30",
     "hover:-top-px hover:z-10 hover:bg-muted hover:shadow-3d-hover",
     "focus-visible:border-ring focus-visible:z-10 focus-visible:ring-[3px] focus-visible:ring-ring/30",
     "-ml-px first:ml-0",

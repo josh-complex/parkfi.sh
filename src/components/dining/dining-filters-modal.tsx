@@ -35,7 +35,7 @@ const FILTERS_SPRING = { type: "spring" as const, stiffness: 420, damping: 34, m
 
 // Same 3D border + glare + drop-shadow the outline Button wears.
 const FILTERS_SURFACE =
-  "bg-background border-3d btn-3d-outline shadow-[0_4px_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)] dark:bg-popover dark:border-border dark:ring-1 dark:ring-foreground/10";
+  "bg-background border-3d btn-3d-outline shadow-[0_4px_0_0_var(--btn-3d),inset_0_1px_0_0_var(--btn-glare)] dark:bg-popover dark:border-[color-mix(in_oklch,var(--border),white_25%)] dark:ring-1 dark:ring-foreground/10";
 
 // Section + PillRow now live in the shared drawer-form module; re-exported here
 // so existing dining call sites keep importing them from this file.

@@ -124,7 +124,7 @@ export function RideFilterButton({ className }: { className?: string }) {
     <Drawer>
       <DrawerTrigger
         className={cn(
-          "btn-3d-outline border-3d shadow-3d inline-flex w-fit items-center gap-2 rounded-full bg-background px-4.5 py-2.5 text-base font-medium transition active:scale-95 dark:border-border",
+          "btn-3d-outline border-3d shadow-3d inline-flex w-fit items-center gap-2 rounded-full bg-background px-4.5 py-2.5 text-base font-medium transition active:scale-95 dark:border-[color-mix(in_oklch,var(--border),white_25%)]",
           className,
         )}
       >

@@ -79,7 +79,7 @@ export function PostCard({
       to="/blog/$slug"
       params={{ slug: post.slug }}
       className={cn(
-        "group/post border-3d btn-3d-outline shadow-3d hover:shadow-3d-hover dark:border-border flex flex-col overflow-hidden rounded-3xl bg-card text-card-foreground ring-foreground/5 transition-shadow dark:ring-foreground/10",
+        "group/post border-3d btn-3d-outline shadow-3d hover:shadow-3d-hover dark:border-[color-mix(in_oklch,var(--border),white_25%)] flex flex-col overflow-hidden rounded-3xl bg-card text-card-foreground ring-foreground/5 transition-shadow dark:ring-foreground/10",
         className,
       )}
     >

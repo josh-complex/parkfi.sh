@@ -23,7 +23,7 @@ function ExternalCard({
       href={item.url}
       target="_blank"
       rel="nofollow noopener noreferrer"
-      className="group border-3d btn-3d-outline shadow-3d hover:shadow-3d-hover dark:border-border flex h-full flex-col gap-2 rounded-2xl bg-card p-4 text-card-foreground ring-foreground/5 transition-shadow dark:ring-foreground/10"
+      className="group border-3d btn-3d-outline shadow-3d hover:shadow-3d-hover dark:border-[color-mix(in_oklch,var(--border),white_25%)] flex h-full flex-col gap-2 rounded-2xl bg-card p-4 text-card-foreground ring-foreground/5 transition-shadow dark:ring-foreground/10"
     >
       <span className="font-heading text-xs font-semibold tracking-wide text-primary uppercase">
         {item.source}

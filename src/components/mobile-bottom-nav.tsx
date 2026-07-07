@@ -26,9 +26,9 @@ import { cn } from "#/lib/utils.ts";
  * fullscreen `/map`) without consuming layout.
  */
 const SEG_BASE =
-  "relative top-0 -ml-px flex flex-1 flex-col items-center justify-center gap-1 border-3d btn-3d-outline shadow-3d bg-background px-2 py-2.5 text-sm font-medium transition-[top,box-shadow,background-color,color] duration-150 ease-out first:ml-0 active:top-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active dark:border-border [&>svg]:size-5";
+  "relative top-0 -ml-px flex flex-1 flex-col items-center justify-center gap-1 border-3d btn-3d-outline shadow-3d bg-background dark:bg-muted/95 px-2 py-2.5 text-sm font-medium transition-[top,box-shadow,background-color,color] duration-150 ease-out first:ml-0 active:top-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)] [&>svg]:size-5";
 const SEG_ACTIVE =
-  "z-10 top-[3px] bg-primary text-primary-foreground [--btn-3d:color-mix(in_oklch,var(--primary),black_32%)] [--btn-glare:var(--btn-3d)] shadow-3d-active hover:top-[3px] hover:shadow-3d-active";
+  "z-10 top-[3px] bg-primary dark:bg-primary text-primary-foreground [--btn-3d:color-mix(in_oklch,var(--primary),black_32%)] [--btn-glare:var(--btn-3d)] shadow-3d-active hover:top-[3px] hover:shadow-3d-active";
 const SEG_IDLE = "text-foreground";
 
 /**
@@ -102,10 +102,10 @@ function MapButton({ active }: { active: boolean }) {
         // "bigger" feel is the extra height (rises above the row) + larger icon, not
         // a deeper shadow. White/outline like the others when idle; only the
         // selected state fills primary and depresses (sinks 3px onto a flat shelf).
-        "relative top-0 z-20 -ml-px flex flex-1 flex-col items-center justify-center gap-1 rounded-t-2xl border-3d shadow-3d px-2 py-3 text-sm font-medium transition-[top,box-shadow,background-color,color] duration-150 ease-out active:top-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active dark:border-border [&>svg]:size-7",
+        "relative top-0 z-20 -ml-px flex flex-1 flex-col items-center justify-center gap-1 rounded-t-2xl border-3d shadow-3d px-2 py-3 text-sm font-medium transition-[top,box-shadow,background-color,color] duration-150 ease-out active:top-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)] [&>svg]:size-7",
         active
           ? "top-[3px] btn-3d-primary bg-primary text-primary-foreground [--btn-glare:var(--btn-3d)] shadow-3d-active"
-          : "btn-3d-outline bg-background text-foreground",
+          : "btn-3d-outline bg-background dark:bg-muted/95 text-foreground",
       )}
     >
       <MapIcon />
@@ -134,7 +134,7 @@ function PlayButton() {
       tabIndex={tucked ? -1 : undefined}
       aria-label="Play — Kingdom Hearts"
       className={cn(
-        "absolute bottom-[calc(100%+0.375rem)] left-1/2 z-10 flex -translate-x-1/2 select-none items-center gap-1.5 rounded-full border-3d px-4 py-2 text-sm font-semibold shadow-3d transition-[transform,opacity,box-shadow,background-color,color] duration-200 ease-out active:translate-y-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active dark:border-border [&>svg]:size-4",
+        "absolute bottom-[calc(100%+0.375rem)] left-1/2 z-10 flex -translate-x-1/2 select-none items-center gap-1.5 rounded-full border-3d px-4 py-2 text-sm font-semibold shadow-3d transition-[transform,opacity,box-shadow,background-color,color] duration-200 ease-out active:translate-y-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)] [&>svg]:size-4",
         playMode
           ? "btn-3d-primary bg-primary text-primary-foreground"
           : "btn-3d-outline bg-background text-foreground",

@@ -59,7 +59,7 @@ export function MobileUserMenu({ showDot = false }: { showDot?: boolean }) {
     <Drawer>
       <DrawerTrigger
         aria-label="Account menu"
-        className="border-3d btn-3d-outline shadow-3d relative top-0 inline-flex size-13 shrink-0 self-center items-center justify-center rounded-full bg-background text-foreground transition-[top,box-shadow] duration-150 active:top-[3px] active:shadow-3d-active dark:border-border"
+        className="border-3d btn-3d-outline shadow-3d relative top-0 inline-flex size-13 shrink-0 self-center items-center justify-center rounded-full bg-background text-foreground transition-[top,box-shadow] duration-150 active:top-[3px] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)]"
       >
         {user?.image ? (
           <img
@@ -81,7 +81,7 @@ export function MobileUserMenu({ showDot = false }: { showDot?: boolean }) {
         <DrawerHeader className="border-b pb-4">
           {user ? (
             <div className="flex items-center gap-3 text-left">
-              <span className="border-3d shadow-3d inline-flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-sm font-semibold dark:border-border">
+              <span className="border-3d shadow-3d inline-flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-sm font-semibold dark:border-[color-mix(in_oklch,var(--border),white_25%)]">
                 {user.image ? (
                   <img
                     src={user.image}

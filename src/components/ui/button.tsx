@@ -11,9 +11,9 @@ const buttonVariants = cva(
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary/80 btn-3d-primary",
         outline:
-          "bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground btn-3d-outline dark:border-border dark:bg-transparent dark:hover:bg-input/30",
+          "bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground btn-3d-outline dark:border-[color-mix(in_oklch,var(--border),white_25%)] dark:bg-transparent dark:hover:bg-input/30",
         outlineCal:
-          "rounded-lg bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground btn-3d-outline dark:border-border dark:bg-transparent dark:hover:bg-input/30",
+          "rounded-lg bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground btn-3d-outline dark:border-[color-mix(in_oklch,var(--border),white_25%)] dark:bg-transparent dark:hover:bg-input/30",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground btn-3d-secondary",
         ghost:

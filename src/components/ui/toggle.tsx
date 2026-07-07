@@ -9,9 +9,9 @@ const toggleVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-background hover:bg-muted hover:text-foreground aria-pressed:bg-primary aria-pressed:text-primary-foreground aria-pressed:[--btn-3d:color-mix(in_oklch,var(--primary),black_32%)] btn-3d-outline dark:border-border dark:bg-input/30 dark:hover:bg-input/50",
+          "bg-background hover:bg-muted hover:text-foreground aria-pressed:bg-primary aria-pressed:text-primary-foreground aria-pressed:[--btn-3d:color-mix(in_oklch,var(--primary),black_32%)] btn-3d-outline dark:border-[color-mix(in_oklch,var(--border),white_25%)] dark:bg-input/30 dark:hover:bg-input/50",
         outline:
-          "bg-background hover:bg-muted hover:text-foreground aria-pressed:bg-primary aria-pressed:text-primary-foreground aria-pressed:[--btn-3d:color-mix(in_oklch,var(--primary),black_32%)] btn-3d-outline dark:border-border dark:bg-input/30 dark:hover:bg-input/50",
+          "bg-background hover:bg-muted hover:text-foreground aria-pressed:bg-primary aria-pressed:text-primary-foreground aria-pressed:[--btn-3d:color-mix(in_oklch,var(--primary),black_32%)] btn-3d-outline dark:border-[color-mix(in_oklch,var(--border),white_25%)] dark:bg-input/30 dark:hover:bg-input/50",
       },
       size: {
         default:

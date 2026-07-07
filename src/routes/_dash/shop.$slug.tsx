@@ -123,7 +123,7 @@ function ShopPage() {
               href={shop.detailUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="btn-3d-outline border-3d shadow-3d inline-flex items-center gap-2 rounded-full bg-background px-4 py-2.5 text-sm font-medium transition active:scale-95 dark:border-border"
+              className="btn-3d-outline border-3d shadow-3d inline-flex items-center gap-2 rounded-full bg-background px-4 py-2.5 text-sm font-medium transition active:scale-95 dark:border-[color-mix(in_oklch,var(--border),white_25%)]"
             >
               <ExternalLinkIcon className="size-4" />
               View on the official site

@@ -134,7 +134,7 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
         {/* Card-like surface to match the chart container, but no drop shadow:
             the 3D shelf border carries the depth, a box-shadow under it would
             double up and read as a floating panel. */}
-        <MapSlot className="border-3d btn-3d-outline relative isolate h-[320px] overflow-hidden rounded-4xl border-t-3 bg-card lg:h-auto lg:min-h-[460px] dark:border-border" />
+        <MapSlot className="border-3d btn-3d-outline relative isolate h-[320px] overflow-hidden rounded-4xl border-t-3 bg-card lg:h-auto lg:min-h-[460px] dark:border-[color-mix(in_oklch,var(--border),white_25%)]" />
         {/* The chart is a `React.lazy` boundary that DOES server-render (React
             ships the resolved subtree), but its chunk isn't loaded yet when the
             client hydrates — so the client falls back to this skeleton, the

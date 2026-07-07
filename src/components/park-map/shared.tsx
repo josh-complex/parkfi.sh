@@ -638,10 +638,14 @@ export function openAttractionCard(opts: {
     // Match the app's modals/popovers: 3d shelf shadow + a plain 1px border (no
     // thicker top edge). `--btn-3d` (from btn-3d-outline) drives both the shelf
     // shadow above and the border; in dark mode it goes transparent, so
-    // dark:border-border keeps an edge.
-    wrap.classList.add("border-3d", "btn-3d-outline", "dark:border-border");
+    // dark:border-[color-mix(in_oklch,var(--border),white_25%)] keeps an edge.
+    wrap.classList.add(
+      "border-3d",
+      "btn-3d-outline",
+      "dark:border-[color-mix(in_oklch,var(--border),white_25%)]",
+    );
     // Pin the resolved border colour inline. A border-color that lives on a class
-    // (border-3d / dark:border-border) doesn't reliably animate when close()
+    // (border-3d / dark:border-[color-mix(in_oklch,var(--border),white_25%)]) doesn't reliably animate when close()
     // overrides it to transparent — the edge holds its colour for the whole
     // collapse and then snaps off when the classes are stripped. Pinning the
     // concrete value here gives the close transition a real inline start point, so

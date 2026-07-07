@@ -344,14 +344,15 @@
 }
 
 /* Light surfaces: outline buttons, toggles, selects, search segments.
-   In dark mode --btn-3d goes transparent (shadow vanishes); pair with
-   dark:border-border on the element to keep a visible border. */
+   In dark mode --btn-3d becomes a dark shelf (below the surface) so the
+   3D emboss survives; pair with dark:border-[color-mix(in_oklch,var(--border),white_25%)] on the element so the
+   border reads from --border instead of the near-black shelf color. */
 @utility btn-3d-outline {
   --btn-3d: color-mix(in oklch, var(--border), black 12%);
   --btn-glare: oklch(1 0 0 / 0.55);
   --btn-glare-hover: oklch(1 0 0 / 0.8);
   &:is(.dark *) {
-    --btn-3d: transparent;
+    --btn-3d: color-mix(in oklch, var(--border), white 25%);
     --btn-glare: oklch(1 0 0 / 0.08);
     --btn-glare-hover: oklch(1 0 0 / 0.16);
   }
