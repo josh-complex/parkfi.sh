@@ -392,18 +392,32 @@
    `[data-sonner-toast][data-styled='true']` box-shadow rule (same specificity,
    but its runtime <style> loads after ours and would otherwise win the tie). */
 [data-sonner-toast][data-styled="true"].cn-toast {
-  --btn-3d: color-mix(in oklch, var(--border), black 12%);
-  --btn-glare: oklch(1 0 0 / 0.6);
+  /* One hue drives the whole pill — gradient, shelf, border, ambient shadow —
+     re-pointed per toast type below: blue for info/standard, red for errors,
+     orange-yellow for warnings, green for success/achievements. */
+  --toast-hue: 235;
+  /* Type-tinted 3D shelf so the depth reads as part of the pill, not a stray
+     gray edge under it. */
+  --btn-3d: oklch(0.76 0.09 var(--toast-hue));
+  --btn-glare: oklch(1 0 0 / 0.7);
   border-color: var(--btn-3d);
+  /* Cute tinted glow: a bright center falling off to clearly-colored rounded
+     ends, so the radial actually reads instead of whispering. */
+  background: radial-gradient(
+    120% 220% at 50% 40%,
+    oklch(0.97 0.025 var(--toast-hue)) 0%,
+    oklch(0.93 0.055 var(--toast-hue)) 62%,
+    oklch(0.88 0.085 var(--toast-hue)) 100%
+  );
   /* Extra horizontal padding so the copy clears the fully-rounded ends. */
   padding-left: 1.25rem;
   padding-right: 1.5rem;
   /* Same 3D shelf as the app's buttons (shelf edge + top glare), plus a soft
-     ambient drop like the dialogs so it lifts off the map. */
+     hue-cast ambient drop like the dialogs so it lifts off the map. */
   box-shadow:
     0 3px 0 0 var(--btn-3d),
     inset 0 1px 0 0 var(--btn-glare),
-    0 10px 30px -12px oklch(0 0 0 / 0.28);
+    0 10px 30px -12px oklch(0.4 0.09 var(--toast-hue) / 0.35);
   /* Springy entrance: quick in, snappy overshoot as it settles. Sonner drives
      the enter/exit purely by transitioning `transform` (its `--y`), so a fast
      back-out curve on a short duration is all it takes. */
@@ -412,10 +426,66 @@
     opacity 170ms ease,
     height 320ms ease,
     box-shadow 200ms;
+  /* Inertial landing: as the slide-in settles, the pill squishes wider/shorter
+     then springs back to rest. Runs on the `scale` property so it composes with
+     (never fights) sonner's own `transform`-based positioning. */
+  transform-origin: 50% 100%;
+  animation: toast-squish-in 480ms ease-out both;
+}
+@keyframes toast-squish-in {
+  /* Squish immediately, riding the front of sonner's spring-in… */
+  0% {
+    scale: 0.9 1.1;
+  }
+  /* …peak wide + short while the slide is still landing… */
+  30% {
+    scale: 1.07 0.88;
+  }
+  /* …and spring back with a little counter-bounce as it settles. */
+  55% {
+    scale: 0.98 1.02;
+  }
+  75% {
+    scale: 1.005 0.995;
+  }
+  100% {
+    scale: 1 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-sonner-toast][data-styled="true"].cn-toast {
+    animation: none;
+  }
 }
 :is(.dark) [data-sonner-toast][data-styled="true"].cn-toast {
-  --btn-3d: color-mix(in oklch, var(--border), white 8%);
-  --btn-glare: oklch(1 0 0 / 0.08);
+  --btn-3d: oklch(0.42 0.07 var(--toast-hue));
+  --btn-glare: oklch(1 0 0 / 0.12);
+  /* Same glow, night mode: a deep tinted center settling into the popover dark. */
+  background: radial-gradient(
+    120% 220% at 50% 40%,
+    oklch(0.37 0.055 var(--toast-hue)) 0%,
+    oklch(0.3 0.035 var(--toast-hue)) 62%,
+    oklch(0.26 0.02 var(--toast-hue)) 100%
+  );
+  box-shadow:
+    0 3px 0 0 var(--btn-3d),
+    inset 0 1px 0 0 var(--btn-glare),
+    0 10px 30px -12px oklch(0 0 0 / 0.5);
+}
+
+/* Per-type tint: the hue re-points the whole dressing (gradient, shelf, border,
+   ambient shadow) in one move. Info + standard toasts keep the base blue. */
+[data-sonner-toast].cn-toast[data-type="error"] {
+  /* Light faded red. */
+  --toast-hue: 25;
+}
+[data-sonner-toast].cn-toast[data-type="warning"] {
+  /* Light faded orange-yellow. */
+  --toast-hue: 80;
+}
+[data-sonner-toast].cn-toast[data-type="success"] {
+  /* Green — success and (soon) achievement unlocks. */
+  --toast-hue: 150;
 }
 
 /* Heading: thicker + a touch larger. Subtext: lighter, smaller, muted. */

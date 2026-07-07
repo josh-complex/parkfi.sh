@@ -1,68 +1,53 @@
 "use client";
 
 import * as React from "react";
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useStore } from "@tanstack/react-store";
-import {
-  ArrowLeftIcon,
-  ArrowRightIcon,
-  ArrowUpDownIcon,
-  ArrowUpIcon,
-  ArrowUpLeftIcon,
-  ArrowUpRightIcon,
-  ChevronDownIcon,
-  CircleCheckBigIcon,
-  CompassIcon,
-  CornerUpLeftIcon,
-  CornerUpRightIcon,
-  DramaIcon,
-  FlagIcon,
-  InfoIcon,
-  LoaderCircleIcon,
-  LocateFixedIcon,
-  MinusIcon,
-  NavigationIcon,
-  PlusIcon,
-  RollerCoasterIcon,
-  RotateCwIcon,
-  ShoppingBagIcon,
-  SparklesIcon,
-  TicketIcon,
-  UtensilsIcon,
-  XIcon,
-  type LucideIcon,
-} from "lucide-react";
 import { createPortal } from "react-dom";
 import posthog from "posthog-js";
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "#/components/ui/alert-dialog.tsx";
 import { playModeStore, setHudExpanded } from "#/components/living/play-mode.ts";
 import { PlayOverlay } from "#/components/living/play-overlay.tsx";
 import { DevLocationPanel } from "#/components/park-map/dev-location-panel.tsx";
 import { useSelection } from "#/components/park-dashboard/selection-context.tsx";
 import { RideFilterButton } from "#/components/rides/ride-filter-button.tsx";
-import { type MapLayers, useRideFilter } from "#/components/rides/ride-filter.tsx";
+import { useRideFilter } from "#/components/rides/ride-filter.tsx";
 import { useDeviceHeading } from "#/hooks/use-device-heading.ts";
-import { useGeolocation, type GeoState } from "#/hooks/use-geolocation.ts";
+import { useGeolocation } from "#/hooks/use-geolocation.ts";
 import { useNavTestToolsEnabled } from "#/integrations/posthog/feature-flags.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { DEV_SPOTS } from "#/lib/dev-location.ts";
-import { cn } from "#/lib/utils.ts";
 import { lazyWithReload } from "#/lib/lazy-with-reload.tsx";
 import { distanceMeters, pointInPolygon } from "#/server/living/geofence.ts";
-import type { RouteManeuver } from "#/server/routing/valhalla.ts";
 
-import { MAP_TYPE_COLOR, type MapHandle, type MapItemKind } from "./shared.tsx";
+import {
+  LocateButton,
+  MapToggleChips,
+  ParkChipScroller,
+  ParkDetailButton,
+  PlayHint,
+  RIDE_CATEGORY_KEYS,
+  ZoomControl,
+} from "./map-controls.tsx";
+import { morph } from "./map-morph.ts";
+import { NavOverlay } from "./nav-overlay.tsx";
+import {
+  clearNavTrip,
+  dropFollow,
+  engageFollow,
+  navStore,
+  recordNavFix,
+  requestNavDirections,
+  resolvePendingDest,
+  setHeadingUp,
+  setMapBearing,
+  startNav,
+  swapNavEnds,
+  type NavDest,
+} from "./nav-store.ts";
+import { type MapHandle } from "./shared.tsx";
+import { useFusedHeading } from "./use-fused-heading.ts";
 import { hasWebGl } from "./webgl.ts";
 
 // Lazy-loaded so the heavy map libraries (maplibre-gl, leaflet) are never
@@ -96,27 +81,6 @@ function useMapStage() {
   return ctx;
 }
 
-// Length of the hero⇄card morph. Snappy, then the camera fly follows (see
-// MORPH_MS in park-map.tsx, kept in lockstep so the fly waits for the box).
-export const MORPH_MS = 420;
-
-// How far (metres) the user must move from the last-routed origin before we
-// recompute the walking route mid-trip. Small enough that turns update promptly,
-// large enough that a jittery GPS fix or a step in place won't re-hit Valhalla.
-// The refetch is silent (previous route stays drawn via keepPreviousData), so we
-// can afford to recompute fairly often for a responsive "next turn".
-const REROUTE_MIN_MOVE_M = 10;
-
-// Within this many metres of the destination we call it: navigation flips to the
-// arrival state and stops re-routing/following. Generous enough to absorb GPS
-// wobble at walking speed so we don't sit one fix short of "arrived".
-const ARRIVE_RADIUS_M = 15;
-
-// Minimum move (metres) before a new fix is appended to the traveled breadcrumb.
-// Keeps the "where you've been" trail from densifying with jittery near-duplicate
-// points while standing still.
-const TRAIL_MIN_MOVE_M = 4;
-
 // Stable empty list for the dev-destination pins when the nav QA tools are off,
 // so the renderer's dev-marker effect sees an unchanging identity (no churn).
 const EMPTY_DEV_SPOTS: typeof DEV_SPOTS = [];
@@ -132,110 +96,6 @@ export type LastMapView = { to: "/map" } | { to: "/park/$slug"; params: { slug: 
 let lastMapView: LastMapView = { to: "/map" };
 export function getLastMapView(): LastMapView {
   return lastMapView;
-}
-const INLINE_PROPS = [
-  "position",
-  "margin",
-  "z-index",
-  "left",
-  "top",
-  "width",
-  "height",
-  "will-change",
-] as const;
-
-// easeOutBack — overshoots slightly past the target before settling, for a
-// springy little landing. `c1` tunes the bounce (higher = more overshoot).
-function ease(t: number): number {
-  const c1 = 1.5;
-  const c3 = c1 + 1;
-  const u = t - 1;
-  return 1 + c3 * u * u * u + c1 * u * u;
-}
-
-function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
-}
-
-// Tears down any morph currently in flight on a given host, so a fast second
-// navigation can claim the map without the prior morph's resize loop stomping
-// the new morph's inline geometry.
-const morphCleanup = new WeakMap<HTMLElement, () => void>();
-
-/**
- * Morph `host` from `first` toward `slot`'s box by animating its *real* geometry
- * — left/top/width/height — and calling MapLibre's own `resize()` on every frame
- * so the map re-lays-out to fill its container as the box changes. We transition
- * the parent and let the map track it, rather than scaling a fixed-size canvas
- * with a CSS transform (which leaves the map's dimensions stale mid-flight, so
- * the layout appears not to adjust while the camera flies).
- *
- * The target is re-read from `slot.getBoundingClientRect()` *every frame* rather
- * than snapshotted once: the destination slot's flex height can still be
- * settling when the morph starts (its content/scroll height isn't final until
- * after paint), and snapshotting a stale value is what made the box land short
- * and then "pop" to full size at the end. Tracking the live rect lands it
- * exactly, no pop.
- *
- * The host is lifted to <body> as a fixed overlay so no transformed/clipped
- * ancestor distorts the coordinates, then re-homed into `slot` when done.
- */
-function morph(host: HTMLElement, first: DOMRect, slot: HTMLElement, resize: () => void) {
-  morphCleanup.get(host)?.();
-  document.body.appendChild(host);
-  Object.assign(host.style, {
-    position: "fixed",
-    margin: "0",
-    // Below the floating chrome — the mobile header is z-30 and the bottom nav
-    // z-40, and on the fullscreen `/map` route the map rests at z-0 *behind*
-    // them (they show it through their transparent areas). Lifting the morph
-    // overlay above the bars (it used to be z-40) covered them for the whole
-    // morph, then dropped back to z-0 — so the chrome blinked out and popped
-    // back in on every return to the map. Staying under the bars keeps them
-    // visible throughout; z-20 is still above page content for the card morph.
-    zIndex: "20",
-    left: `${first.left}px`,
-    top: `${first.top}px`,
-    width: `${first.width}px`,
-    height: `${first.height}px`,
-    willChange: "left, top, width, height",
-  });
-  resize();
-
-  let raf = 0;
-  let start = 0;
-  let done = false;
-  const teardown = () => {
-    done = true;
-    cancelAnimationFrame(raf);
-    morphCleanup.delete(host);
-  };
-  morphCleanup.set(host, teardown);
-
-  const tick = (now: number) => {
-    if (!start) start = now;
-    const t = Math.min(1, (now - start) / MORPH_MS);
-    const e = ease(t);
-    // Live target — picks up the slot's settling height/width as it finalizes.
-    const to = slot.getBoundingClientRect();
-    host.style.left = `${lerp(first.left, to.left, e)}px`;
-    host.style.top = `${lerp(first.top, to.top, e)}px`;
-    host.style.width = `${lerp(first.width, to.width, e)}px`;
-    host.style.height = `${lerp(first.height, to.height, e)}px`;
-    resize();
-    if (t < 1 && !done) {
-      raf = requestAnimationFrame(tick);
-      return;
-    }
-    teardown();
-    // Re-home into the slot only if it's still the one we were animating into;
-    // otherwise a newer navigation already claimed the map and we must not
-    // steal it back.
-    if (host.parentElement !== slot && slot.isConnected) slot.appendChild(host);
-    for (const p of INLINE_PROPS) host.style.removeProperty(p);
-    resize();
-  };
-  raf = requestAnimationFrame(tick);
 }
 
 /**
@@ -324,14 +184,17 @@ export function MapStageProvider({
   // moving between routes. Never auto-prompts — the locate button calls locate().
   const geo = useGeolocation({ watch: true, rememberActive: true });
   // Live compass heading from the device magnetometer, only while location is on.
-  // Prefer it over GPS course-over-ground (which is null unless moving) so the
-  // facing cone points the right way even standing still. iOS needs a permission
-  // grant from a gesture — hung off the locate tap below.
+  // iOS needs a permission grant from a gesture — hung off the locate tap below.
   const compass = useDeviceHeading(geo.state.status === "granted");
-  // Read the compass heading inside callbacks via a ref, so they aren't recreated
+  // The heading handed to the renderers (facing cone + heading-up rotation):
+  // the compass fused with the GPS movement course — while walking, the
+  // direction you're actually moving is weighted over the (orientation-
+  // sensitive) magnetometer unless the compass says you're actively turning.
+  const fusedHeading = useFusedHeading(geo.state, compass.heading);
+  // Read the fused heading inside callbacks via a ref, so they aren't recreated
   // on every sensor tick (they'd otherwise churn effects that list them as deps).
-  const compassHeadingRef = React.useRef<number | null>(null);
-  compassHeadingRef.current = compass.heading;
+  const fusedHeadingRef = React.useRef<number | null>(null);
+  fusedHeadingRef.current = fusedHeading;
   // Nav QA tools (the local-routing destination picker): always on in dev, and
   // in prod for accounts with the `nav-test-tools` PostHog flag — so it can be
   // dogfooded on a phone without shipping it to everyone.
@@ -348,7 +211,7 @@ export function MapStageProvider({
   );
   // Memoized so its identity only changes on a new GPS fix — not on every compass
   // tick — keeping the renderers' `userLocation`-keyed effects (follow-cam, marker
-  // create) from re-running at sensor rate. The live compass heading rides down
+  // create) from re-running at sensor rate. The live fused heading rides down
   // separately as `deviceHeading`.
   const userLocation = React.useMemo(
     () =>
@@ -387,61 +250,24 @@ export function MapStageProvider({
     }
   }, [geo.state, activeSlug, parksQ.data, navigate]);
 
-  // Walking directions. A "Directions" tap snapshots the user's location as the
-  // trip origin (so the route doesn't re-fetch/re-frame on every GPS tick) and
-  // routes to the destination via the `routing.route` query. If location isn't
-  // granted yet, we stash the destination and fulfill it once a fix arrives.
-  // Both ends are labeled `Place`s (not a bare origin coord) so the route is
-  // symmetric — Swap just flips them, which re-keys the query and re-fetches.
-  type Dest = { id: number; name: string; coords: [number, number] };
-  type Place = { name: string; coords: [number, number] };
-  const [pendingDest, setPendingDest] = React.useState<Dest | null>(null);
-  const [trip, setTrip] = React.useState<{ from: Place; to: Place } | null>(null);
-  // Nav phase: a resolved `trip` starts in *preview* (whole route framed); tapping
-  // Start flips `started` → the follow-cam. `following` recenters on the user as
-  // they move (a manual pan clears it); `headingUp` rotates the map to their
-  // facing (GL only); `mapBearing` mirrors the live rotation for the compass.
-  const [started, setStarted] = React.useState(false);
-  const [following, setFollowing] = React.useState(false);
-  const [headingUp, setHeadingUp] = React.useState(false);
-  const [mapBearing, setMapBearing] = React.useState(0);
-  // Arrival: flips true once the user is within ARRIVE_RADIUS_M of the
-  // destination, freezing re-routing/follow and swapping the nav UI for a
-  // completion card. `traveled` is the breadcrumb of where they've walked since
-  // Start — drawn as a grayed trail behind the live (remaining) route.
-  const [arrived, setArrived] = React.useState(false);
-  const [traveled, setTraveled] = React.useState<Array<[number, number]>>([]);
-  const trailLastRef = React.useRef<[number, number] | null>(null);
-  // Reset the per-trip nav bookkeeping (arrival latch + breadcrumb) whenever a
-  // fresh destination is chosen, so a new trip never inherits the last one's
-  // "arrived" flag or trail.
-  const resetTripProgress = React.useCallback(() => {
-    setArrived(false);
-    setTraveled([]);
-    trailLastRef.current = null;
-  }, []);
+  // Walking directions — the trip itself lives in the shared nav store (see
+  // nav-store.ts for the state shape + transition rules). A "Directions" tap
+  // snapshots the user's location as the trip origin (so the route doesn't
+  // re-fetch/re-frame on every GPS tick) and routes to the destination via the
+  // `routing.route` query. If location isn't granted yet, the store parks the
+  // destination and the effect below fulfills it once a fix arrives.
+  const { pendingDest, trip, started, following, headingUp, arrived, traveled, mapBearing } =
+    useStore(navStore);
   const requestDirections = React.useCallback(
-    (d: Dest) => {
-      resetTripProgress();
-      const to: Place = { name: d.name, coords: d.coords };
-      if (geo.state.status === "granted")
-        setTrip({ from: { name: "Your location", coords: geo.state.coords }, to });
-      else {
-        setPendingDest(d);
-        geo.locate();
-      }
+    (d: NavDest) => {
+      requestNavDirections(d, geo.state.status === "granted" ? geo.state.coords : null);
+      if (geo.state.status !== "granted") geo.locate();
     },
-    [geo, resetTripProgress],
+    [geo],
   );
   React.useEffect(() => {
-    if (geo.state.status === "granted" && pendingDest) {
-      setTrip({
-        from: { name: "Your location", coords: geo.state.coords },
-        to: { name: pendingDest.name, coords: pendingDest.coords },
-      });
-      setPendingDest(null);
-    }
-  }, [geo.state, pendingDest]);
+    if (geo.state.status === "granted") resolvePendingDest(geo.state.coords);
+  }, [geo.state]);
   const routeQ = useQuery({
     ...trpc.routing.route.queryOptions({
       from: trip?.from.coords ?? [0, 0],
@@ -459,53 +285,12 @@ export function MapStageProvider({
   // so gate the drawn geometry on an active trip — otherwise clearing/ending nav
   // leaves the route line and dots painted on the map.
   const routeCoords = trip ? (routeQ.data?.coordinates ?? null) : null;
-  const clearTrip = React.useCallback(() => {
-    setTrip(null);
-    setPendingDest(null);
-    setStarted(false);
-    setFollowing(false);
-    setHeadingUp(false);
-    resetTripProgress();
-  }, [resetTripProgress]);
-  const swapEnds = React.useCallback(() => {
-    setTrip((t) => (t ? { from: t.to, to: t.from } : t));
-  }, []);
-  // Live re-routing. Once navigating (Start tapped), re-key the trip origin to
-  // the user's current position whenever they've walked past REROUTE_MIN_MOVE_M
-  // from where we last routed. Re-keying refetches `routing.route`, so the ETA,
-  // remaining distance, and the "next turn" (== the first maneuver *from here*)
-  // all stay current as they move. Throttled by distance — not every GPS tick —
-  // so we don't spam Valhalla or re-frame; the follow-cam does the smooth
-  // per-tick recenter. Preview (before Start) keeps its frozen snapshot origin.
+  // Live fixes drive the trip: arrival detection, the traveled breadcrumb
+  // (snapped to the routed path), and the mid-trip re-route throttle — all in
+  // one store transition per fix (see recordNavFix).
   React.useEffect(() => {
-    if (!started || arrived || geo.state.status !== "granted") return;
-    const here = geo.state.coords;
-    setTrip((t) => {
-      if (!t || distanceMeters(here, t.from.coords) < REROUTE_MIN_MOVE_M) return t;
-      return { ...t, from: { ...t.from, coords: here } };
-    });
-  }, [geo.state, started, arrived]);
-  // Arrival detection: once navigating and within ARRIVE_RADIUS_M of the
-  // destination, latch `arrived` (stops re-routing/following via the guards
-  // above) and drop the follow-cam so the completion card can frame the finish.
-  React.useEffect(() => {
-    if (!started || arrived || !trip || geo.state.status !== "granted") return;
-    if (distanceMeters(geo.state.coords, trip.to.coords) <= ARRIVE_RADIUS_M) {
-      setArrived(true);
-      setFollowing(false);
-    }
-  }, [geo.state, started, arrived, trip]);
-  // Breadcrumb: append the live position to the traveled trail as the user walks
-  // (throttled by distance so it doesn't densify while standing still). Drawn as
-  // a grayed "where you've been" line behind the remaining route.
-  React.useEffect(() => {
-    if (!started || arrived || geo.state.status !== "granted") return;
-    const here = geo.state.coords;
-    const last = trailLastRef.current;
-    if (last && distanceMeters(here, last) < TRAIL_MIN_MOVE_M) return;
-    trailLastRef.current = here;
-    setTraveled((pts) => [...pts, here]);
-  }, [geo.state, started, arrived]);
+    if (geo.state.status === "granted") recordNavFix(geo.state.coords, routeCoords);
+  }, [geo.state, routeCoords]);
   // While navigating (a resolved trip, or waiting on a location fix for a
   // pending one), the green nav UI takes over and the filter chrome hides.
   const navigating = trip != null || pendingDest != null;
@@ -536,15 +321,14 @@ export function MapStageProvider({
     // session (no locate tap) and the per-gesture orientation grant was never
     // asked for. A no-op once already granted / off iOS.
     compass.requestPermission();
-    setFollowing(true);
-    setHeadingUp(true);
+    engageFollow();
     mapRef.current?.flyToLocation(geo.state.coords, {
       zoom: 17.5,
-      bearing: compassHeadingRef.current ?? geo.state.heading ?? 0,
+      bearing: fusedHeadingRef.current ?? geo.state.heading ?? 0,
     });
   }, [geo, compass.requestPermission]);
-  const startNav = React.useCallback(() => {
-    setStarted(true);
+  const handleStart = React.useCallback(() => {
+    startNav();
     flyToUser();
   }, [flyToUser]);
   // Turning on locate is the natural gesture to also grant compass access (iOS
@@ -556,13 +340,11 @@ export function MapStageProvider({
   // Compass tap: toggle heading-up, snapping the map bearing to the heading (or
   // back to north). GL only — Leaflet's `setBearing` is a no-op.
   const toggleHeadingUp = React.useCallback(() => {
-    setHeadingUp((up) => {
-      const next = !up;
-      const h =
-        compassHeadingRef.current ?? (geo.state.status === "granted" ? geo.state.heading : null);
-      mapRef.current?.setBearing(next ? (h ?? 0) : 0);
-      return next;
-    });
+    const next = !navStore.state.headingUp;
+    const h =
+      fusedHeadingRef.current ?? (geo.state.status === "granted" ? geo.state.heading : null);
+    mapRef.current?.setBearing(next ? (h ?? 0) : 0);
+    setHeadingUp(next);
   }, [geo]);
 
   // Park the host in its off-screen home on mount, unless a <MapSlot>'s layout
@@ -674,7 +456,7 @@ export function MapStageProvider({
                   onMapRef={onMapRef}
                   attached={attached}
                   userLocation={userLocation}
-                  deviceHeading={compass.heading}
+                  deviceHeading={fusedHeading}
                   route={routeCoords}
                   traveled={started && traveled.length > 1 ? traveled : null}
                   animateRoute={started && !arrived}
@@ -684,7 +466,7 @@ export function MapStageProvider({
                   follow={following}
                   headingUp={headingUp}
                   onBearingChange={setMapBearing}
-                  onUserInteract={() => setFollowing(false)}
+                  onUserInteract={dropFollow}
                   roam={roam}
                   filter={filter}
                   onRoamFocusChange={setRoamFocusSlug}
@@ -708,7 +490,7 @@ export function MapStageProvider({
                   onMapRef={onMapRef}
                   attached={attached}
                   userLocation={userLocation}
-                  deviceHeading={compass.heading}
+                  deviceHeading={fusedHeading}
                   route={routeCoords}
                   traveled={started && traveled.length > 1 ? traveled : null}
                   animateRoute={started && !arrived}
@@ -716,7 +498,7 @@ export function MapStageProvider({
                   navDest={started && trip ? trip.to.coords : null}
                   devDestinations={devDestinations}
                   follow={following}
-                  onUserInteract={() => setFollowing(false)}
+                  onUserInteract={dropFollow}
                   roam={roam}
                   filter={filter}
                   onRoamFocusChange={setRoamFocusSlug}
@@ -747,7 +529,7 @@ export function MapStageProvider({
               <DevLocationPanel
                 activeDest={trip?.to ?? null}
                 onNavigate={(d) => requestDirections({ id: -1, name: d.name, coords: d.coords })}
-                onEndNav={clearTrip}
+                onEndNav={clearNavTrip}
               />
             )}
             {attached && engine && (
@@ -825,11 +607,11 @@ export function MapStageProvider({
                 canRotate={engine === "gl"}
                 headingUp={headingUp}
                 bearing={mapBearing}
-                onStart={startNav}
+                onStart={handleStart}
                 onRetry={() => void routeQ.refetch()}
                 onToggleHeadingUp={toggleHeadingUp}
-                onSwap={swapEnds}
-                onClear={clearTrip}
+                onSwap={swapNavEnds}
+                onClear={clearNavTrip}
               />
             )}
           </>,
@@ -837,648 +619,6 @@ export function MapStageProvider({
         )}
       {children}
     </MapStageContext.Provider>
-  );
-}
-
-// A round, 3D-embossed map control, matching the app's button language (the same
-// shelf/glare as the bottom nav + core search). Absolutely positioned, so the
-// press "sinks" via translate-y (not the `top` trick the flow buttons use, which
-// would fight the overlay's absolute `top`/`bottom` anchor). Slightly translucent
-// with a blur so it floats cleanly over the map.
-const MAP_CTRL_3D =
-  "btn-3d-outline border-3d shadow-3d pointer-events-auto flex size-10 items-center justify-center bg-background/95 text-foreground backdrop-blur transition-[transform,box-shadow,background-color,color] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-border";
-
-/** A small centered pill for Kingdom Hearts status copy (wrong park / no WebGL). Sits
- *  in the bottom-center slot the play HUD would otherwise occupy. */
-function PlayHint({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="animate-in fade-in slide-in-from-bottom-2 pointer-events-none absolute left-1/2 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+3rem)] z-10 -translate-x-1/2 rounded-full border bg-background/90 px-4 py-2 text-center text-xs shadow-sm backdrop-blur duration-200 md:bottom-4">
-      {children}
-    </div>
-  );
-}
-
-/** Vertical +/- zoom group, bottom-right, stacked directly above the locate
- *  button (clear of the bottom-nav island on mobile). Replaces each engine's
- *  native zoom control with one connected 3D control — a single embossed shelf
- *  split by a divider — driving zoom through the shared MapHandle. Individual
- *  buttons flash their background on press rather than sinking, so the group
- *  reads as one solid piece. */
-function ZoomControl({
-  onZoomIn,
-  onZoomOut,
-  raised,
-}: {
-  onZoomIn: () => void;
-  onZoomOut: () => void;
-  /** Lift clear of the bottom nav ETA bar while navigating. */
-  raised?: boolean;
-}) {
-  return (
-    <div
-      data-map-chrome="bottom"
-      className={cn(
-        "pointer-events-none absolute right-3 z-10",
-        raised
-          ? "bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+8rem)] md:bottom-[8rem]"
-          : "bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+3.75rem)] md:bottom-[3.75rem]",
-      )}
-    >
-      <div className="btn-3d-outline border-3d shadow-3d pointer-events-auto flex flex-col overflow-hidden rounded-2xl bg-background/95 backdrop-blur dark:border-border">
-        <button
-          type="button"
-          onClick={onZoomIn}
-          aria-label="Zoom in"
-          className="flex size-10 items-center justify-center text-foreground transition-colors active:bg-foreground/10"
-        >
-          <PlusIcon className="size-5" />
-        </button>
-        <div className="mx-2 h-px bg-border" />
-        <button
-          type="button"
-          onClick={onZoomOut}
-          aria-label="Zoom out"
-          className="flex size-10 items-center justify-center text-foreground transition-colors active:bg-foreground/10"
-        >
-          <MinusIcon className="size-5" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Floating "locate me" control, overlaid on the map (it travels in the portal so
- * it follows the map between routes). Sits clear of the bottom-nav island on
- * mobile and bottom-right on desktop. Tapping it requests/refreshes the fix.
- */
-function LocateButton({
-  state,
-  onClick,
-  raised,
-}: {
-  state: GeoState;
-  onClick: () => void;
-  /** Lift clear of the bottom nav ETA bar while navigating. */
-  raised?: boolean;
-}) {
-  const prompting = state.status === "prompting";
-  const active = state.status === "granted";
-  const off = state.status === "denied" || state.status === "unavailable";
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={active ? "Hide my location" : "Show my location"}
-      aria-pressed={active}
-      title={
-        off
-          ? "Location unavailable — check permissions"
-          : active
-            ? "Hide my location"
-            : "Show my location"
-      }
-      className={cn(
-        MAP_CTRL_3D,
-        "absolute right-3 z-10 rounded-full",
-        raised
-          ? "bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+5rem)] md:bottom-[5rem]"
-          : "bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] md:bottom-3",
-        active && "text-blue-600",
-        off && "text-muted-foreground",
-      )}
-    >
-      {prompting ? (
-        <LoaderCircleIcon className="size-5 animate-spin" />
-      ) : (
-        <LocateFixedIcon className="size-5" />
-      )}
-    </button>
-  );
-}
-
-/**
- * Free-roam shortcut into the focused park's dashboard. Appears (traveling in the
- * portal with the map) only when the roam map is zoomed into a park — a left-aligned
- * 3D pill in the bottom-left cluster, stacked directly on top of the filter button
- * (the cluster owns the absolute positioning). Tapping it opens the full
- * `/park/$slug` page; the press sinks via translate-y.
- */
-function ParkDetailButton({ slug }: { slug: string }) {
-  return (
-    <Link
-      to="/park/$slug"
-      params={{ slug }}
-      className="btn-3d-outline border-3d shadow-3d pointer-events-auto flex shrink-0 select-none items-center gap-1.5 rounded-full bg-background/95 px-4 py-2 text-sm font-medium text-foreground backdrop-blur transition-[transform,box-shadow] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-border"
-    >
-      <span>Park info</span>
-      <ArrowUpRightIcon className="size-4 shrink-0 text-muted-foreground" />
-    </Link>
-  );
-}
-
-/**
- * The top park-chip row: a plain horizontally-scrollable row of pills that fly the
- * roam camera to a park. Zoomed into a park (`focusSlug` set) it offers the *other*
- * parks; zoomed out (`focusSlug` null) it offers every park. Tapping a chip flies
- * the shared map there; the roam viewport watcher then re-points the cluster at the
- * new focus. Renders nothing when there's no park to offer. Negative margins +
- * matching padding let the row bleed to the screen edges while the first chip still
- * lines up with the search bar.
- */
-function ParkChipScroller({
-  parks,
-  focusSlug,
-  onZoom,
-}: {
-  parks: ReadonlyArray<{ slug: string; name: string }>;
-  focusSlug: string | null;
-  onZoom: (slug: string) => void;
-}) {
-  const others = focusSlug ? parks.filter((p) => p.slug !== focusSlug) : parks;
-  if (others.length === 0) return null;
-  return (
-    <div className="pointer-events-auto -mx-3 flex w-[calc(100%+1.5rem)] touch-pan-x items-center gap-1.5 overflow-x-auto overscroll-contain px-3 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      {others.map((p) => (
-        <button
-          key={p.slug}
-          type="button"
-          onClick={() => onZoom(p.slug)}
-          className="btn-3d-outline border-3d shadow-3d flex shrink-0 select-none items-center whitespace-nowrap rounded-full bg-background/95 px-4 py-2 text-sm font-medium text-foreground backdrop-blur transition-[transform,box-shadow] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-border"
-        >
-          {p.name}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-// The ride categories each on-map chip stands for. "Rides" folds the three
-// ride-type markers (coasters, flat/dark rides, water rides) into one toggle;
-// "Shows" folds stage shows and character meets together. Kept as the single
-// source of truth for both the seeded roam-map default and the chip's
-// active/toggle logic.
-const RIDE_CATEGORY_KEYS = ["thrill", "attraction", "water"] as const;
-const SHOW_CATEGORY_KEYS = ["show", "character"] as const;
-
-/**
- * The on-map toggle row: labeled pills for what the map draws — grouped ride
- * categories (which ride markers show, shared with the Waits filter) and the
- * optional overlay layers (dining/shops markers). Two category groups ("Rides",
- * "Shows") each cover several underlying categories; Shops and Eats are overlay
- * layers (on the map only ride markers render, so a per-venue ride category would
- * have nothing to act on — the venues live in the layers instead). Sized to match
- * the filter button, in a scroll-if-it-overflows row with the scrollbar hidden.
- */
-type MapToggle = { label: string; Icon: LucideIcon; color: MapItemKind } & (
-  | { kind: "category"; keys: ReadonlyArray<string> }
-  | { kind: "layer"; key: keyof MapLayers }
-);
-
-const MAP_TOGGLES: ReadonlyArray<MapToggle> = [
-  {
-    kind: "category",
-    label: "Rides",
-    Icon: RollerCoasterIcon,
-    keys: RIDE_CATEGORY_KEYS,
-    color: "rides",
-  },
-  { kind: "category", label: "Shows", Icon: DramaIcon, keys: SHOW_CATEGORY_KEYS, color: "shows" },
-  { kind: "layer", key: "shops", label: "Shops", Icon: ShoppingBagIcon, color: "shops" },
-  { kind: "layer", key: "dining", label: "Eats", Icon: UtensilsIcon, color: "eats" },
-  {
-    kind: "layer",
-    key: "entertainment",
-    label: "Live",
-    Icon: SparklesIcon,
-    color: "entertainment",
-  },
-  { kind: "layer", key: "tours", label: "Tours", Icon: TicketIcon, color: "tours" },
-  { kind: "layer", key: "services", label: "Services", Icon: InfoIcon, color: "services" },
-];
-
-function MapToggleChips() {
-  const { filter, setFilter } = useRideFilter();
-  // A group is on when every category it covers is selected; toggling flips the
-  // whole group on/off together.
-  const toggleCategory = (keys: ReadonlyArray<string>) =>
-    setFilter((f) => {
-      const categories = new Set(f.categories);
-      const allOn = keys.every((k) => categories.has(k));
-      for (const k of keys) {
-        if (allOn) categories.delete(k);
-        else categories.add(k);
-      }
-      return { ...f, categories };
-    });
-  const toggleLayer = (key: keyof MapLayers) =>
-    setFilter((f) => ({ ...f, layers: { ...f.layers, [key]: !f.layers[key] } }));
-  return (
-    <div className="pointer-events-auto -mx-3 flex w-[calc(100%+1.5rem)] touch-pan-x gap-1.5 overflow-x-auto overscroll-contain px-3 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      {MAP_TOGGLES.map((t) => {
-        const active =
-          t.kind === "category"
-            ? t.keys.every((k) => filter.categories.has(k))
-            : filter.layers[t.key];
-        const { Icon } = t;
-        const color = MAP_TYPE_COLOR[t.color];
-        return (
-          <button
-            key={t.kind === "category" ? `cat:${t.label}` : `layer:${t.key}`}
-            type="button"
-            onClick={() => (t.kind === "category" ? toggleCategory(t.keys) : toggleLayer(t.key))}
-            aria-pressed={active}
-            style={
-              active
-                ? // Fill + 3D shelf/glare all derived from the type's signature
-                  // colour, so a lit chip matches its markers' overflow dot.
-                  ({
-                    backgroundColor: color,
-                    "--btn-3d": `color-mix(in oklch, ${color}, black 32%)`,
-                    "--btn-glare": `color-mix(in oklch, ${color}, black 32%)`,
-                  } as React.CSSProperties)
-                : undefined
-            }
-            className={cn(
-              "btn-3d-outline border-3d flex shrink-0 select-none items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium backdrop-blur transition-[transform,box-shadow,background-color,color] duration-150 ease-out dark:border-border",
-              active
-                ? // Selected: hold the pressed-in state — the filled pill sits
-                  // translated down into its shelf with the shadow collapsed, so it
-                  // reads as depressed rather than raised.
-                  "translate-y-[3px] text-white shadow-3d-active"
-                : // Resting: raised 3D outline pill that sinks on press. The icon
-                  // carries the type colour so the mapping reads even when off.
-                  "bg-background/95 text-foreground shadow-3d active:translate-y-[3px] active:shadow-3d-active",
-            )}
-          >
-            <Icon className="size-5" style={active ? undefined : { color }} />
-            {t.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function formatDistance(m: number): string {
-  return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`;
-}
-function formatWalk(s: number): string {
-  const mins = Math.max(1, Math.round(s / 60));
-  if (mins < 60) return `${mins} min walk`;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return m === 0 ? `${h} hr walk` : `${h} hr ${m} min walk`;
-}
-
-/**
- * Map a Valhalla maneuver `type` code to a turn icon. Codes follow Valhalla's
- * `DirectionsLeg.Maneuver.Type` enum; we collapse the ones a pedestrian on OSM
- * footpaths actually hits (start/continue/turns/destination) and fall back to a
- * straight arrow for anything exotic (ramps, ferries, transit).
- */
-function maneuverIcon(type: number): LucideIcon {
-  switch (type) {
-    case 4: // destination
-    case 5: // destination right
-    case 6: // destination left
-      return FlagIcon;
-    case 9: // slight right
-    case 23: // stay right
-      return ArrowUpRightIcon;
-    case 10: // right
-    case 18: // ramp right
-    case 20: // exit right
-      return CornerUpRightIcon;
-    case 11: // sharp right
-      return ArrowRightIcon;
-    case 16: // slight left
-    case 24: // stay left
-      return ArrowUpLeftIcon;
-    case 15: // left
-    case 19: // ramp left
-    case 21: // exit left
-      return CornerUpLeftIcon;
-    case 14: // sharp left
-      return ArrowLeftIcon;
-    case 12: // uturn right
-    case 13: // uturn left
-      return RotateCwIcon;
-    default: // 1 start, 8 continue, 25 merge, roundabouts, unknown…
-      return ArrowUpIcon;
-  }
-}
-
-/**
- * Google-style walking-nav UI, overlaid on the map while a trip is active (it
- * travels in the portal with the map, and the filter chrome hides beneath it).
- * Two parts, deliberately solid highway-sign green to read as "actively
- * navigating" against the light 3D chips:
- *  - a top turn sign where the park/category chips were — the next maneuver,
- *    tappable to expand the full step list;
- *  - a bottom bar where the Filter button was — ETA + distance, with Swap
- *    (reverse origin/destination) and Cancel (end nav → plain UI).
- */
-function NavOverlay({
-  destName,
-  geoBlocked,
-  locating,
-  loading,
-  error,
-  distanceMeters,
-  durationSeconds,
-  maneuvers,
-  started,
-  arrived,
-  canRotate,
-  headingUp,
-  bearing,
-  onStart,
-  onRetry,
-  onToggleHeadingUp,
-  onSwap,
-  onClear,
-}: {
-  destName: string;
-  geoBlocked: boolean;
-  /** Waiting on a location fix — trip not resolved yet, so no route to show. */
-  locating: boolean;
-  loading: boolean;
-  error: boolean;
-  /** Reached the destination — swap the nav UI for the completion card. */
-  arrived: boolean;
-  distanceMeters: number | null;
-  durationSeconds: number | null;
-  maneuvers: Array<RouteManeuver> | null;
-  /** Preview (route framed) vs navigating (follow-cam). */
-  started: boolean;
-  /** Whether the map can rotate (GL) — gates the compass. */
-  canRotate: boolean;
-  /** Heading-up engaged (compass needle points off-north). */
-  headingUp: boolean;
-  /** Live map bearing in degrees, for the compass needle. */
-  bearing: number;
-  onStart: () => void;
-  /** Re-run the route query after a full failure (Retry button). */
-  onRetry: () => void;
-  onToggleHeadingUp: () => void;
-  onSwap: () => void;
-  onClear: () => void;
-}) {
-  const [expanded, setExpanded] = React.useState(false);
-  const [confirmOpen, setConfirmOpen] = React.useState(false);
-  // Steps only make sense on a resolved route; keep the ones with real copy
-  // (Valhalla sometimes emits an empty final maneuver).
-  const steps = (maneuvers ?? []).filter((m) => m.instruction.trim().length > 0);
-  const routed =
-    !geoBlocked &&
-    !locating &&
-    !loading &&
-    !error &&
-    distanceMeters != null &&
-    durationSeconds != null;
-  const canExpand = routed && steps.length > 0;
-  // Collapse whenever the route goes away (new fetch, cleared, errored) so a
-  // stale step list can't linger open over the next trip.
-  React.useEffect(() => {
-    if (!canExpand) setExpanded(false);
-  }, [canExpand]);
-
-  // Top sign: headline the first maneuver once routed. While navigating the trip
-  // origin re-keys to the live position (see the re-route effect in MapStage), so
-  // the route is recomputed from where you are and its first step *is* the next
-  // turn; otherwise a status line.
-  const first = steps[0];
-  const HeadIcon = geoBlocked
-    ? LocateFixedIcon
-    : locating || loading
-      ? LoaderCircleIcon
-      : routed && first
-        ? maneuverIcon(first.type)
-        : ArrowUpIcon;
-  let headline: React.ReactNode;
-  if (geoBlocked) headline = "Enable location to navigate";
-  else if (locating) headline = "Getting your location…";
-  else if (loading) headline = "Finding route…";
-  else if (error || !routed) headline = `No walking route found to ${destName}`;
-  else headline = first ? first.instruction : `Heading to ${destName}`;
-  const headSub =
-    routed && first && first.distanceMeters > 0 ? formatDistance(first.distanceMeters) : null;
-
-  const topSign = (
-    <div className="flex items-center gap-3 px-4 py-3 text-left">
-      <HeadIcon
-        className={cn("size-7 shrink-0", (locating || loading) && "animate-spin")}
-        aria-hidden
-      />
-      <div className="min-w-0 flex-1">
-        <div className="font-semibold leading-snug">{headline}</div>
-        {headSub && <div className="text-xs text-white/70">{headSub}</div>}
-      </div>
-      {canExpand && (
-        <ChevronDownIcon
-          className={cn("size-5 shrink-0 transition-transform", expanded && "rotate-180")}
-          aria-hidden
-        />
-      )}
-    </div>
-  );
-
-  // Arrival — replace the whole nav UI with a completion card. No confirm on
-  // Done: the trip is finished, so ending it isn't a destructive mis-tap.
-  if (arrived) {
-    return (
-      <div
-        data-map-chrome="bottom"
-        className="pointer-events-auto absolute inset-x-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] z-10 mx-auto flex max-w-md items-center gap-3 rounded-2xl bg-green-700 px-4 py-3 text-white shadow-lg ring-1 ring-white/15 md:bottom-3"
-      >
-        <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-white/15">
-          <CircleCheckBigIcon className="size-6" aria-hidden />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold leading-tight">You’ve arrived</div>
-          {destName && <div className="truncate text-sm text-white/80">{destName}</div>}
-        </div>
-        <button
-          type="button"
-          onClick={onClear}
-          className="inline-flex shrink-0 items-center rounded-full bg-white px-4 py-1.5 text-sm font-semibold text-green-700 shadow-sm transition hover:bg-white/90 active:scale-95"
-        >
-          Done
-        </button>
-      </div>
-    );
-  }
-
-  const showCompass = started && canRotate;
-  return (
-    <>
-      {/* Top turn sign — sits where the park/category chips were. Spans the full
-          width; the heading-lock compass lives down by the bottom bar so it never
-          steals room from the instruction. */}
-      <div
-        data-map-chrome="top"
-        className="pointer-events-auto absolute inset-x-3 top-[calc(env(safe-area-inset-top)+5.25rem)] z-10 mx-auto max-w-md overflow-hidden rounded-2xl bg-green-700 text-white shadow-lg ring-1 ring-white/15 md:top-3"
-      >
-        {canExpand ? (
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            aria-expanded={expanded}
-            className="block w-full transition hover:bg-white/5"
-          >
-            {topSign}
-          </button>
-        ) : (
-          topSign
-        )}
-        {/* Step list expands/collapses via an animated grid-rows track (0fr↔1fr),
-            so it slides open smoothly instead of popping. */}
-        {canExpand && (
-          <div
-            className={cn(
-              "grid transition-[grid-template-rows] duration-300 ease-out motion-reduce:transition-none",
-              expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
-            )}
-          >
-            <div className="overflow-hidden">
-              <ol className="max-h-64 divide-y divide-white/15 overflow-y-auto border-t border-white/15">
-                {steps.map((m, i) => {
-                  const Icon = maneuverIcon(m.type);
-                  return (
-                    <li key={i} className="flex items-start gap-3 px-4 py-2.5 text-sm">
-                      <Icon className="mt-0.5 size-4 shrink-0 text-white/80" aria-hidden />
-                      <span className="min-w-0 flex-1">{m.instruction}</span>
-                      {m.distanceMeters > 0 && (
-                        <span className="shrink-0 text-xs text-white/70 tabular-nums">
-                          {formatDistance(m.distanceMeters)}
-                        </span>
-                      )}
-                    </li>
-                  );
-                })}
-              </ol>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Heading-lock compass — bottom-left, above the ETA bar (GL only), so the
-          instruction sign can span the full width up top. The needle
-          counter-rotates with the map bearing so it always points to true north.
-          Tap toggles heading-up (map rotates to your facing) vs north-lock; the
-          icon fills in when north-lock is engaged so the current mode reads at a
-          glance. */}
-      {showCompass && (
-        <button
-          type="button"
-          onClick={onToggleHeadingUp}
-          aria-label={headingUp ? "Lock map to north" : "Rotate map to my heading"}
-          aria-pressed={!headingUp}
-          className="pointer-events-auto absolute left-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+4.75rem)] z-10 inline-flex size-11 items-center justify-center rounded-full bg-green-700 text-white shadow-lg ring-1 ring-white/15 transition active:scale-95 md:bottom-[4.75rem]"
-        >
-          <CompassIcon
-            // North-lock engaged → fill just the needle (the icon's polygon), not
-            // the whole circle, so it reads as an active/pressed state.
-            className={cn("size-6 transition-transform", !headingUp && "[&>polygon]:fill-current")}
-            style={{ transform: `rotate(${-bearing}deg)` }}
-            aria-hidden
-          />
-        </button>
-      )}
-
-      {/* Bottom ETA bar — sits where the Filter button was. */}
-      <div
-        data-map-chrome="bottom"
-        className="pointer-events-auto absolute inset-x-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] z-10 mx-auto flex max-w-md items-center gap-3 rounded-2xl bg-green-700 px-4 py-2.5 text-white shadow-lg ring-1 ring-white/15 md:bottom-3"
-      >
-        <div className="min-w-0 flex-1">
-          {routed ? (
-            <div className="leading-tight">
-              <span className="font-semibold">{formatWalk(durationSeconds)}</span>
-              <span className="text-white/70"> · {formatDistance(distanceMeters)}</span>
-            </div>
-          ) : (
-            <div className="font-medium leading-tight">
-              {geoBlocked ? "Location off" : error ? "Route unavailable" : "Routing…"}
-            </div>
-          )}
-          <div className="truncate text-xs text-white/70">to {destName}</div>
-        </div>
-        {/* Start — the preview→navigate CTA, next to the ETA. White-on-green so
-            it reads as the primary action; hidden once navigating. */}
-        {routed && !started && (
-          <button
-            type="button"
-            onClick={onStart}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-semibold text-green-700 shadow-sm transition hover:bg-white/90 active:scale-95"
-          >
-            <NavigationIcon className="size-4 fill-current" />
-            Start
-          </button>
-        )}
-        {/* Retry — the recovery action after a full routing failure (React
-            Query's retries already exhausted, no route to fall back on). */}
-        {error && (
-          <button
-            type="button"
-            onClick={onRetry}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-semibold text-green-700 shadow-sm transition hover:bg-white/90 active:scale-95"
-          >
-            <RotateCwIcon className="size-4" />
-            Retry
-          </button>
-        )}
-        {/* Swap only in preview — once navigating, the origin re-keys to your
-            live position every fix, so a reversed origin wouldn't stick. */}
-        {!locating && !geoBlocked && !started && (
-          <button
-            type="button"
-            onClick={onSwap}
-            aria-label="Reverse route"
-            className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-white/15 transition hover:bg-white/25 active:scale-95"
-          >
-            <ArrowUpDownIcon className="size-4" />
-          </button>
-        )}
-        {/* In preview (route not yet started) the X just cancels — nothing is
-            underway to lose, so a mis-tap costs nothing. Once navigating, confirm
-            first so a stray tap doesn't drop the trip. */}
-        <button
-          type="button"
-          onClick={() => (started ? setConfirmOpen(true) : onClear())}
-          aria-label={started ? "End navigation" : "Cancel route"}
-          className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-white/15 transition hover:bg-white/25 active:scale-95"
-        >
-          <XIcon className="size-4" />
-        </button>
-      </div>
-
-      {/* Confirm before dropping the route — a mis-tap on the map shouldn't
-          silently end navigation. */}
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent size="sm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>End navigation?</AlertDialogTitle>
-            <AlertDialogDescription>
-              You’ll stop navigating{destName ? ` to ${destName}` : ""} and return to the map.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep navigating</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={() => {
-                setConfirmOpen(false);
-                onClear();
-              }}
-            >
-              End
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
   );
 }
 

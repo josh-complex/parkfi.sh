@@ -891,12 +891,21 @@ export function ParkMapLeaflet({
     routeRef.current = null;
     traveledRef.current?.remove();
     traveledRef.current = null;
-    // Where you've been — a solid gray trail, drawn first so the live route sits
-    // on top of it.
+    // Where you've been — a trail of static gray dots (zero-length round-capped
+    // dashes), drawn first so the live route sits on top of it. Same dotted
+    // language as the route, but gray and not marching, so "walked" reads as the
+    // route with the motion drained out of it.
     if (traveled && traveled.length > 1) {
       traveledRef.current = L.polyline(
         traveled.map(([lng, lat]) => [lat, lng] as [number, number]),
-        { color: "#94a3b8", weight: 5, opacity: 0.6, interactive: false },
+        {
+          color: "#94a3b8",
+          weight: 7,
+          opacity: 0.85,
+          dashArray: "0.1 14",
+          lineCap: "round",
+          interactive: false,
+        },
       ).addTo(map);
     }
     if (!route || route.length < 2) return;

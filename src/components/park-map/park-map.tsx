@@ -49,7 +49,7 @@ import {
 
 import "maplibre-gl/dist/maplibre-gl.css";
 
-import type { FeatureCollection, LineString, Point } from "geojson";
+import type { FeatureCollection, Point } from "geojson";
 
 // MapTiler API key (client-side, domain-restricted — safe to expose via VITE_).
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY as string | undefined;
@@ -144,10 +144,13 @@ const ROAM_RIDE_ZOOM = 14;
 
 // Route styling. The remaining route is drawn as short dashes marching toward
 // the destination (Google's pedestrian style); the already-walked breadcrumb
-// sits behind it as a solid gray trail.
+// sits behind it as a trail of *static* gray dots — same visual language as the
+// route, but frozen, so "walked" reads as the route with the motion drained out
+// of it (and far more visibly than the old thin line).
 const ROUTE_COLOR = "#2563eb";
 const TRAVELED_COLOR = "#94a3b8"; // slate-400 — a muted "where you've been" gray
-const TRAVELED_WIDTH = 5;
+const TRAVELED_DOT_SPACING_PX = 14; // tighter than the route's, so the trail reads solid
+const TRAVELED_DOT_RADIUS = 4;
 // The remaining route is drawn as a row of round dots marching toward the
 // destination (Google pedestrian style). MapLibre can't animate a dash offset —
 // round-capped dashes leave a stray dot pinned at the line origin and double up
@@ -671,17 +674,28 @@ export function ParkMap({
     });
   }, []);
 
-  // Re-sample the route dots and push them to the source. Spacing is derived from
-  // the live zoom so the on-screen gap stays constant; the running phase (a
-  // fraction of one spacing) offsets where the row starts.
+  // Re-sample the route + traveled-trail dots and push them to their sources.
+  // Spacing is derived from the live zoom so the on-screen gap stays constant.
+  // The route dots march (the running phase offsets where the row starts); the
+  // traveled dots always sample from phase 0, so they hold still — appending to
+  // the trail only adds dots at its end, it never re-shuffles the ones behind.
   const paintDots = React.useCallback(() => {
     const map = mapRef.current;
-    const src = map?.getSource("route-dots");
-    if (!map || !src) return;
-    const spacingM = DOT_SPACING_PX * metersPerPixel(map.getCenter().lat, map.getZoom());
-    (src as maplibregl.GeoJSONSource).setData(
-      dotsAlongRoute(routeCoordsRef.current, spacingM, dotPhaseRef.current * spacingM),
-    );
+    if (!map) return;
+    const mpp = metersPerPixel(map.getCenter().lat, map.getZoom());
+    const routeSrc = map.getSource("route-dots");
+    if (routeSrc) {
+      const spacingM = DOT_SPACING_PX * mpp;
+      (routeSrc as maplibregl.GeoJSONSource).setData(
+        dotsAlongRoute(routeCoordsRef.current, spacingM, dotPhaseRef.current * spacingM),
+      );
+    }
+    const traveledSrc = map.getSource("route-traveled");
+    if (traveledSrc) {
+      (traveledSrc as maplibregl.GeoJSONSource).setData(
+        dotsAlongRoute(traveledCoordsRef.current, TRAVELED_DOT_SPACING_PX * mpp, 0),
+      );
+    }
   }, []);
 
   // Start/stop the marching-dots timer to match the current mode. Runs only while
@@ -703,8 +717,8 @@ export function ParkMap({
     }
   }, [paintDots]);
 
-  // Install/refresh the grayed traveled trail (a line) and the remaining route
-  // (a row of dots) as GeoJSON layers. Like the boundaries, they must re-install
+  // Install/refresh the grayed traveled trail and the remaining route (each a
+  // row of dots) as GeoJSON layers. Like the boundaries, they must re-install
   // on `styledata` (a theme swap's setStyle wipes custom sources/layers). Empty
   // collections clear them in place. The traveled trail is added first so the
   // route dots draw on top of it.
@@ -716,31 +730,23 @@ export function ParkMap({
       return;
     }
 
-    const traveled = traveledCoordsRef.current;
-    const traveledFC: FeatureCollection<LineString> = {
-      type: "FeatureCollection",
-      features:
-        traveled && traveled.length > 1
-          ? [
-              {
-                type: "Feature",
-                properties: {},
-                geometry: { type: "LineString", coordinates: traveled },
-              },
-            ]
-          : [],
-    };
-    const traveledSrc = map.getSource("route-traveled");
-    if (traveledSrc) {
-      (traveledSrc as maplibregl.GeoJSONSource).setData(traveledFC);
-    } else {
-      map.addSource("route-traveled", { type: "geojson", data: traveledFC });
+    if (!map.getSource("route-traveled")) {
+      map.addSource("route-traveled", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
       map.addLayer({
-        id: "route-traveled-line",
-        type: "line",
+        id: "route-traveled-dots",
+        type: "circle",
         source: "route-traveled",
-        layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": TRAVELED_COLOR, "line-width": TRAVELED_WIDTH, "line-opacity": 0.6 },
+        paint: {
+          "circle-radius": TRAVELED_DOT_RADIUS,
+          "circle-color": TRAVELED_COLOR,
+          "circle-opacity": 0.9,
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 1.25,
+          "circle-stroke-opacity": 0.85,
+        },
       });
     }
 

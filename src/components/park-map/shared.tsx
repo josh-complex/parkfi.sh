@@ -74,11 +74,12 @@ export const ORLANDO_ZOOM = 10.5;
 
 // Camera fly duration (ms).
 export const MAP_FLY_MS = 800;
-// Must match MORPH_MS in map-stage.tsx. We wait this long after a navigation
-// before flying so the shared-map box has finished morphing to its destination
-// size — fitBounds reads the container's pixel dimensions, so flying before the
-// box settles frames the view for the wrong size. Layout first, then zoom.
-export const MORPH_MS = 420;
+// The stage's hero⇄card morph duration. The renderers wait this long after a
+// navigation before flying so the shared-map box has finished morphing to its
+// destination size — fitBounds reads the container's pixel dimensions, so
+// flying before the box settles frames the view for the wrong size. Layout
+// first, then zoom.
+export { MORPH_MS } from "./map-morph.ts";
 
 // Center-to-center px radius reserved around a full marker for collision
 // avoidance. Two markers whose projected centers fall within this of each other

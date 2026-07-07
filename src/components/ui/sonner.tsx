@@ -5,18 +5,18 @@ import { useTheme } from "next-themes";
 import { Toaster as Sonner, type ToasterProps } from "sonner";
 import { CircleCheckIcon, InfoIcon, Loader2Icon } from "lucide-react";
 
-// Animated Lordicon status icons (public/anim). Attribution lives in the
+// Animated Lordicon status icons (public/anim, APNG). Attribution lives in the
 // welcome-page footer. Sizing is in styles.css under the
 // `.cn-toast[data-type="error"|"warning"]` rules.
-const ERROR_ICON = "/anim/error-icon.webp";
-const WARNING_ICON = "/anim/warning-icon.webp";
+const ERROR_ICON = "/anim/error.apng";
+const WARNING_ICON = "/anim/warning.apng";
 
 /**
- * Renders an animated webp status icon that **replays from frame 0 every time a
+ * Renders an animated APNG status icon that **replays from frame 0 every time a
  * toast mounts it**. A fresh <img> alone doesn't reliably restart a play-once
- * animated webp (browsers reuse the cached, already-finished decode), so on mount
- * we clear and re-assign `src` against the prewarmed cache — that forces the
- * decoder to replay with no network round-trip.
+ * animated image (browsers reuse the cached, already-finished decode), so on
+ * mount we clear and re-assign `src` against the prewarmed cache — that forces
+ * the decoder to replay with no network round-trip.
  */
 function ToastAnimIcon({ src }: { src: string }) {
   const ref = React.useRef<HTMLImageElement>(null);
