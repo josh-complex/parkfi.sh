@@ -1,5 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { FileText, ShieldAlert } from "lucide-react";
+import { FileText, ShieldAlert, Trophy } from "lucide-react";
 
 import { Card, CardDescription, CardHeader, CardTitle } from "#/components/ui/card.tsx";
 import { seo } from "#/lib/seo.ts";
@@ -29,6 +29,12 @@ const TOOLS: AdminTool[] = [
       "Action content-removal requests from cast members and take features offline for maintenance.",
     to: "/admin/removal-requests",
     icon: ShieldAlert,
+  },
+  {
+    title: "Achievements",
+    description: "Inspect user stats and revoke achievement unlocks for testing.",
+    to: "/admin/achievements",
+    icon: Trophy,
   },
 ];
 

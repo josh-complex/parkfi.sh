@@ -8,10 +8,12 @@ import {
   ShapesIcon,
   SunIcon,
   TrendingUpIcon,
+  TrophyIcon,
   UserRoundIcon,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 
+import { LevelBadge, LevelDetails } from "#/components/achievements/level-badge.tsx";
 import { CastAvatarBadge } from "#/components/cast-member-badge.tsx";
 import {
   Drawer,
@@ -21,6 +23,7 @@ import {
   DrawerTitle,
   DrawerTrigger,
 } from "#/components/ui/drawer.tsx";
+import { useUserLevel } from "#/hooks/use-level.ts";
 import { authClient } from "#/lib/auth-client.ts";
 import { cn } from "#/lib/utils.ts";
 
@@ -39,6 +42,7 @@ export function MobileUserMenu({ showDot = false }: { showDot?: boolean }) {
   const { data: session } = authClient.useSession();
   const navigate = useNavigate();
   const { resolvedTheme, setTheme } = useTheme();
+  const userLevel = useUserLevel();
   const user = session?.user;
 
   const initials = user?.name
@@ -75,30 +79,42 @@ export function MobileUserMenu({ showDot = false }: { showDot?: boolean }) {
         {showDot && (
           <span className="bg-primary absolute top-0.5 right-0.5 size-2 rounded-full ring-2 ring-background" />
         )}
+        {user && userLevel && (
+          <LevelBadge
+            level={userLevel.level.level}
+            size="sm"
+            className="absolute -right-1 -bottom-1 ring-2 ring-background"
+          />
+        )}
         <CastAvatarBadge />
       </DrawerTrigger>
       <DrawerContent>
         <DrawerHeader className="border-b pb-4">
           {user ? (
-            <div className="flex items-center gap-3 text-left">
-              <span className="border-3d shadow-3d inline-flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-sm font-semibold dark:border-[color-mix(in_oklch,var(--border),white_25%)]">
-                {user.image ? (
-                  <img
-                    src={user.image}
-                    alt={user.name ?? user.email}
-                    className="size-full object-cover"
-                  />
-                ) : (
-                  initials
-                )}
-              </span>
-              <div className="grid min-w-0 flex-1">
-                <DrawerTitle className="truncate text-base">{user.name ?? user.email}</DrawerTitle>
-                <span className="truncate text-xs font-normal text-muted-foreground">
-                  {user.email}
+            <>
+              <div className="flex items-center gap-3 text-left">
+                <span className="border-3d shadow-3d inline-flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-sm font-semibold dark:border-[color-mix(in_oklch,var(--border),white_25%)]">
+                  {user.image ? (
+                    <img
+                      src={user.image}
+                      alt={user.name ?? user.email}
+                      className="size-full object-cover"
+                    />
+                  ) : (
+                    initials
+                  )}
                 </span>
+                <div className="grid min-w-0 flex-1">
+                  <DrawerTitle className="truncate text-base">
+                    {user.name ?? user.email}
+                  </DrawerTitle>
+                  <span className="truncate text-xs font-normal text-muted-foreground">
+                    {user.email}
+                  </span>
+                </div>
               </div>
-            </div>
+              {userLevel && <LevelDetails level={userLevel.level} className="mt-3" />}
+            </>
           ) : (
             <DrawerTitle>Account</DrawerTitle>
           )}
@@ -115,6 +131,12 @@ export function MobileUserMenu({ showDot = false }: { showDot?: boolean }) {
             <Link to="/predictions" className={ROW}>
               <TrendingUpIcon />
               Forecast
+            </Link>
+          </DrawerClose>
+          <DrawerClose asChild>
+            <Link to="/achievements" className={ROW}>
+              <TrophyIcon />
+              Badges
             </Link>
           </DrawerClose>
           <DrawerClose asChild>

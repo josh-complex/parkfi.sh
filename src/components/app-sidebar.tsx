@@ -8,6 +8,7 @@ import {
   ShieldAlertIcon,
   TicketIcon,
   TrendingUpIcon,
+  TrophyIcon,
   UtensilsIcon,
 } from "lucide-react";
 
@@ -36,6 +37,7 @@ const NAV: Array<{ title: string; to: string; icon: React.ReactNode }> = [
   { title: "Stays", to: "/stays", icon: <BedDoubleIcon /> },
   { title: "Pins", to: "/pins", icon: <ShapesIcon /> },
   { title: "Forecast", to: "/predictions", icon: <TrendingUpIcon /> },
+  { title: "Badges", to: "/achievements", icon: <TrophyIcon /> },
 ];
 
 /**

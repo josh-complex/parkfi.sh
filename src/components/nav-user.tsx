@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { LogInIcon, LogOutIcon, SettingsIcon } from "lucide-react";
+import { LogInIcon, LogOutIcon, SettingsIcon, TrophyIcon } from "lucide-react";
 import { authClient } from "#/lib/auth-client.ts";
+import { LevelBadge, LevelDetails } from "#/components/achievements/level-badge.tsx";
 import { NotificationCenter } from "#/components/notifications/notification-center.tsx";
 import { SidebarThemeToggle } from "#/components/theme-toggle.tsx";
 import { Avatar, AvatarFallback, AvatarImage } from "#/components/ui/avatar.tsx";
@@ -16,11 +17,13 @@ import {
 } from "#/components/ui/dropdown-menu.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { SidebarMenu, SidebarMenuItem, useSidebar } from "#/components/ui/sidebar.tsx";
+import { useUserLevel } from "#/hooks/use-level.ts";
 
 export function NavUser() {
   const { data: session, isPending } = authClient.useSession();
   const navigate = useNavigate();
   const { isMobile, state } = useSidebar();
+  const userLevel = useUserLevel();
   // The bell sits beside the user button in the footer whenever the footer is
   // visible: on mobile it lives in the offcanvas menu (the header no longer
   // carries it), and on desktop when the panel is expanded. Only the collapsed
@@ -87,7 +90,10 @@ export function NavUser() {
               <AvatarImage src={user.image ?? undefined} alt={user.name ?? user.email} />
               <AvatarFallback className="rounded-lg text-xs">{initials}</AvatarFallback>
             </Avatar>
-            <span className="truncate text-sm font-medium">{user.name ?? user.email}</span>
+            <span className="flex-1 truncate text-left text-sm font-medium">
+              {user.name ?? user.email}
+            </span>
+            {userLevel && <LevelBadge level={userLevel.level.level} />}
           </DropdownMenuTrigger>
           <DropdownMenuContent
             className="min-w-56"
@@ -109,7 +115,19 @@ export function NavUser() {
                 </div>
               </DropdownMenuLabel>
             </DropdownMenuGroup>
+            {userLevel && (
+              <>
+                <DropdownMenuSeparator />
+                <div className="px-2 py-1.5">
+                  <LevelDetails level={userLevel.level} />
+                </div>
+              </>
+            )}
             <DropdownMenuSeparator />
+            <DropdownMenuItem render={<Link to="/achievements" />}>
+              <TrophyIcon />
+              Badges
+            </DropdownMenuItem>
             <DropdownMenuItem render={<Link to="/account" />}>
               <SettingsIcon />
               Account settings

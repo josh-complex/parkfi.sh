@@ -1,4 +1,5 @@
 import { createTRPCRouter } from "./init";
+import { achievementsRouter } from "./routers/achievements.ts";
 import { blogRouter } from "./routers/blog.ts";
 import { diningRouter } from "./routers/dining.ts";
 import { diningAlertsRouter } from "./routers/diningAlerts.ts";
@@ -21,6 +22,7 @@ import { ticketsRouter } from "./routers/tickets.ts";
 import { uploadsRouter } from "./routers/uploads.ts";
 
 export const trpcRouter = createTRPCRouter({
+  achievements: achievementsRouter,
   parks: parksRouter,
   tickets: ticketsRouter,
   dining: diningRouter,

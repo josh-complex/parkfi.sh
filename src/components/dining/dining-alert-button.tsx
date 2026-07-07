@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "#/components/ui/select.tsx";
+import { useAchievementTrack } from "#/hooks/use-achievement-track.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
 const PARTY_OPTIONS: Record<string, string> = Object.fromEntries(
@@ -61,6 +62,7 @@ export function DiningAlertButton({
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+  const track = useAchievementTrack();
   const [open, setOpen] = React.useState(false);
   const [party, setParty] = React.useState(String(Math.min(Math.max(defaultPartySize, 1), 8)));
   const [mode, setMode] = React.useState<"window" | "date">("window");
@@ -73,6 +75,7 @@ export function DiningAlertButton({
         void queryClient.invalidateQueries({ queryKey: trpc.diningAlerts.list.queryKey() });
         setOpen(false);
         toast.success(`We'll email you about ${restaurantName}`);
+        track("alert_created");
       },
       onError: (err) => toast.error(err.message || "Could not save alert"),
     }),

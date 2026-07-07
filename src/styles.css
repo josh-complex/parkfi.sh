@@ -518,3 +518,161 @@
   height: 2.75rem !important;
   object-fit: contain;
 }
+
+/* ── Achievement unlock toasts ─────────────────────────────────────────────── *
+ * Bespoke celebratory cards rendered via `toast.custom` (so sonner marks them
+ * `data-styled="false"` — none of the standard `.cn-toast` dressing above
+ * touches them, and the card owns all of its own chrome). Unlike the standard
+ * toasts, the gradient is a fixed high-chroma horizontal blend so it stays
+ * vibrant in dark mode instead of dimming into the popover background.
+ * ----------------------------------------------------------------------- */
+.achv-card {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  width: 100%;
+  border-radius: 1.5rem;
+  padding: 0.875rem 1.125rem;
+  color: #fff;
+  /* Near-horizontal green → teal → green blend. Oversized + no-repeat so the
+     bright teal centerline can slide: it sweeps in from the far left on entry,
+     rests just left of center, then sweeps off to the right on exit (see the
+     achv-gradient-* keyframes). */
+  background-image: linear-gradient(
+    100deg,
+    oklch(0.66 0.2 150) 0%,
+    oklch(0.75 0.16 178) 50%,
+    oklch(0.64 0.21 142) 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  background-position: 60% 0;
+  animation: achv-gradient-in 640ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  box-shadow:
+    0 3px 0 0 oklch(0.5 0.14 152),
+    inset 0 1px 0 0 oklch(1 0 0 / 0.35),
+    0 12px 34px -12px oklch(0.5 0.16 152 / 0.6);
+}
+/* Sweep the centerline off to the right as the card animates out. */
+[data-sonner-toast][data-removed="true"].achv-toast .achv-card {
+  animation: achv-gradient-out 280ms ease-in both;
+}
+@keyframes achv-gradient-in {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 60% 0;
+  }
+}
+@keyframes achv-gradient-out {
+  from {
+    background-position: 60% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
+}
+/* Celebration cards ride `toast.custom` (data-styled="false"), so they miss the
+   springy slide + inertial squish the standard styled toasts get above. Opt the
+   toast <li> back into the exact same morph via the `.achv-toast` class we pass
+   as each card's `className`, minus the styled dressing (the card is its own
+   surface). Same entrance AND exit feel as every other toast; the level-up +
+   unlock pair stagger simply by being fired a beat apart. */
+[data-sonner-toast].cn-toast.achv-toast {
+  /* Custom (unstyled) toasts don't get sonner's fixed width on desktop, so a
+     short card (the gold level-up) shrinks to its content and reads narrower
+     than the green unlock chip. Pin both to the toast width. */
+  width: var(--width);
+  max-width: 100%;
+  transition:
+    transform 300ms cubic-bezier(0.22, 1.7, 0.36, 1),
+    opacity 170ms ease,
+    height 320ms ease,
+    box-shadow 200ms;
+  transform-origin: 50% 100%;
+  animation: toast-squish-in 480ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-sonner-toast].cn-toast.achv-toast {
+    animation: none;
+  }
+}
+/* Level-up: gold. Dark ink reads richer than white on a bright gold sweep. */
+.achv-card--gold {
+  color: oklch(0.3 0.08 66);
+  /* Only the colors change — size/position/animation stay on `.achv-card` so
+     the same centerline sweep applies. */
+  background-image: linear-gradient(
+    100deg,
+    oklch(0.82 0.16 78) 0%,
+    oklch(0.9 0.15 96) 50%,
+    oklch(0.78 0.17 66) 100%
+  );
+  box-shadow:
+    0 3px 0 0 oklch(0.66 0.15 72),
+    inset 0 1px 0 0 oklch(1 0 0 / 0.5),
+    0 12px 34px -12px oklch(0.7 0.16 78 / 0.7);
+}
+.achv-card__title {
+  text-shadow: 0 1px 2px oklch(0 0 0 / 0.28);
+}
+.achv-card--gold .achv-card__title {
+  text-shadow: 0 1px 1px oklch(1 0 0 / 0.4);
+}
+
+.achv-sparkle {
+  position: absolute;
+  z-index: 1;
+  width: 0.9rem;
+  height: 0.9rem;
+  pointer-events: none;
+  color: oklch(1 0 0 / 0.9);
+  filter: drop-shadow(0 0 4px oklch(1 0 0 / 0.6));
+  animation: achv-twinkle 1.8s ease-in-out infinite;
+}
+.achv-card--gold .achv-sparkle {
+  color: oklch(1 0.04 95 / 0.95);
+  filter: drop-shadow(0 0 4px oklch(0.95 0.12 90 / 0.7));
+}
+.achv-sparkle--tl {
+  top: 0.35rem;
+  left: 0.4rem;
+}
+.achv-sparkle--br {
+  right: 0.4rem;
+  bottom: 0.35rem;
+  animation-delay: 0.9s;
+}
+
+@keyframes achv-twinkle {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.7) rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15) rotate(30deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .achv-card {
+    animation: none;
+    background-position: 60% 0;
+  }
+  .achv-sparkle {
+    animation: none;
+    opacity: 0.85;
+  }
+}
+
+/* Gold level coin — the level-number chip on the user button and mobile avatar,
+   matched to the gold level-up toast. */
+.achv-level-coin {
+  color: oklch(0.3 0.08 66);
+  background-image: linear-gradient(135deg, oklch(0.9 0.15 96) 0%, oklch(0.79 0.16 70) 100%);
+  box-shadow:
+    inset 0 1px 0 0 oklch(1 0 0 / 0.55),
+    0 1px 2px oklch(0.5 0.12 70 / 0.5);
+}

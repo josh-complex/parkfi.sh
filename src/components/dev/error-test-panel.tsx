@@ -6,8 +6,13 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { BugIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 
-import { reportError } from "#/lib/report-error.ts";
+import {
+  resetCelebratedLevel,
+  showUnlockToasts,
+} from "#/components/achievements/unlock-toasts.tsx";
 import { useNavTestToolsEnabled } from "#/integrations/posthog/feature-flags.ts";
+import { useTRPC } from "#/integrations/trpc/react.ts";
+import { reportError } from "#/lib/report-error.ts";
 import { cn } from "#/lib/utils.ts";
 
 /**
@@ -47,12 +52,45 @@ export function ErrorTestPanel() {
   const [open, setOpen] = React.useState(false);
   const [crash, setCrash] = React.useState(false);
   const queryClient = useQueryClient();
+  const trpc = useTRPC();
 
   // No local onError, so the global mutationCache sink owns the toast + capture.
   const testMutation = useMutation({
     mutationKey: ["__error_test_mutation__"],
     mutationFn: () => Promise.reject(new Error("Test mutation failure")),
   });
+
+  // Achievements QA — bypasses real stat thresholds server-side (gated by
+  // ACHIEVEMENTS_DEV, on by default outside production; see achievements.ts).
+  const ackUnlock = useMutation(
+    trpc.achievements.ackUnlocks.mutationOptions({ meta: { errorToast: false } }),
+  );
+  const devUnlock = useMutation(
+    trpc.achievements.devUnlock.mutationOptions({
+      onSuccess: (r) => {
+        if (r.newlyUnlocked.length === 0) {
+          toast.success("All achievements already unlocked");
+          return;
+        }
+        showUnlockToasts(
+          r.newlyUnlocked.map((u) => u.id),
+          { xp: r.xp, level: r.level, onShown: (ids) => ackUnlock.mutate({ ids }) },
+        );
+      },
+      onError: (err) => toast.error(err.message || "Could not unlock (requires sign-in)"),
+    }),
+  );
+  const devReset = useMutation(
+    trpc.achievements.devReset.mutationOptions({
+      onSuccess: () => {
+        // Server state is wiped; also forget the celebrated-level marker so a
+        // full reset really replays from zero (level-ups re-fire on re-earn).
+        resetCelebratedLevel();
+        toast.success("Achievements reset");
+      },
+      onError: (err) => toast.error(err.message || "Could not reset"),
+    }),
+  );
 
   // Hooks above run unconditionally; gate rendering only after them.
   if (!enabled) return null;
@@ -148,6 +186,25 @@ export function ErrorTestPanel() {
         {
           label: "Crash React render",
           run: () => setCrash(true),
+          danger: true,
+        },
+      ],
+    },
+    {
+      heading: "Achievements",
+      actions: [
+        {
+          label: "Unlock next achievement",
+          run: () => devUnlock.mutate(),
+        },
+        {
+          label: "Reset my level",
+          run: () => resetCelebratedLevel(),
+          confirm: "Level reset — next unlock re-celebrates your current level",
+        },
+        {
+          label: "Reset my achievements",
+          run: () => devReset.mutate(),
           danger: true,
         },
       ],

@@ -35,6 +35,12 @@ function readActiveFlag(): boolean {
   }
 }
 
+/** Whether the user has ever turned locate on — lets a page gate copy on
+ *  "has location ever been granted" without instantiating another watch. */
+export function hasGrantedLocationBefore(): boolean {
+  return readActiveFlag();
+}
+
 function writeActiveFlag(active: boolean) {
   if (typeof window === "undefined") return;
   try {

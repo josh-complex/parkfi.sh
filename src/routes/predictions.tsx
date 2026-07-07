@@ -1,3 +1,4 @@
+import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 
 import { AppInset } from "#/components/app-inset.tsx";
@@ -6,6 +7,7 @@ import { MaintenanceGate } from "#/components/maintenance-gate.tsx";
 import { PredictionsDashboard } from "#/components/predictions/predictions-dashboard.tsx";
 import { SiteHeader } from "#/components/site-header.tsx";
 import { SidebarProvider } from "#/components/ui/sidebar.tsx";
+import { useAchievementTrack } from "#/hooks/use-achievement-track.ts";
 import { seo } from "#/lib/seo.ts";
 
 export const Route = createFileRoute("/predictions")({
@@ -22,6 +24,14 @@ export const Route = createFileRoute("/predictions")({
 });
 
 function PredictionsPage() {
+  const track = useAchievementTrack();
+  const trackedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (trackedRef.current) return;
+    trackedRef.current = true;
+    track("forecast_view");
+  }, [track]);
+
   return (
     <SidebarProvider
       style={

@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from "#/components/ui/select.tsx";
 import { Switch } from "#/components/ui/switch.tsx";
+import { useAchievementTrack } from "#/hooks/use-achievement-track.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
 /** The search dims an alert watches — same shape the stays search sends. */
@@ -75,6 +76,7 @@ export function StayAlertButton({
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+  const track = useAchievementTrack();
   const [open, setOpen] = React.useState(false);
   const [scope, setScope] = React.useState<ScopeChoice>("resort");
   const [mode, setMode] = React.useState<number>(BECOMES_AVAILABLE);
@@ -87,6 +89,7 @@ export function StayAlertButton({
         void queryClient.invalidateQueries({ queryKey: trpc.stayAlerts.list.queryKey() });
         setOpen(false);
         toast.success("Alert saved — we'll email you");
+        track("alert_created");
       },
       onError: (err) => toast.error(err.message || "Could not save alert"),
     }),

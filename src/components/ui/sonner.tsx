@@ -5,6 +5,8 @@ import { useTheme } from "next-themes";
 import { Toaster as Sonner, type ToasterProps } from "sonner";
 import { CircleCheckIcon, InfoIcon, Loader2Icon } from "lucide-react";
 
+import { useToastExpand } from "#/lib/toast-expand.ts";
+
 // Animated Lordicon status icons (public/anim, APNG). Attribution lives in the
 // welcome-page footer. Sizing is in styles.css under the
 // `.cn-toast[data-type="error"|"warning"]` rules.
@@ -35,6 +37,10 @@ function ToastAnimIcon({ src }: { src: string }) {
 
 const Toaster = ({ ...props }: ToasterProps) => {
   const { theme = "system" } = useTheme();
+  // The achievement level-up celebration flips this on so its gold + green
+  // toasts unfurl together instead of collapsing into a stack; off otherwise,
+  // so normal toasts keep their default hover-to-expand behavior.
+  const forceExpand = useToastExpand();
 
   // Prewarm the animated icons once at app load so the first toast plays smoothly
   // instead of decoding on the fly (the choppy first run). Warms both the HTTP
@@ -53,6 +59,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
       theme={theme as ToasterProps["theme"]}
+      expand={forceExpand}
       className="toaster group"
       icons={{
         success: <CircleCheckIcon className="size-4" />,

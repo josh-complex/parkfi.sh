@@ -35,6 +35,7 @@ import { Route as BlogSlugRouteImport } from './routes/blog/$slug'
 import { Route as DashMapRouteImport } from './routes/_dash/map'
 import { Route as DashAlertsRouteImport } from './routes/_dash/alerts'
 import { Route as DashAdminRouteImport } from './routes/_dash/admin'
+import { Route as DashAchievementsRouteImport } from './routes/_dash/achievements'
 import { Route as DashAccountRouteImport } from './routes/_dash/account'
 import { Route as DashAdminIndexRouteImport } from './routes/_dash/admin.index'
 import { Route as DashAccountIndexRouteImport } from './routes/_dash/account/index'
@@ -45,6 +46,7 @@ import { Route as DashShopSlugRouteImport } from './routes/_dash/shop.$slug'
 import { Route as DashParkSlugRouteImport } from './routes/_dash/park.$slug'
 import { Route as DashAdminRemovalRequestsRouteImport } from './routes/_dash/admin.removal-requests'
 import { Route as DashAdminBlogRouteImport } from './routes/_dash/admin.blog'
+import { Route as DashAdminAchievementsRouteImport } from './routes/_dash/admin.achievements'
 import { Route as DashAccountSecurityRouteImport } from './routes/_dash/account/security'
 import { Route as DashAccountProfileRouteImport } from './routes/_dash/account/profile'
 import { Route as DashAccountConnectionsRouteImport } from './routes/_dash/account/connections'
@@ -184,6 +186,11 @@ const DashAdminRoute = DashAdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => DashRoute,
 } as any)
+const DashAchievementsRoute = DashAchievementsRouteImport.update({
+  id: '/achievements',
+  path: '/achievements',
+  getParentRoute: () => DashRoute,
+} as any)
 const DashAccountRoute = DashAccountRouteImport.update({
   id: '/account',
   path: '/account',
@@ -233,6 +240,11 @@ const DashAdminRemovalRequestsRoute =
 const DashAdminBlogRoute = DashAdminBlogRouteImport.update({
   id: '/blog',
   path: '/blog',
+  getParentRoute: () => DashAdminRoute,
+} as any)
+const DashAdminAchievementsRoute = DashAdminAchievementsRouteImport.update({
+  id: '/achievements',
+  path: '/achievements',
   getParentRoute: () => DashAdminRoute,
 } as any)
 const DashAccountSecurityRoute = DashAccountSecurityRouteImport.update({
@@ -298,6 +310,7 @@ export interface FileRoutesByFullPath {
   '/unsubscribe': typeof UnsubscribeRoute
   '/welcome': typeof WelcomeRoute
   '/account': typeof DashAccountRouteWithChildren
+  '/achievements': typeof DashAchievementsRoute
   '/admin': typeof DashAdminRouteWithChildren
   '/alerts': typeof DashAlertsRoute
   '/map': typeof DashMapRoute
@@ -315,6 +328,7 @@ export interface FileRoutesByFullPath {
   '/account/connections': typeof DashAccountConnectionsRoute
   '/account/profile': typeof DashAccountProfileRoute
   '/account/security': typeof DashAccountSecurityRoute
+  '/admin/achievements': typeof DashAdminAchievementsRoute
   '/admin/blog': typeof DashAdminBlogRoute
   '/admin/removal-requests': typeof DashAdminRemovalRequestsRoute
   '/park/$slug': typeof DashParkSlugRoute
@@ -342,6 +356,7 @@ export interface FileRoutesByTo {
   '/tickets': typeof TicketsRoute
   '/unsubscribe': typeof UnsubscribeRoute
   '/welcome': typeof WelcomeRoute
+  '/achievements': typeof DashAchievementsRoute
   '/alerts': typeof DashAlertsRoute
   '/map': typeof DashMapRoute
   '/blog/$slug': typeof BlogSlugRoute
@@ -359,6 +374,7 @@ export interface FileRoutesByTo {
   '/account/connections': typeof DashAccountConnectionsRoute
   '/account/profile': typeof DashAccountProfileRoute
   '/account/security': typeof DashAccountSecurityRoute
+  '/admin/achievements': typeof DashAdminAchievementsRoute
   '/admin/blog': typeof DashAdminBlogRoute
   '/admin/removal-requests': typeof DashAdminRemovalRequestsRoute
   '/park/$slug': typeof DashParkSlugRoute
@@ -389,6 +405,7 @@ export interface FileRoutesById {
   '/unsubscribe': typeof UnsubscribeRoute
   '/welcome': typeof WelcomeRoute
   '/_dash/account': typeof DashAccountRouteWithChildren
+  '/_dash/achievements': typeof DashAchievementsRoute
   '/_dash/admin': typeof DashAdminRouteWithChildren
   '/_dash/alerts': typeof DashAlertsRoute
   '/_dash/map': typeof DashMapRoute
@@ -407,6 +424,7 @@ export interface FileRoutesById {
   '/_dash/account/connections': typeof DashAccountConnectionsRoute
   '/_dash/account/profile': typeof DashAccountProfileRoute
   '/_dash/account/security': typeof DashAccountSecurityRoute
+  '/_dash/admin/achievements': typeof DashAdminAchievementsRoute
   '/_dash/admin/blog': typeof DashAdminBlogRoute
   '/_dash/admin/removal-requests': typeof DashAdminRemovalRequestsRoute
   '/_dash/park/$slug': typeof DashParkSlugRoute
@@ -438,6 +456,7 @@ export interface FileRouteTypes {
     | '/unsubscribe'
     | '/welcome'
     | '/account'
+    | '/achievements'
     | '/admin'
     | '/alerts'
     | '/map'
@@ -455,6 +474,7 @@ export interface FileRouteTypes {
     | '/account/connections'
     | '/account/profile'
     | '/account/security'
+    | '/admin/achievements'
     | '/admin/blog'
     | '/admin/removal-requests'
     | '/park/$slug'
@@ -482,6 +502,7 @@ export interface FileRouteTypes {
     | '/tickets'
     | '/unsubscribe'
     | '/welcome'
+    | '/achievements'
     | '/alerts'
     | '/map'
     | '/blog/$slug'
@@ -499,6 +520,7 @@ export interface FileRouteTypes {
     | '/account/connections'
     | '/account/profile'
     | '/account/security'
+    | '/admin/achievements'
     | '/admin/blog'
     | '/admin/removal-requests'
     | '/park/$slug'
@@ -528,6 +550,7 @@ export interface FileRouteTypes {
     | '/unsubscribe'
     | '/welcome'
     | '/_dash/account'
+    | '/_dash/achievements'
     | '/_dash/admin'
     | '/_dash/alerts'
     | '/_dash/map'
@@ -546,6 +569,7 @@ export interface FileRouteTypes {
     | '/_dash/account/connections'
     | '/_dash/account/profile'
     | '/_dash/account/security'
+    | '/_dash/admin/achievements'
     | '/_dash/admin/blog'
     | '/_dash/admin/removal-requests'
     | '/_dash/park/$slug'
@@ -778,6 +802,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashAdminRouteImport
       parentRoute: typeof DashRoute
     }
+    '/_dash/achievements': {
+      id: '/_dash/achievements'
+      path: '/achievements'
+      fullPath: '/achievements'
+      preLoaderRoute: typeof DashAchievementsRouteImport
+      parentRoute: typeof DashRoute
+    }
     '/_dash/account': {
       id: '/_dash/account'
       path: '/account'
@@ -846,6 +877,13 @@ declare module '@tanstack/react-router' {
       path: '/blog'
       fullPath: '/admin/blog'
       preLoaderRoute: typeof DashAdminBlogRouteImport
+      parentRoute: typeof DashAdminRoute
+    }
+    '/_dash/admin/achievements': {
+      id: '/_dash/admin/achievements'
+      path: '/achievements'
+      fullPath: '/admin/achievements'
+      preLoaderRoute: typeof DashAdminAchievementsRouteImport
       parentRoute: typeof DashAdminRoute
     }
     '/_dash/account/security': {
@@ -935,12 +973,14 @@ const DashAccountRouteWithChildren = DashAccountRoute._addFileChildren(
 )
 
 interface DashAdminRouteChildren {
+  DashAdminAchievementsRoute: typeof DashAdminAchievementsRoute
   DashAdminBlogRoute: typeof DashAdminBlogRoute
   DashAdminRemovalRequestsRoute: typeof DashAdminRemovalRequestsRoute
   DashAdminIndexRoute: typeof DashAdminIndexRoute
 }
 
 const DashAdminRouteChildren: DashAdminRouteChildren = {
+  DashAdminAchievementsRoute: DashAdminAchievementsRoute,
   DashAdminBlogRoute: DashAdminBlogRoute,
   DashAdminRemovalRequestsRoute: DashAdminRemovalRequestsRoute,
   DashAdminIndexRoute: DashAdminIndexRoute,
@@ -952,6 +992,7 @@ const DashAdminRouteWithChildren = DashAdminRoute._addFileChildren(
 
 interface DashRouteChildren {
   DashAccountRoute: typeof DashAccountRouteWithChildren
+  DashAchievementsRoute: typeof DashAchievementsRoute
   DashAdminRoute: typeof DashAdminRouteWithChildren
   DashAlertsRoute: typeof DashAlertsRoute
   DashMapRoute: typeof DashMapRoute
@@ -963,6 +1004,7 @@ interface DashRouteChildren {
 
 const DashRouteChildren: DashRouteChildren = {
   DashAccountRoute: DashAccountRouteWithChildren,
+  DashAchievementsRoute: DashAchievementsRoute,
   DashAdminRoute: DashAdminRouteWithChildren,
   DashAlertsRoute: DashAlertsRoute,
   DashMapRoute: DashMapRoute,

@@ -1789,3 +1789,83 @@ export const contentSuppression = pgTable(
   },
   (t) => [primaryKey({ columns: [t.entityType, t.entityId, t.field] })],
 );
+
+// ============================================================================
+// Levels & achievements — engagement telemetry and unlocks.
+// Catalog (names, thresholds, XP) lives in code: src/lib/achievements.ts.
+// The DB stores only per-user activity rollups and unlocked tier ids.
+// Deliberately independent of the Living Layer tables/modules.
+// ============================================================================
+
+/** One row per user × park × park-local day; all geo achievement stats derive from these. */
+export const userParkDay = pgTable(
+  "user_park_day",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    parkId: bigint("park_id", { mode: "number" })
+      .notNull()
+      .references(() => parks.id),
+    day: date("day").notNull(), // park-local calendar day (per parks.timezone)
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    pings: integer("pings").notNull().default(0),
+    distanceM: doublePrecision("distance_m").notNull().default(0),
+    queueSeconds: integer("queue_seconds").notNull().default(0),
+    rides: integer("rides").notNull().default(0),
+    ropeDrop: boolean("rope_drop").notNull().default(false),
+    nightOwl: boolean("night_owl").notNull().default(false),
+    rainy: boolean("rainy").notNull().default(false),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.parkId, t.day] }),
+    index("user_park_day_user_idx").on(t.userId),
+  ],
+);
+
+/** Last-ping cursor per user: powers distance deltas and queue-dwell detection. */
+export const userGeoState = pgTable("user_geo_state", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  parkId: bigint("park_id", { mode: "number" }),
+  lng: doublePrecision("lng"),
+  lat: doublePrecision("lat"),
+  at: timestamp("at", { withTimezone: true }),
+  anchorAttractionId: bigint("anchor_attraction_id", { mode: "number" }),
+  anchorSince: timestamp("anchor_since", { withTimezone: true }),
+  anchorSeconds: integer("anchor_seconds").notNull().default(0),
+});
+
+/** Event counters with no day/park dimension (pin scans, alert creations, …). */
+export const userStat = pgTable(
+  "user_stat",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    stat: text("stat").notNull(), // StatKey (event keys only)
+    value: doublePrecision("value").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.stat] })],
+);
+
+/** Unlocked achievement tiers. achievement_id = catalog tier id, e.g. "walker.3". */
+export const userAchievement = pgTable(
+  "user_achievement",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    achievementId: text("achievement_id").notNull(),
+    unlockedAt: timestamp("unlocked_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Null until the client has shown the unlock toast (at-least-once delivery). */
+    notifiedAt: timestamp("notified_at", { withTimezone: true }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.achievementId] }),
+    index("user_achievement_user_idx").on(t.userId),
+  ],
+);

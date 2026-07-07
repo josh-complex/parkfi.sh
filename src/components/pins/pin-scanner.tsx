@@ -11,6 +11,7 @@ import { formatCents } from "#/components/pins/format.ts";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Spinner } from "#/components/ui/spinner.tsx";
+import { useAchievementTrack } from "#/hooks/use-achievement-track.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
 import { cn } from "#/lib/utils.ts";
@@ -25,6 +26,7 @@ export function PinScanner() {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const loggedIn = !!session?.user;
+  const track = useAchievementTrack();
 
   const [scanId, setScanId] = React.useState<string | null>(null);
   const [confirmedPinId, setConfirmedPinId] = React.useState<string | null>(null);
@@ -52,6 +54,7 @@ export function PinScanner() {
         setConfirmedPinId(vars.chosenPinId);
         void queryClient.invalidateQueries({ queryKey: trpc.pinCollection.list.queryKey() });
         toast.success(vars.chosenPinId ? "Pin confirmed" : "Thanks — we'll keep looking");
+        if (vars.chosenPinId) track("pin_scan");
       },
       onError: (err) => toast.error(err.message || "Could not confirm"),
     }),

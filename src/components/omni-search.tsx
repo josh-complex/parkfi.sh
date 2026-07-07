@@ -19,6 +19,7 @@ import { useTRPC } from "#/integrations/trpc/react.ts";
 import { buttonVariants } from "#/components/ui/button.tsx";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "#/components/ui/drawer.tsx";
 import { MorphingText } from "#/components/ui/morphing-text.tsx";
+import { useAchievementTrack } from "#/hooks/use-achievement-track.ts";
 import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { cn } from "#/lib/utils.ts";
 
@@ -203,6 +204,7 @@ export function OmniSearch({
   const [active, setActive] = React.useState(0);
   const navigate = useNavigate();
   const trpc = useTRPC();
+  const track = useAchievementTrack();
   const isMobile = useIsMobile();
   const listRef = React.useRef<HTMLDivElement>(null);
   const inline = variant === "inline";
@@ -295,6 +297,7 @@ export function OmniSearch({
     const go = (to: () => void) => () => {
       to();
       close();
+      track("search");
     };
 
     const parkPrice = (cents: number | null | undefined): Pick<Item, "price" | "priceKind"> =>
@@ -413,7 +416,7 @@ export function OmniSearch({
           onSelect: go(() => navigate({ to: "/blog/$slug", params: { slug: b.slug } })),
         })),
     ];
-  }, [defaultsQ.data, indexQ.data, menuQ.data, query, navigate, close]);
+  }, [defaultsQ.data, indexQ.data, menuQ.data, query, navigate, close, track]);
 
   // Keep the highlight valid as the result set changes under the cursor.
   React.useEffect(() => {

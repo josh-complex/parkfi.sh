@@ -1,3 +1,4 @@
+import * as React from "react";
 import { createFileRoute, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
@@ -8,6 +9,7 @@ import { DiningVenueDetail } from "#/components/dining/dining-venue-detail.tsx";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
 import { SiteHeader } from "#/components/site-header.tsx";
 import { SidebarProvider } from "#/components/ui/sidebar.tsx";
+import { useAchievementTrack } from "#/hooks/use-achievement-track.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { breadcrumbJsonLd, restaurantJsonLd, seo } from "#/lib/seo.ts";
 
@@ -53,6 +55,14 @@ function VenuePage() {
   const { facilityId } = Route.useParams();
   const trpc = useTRPC();
   const { data: venue } = useQuery(trpc.dining.venue.queryOptions({ facilityId }));
+
+  const track = useAchievementTrack();
+  const trackedFacilityRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (trackedFacilityRef.current === facilityId) return;
+    trackedFacilityRef.current = facilityId;
+    track("menu_view");
+  }, [facilityId, track]);
 
   // Menu-item deep links arrive as `#menu-<slug>`; pass the slug through so the
   // detail page scrolls to and highlights that item. A bare `#menu` (recently

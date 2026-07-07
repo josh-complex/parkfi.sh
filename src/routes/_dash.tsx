@@ -1,6 +1,7 @@
 import { Outlet, createFileRoute, useParams, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
+import { AchievementTracker } from "#/components/achievements/achievement-tracker.tsx";
 import { AppInset } from "#/components/app-inset.tsx";
 import { AppSidebar } from "#/components/app-sidebar.tsx";
 import { SelectionProvider } from "#/components/park-dashboard/selection-context.tsx";
@@ -43,6 +44,7 @@ function DashLayout() {
         } as React.CSSProperties
       }
     >
+      <AchievementTracker />
       <AppSidebar variant="inset" />
       <AppInset>
         <SiteHeader title={title} mobileTitle={parkName ?? undefined} />

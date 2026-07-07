@@ -17,6 +17,7 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "#/components/ui/popover.tsx";
+import { useAchievementTrack } from "#/hooks/use-achievement-track.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { cn } from "#/lib/utils.ts";
 
@@ -51,6 +52,7 @@ export function RideAlertButton({
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+  const track = useAchievementTrack();
   const [open, setOpen] = React.useState(false);
   const tracked = !!alert;
 
@@ -75,6 +77,7 @@ export function RideAlertButton({
         void invalidate();
         setOpen(false);
         toast.success(`Tracking ${attractionName}`);
+        if (!tracked) track("alert_created");
       },
       onError: (err) => toast.error(err.message || "Could not save alert"),
     }),
