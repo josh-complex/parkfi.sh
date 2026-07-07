@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { motion } from "motion/react";
 
 import { RideDetail } from "#/components/park-dashboard/ride-detail.tsx";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
@@ -60,12 +59,7 @@ function RidePage() {
   const { data: ride } = useQuery(trpc.parks.attraction.queryOptions({ parkSlug: slug, rideSlug }));
 
   return (
-    <motion.div
-      key={`${slug}/${rideSlug}`}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.25 }}
-    >
+    <div>
       {ride && (
         <>
           <JsonLd
@@ -89,6 +83,6 @@ function RidePage() {
         </>
       )}
       <RideDetail parkSlug={slug} rideSlug={rideSlug} />
-    </motion.div>
+    </div>
   );
 }

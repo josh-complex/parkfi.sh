@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Link, createFileRoute, notFound } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { isServer, useQuery } from "@tanstack/react-query";
 
 import { AppInset } from "#/components/app-inset.tsx";
 import { AppSidebar } from "#/components/app-sidebar.tsx";
@@ -32,9 +32,17 @@ export const Route = createFileRoute("/pins_/$pinId")({
   // an infinite space of "Pin Details" shells (soft 404s).
   loader: async ({ context, params }) => {
     if (!UUID_RE.test(params.pinId)) throw notFound();
-    const pin = await context.queryClient.ensureQueryData(
-      context.trpc.pinCatalog.detail.queryOptions({ id: params.pinId }),
-    );
+    const options = context.trpc.pinCatalog.detail.queryOptions({ id: params.pinId });
+    if (!isServer) {
+      // Client: warm the cache and render immediately — the component owns the
+      // loading skeleton and the "pin not found" empty state, so we don't freeze
+      // the previous page or block on the network here.
+      void context.queryClient.prefetchQuery(options);
+      return;
+    }
+    // Server: block so the HTML carries the indexable pin content, and hard-404
+    // unknown ids so crawlers don't index an infinite space of empty shells.
+    const pin = await context.queryClient.ensureQueryData(options);
     if (!pin) throw notFound();
     return {
       name: pin.name,

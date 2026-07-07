@@ -1,14 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { MapSlot } from "#/components/park-map/map-stage.tsx";
+import { load } from "#/lib/loader.ts";
 import { seo } from "#/lib/seo.ts";
 
 export const Route = createFileRoute("/_dash/map")({
   component: MapPage,
   // The cross-park markers come from the overview query — prefetch it so the
-  // fullscreen map paints with parks immediately.
+  // fullscreen map paints with parks immediately. `load` blocks server-side; on
+  // the client the map paints right away and the markers stream in.
   loader: async ({ context }) => {
-    await context.queryClient.ensureQueryData(context.trpc.parks.overview.queryOptions());
+    await load(context.queryClient, context.trpc.parks.overview.queryOptions());
   },
   head: () =>
     seo({

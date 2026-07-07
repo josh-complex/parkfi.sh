@@ -118,6 +118,14 @@ export function getContext() {
       queries: {
         // One retry for transient blips on reads; mutations stay retry-free.
         retry: 1,
+        // Trust freshly-fetched data for 30s so navigations within the window —
+        // including hover-preloaded routes — read from cache instead of
+        // refetching from scratch. Live boards resurface newer data on their own
+        // refetch cadence, which is coarser than 30s anyway. Per-query overrides
+        // (omni-search, POI map, auth, achievements) layer longer windows on top.
+        staleTime: 30_000,
+        // Keep cache entries warm for a few minutes so back/forward nav is instant.
+        gcTime: 5 * 60_000,
       },
     },
   });

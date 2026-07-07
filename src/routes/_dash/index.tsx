@@ -1,15 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { motion } from "motion/react";
 
 import { CrossParkWaits } from "#/components/rides/cross-park-waits.tsx";
+import { load } from "#/lib/loader.ts";
 import { seo } from "#/lib/seo.ts";
 
 export const Route = createFileRoute("/_dash/")({
   component: Waits,
   // SSR-prefetch the cross-park ride list so the page ships real ride names +
-  // live waits in its HTML (good for crawlers and instant first paint).
+  // live waits in its HTML (good for crawlers and instant first paint). `load`
+  // blocks server-side; on the client it warms the cache and lets CrossParkWaits
+  // render its own loading state immediately.
   loader: async ({ context }) => {
-    await context.queryClient.ensureQueryData(context.trpc.parks.allRides.queryOptions());
+    await load(context.queryClient, context.trpc.parks.allRides.queryOptions());
   },
   head: () =>
     seo({
@@ -22,13 +24,8 @@ export const Route = createFileRoute("/_dash/")({
 
 function Waits() {
   return (
-    <motion.div
-      className="flex min-h-0 flex-1 flex-col"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.25 }}
-    >
+    <div className="flex min-h-0 flex-1 flex-col">
       <CrossParkWaits />
-    </motion.div>
+    </div>
   );
 }

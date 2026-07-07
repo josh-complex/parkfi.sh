@@ -1,10 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { motion } from "motion/react";
 
 import { ParkDashboard } from "#/components/park-dashboard/park-dashboard.tsx";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
+import { load } from "#/lib/loader.ts";
 import { amusementParkJsonLd, breadcrumbJsonLd, seo } from "#/lib/seo.ts";
 
 /** "magic-kingdom" -> "Magic Kingdom" for a readable, indexable title. */
@@ -21,15 +21,22 @@ export const Route = createFileRoute("/_dash/park/$slug")({
   // list, live waits, and status — the indexable content that makes a park page
   // rank. Without this the server ships an empty "Loading park…" shell, and the
   // client refetch hits /api/trpc which robots.txt disallows, so crawlers see
-  // nothing either way.
+  // nothing either way. `load` blocks on the server (SEO) but only warms the
+  // cache on the client, so an in-app park switch renders ParkDashboard's
+  // skeletons immediately instead of freezing on the previous park.
   loader: async ({ context, params }) => {
-    await context.queryClient.ensureQueryData(
+    const boardPromise = load(
+      context.queryClient,
       context.trpc.parks.board.queryOptions({ parkSlug: params.slug }),
     );
     // `parks.list` is already prefetched by the `_dash` loader — read it here to
-    // resolve the real park name + operator for operator-aware head copy.
+    // resolve the real park name + operator for operator-aware head copy. It's a
+    // cache hit in practice, so keep it awaited (cheap identity data feeds head).
     const parks = await context.queryClient.ensureQueryData(context.trpc.parks.list.queryOptions());
     const park = parks.find((p) => p.slug === params.slug);
+    // Server: block on the board so it ships in the HTML. Client: `undefined`,
+    // resolves instantly — the board streams in behind the skeleton.
+    await boardPromise;
     return { name: park?.name ?? null, operatorSlug: park?.operatorSlug ?? null };
   },
   head: ({ params, loaderData }) => {
@@ -58,12 +65,7 @@ function ParkPage() {
   const name = park?.name ?? titleizeSlug(slug);
 
   return (
-    <motion.div
-      key={slug}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.25 }}
-    >
+    <div>
       <JsonLd
         data={amusementParkJsonLd({
           name,
@@ -80,6 +82,6 @@ function ParkPage() {
         ])}
       />
       <ParkDashboard parkSlug={slug} />
-    </motion.div>
+    </div>
   );
 }

@@ -20,6 +20,9 @@ export const Route = createFileRoute("/dining_/$facilityId")({
   validateSearch: validateDiningSearch,
   // SSR-prefetch the venue header + its menu so the rendered HTML carries the
   // indexable content (and the menu deep-link target is present before JS runs).
+  // The venue header is cheap identity data that feeds `head()`, so keep it
+  // awaited; the heavy menu + hours are already fire-and-forget prefetches, so
+  // an in-app dining nav paints the header immediately and streams the menu in.
   loader: async ({ context, params }) => {
     const venue = await context.queryClient.ensureQueryData(
       context.trpc.dining.venue.queryOptions({ facilityId: params.facilityId }),
