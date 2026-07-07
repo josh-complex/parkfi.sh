@@ -77,7 +77,7 @@ export function MobileUserMenu({ showDot = false }: { showDot?: boolean }) {
           <UserRoundIcon className="size-5" />
         )}
         {showDot && (
-          <span className="bg-primary absolute top-0.5 right-0.5 size-2 rounded-full ring-2 ring-background" />
+          <span className="bg-primary absolute top-0.5 right-0.5 size-2.5 rounded-full ring-2 ring-background" />
         )}
         {user && userLevel && (
           <LevelBadge
