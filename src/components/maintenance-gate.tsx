@@ -11,6 +11,13 @@ export function useMaintenanceFeatures(): Set<string> {
   return new Set(q.data ?? []);
 }
 
+/** Whether the signed-in user is an owner (email on the ADMIN_EMAILS allowlist). */
+export function useIsAdmin(): boolean {
+  const trpc = useTRPC();
+  const q = useQuery(trpc.removal.isAdmin.queryOptions());
+  return q.data ?? false;
+}
+
 /** Diagonal amber/black caution stripe, slowly scrolling like real barricade tape. */
 function CautionBar() {
   return (
@@ -71,6 +78,10 @@ export function MaintenanceGate({
   children: React.ReactNode;
 }) {
   const features = useMaintenanceFeatures();
-  if (features.has(feature)) return <MaintenanceScreen title={title} message={message} />;
+  const isAdmin = useIsAdmin();
+  // Admins see through the overlay so they can work on a page that's offline
+  // for everyone else.
+  if (features.has(feature) && !isAdmin)
+    return <MaintenanceScreen title={title} message={message} />;
   return <>{children}</>;
 }

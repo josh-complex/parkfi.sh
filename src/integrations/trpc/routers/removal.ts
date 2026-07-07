@@ -5,7 +5,7 @@ import { z } from "zod";
 import { db } from "#/db/index.ts";
 import { contentSuppression, removalRequest } from "#/db/schema.ts";
 import { notifyAdminsOfRemovalRequest } from "#/server/notifications/removalMailer.ts";
-import { adminProcedure, castMemberProcedure, publicProcedure } from "../init.ts";
+import { adminProcedure, castMemberProcedure, isAdminEmail, publicProcedure } from "../init.ts";
 
 /**
  * Feature keys that can be put into maintenance mode. Stored in
@@ -141,6 +141,13 @@ export const removalRouter = {
       }
       return { ok: true };
     }),
+
+  /**
+   * Whether the current caller is an owner. Public (returns false for anyone
+   * not on the allowlist) so the client `MaintenanceGate` can let admins
+   * preview a page that's toggled into maintenance for everyone else.
+   */
+  isAdmin: publicProcedure.query(({ ctx }) => isAdminEmail(ctx.userEmail)),
 
   /** Feature keys currently in maintenance mode. Public — drives the overlay. */
   features: publicProcedure.query(async () => {
