@@ -22,13 +22,12 @@ import { useUserLevel } from "#/hooks/use-level.ts";
 export function NavUser() {
   const { data: session, isPending } = authClient.useSession();
   const navigate = useNavigate();
-  const { isMobile, state } = useSidebar();
+  const { isMobile } = useSidebar();
   const userLevel = useUserLevel();
-  // The bell sits beside the user button in the footer whenever the footer is
-  // visible: on mobile it lives in the offcanvas menu (the header no longer
-  // carries it), and on desktop when the panel is expanded. Only the collapsed
-  // desktop panel cedes it to the top bar.
-  const showBell = isMobile || state === "expanded";
+  // The bell + theme toggle live beside the user button only on mobile (in the
+  // offcanvas menu). On desktop they've moved to the blue toolbar (see AppInset),
+  // so the footer no longer carries them at any panel state.
+  const showActions = isMobile;
 
   const handleSignOut = async () => {
     await authClient.signOut();
@@ -139,8 +138,8 @@ export function NavUser() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        {showBell && <NotificationCenter />}
-        <SidebarThemeToggle />
+        {showActions && <NotificationCenter />}
+        {showActions && <SidebarThemeToggle />}
       </SidebarMenuItem>
     </SidebarMenu>
   );

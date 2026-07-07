@@ -5,7 +5,6 @@ import {
   ActivityIcon,
   BedDoubleIcon,
   ShapesIcon,
-  ShieldAlertIcon,
   TicketIcon,
   TrendingUpIcon,
   TrophyIcon,
@@ -182,7 +181,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarFooter>
         <div className="flex flex-wrap gap-1">
           <Button variant="ghost" size="sm" onClick={closeOnMobile} render={<Link to="/privacy" />}>
-            <ShieldAlertIcon />
             Terms & Privacy
           </Button>
           <Button

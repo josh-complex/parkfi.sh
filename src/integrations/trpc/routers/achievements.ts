@@ -16,15 +16,6 @@ import { adminProcedure, protectedProcedure } from "../init.ts";
 
 const TRACK_EVENT_KEYS = Object.keys(TRACK_EVENTS) as [TrackEvent, ...TrackEvent[]];
 
-/**
- * QA backdoor for the unlock toast/haptic/level-up funnel — bypasses real stat
- * thresholds entirely, so it must never be reachable by real users in
- * production. Same convention as Living Layer's LIVING_DEV (config.ts):
- * enabled by default outside production, opt-in only via env var in prod.
- */
-const ACHIEVEMENTS_DEV =
-  process.env.ACHIEVEMENTS_DEV === "1" || process.env.NODE_ENV !== "production";
-
 export const achievementsRouter = {
   /** Location ping from the tracker. ~1 per 30s per active user. */
   ping: protectedProcedure
@@ -92,16 +83,13 @@ export const achievementsRouter = {
   /**
    * QA/dev only: unlock the next catalog tier the caller doesn't have yet,
    * bypassing real stat thresholds — a fast way to exercise the unlock toast
-   * on demand. FORBIDDEN unless ACHIEVEMENTS_DEV (see above).
+   * on demand. Owner-only (adminProcedure), so it's safe in production without
+   * an env flag: real users can't reach it.
    */
-  devUnlock: protectedProcedure.mutation(({ ctx }) => {
-    if (!ACHIEVEMENTS_DEV) throw new TRPCError({ code: "FORBIDDEN" });
-    return devUnlockNext(ctx.userId);
-  }),
+  devUnlock: adminProcedure.mutation(({ ctx }) => devUnlockNext(ctx.userId)),
 
   /** QA/dev only: wipe the caller's own achievement state to replay from zero. */
-  devReset: protectedProcedure.mutation(async ({ ctx }) => {
-    if (!ACHIEVEMENTS_DEV) throw new TRPCError({ code: "FORBIDDEN" });
+  devReset: adminProcedure.mutation(async ({ ctx }) => {
     await devResetMine(ctx.userId);
     return { ok: true };
   }),
