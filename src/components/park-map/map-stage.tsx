@@ -290,6 +290,16 @@ export function MapStageProvider({
     // arrives, so recalcs are invisible; `isPending` (no data at all) is the only
     // true loading state, reserved for the very first fetch.
     placeholderData: keepPreviousData,
+    // Never gate route fetches on `navigator.onLine`. The default networkMode
+    // ("online") *pauses* a fetch when the browser thinks it's offline and only
+    // resumes on an offline→online transition — but on mobile/PWA that flag is
+    // unreliable (it can stay false, or never re-fire `online`, after a blip,
+    // captive portal, or flaky cellular). That left the route query stuck in
+    // `paused` after a network loss: re-keying (walking / a new destination) just
+    // re-parked it, so `routeQ.data` never advanced and the line never redrew —
+    // even though the GPS-driven "traveled" breadcrumb kept updating. "always"
+    // lets the real fetch decide, and makes the manual Retry reliable too.
+    networkMode: "always",
   });
   // `keepPreviousData` keeps the last route cached after the query is disabled,
   // so gate the drawn geometry on an active trip — otherwise clearing/ending nav
