@@ -11,54 +11,55 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WelcomeRouteImport } from './routes/welcome'
 import { Route as UnsubscribeRouteImport } from './routes/unsubscribe'
-import { Route as TicketsRouteImport } from './routes/tickets'
-import { Route as StaysRouteImport } from './routes/stays'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
-import { Route as PrivacyRouteImport } from './routes/privacy'
-import { Route as PredictionsRouteImport } from './routes/predictions'
-import { Route as PinsRouteImport } from './routes/pins'
 import { Route as LoginRouteImport } from './routes/login'
-import { Route as DisclaimersRouteImport } from './routes/disclaimers'
-import { Route as DiningRouteImport } from './routes/dining'
 import { Route as DeepLinkRouteImport } from './routes/deep-link'
-import { Route as DashRouteImport } from './routes/_dash'
+import { Route as AppRouteImport } from './routes/_app'
 import { Route as BlogIndexRouteImport } from './routes/blog/index'
-import { Route as DashIndexRouteImport } from './routes/_dash/index'
-import { Route as StaysAlertsRouteImport } from './routes/stays_.alerts'
-import { Route as ResortSlugRouteImport } from './routes/resort.$slug'
-import { Route as PinsTradesRouteImport } from './routes/pins_.trades'
-import { Route as PinsScanRouteImport } from './routes/pins_.scan'
-import { Route as PinsCollectionRouteImport } from './routes/pins_.collection'
-import { Route as PinsPinIdRouteImport } from './routes/pins_.$pinId'
-import { Route as DiningFacilityIdRouteImport } from './routes/dining_.$facilityId'
 import { Route as BlogRssDotxmlRouteImport } from './routes/blog/rss[.]xml'
 import { Route as BlogSlugRouteImport } from './routes/blog/$slug'
-import { Route as DashMapRouteImport } from './routes/_dash/map'
-import { Route as DashAlertsRouteImport } from './routes/_dash/alerts'
-import { Route as DashAdminRouteImport } from './routes/_dash/admin'
-import { Route as DashAchievementsRouteImport } from './routes/_dash/achievements'
-import { Route as DashAccountRouteImport } from './routes/_dash/account'
-import { Route as DashAdminIndexRouteImport } from './routes/_dash/admin.index'
-import { Route as DashAccountIndexRouteImport } from './routes/_dash/account/index'
+import { Route as AppTicketsRouteImport } from './routes/_app/tickets'
+import { Route as AppStaysRouteImport } from './routes/_app/stays'
+import { Route as AppPrivacyRouteImport } from './routes/_app/privacy'
+import { Route as AppPredictionsRouteImport } from './routes/_app/predictions'
+import { Route as AppPinsRouteImport } from './routes/_app/pins'
+import { Route as AppDisclaimersRouteImport } from './routes/_app/disclaimers'
+import { Route as AppDiningRouteImport } from './routes/_app/dining'
+import { Route as AppDashRouteImport } from './routes/_app/_dash'
+import { Route as AppDashIndexRouteImport } from './routes/_app/_dash/index'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
 import { Route as ApiPushSubscribeRouteImport } from './routes/api/push/subscribe'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
-import { Route as DashShopSlugRouteImport } from './routes/_dash/shop.$slug'
-import { Route as DashParkSlugRouteImport } from './routes/_dash/park.$slug'
-import { Route as DashAdminRemovalRequestsRouteImport } from './routes/_dash/admin.removal-requests'
-import { Route as DashAdminBlogRouteImport } from './routes/_dash/admin.blog'
-import { Route as DashAdminAlertsRouteImport } from './routes/_dash/admin.alerts'
-import { Route as DashAdminAchievementsRouteImport } from './routes/_dash/admin.achievements'
-import { Route as DashAccountSecurityRouteImport } from './routes/_dash/account/security'
-import { Route as DashAccountProfileRouteImport } from './routes/_dash/account/profile'
-import { Route as DashAccountConnectionsRouteImport } from './routes/_dash/account/connections'
-import { Route as DashAccountAlertsRouteImport } from './routes/_dash/account/alerts'
+import { Route as AppStaysAlertsRouteImport } from './routes/_app/stays_.alerts'
+import { Route as AppResortSlugRouteImport } from './routes/_app/resort.$slug'
+import { Route as AppPinsTradesRouteImport } from './routes/_app/pins_.trades'
+import { Route as AppPinsScanRouteImport } from './routes/_app/pins_.scan'
+import { Route as AppPinsCollectionRouteImport } from './routes/_app/pins_.collection'
+import { Route as AppPinsPinIdRouteImport } from './routes/_app/pins_.$pinId'
+import { Route as AppDiningFacilityIdRouteImport } from './routes/_app/dining_.$facilityId'
+import { Route as AppDashMapRouteImport } from './routes/_app/_dash/map'
+import { Route as AppDashAlertsRouteImport } from './routes/_app/_dash/alerts'
+import { Route as AppDashAdminRouteImport } from './routes/_app/_dash/admin'
+import { Route as AppDashAchievementsRouteImport } from './routes/_app/_dash/achievements'
+import { Route as AppDashAccountRouteImport } from './routes/_app/_dash/account'
+import { Route as AppDashAdminIndexRouteImport } from './routes/_app/_dash/admin.index'
+import { Route as AppDashAccountIndexRouteImport } from './routes/_app/_dash/account/index'
 import { Route as OgResortSlugCardDotpngRouteImport } from './routes/og.resort.$slug.card[.]png'
 import { Route as OgParkSlugCardDotpngRouteImport } from './routes/og.park.$slug.card[.]png'
 import { Route as OgDiningFacilityIdCardDotpngRouteImport } from './routes/og.dining.$facilityId.card[.]png'
-import { Route as DiningFacilityIdItemSlugRouteImport } from './routes/dining_.$facilityId_.item.$slug'
+import { Route as AppDashShopSlugRouteImport } from './routes/_app/_dash/shop.$slug'
+import { Route as AppDashParkSlugRouteImport } from './routes/_app/_dash/park.$slug'
+import { Route as AppDashAdminRemovalRequestsRouteImport } from './routes/_app/_dash/admin.removal-requests'
+import { Route as AppDashAdminBlogRouteImport } from './routes/_app/_dash/admin.blog'
+import { Route as AppDashAdminAlertsRouteImport } from './routes/_app/_dash/admin.alerts'
+import { Route as AppDashAdminAchievementsRouteImport } from './routes/_app/_dash/admin.achievements'
+import { Route as AppDashAccountSecurityRouteImport } from './routes/_app/_dash/account/security'
+import { Route as AppDashAccountProfileRouteImport } from './routes/_app/_dash/account/profile'
+import { Route as AppDashAccountConnectionsRouteImport } from './routes/_app/_dash/account/connections'
+import { Route as AppDashAccountAlertsRouteImport } from './routes/_app/_dash/account/alerts'
 import { Route as OgRideParkSlugRideSlugCardDotpngRouteImport } from './routes/og.ride.$parkSlug.$rideSlug.card[.]png'
-import { Route as DashParkSlugRideRideSlugRouteImport } from './routes/_dash/park.$slug_.ride.$rideSlug'
+import { Route as AppDiningFacilityIdItemSlugRouteImport } from './routes/_app/dining_.$facilityId_.item.$slug'
+import { Route as AppDashParkSlugRideRideSlugRouteImport } from './routes/_app/_dash/park.$slug_.ride.$rideSlug'
 
 const WelcomeRoute = WelcomeRouteImport.update({
   id: '/welcome',
@@ -70,34 +71,9 @@ const UnsubscribeRoute = UnsubscribeRouteImport.update({
   path: '/unsubscribe',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TicketsRoute = TicketsRouteImport.update({
-  id: '/tickets',
-  path: '/tickets',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const StaysRoute = StaysRouteImport.update({
-  id: '/stays',
-  path: '/stays',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PrivacyRoute = PrivacyRouteImport.update({
-  id: '/privacy',
-  path: '/privacy',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PredictionsRoute = PredictionsRouteImport.update({
-  id: '/predictions',
-  path: '/predictions',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PinsRoute = PinsRouteImport.update({
-  id: '/pins',
-  path: '/pins',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -105,68 +81,18 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DisclaimersRoute = DisclaimersRouteImport.update({
-  id: '/disclaimers',
-  path: '/disclaimers',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DiningRoute = DiningRouteImport.update({
-  id: '/dining',
-  path: '/dining',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const DeepLinkRoute = DeepLinkRouteImport.update({
   id: '/deep-link',
   path: '/deep-link',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DashRoute = DashRouteImport.update({
-  id: '/_dash',
+const AppRoute = AppRouteImport.update({
+  id: '/_app',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BlogIndexRoute = BlogIndexRouteImport.update({
   id: '/blog/',
   path: '/blog/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DashIndexRoute = DashIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => DashRoute,
-} as any)
-const StaysAlertsRoute = StaysAlertsRouteImport.update({
-  id: '/stays_/alerts',
-  path: '/stays/alerts',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ResortSlugRoute = ResortSlugRouteImport.update({
-  id: '/resort/$slug',
-  path: '/resort/$slug',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PinsTradesRoute = PinsTradesRouteImport.update({
-  id: '/pins_/trades',
-  path: '/pins/trades',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PinsScanRoute = PinsScanRouteImport.update({
-  id: '/pins_/scan',
-  path: '/pins/scan',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PinsCollectionRoute = PinsCollectionRouteImport.update({
-  id: '/pins_/collection',
-  path: '/pins/collection',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PinsPinIdRoute = PinsPinIdRouteImport.update({
-  id: '/pins_/$pinId',
-  path: '/pins/$pinId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DiningFacilityIdRoute = DiningFacilityIdRouteImport.update({
-  id: '/dining_/$facilityId',
-  path: '/dining/$facilityId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BlogRssDotxmlRoute = BlogRssDotxmlRouteImport.update({
@@ -179,40 +105,49 @@ const BlogSlugRoute = BlogSlugRouteImport.update({
   path: '/blog/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DashMapRoute = DashMapRouteImport.update({
-  id: '/map',
-  path: '/map',
-  getParentRoute: () => DashRoute,
+const AppTicketsRoute = AppTicketsRouteImport.update({
+  id: '/tickets',
+  path: '/tickets',
+  getParentRoute: () => AppRoute,
 } as any)
-const DashAlertsRoute = DashAlertsRouteImport.update({
-  id: '/alerts',
-  path: '/alerts',
-  getParentRoute: () => DashRoute,
+const AppStaysRoute = AppStaysRouteImport.update({
+  id: '/stays',
+  path: '/stays',
+  getParentRoute: () => AppRoute,
 } as any)
-const DashAdminRoute = DashAdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
-  getParentRoute: () => DashRoute,
+const AppPrivacyRoute = AppPrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => AppRoute,
 } as any)
-const DashAchievementsRoute = DashAchievementsRouteImport.update({
-  id: '/achievements',
-  path: '/achievements',
-  getParentRoute: () => DashRoute,
+const AppPredictionsRoute = AppPredictionsRouteImport.update({
+  id: '/predictions',
+  path: '/predictions',
+  getParentRoute: () => AppRoute,
 } as any)
-const DashAccountRoute = DashAccountRouteImport.update({
-  id: '/account',
-  path: '/account',
-  getParentRoute: () => DashRoute,
+const AppPinsRoute = AppPinsRouteImport.update({
+  id: '/pins',
+  path: '/pins',
+  getParentRoute: () => AppRoute,
 } as any)
-const DashAdminIndexRoute = DashAdminIndexRouteImport.update({
+const AppDisclaimersRoute = AppDisclaimersRouteImport.update({
+  id: '/disclaimers',
+  path: '/disclaimers',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDiningRoute = AppDiningRouteImport.update({
+  id: '/dining',
+  path: '/dining',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDashRoute = AppDashRouteImport.update({
+  id: '/_dash',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDashIndexRoute = AppDashIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => DashAdminRoute,
-} as any)
-const DashAccountIndexRoute = DashAccountIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => DashAccountRoute,
+  getParentRoute: () => AppDashRoute,
 } as any)
 const ApiTrpcSplatRoute = ApiTrpcSplatRouteImport.update({
   id: '/api/trpc/$',
@@ -229,56 +164,75 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DashShopSlugRoute = DashShopSlugRouteImport.update({
-  id: '/shop/$slug',
-  path: '/shop/$slug',
-  getParentRoute: () => DashRoute,
+const AppStaysAlertsRoute = AppStaysAlertsRouteImport.update({
+  id: '/stays_/alerts',
+  path: '/stays/alerts',
+  getParentRoute: () => AppRoute,
 } as any)
-const DashParkSlugRoute = DashParkSlugRouteImport.update({
-  id: '/park/$slug',
-  path: '/park/$slug',
-  getParentRoute: () => DashRoute,
+const AppResortSlugRoute = AppResortSlugRouteImport.update({
+  id: '/resort/$slug',
+  path: '/resort/$slug',
+  getParentRoute: () => AppRoute,
 } as any)
-const DashAdminRemovalRequestsRoute =
-  DashAdminRemovalRequestsRouteImport.update({
-    id: '/removal-requests',
-    path: '/removal-requests',
-    getParentRoute: () => DashAdminRoute,
-  } as any)
-const DashAdminBlogRoute = DashAdminBlogRouteImport.update({
-  id: '/blog',
-  path: '/blog',
-  getParentRoute: () => DashAdminRoute,
+const AppPinsTradesRoute = AppPinsTradesRouteImport.update({
+  id: '/pins_/trades',
+  path: '/pins/trades',
+  getParentRoute: () => AppRoute,
 } as any)
-const DashAdminAlertsRoute = DashAdminAlertsRouteImport.update({
+const AppPinsScanRoute = AppPinsScanRouteImport.update({
+  id: '/pins_/scan',
+  path: '/pins/scan',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPinsCollectionRoute = AppPinsCollectionRouteImport.update({
+  id: '/pins_/collection',
+  path: '/pins/collection',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPinsPinIdRoute = AppPinsPinIdRouteImport.update({
+  id: '/pins_/$pinId',
+  path: '/pins/$pinId',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDiningFacilityIdRoute = AppDiningFacilityIdRouteImport.update({
+  id: '/dining_/$facilityId',
+  path: '/dining/$facilityId',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDashMapRoute = AppDashMapRouteImport.update({
+  id: '/map',
+  path: '/map',
+  getParentRoute: () => AppDashRoute,
+} as any)
+const AppDashAlertsRoute = AppDashAlertsRouteImport.update({
   id: '/alerts',
   path: '/alerts',
-  getParentRoute: () => DashAdminRoute,
+  getParentRoute: () => AppDashRoute,
 } as any)
-const DashAdminAchievementsRoute = DashAdminAchievementsRouteImport.update({
+const AppDashAdminRoute = AppDashAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => AppDashRoute,
+} as any)
+const AppDashAchievementsRoute = AppDashAchievementsRouteImport.update({
   id: '/achievements',
   path: '/achievements',
-  getParentRoute: () => DashAdminRoute,
+  getParentRoute: () => AppDashRoute,
 } as any)
-const DashAccountSecurityRoute = DashAccountSecurityRouteImport.update({
-  id: '/security',
-  path: '/security',
-  getParentRoute: () => DashAccountRoute,
+const AppDashAccountRoute = AppDashAccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => AppDashRoute,
 } as any)
-const DashAccountProfileRoute = DashAccountProfileRouteImport.update({
-  id: '/profile',
-  path: '/profile',
-  getParentRoute: () => DashAccountRoute,
+const AppDashAdminIndexRoute = AppDashAdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppDashAdminRoute,
 } as any)
-const DashAccountConnectionsRoute = DashAccountConnectionsRouteImport.update({
-  id: '/connections',
-  path: '/connections',
-  getParentRoute: () => DashAccountRoute,
-} as any)
-const DashAccountAlertsRoute = DashAccountAlertsRouteImport.update({
-  id: '/alerts',
-  path: '/alerts',
-  getParentRoute: () => DashAccountRoute,
+const AppDashAccountIndexRoute = AppDashAccountIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppDashAccountRoute,
 } as any)
 const OgResortSlugCardDotpngRoute = OgResortSlugCardDotpngRouteImport.update({
   id: '/og/resort/$slug/card.png',
@@ -296,201 +250,256 @@ const OgDiningFacilityIdCardDotpngRoute =
     path: '/og/dining/$facilityId/card.png',
     getParentRoute: () => rootRouteImport,
   } as any)
-const DiningFacilityIdItemSlugRoute =
-  DiningFacilityIdItemSlugRouteImport.update({
-    id: '/dining_/$facilityId_/item/$slug',
-    path: '/dining/$facilityId/item/$slug',
-    getParentRoute: () => rootRouteImport,
+const AppDashShopSlugRoute = AppDashShopSlugRouteImport.update({
+  id: '/shop/$slug',
+  path: '/shop/$slug',
+  getParentRoute: () => AppDashRoute,
+} as any)
+const AppDashParkSlugRoute = AppDashParkSlugRouteImport.update({
+  id: '/park/$slug',
+  path: '/park/$slug',
+  getParentRoute: () => AppDashRoute,
+} as any)
+const AppDashAdminRemovalRequestsRoute =
+  AppDashAdminRemovalRequestsRouteImport.update({
+    id: '/removal-requests',
+    path: '/removal-requests',
+    getParentRoute: () => AppDashAdminRoute,
   } as any)
+const AppDashAdminBlogRoute = AppDashAdminBlogRouteImport.update({
+  id: '/blog',
+  path: '/blog',
+  getParentRoute: () => AppDashAdminRoute,
+} as any)
+const AppDashAdminAlertsRoute = AppDashAdminAlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
+  getParentRoute: () => AppDashAdminRoute,
+} as any)
+const AppDashAdminAchievementsRoute =
+  AppDashAdminAchievementsRouteImport.update({
+    id: '/achievements',
+    path: '/achievements',
+    getParentRoute: () => AppDashAdminRoute,
+  } as any)
+const AppDashAccountSecurityRoute = AppDashAccountSecurityRouteImport.update({
+  id: '/security',
+  path: '/security',
+  getParentRoute: () => AppDashAccountRoute,
+} as any)
+const AppDashAccountProfileRoute = AppDashAccountProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AppDashAccountRoute,
+} as any)
+const AppDashAccountConnectionsRoute =
+  AppDashAccountConnectionsRouteImport.update({
+    id: '/connections',
+    path: '/connections',
+    getParentRoute: () => AppDashAccountRoute,
+  } as any)
+const AppDashAccountAlertsRoute = AppDashAccountAlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
+  getParentRoute: () => AppDashAccountRoute,
+} as any)
 const OgRideParkSlugRideSlugCardDotpngRoute =
   OgRideParkSlugRideSlugCardDotpngRouteImport.update({
     id: '/og/ride/$parkSlug/$rideSlug/card.png',
     path: '/og/ride/$parkSlug/$rideSlug/card.png',
     getParentRoute: () => rootRouteImport,
   } as any)
-const DashParkSlugRideRideSlugRoute =
-  DashParkSlugRideRideSlugRouteImport.update({
+const AppDiningFacilityIdItemSlugRoute =
+  AppDiningFacilityIdItemSlugRouteImport.update({
+    id: '/dining_/$facilityId_/item/$slug',
+    path: '/dining/$facilityId/item/$slug',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppDashParkSlugRideRideSlugRoute =
+  AppDashParkSlugRideRideSlugRouteImport.update({
     id: '/park/$slug_/ride/$rideSlug',
     path: '/park/$slug/ride/$rideSlug',
-    getParentRoute: () => DashRoute,
+    getParentRoute: () => AppDashRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof DashIndexRoute
+  '/': typeof AppDashIndexRoute
   '/deep-link': typeof DeepLinkRoute
-  '/dining': typeof DiningRoute
-  '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
-  '/pins': typeof PinsRoute
-  '/predictions': typeof PredictionsRoute
-  '/privacy': typeof PrivacyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/stays': typeof StaysRoute
-  '/tickets': typeof TicketsRoute
   '/unsubscribe': typeof UnsubscribeRoute
   '/welcome': typeof WelcomeRoute
-  '/account': typeof DashAccountRouteWithChildren
-  '/achievements': typeof DashAchievementsRoute
-  '/admin': typeof DashAdminRouteWithChildren
-  '/alerts': typeof DashAlertsRoute
-  '/map': typeof DashMapRoute
+  '/dining': typeof AppDiningRoute
+  '/disclaimers': typeof AppDisclaimersRoute
+  '/pins': typeof AppPinsRoute
+  '/predictions': typeof AppPredictionsRoute
+  '/privacy': typeof AppPrivacyRoute
+  '/stays': typeof AppStaysRoute
+  '/tickets': typeof AppTicketsRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/blog/rss.xml': typeof BlogRssDotxmlRoute
-  '/dining/$facilityId': typeof DiningFacilityIdRoute
-  '/pins/$pinId': typeof PinsPinIdRoute
-  '/pins/collection': typeof PinsCollectionRoute
-  '/pins/scan': typeof PinsScanRoute
-  '/pins/trades': typeof PinsTradesRoute
-  '/resort/$slug': typeof ResortSlugRoute
-  '/stays/alerts': typeof StaysAlertsRoute
   '/blog/': typeof BlogIndexRoute
-  '/account/alerts': typeof DashAccountAlertsRoute
-  '/account/connections': typeof DashAccountConnectionsRoute
-  '/account/profile': typeof DashAccountProfileRoute
-  '/account/security': typeof DashAccountSecurityRoute
-  '/admin/achievements': typeof DashAdminAchievementsRoute
-  '/admin/alerts': typeof DashAdminAlertsRoute
-  '/admin/blog': typeof DashAdminBlogRoute
-  '/admin/removal-requests': typeof DashAdminRemovalRequestsRoute
-  '/park/$slug': typeof DashParkSlugRoute
-  '/shop/$slug': typeof DashShopSlugRoute
+  '/account': typeof AppDashAccountRouteWithChildren
+  '/achievements': typeof AppDashAchievementsRoute
+  '/admin': typeof AppDashAdminRouteWithChildren
+  '/alerts': typeof AppDashAlertsRoute
+  '/map': typeof AppDashMapRoute
+  '/dining/$facilityId': typeof AppDiningFacilityIdRoute
+  '/pins/$pinId': typeof AppPinsPinIdRoute
+  '/pins/collection': typeof AppPinsCollectionRoute
+  '/pins/scan': typeof AppPinsScanRoute
+  '/pins/trades': typeof AppPinsTradesRoute
+  '/resort/$slug': typeof AppResortSlugRoute
+  '/stays/alerts': typeof AppStaysAlertsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
-  '/account/': typeof DashAccountIndexRoute
-  '/admin/': typeof DashAdminIndexRoute
-  '/dining/$facilityId/item/$slug': typeof DiningFacilityIdItemSlugRoute
+  '/account/alerts': typeof AppDashAccountAlertsRoute
+  '/account/connections': typeof AppDashAccountConnectionsRoute
+  '/account/profile': typeof AppDashAccountProfileRoute
+  '/account/security': typeof AppDashAccountSecurityRoute
+  '/admin/achievements': typeof AppDashAdminAchievementsRoute
+  '/admin/alerts': typeof AppDashAdminAlertsRoute
+  '/admin/blog': typeof AppDashAdminBlogRoute
+  '/admin/removal-requests': typeof AppDashAdminRemovalRequestsRoute
+  '/park/$slug': typeof AppDashParkSlugRoute
+  '/shop/$slug': typeof AppDashShopSlugRoute
   '/og/dining/$facilityId/card.png': typeof OgDiningFacilityIdCardDotpngRoute
   '/og/park/$slug/card.png': typeof OgParkSlugCardDotpngRoute
   '/og/resort/$slug/card.png': typeof OgResortSlugCardDotpngRoute
-  '/park/$slug/ride/$rideSlug': typeof DashParkSlugRideRideSlugRoute
+  '/account/': typeof AppDashAccountIndexRoute
+  '/admin/': typeof AppDashAdminIndexRoute
+  '/dining/$facilityId/item/$slug': typeof AppDiningFacilityIdItemSlugRoute
   '/og/ride/$parkSlug/$rideSlug/card.png': typeof OgRideParkSlugRideSlugCardDotpngRoute
+  '/park/$slug/ride/$rideSlug': typeof AppDashParkSlugRideRideSlugRoute
 }
 export interface FileRoutesByTo {
+  '/': typeof AppDashIndexRoute
   '/deep-link': typeof DeepLinkRoute
-  '/dining': typeof DiningRoute
-  '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
-  '/pins': typeof PinsRoute
-  '/predictions': typeof PredictionsRoute
-  '/privacy': typeof PrivacyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/stays': typeof StaysRoute
-  '/tickets': typeof TicketsRoute
   '/unsubscribe': typeof UnsubscribeRoute
   '/welcome': typeof WelcomeRoute
-  '/achievements': typeof DashAchievementsRoute
-  '/alerts': typeof DashAlertsRoute
-  '/map': typeof DashMapRoute
+  '/dining': typeof AppDiningRoute
+  '/disclaimers': typeof AppDisclaimersRoute
+  '/pins': typeof AppPinsRoute
+  '/predictions': typeof AppPredictionsRoute
+  '/privacy': typeof AppPrivacyRoute
+  '/stays': typeof AppStaysRoute
+  '/tickets': typeof AppTicketsRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/blog/rss.xml': typeof BlogRssDotxmlRoute
-  '/dining/$facilityId': typeof DiningFacilityIdRoute
-  '/pins/$pinId': typeof PinsPinIdRoute
-  '/pins/collection': typeof PinsCollectionRoute
-  '/pins/scan': typeof PinsScanRoute
-  '/pins/trades': typeof PinsTradesRoute
-  '/resort/$slug': typeof ResortSlugRoute
-  '/stays/alerts': typeof StaysAlertsRoute
-  '/': typeof DashIndexRoute
   '/blog': typeof BlogIndexRoute
-  '/account/alerts': typeof DashAccountAlertsRoute
-  '/account/connections': typeof DashAccountConnectionsRoute
-  '/account/profile': typeof DashAccountProfileRoute
-  '/account/security': typeof DashAccountSecurityRoute
-  '/admin/achievements': typeof DashAdminAchievementsRoute
-  '/admin/alerts': typeof DashAdminAlertsRoute
-  '/admin/blog': typeof DashAdminBlogRoute
-  '/admin/removal-requests': typeof DashAdminRemovalRequestsRoute
-  '/park/$slug': typeof DashParkSlugRoute
-  '/shop/$slug': typeof DashShopSlugRoute
+  '/achievements': typeof AppDashAchievementsRoute
+  '/alerts': typeof AppDashAlertsRoute
+  '/map': typeof AppDashMapRoute
+  '/dining/$facilityId': typeof AppDiningFacilityIdRoute
+  '/pins/$pinId': typeof AppPinsPinIdRoute
+  '/pins/collection': typeof AppPinsCollectionRoute
+  '/pins/scan': typeof AppPinsScanRoute
+  '/pins/trades': typeof AppPinsTradesRoute
+  '/resort/$slug': typeof AppResortSlugRoute
+  '/stays/alerts': typeof AppStaysAlertsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
-  '/account': typeof DashAccountIndexRoute
-  '/admin': typeof DashAdminIndexRoute
-  '/dining/$facilityId/item/$slug': typeof DiningFacilityIdItemSlugRoute
+  '/account/alerts': typeof AppDashAccountAlertsRoute
+  '/account/connections': typeof AppDashAccountConnectionsRoute
+  '/account/profile': typeof AppDashAccountProfileRoute
+  '/account/security': typeof AppDashAccountSecurityRoute
+  '/admin/achievements': typeof AppDashAdminAchievementsRoute
+  '/admin/alerts': typeof AppDashAdminAlertsRoute
+  '/admin/blog': typeof AppDashAdminBlogRoute
+  '/admin/removal-requests': typeof AppDashAdminRemovalRequestsRoute
+  '/park/$slug': typeof AppDashParkSlugRoute
+  '/shop/$slug': typeof AppDashShopSlugRoute
   '/og/dining/$facilityId/card.png': typeof OgDiningFacilityIdCardDotpngRoute
   '/og/park/$slug/card.png': typeof OgParkSlugCardDotpngRoute
   '/og/resort/$slug/card.png': typeof OgResortSlugCardDotpngRoute
-  '/park/$slug/ride/$rideSlug': typeof DashParkSlugRideRideSlugRoute
+  '/account': typeof AppDashAccountIndexRoute
+  '/admin': typeof AppDashAdminIndexRoute
+  '/dining/$facilityId/item/$slug': typeof AppDiningFacilityIdItemSlugRoute
   '/og/ride/$parkSlug/$rideSlug/card.png': typeof OgRideParkSlugRideSlugCardDotpngRoute
+  '/park/$slug/ride/$rideSlug': typeof AppDashParkSlugRideRideSlugRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/_dash': typeof DashRouteWithChildren
+  '/_app': typeof AppRouteWithChildren
   '/deep-link': typeof DeepLinkRoute
-  '/dining': typeof DiningRoute
-  '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
-  '/pins': typeof PinsRoute
-  '/predictions': typeof PredictionsRoute
-  '/privacy': typeof PrivacyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/stays': typeof StaysRoute
-  '/tickets': typeof TicketsRoute
   '/unsubscribe': typeof UnsubscribeRoute
   '/welcome': typeof WelcomeRoute
-  '/_dash/account': typeof DashAccountRouteWithChildren
-  '/_dash/achievements': typeof DashAchievementsRoute
-  '/_dash/admin': typeof DashAdminRouteWithChildren
-  '/_dash/alerts': typeof DashAlertsRoute
-  '/_dash/map': typeof DashMapRoute
+  '/_app/_dash': typeof AppDashRouteWithChildren
+  '/_app/dining': typeof AppDiningRoute
+  '/_app/disclaimers': typeof AppDisclaimersRoute
+  '/_app/pins': typeof AppPinsRoute
+  '/_app/predictions': typeof AppPredictionsRoute
+  '/_app/privacy': typeof AppPrivacyRoute
+  '/_app/stays': typeof AppStaysRoute
+  '/_app/tickets': typeof AppTicketsRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/blog/rss.xml': typeof BlogRssDotxmlRoute
-  '/dining_/$facilityId': typeof DiningFacilityIdRoute
-  '/pins_/$pinId': typeof PinsPinIdRoute
-  '/pins_/collection': typeof PinsCollectionRoute
-  '/pins_/scan': typeof PinsScanRoute
-  '/pins_/trades': typeof PinsTradesRoute
-  '/resort/$slug': typeof ResortSlugRoute
-  '/stays_/alerts': typeof StaysAlertsRoute
-  '/_dash/': typeof DashIndexRoute
   '/blog/': typeof BlogIndexRoute
-  '/_dash/account/alerts': typeof DashAccountAlertsRoute
-  '/_dash/account/connections': typeof DashAccountConnectionsRoute
-  '/_dash/account/profile': typeof DashAccountProfileRoute
-  '/_dash/account/security': typeof DashAccountSecurityRoute
-  '/_dash/admin/achievements': typeof DashAdminAchievementsRoute
-  '/_dash/admin/alerts': typeof DashAdminAlertsRoute
-  '/_dash/admin/blog': typeof DashAdminBlogRoute
-  '/_dash/admin/removal-requests': typeof DashAdminRemovalRequestsRoute
-  '/_dash/park/$slug': typeof DashParkSlugRoute
-  '/_dash/shop/$slug': typeof DashShopSlugRoute
+  '/_app/_dash/account': typeof AppDashAccountRouteWithChildren
+  '/_app/_dash/achievements': typeof AppDashAchievementsRoute
+  '/_app/_dash/admin': typeof AppDashAdminRouteWithChildren
+  '/_app/_dash/alerts': typeof AppDashAlertsRoute
+  '/_app/_dash/map': typeof AppDashMapRoute
+  '/_app/dining_/$facilityId': typeof AppDiningFacilityIdRoute
+  '/_app/pins_/$pinId': typeof AppPinsPinIdRoute
+  '/_app/pins_/collection': typeof AppPinsCollectionRoute
+  '/_app/pins_/scan': typeof AppPinsScanRoute
+  '/_app/pins_/trades': typeof AppPinsTradesRoute
+  '/_app/resort/$slug': typeof AppResortSlugRoute
+  '/_app/stays_/alerts': typeof AppStaysAlertsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
-  '/_dash/account/': typeof DashAccountIndexRoute
-  '/_dash/admin/': typeof DashAdminIndexRoute
-  '/dining_/$facilityId_/item/$slug': typeof DiningFacilityIdItemSlugRoute
+  '/_app/_dash/': typeof AppDashIndexRoute
+  '/_app/_dash/account/alerts': typeof AppDashAccountAlertsRoute
+  '/_app/_dash/account/connections': typeof AppDashAccountConnectionsRoute
+  '/_app/_dash/account/profile': typeof AppDashAccountProfileRoute
+  '/_app/_dash/account/security': typeof AppDashAccountSecurityRoute
+  '/_app/_dash/admin/achievements': typeof AppDashAdminAchievementsRoute
+  '/_app/_dash/admin/alerts': typeof AppDashAdminAlertsRoute
+  '/_app/_dash/admin/blog': typeof AppDashAdminBlogRoute
+  '/_app/_dash/admin/removal-requests': typeof AppDashAdminRemovalRequestsRoute
+  '/_app/_dash/park/$slug': typeof AppDashParkSlugRoute
+  '/_app/_dash/shop/$slug': typeof AppDashShopSlugRoute
   '/og/dining/$facilityId/card.png': typeof OgDiningFacilityIdCardDotpngRoute
   '/og/park/$slug/card.png': typeof OgParkSlugCardDotpngRoute
   '/og/resort/$slug/card.png': typeof OgResortSlugCardDotpngRoute
-  '/_dash/park/$slug_/ride/$rideSlug': typeof DashParkSlugRideRideSlugRoute
+  '/_app/_dash/account/': typeof AppDashAccountIndexRoute
+  '/_app/_dash/admin/': typeof AppDashAdminIndexRoute
+  '/_app/dining_/$facilityId_/item/$slug': typeof AppDiningFacilityIdItemSlugRoute
   '/og/ride/$parkSlug/$rideSlug/card.png': typeof OgRideParkSlugRideSlugCardDotpngRoute
+  '/_app/_dash/park/$slug_/ride/$rideSlug': typeof AppDashParkSlugRideRideSlugRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/deep-link'
+    | '/login'
+    | '/sitemap.xml'
+    | '/unsubscribe'
+    | '/welcome'
     | '/dining'
     | '/disclaimers'
-    | '/login'
     | '/pins'
     | '/predictions'
     | '/privacy'
-    | '/sitemap.xml'
     | '/stays'
     | '/tickets'
-    | '/unsubscribe'
-    | '/welcome'
+    | '/blog/$slug'
+    | '/blog/rss.xml'
+    | '/blog/'
     | '/account'
     | '/achievements'
     | '/admin'
     | '/alerts'
     | '/map'
-    | '/blog/$slug'
-    | '/blog/rss.xml'
     | '/dining/$facilityId'
     | '/pins/$pinId'
     | '/pins/collection'
@@ -498,7 +507,9 @@ export interface FileRouteTypes {
     | '/pins/trades'
     | '/resort/$slug'
     | '/stays/alerts'
-    | '/blog/'
+    | '/api/auth/$'
+    | '/api/push/subscribe'
+    | '/api/trpc/$'
     | '/account/alerts'
     | '/account/connections'
     | '/account/profile'
@@ -509,36 +520,35 @@ export interface FileRouteTypes {
     | '/admin/removal-requests'
     | '/park/$slug'
     | '/shop/$slug'
-    | '/api/auth/$'
-    | '/api/push/subscribe'
-    | '/api/trpc/$'
+    | '/og/dining/$facilityId/card.png'
+    | '/og/park/$slug/card.png'
+    | '/og/resort/$slug/card.png'
     | '/account/'
     | '/admin/'
     | '/dining/$facilityId/item/$slug'
-    | '/og/dining/$facilityId/card.png'
-    | '/og/park/$slug/card.png'
-    | '/og/resort/$slug/card.png'
-    | '/park/$slug/ride/$rideSlug'
     | '/og/ride/$parkSlug/$rideSlug/card.png'
+    | '/park/$slug/ride/$rideSlug'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/'
     | '/deep-link'
+    | '/login'
+    | '/sitemap.xml'
+    | '/unsubscribe'
+    | '/welcome'
     | '/dining'
     | '/disclaimers'
-    | '/login'
     | '/pins'
     | '/predictions'
     | '/privacy'
-    | '/sitemap.xml'
     | '/stays'
     | '/tickets'
-    | '/unsubscribe'
-    | '/welcome'
+    | '/blog/$slug'
+    | '/blog/rss.xml'
+    | '/blog'
     | '/achievements'
     | '/alerts'
     | '/map'
-    | '/blog/$slug'
-    | '/blog/rss.xml'
     | '/dining/$facilityId'
     | '/pins/$pinId'
     | '/pins/collection'
@@ -546,8 +556,9 @@ export interface FileRouteTypes {
     | '/pins/trades'
     | '/resort/$slug'
     | '/stays/alerts'
-    | '/'
-    | '/blog'
+    | '/api/auth/$'
+    | '/api/push/subscribe'
+    | '/api/trpc/$'
     | '/account/alerts'
     | '/account/connections'
     | '/account/profile'
@@ -558,99 +569,82 @@ export interface FileRouteTypes {
     | '/admin/removal-requests'
     | '/park/$slug'
     | '/shop/$slug'
-    | '/api/auth/$'
-    | '/api/push/subscribe'
-    | '/api/trpc/$'
+    | '/og/dining/$facilityId/card.png'
+    | '/og/park/$slug/card.png'
+    | '/og/resort/$slug/card.png'
     | '/account'
     | '/admin'
     | '/dining/$facilityId/item/$slug'
-    | '/og/dining/$facilityId/card.png'
-    | '/og/park/$slug/card.png'
-    | '/og/resort/$slug/card.png'
-    | '/park/$slug/ride/$rideSlug'
     | '/og/ride/$parkSlug/$rideSlug/card.png'
+    | '/park/$slug/ride/$rideSlug'
   id:
     | '__root__'
-    | '/_dash'
+    | '/_app'
     | '/deep-link'
-    | '/dining'
-    | '/disclaimers'
     | '/login'
-    | '/pins'
-    | '/predictions'
-    | '/privacy'
     | '/sitemap.xml'
-    | '/stays'
-    | '/tickets'
     | '/unsubscribe'
     | '/welcome'
-    | '/_dash/account'
-    | '/_dash/achievements'
-    | '/_dash/admin'
-    | '/_dash/alerts'
-    | '/_dash/map'
+    | '/_app/_dash'
+    | '/_app/dining'
+    | '/_app/disclaimers'
+    | '/_app/pins'
+    | '/_app/predictions'
+    | '/_app/privacy'
+    | '/_app/stays'
+    | '/_app/tickets'
     | '/blog/$slug'
     | '/blog/rss.xml'
-    | '/dining_/$facilityId'
-    | '/pins_/$pinId'
-    | '/pins_/collection'
-    | '/pins_/scan'
-    | '/pins_/trades'
-    | '/resort/$slug'
-    | '/stays_/alerts'
-    | '/_dash/'
     | '/blog/'
-    | '/_dash/account/alerts'
-    | '/_dash/account/connections'
-    | '/_dash/account/profile'
-    | '/_dash/account/security'
-    | '/_dash/admin/achievements'
-    | '/_dash/admin/alerts'
-    | '/_dash/admin/blog'
-    | '/_dash/admin/removal-requests'
-    | '/_dash/park/$slug'
-    | '/_dash/shop/$slug'
+    | '/_app/_dash/account'
+    | '/_app/_dash/achievements'
+    | '/_app/_dash/admin'
+    | '/_app/_dash/alerts'
+    | '/_app/_dash/map'
+    | '/_app/dining_/$facilityId'
+    | '/_app/pins_/$pinId'
+    | '/_app/pins_/collection'
+    | '/_app/pins_/scan'
+    | '/_app/pins_/trades'
+    | '/_app/resort/$slug'
+    | '/_app/stays_/alerts'
     | '/api/auth/$'
     | '/api/push/subscribe'
     | '/api/trpc/$'
-    | '/_dash/account/'
-    | '/_dash/admin/'
-    | '/dining_/$facilityId_/item/$slug'
+    | '/_app/_dash/'
+    | '/_app/_dash/account/alerts'
+    | '/_app/_dash/account/connections'
+    | '/_app/_dash/account/profile'
+    | '/_app/_dash/account/security'
+    | '/_app/_dash/admin/achievements'
+    | '/_app/_dash/admin/alerts'
+    | '/_app/_dash/admin/blog'
+    | '/_app/_dash/admin/removal-requests'
+    | '/_app/_dash/park/$slug'
+    | '/_app/_dash/shop/$slug'
     | '/og/dining/$facilityId/card.png'
     | '/og/park/$slug/card.png'
     | '/og/resort/$slug/card.png'
-    | '/_dash/park/$slug_/ride/$rideSlug'
+    | '/_app/_dash/account/'
+    | '/_app/_dash/admin/'
+    | '/_app/dining_/$facilityId_/item/$slug'
     | '/og/ride/$parkSlug/$rideSlug/card.png'
+    | '/_app/_dash/park/$slug_/ride/$rideSlug'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  DashRoute: typeof DashRouteWithChildren
+  AppRoute: typeof AppRouteWithChildren
   DeepLinkRoute: typeof DeepLinkRoute
-  DiningRoute: typeof DiningRoute
-  DisclaimersRoute: typeof DisclaimersRoute
   LoginRoute: typeof LoginRoute
-  PinsRoute: typeof PinsRoute
-  PredictionsRoute: typeof PredictionsRoute
-  PrivacyRoute: typeof PrivacyRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
-  StaysRoute: typeof StaysRoute
-  TicketsRoute: typeof TicketsRoute
   UnsubscribeRoute: typeof UnsubscribeRoute
   WelcomeRoute: typeof WelcomeRoute
   BlogSlugRoute: typeof BlogSlugRoute
   BlogRssDotxmlRoute: typeof BlogRssDotxmlRoute
-  DiningFacilityIdRoute: typeof DiningFacilityIdRoute
-  PinsPinIdRoute: typeof PinsPinIdRoute
-  PinsCollectionRoute: typeof PinsCollectionRoute
-  PinsScanRoute: typeof PinsScanRoute
-  PinsTradesRoute: typeof PinsTradesRoute
-  ResortSlugRoute: typeof ResortSlugRoute
-  StaysAlertsRoute: typeof StaysAlertsRoute
   BlogIndexRoute: typeof BlogIndexRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiPushSubscribeRoute: typeof ApiPushSubscribeRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
-  DiningFacilityIdItemSlugRoute: typeof DiningFacilityIdItemSlugRoute
   OgDiningFacilityIdCardDotpngRoute: typeof OgDiningFacilityIdCardDotpngRoute
   OgParkSlugCardDotpngRoute: typeof OgParkSlugCardDotpngRoute
   OgResortSlugCardDotpngRoute: typeof OgResortSlugCardDotpngRoute
@@ -673,46 +667,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof UnsubscribeRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/tickets': {
-      id: '/tickets'
-      path: '/tickets'
-      fullPath: '/tickets'
-      preLoaderRoute: typeof TicketsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/stays': {
-      id: '/stays'
-      path: '/stays'
-      fullPath: '/stays'
-      preLoaderRoute: typeof StaysRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/sitemap.xml': {
       id: '/sitemap.xml'
       path: '/sitemap.xml'
       fullPath: '/sitemap.xml'
       preLoaderRoute: typeof SitemapDotxmlRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/privacy': {
-      id: '/privacy'
-      path: '/privacy'
-      fullPath: '/privacy'
-      preLoaderRoute: typeof PrivacyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/predictions': {
-      id: '/predictions'
-      path: '/predictions'
-      fullPath: '/predictions'
-      preLoaderRoute: typeof PredictionsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/pins': {
-      id: '/pins'
-      path: '/pins'
-      fullPath: '/pins'
-      preLoaderRoute: typeof PinsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -722,20 +681,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/disclaimers': {
-      id: '/disclaimers'
-      path: '/disclaimers'
-      fullPath: '/disclaimers'
-      preLoaderRoute: typeof DisclaimersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dining': {
-      id: '/dining'
-      path: '/dining'
-      fullPath: '/dining'
-      preLoaderRoute: typeof DiningRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/deep-link': {
       id: '/deep-link'
       path: '/deep-link'
@@ -743,11 +688,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DeepLinkRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_dash': {
-      id: '/_dash'
+    '/_app': {
+      id: '/_app'
       path: ''
       fullPath: '/'
-      preLoaderRoute: typeof DashRouteImport
+      preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/blog/': {
@@ -755,62 +700,6 @@ declare module '@tanstack/react-router' {
       path: '/blog'
       fullPath: '/blog/'
       preLoaderRoute: typeof BlogIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_dash/': {
-      id: '/_dash/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof DashIndexRouteImport
-      parentRoute: typeof DashRoute
-    }
-    '/stays_/alerts': {
-      id: '/stays_/alerts'
-      path: '/stays/alerts'
-      fullPath: '/stays/alerts'
-      preLoaderRoute: typeof StaysAlertsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/resort/$slug': {
-      id: '/resort/$slug'
-      path: '/resort/$slug'
-      fullPath: '/resort/$slug'
-      preLoaderRoute: typeof ResortSlugRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/pins_/trades': {
-      id: '/pins_/trades'
-      path: '/pins/trades'
-      fullPath: '/pins/trades'
-      preLoaderRoute: typeof PinsTradesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/pins_/scan': {
-      id: '/pins_/scan'
-      path: '/pins/scan'
-      fullPath: '/pins/scan'
-      preLoaderRoute: typeof PinsScanRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/pins_/collection': {
-      id: '/pins_/collection'
-      path: '/pins/collection'
-      fullPath: '/pins/collection'
-      preLoaderRoute: typeof PinsCollectionRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/pins_/$pinId': {
-      id: '/pins_/$pinId'
-      path: '/pins/$pinId'
-      fullPath: '/pins/$pinId'
-      preLoaderRoute: typeof PinsPinIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dining_/$facilityId': {
-      id: '/dining_/$facilityId'
-      path: '/dining/$facilityId'
-      fullPath: '/dining/$facilityId'
-      preLoaderRoute: typeof DiningFacilityIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/blog/rss.xml': {
@@ -827,54 +716,68 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BlogSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_dash/map': {
-      id: '/_dash/map'
-      path: '/map'
-      fullPath: '/map'
-      preLoaderRoute: typeof DashMapRouteImport
-      parentRoute: typeof DashRoute
+    '/_app/tickets': {
+      id: '/_app/tickets'
+      path: '/tickets'
+      fullPath: '/tickets'
+      preLoaderRoute: typeof AppTicketsRouteImport
+      parentRoute: typeof AppRoute
     }
-    '/_dash/alerts': {
-      id: '/_dash/alerts'
-      path: '/alerts'
-      fullPath: '/alerts'
-      preLoaderRoute: typeof DashAlertsRouteImport
-      parentRoute: typeof DashRoute
+    '/_app/stays': {
+      id: '/_app/stays'
+      path: '/stays'
+      fullPath: '/stays'
+      preLoaderRoute: typeof AppStaysRouteImport
+      parentRoute: typeof AppRoute
     }
-    '/_dash/admin': {
-      id: '/_dash/admin'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof DashAdminRouteImport
-      parentRoute: typeof DashRoute
+    '/_app/privacy': {
+      id: '/_app/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof AppPrivacyRouteImport
+      parentRoute: typeof AppRoute
     }
-    '/_dash/achievements': {
-      id: '/_dash/achievements'
-      path: '/achievements'
-      fullPath: '/achievements'
-      preLoaderRoute: typeof DashAchievementsRouteImport
-      parentRoute: typeof DashRoute
+    '/_app/predictions': {
+      id: '/_app/predictions'
+      path: '/predictions'
+      fullPath: '/predictions'
+      preLoaderRoute: typeof AppPredictionsRouteImport
+      parentRoute: typeof AppRoute
     }
-    '/_dash/account': {
-      id: '/_dash/account'
-      path: '/account'
-      fullPath: '/account'
-      preLoaderRoute: typeof DashAccountRouteImport
-      parentRoute: typeof DashRoute
+    '/_app/pins': {
+      id: '/_app/pins'
+      path: '/pins'
+      fullPath: '/pins'
+      preLoaderRoute: typeof AppPinsRouteImport
+      parentRoute: typeof AppRoute
     }
-    '/_dash/admin/': {
-      id: '/_dash/admin/'
+    '/_app/disclaimers': {
+      id: '/_app/disclaimers'
+      path: '/disclaimers'
+      fullPath: '/disclaimers'
+      preLoaderRoute: typeof AppDisclaimersRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/dining': {
+      id: '/_app/dining'
+      path: '/dining'
+      fullPath: '/dining'
+      preLoaderRoute: typeof AppDiningRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/_dash': {
+      id: '/_app/_dash'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AppDashRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/_dash/': {
+      id: '/_app/_dash/'
       path: '/'
-      fullPath: '/admin/'
-      preLoaderRoute: typeof DashAdminIndexRouteImport
-      parentRoute: typeof DashAdminRoute
-    }
-    '/_dash/account/': {
-      id: '/_dash/account/'
-      path: '/'
-      fullPath: '/account/'
-      preLoaderRoute: typeof DashAccountIndexRouteImport
-      parentRoute: typeof DashAccountRoute
+      fullPath: '/'
+      preLoaderRoute: typeof AppDashIndexRouteImport
+      parentRoute: typeof AppDashRoute
     }
     '/api/trpc/$': {
       id: '/api/trpc/$'
@@ -897,75 +800,103 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_dash/shop/$slug': {
-      id: '/_dash/shop/$slug'
-      path: '/shop/$slug'
-      fullPath: '/shop/$slug'
-      preLoaderRoute: typeof DashShopSlugRouteImport
-      parentRoute: typeof DashRoute
+    '/_app/stays_/alerts': {
+      id: '/_app/stays_/alerts'
+      path: '/stays/alerts'
+      fullPath: '/stays/alerts'
+      preLoaderRoute: typeof AppStaysAlertsRouteImport
+      parentRoute: typeof AppRoute
     }
-    '/_dash/park/$slug': {
-      id: '/_dash/park/$slug'
-      path: '/park/$slug'
-      fullPath: '/park/$slug'
-      preLoaderRoute: typeof DashParkSlugRouteImport
-      parentRoute: typeof DashRoute
+    '/_app/resort/$slug': {
+      id: '/_app/resort/$slug'
+      path: '/resort/$slug'
+      fullPath: '/resort/$slug'
+      preLoaderRoute: typeof AppResortSlugRouteImport
+      parentRoute: typeof AppRoute
     }
-    '/_dash/admin/removal-requests': {
-      id: '/_dash/admin/removal-requests'
-      path: '/removal-requests'
-      fullPath: '/admin/removal-requests'
-      preLoaderRoute: typeof DashAdminRemovalRequestsRouteImport
-      parentRoute: typeof DashAdminRoute
+    '/_app/pins_/trades': {
+      id: '/_app/pins_/trades'
+      path: '/pins/trades'
+      fullPath: '/pins/trades'
+      preLoaderRoute: typeof AppPinsTradesRouteImport
+      parentRoute: typeof AppRoute
     }
-    '/_dash/admin/blog': {
-      id: '/_dash/admin/blog'
-      path: '/blog'
-      fullPath: '/admin/blog'
-      preLoaderRoute: typeof DashAdminBlogRouteImport
-      parentRoute: typeof DashAdminRoute
+    '/_app/pins_/scan': {
+      id: '/_app/pins_/scan'
+      path: '/pins/scan'
+      fullPath: '/pins/scan'
+      preLoaderRoute: typeof AppPinsScanRouteImport
+      parentRoute: typeof AppRoute
     }
-    '/_dash/admin/alerts': {
-      id: '/_dash/admin/alerts'
+    '/_app/pins_/collection': {
+      id: '/_app/pins_/collection'
+      path: '/pins/collection'
+      fullPath: '/pins/collection'
+      preLoaderRoute: typeof AppPinsCollectionRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/pins_/$pinId': {
+      id: '/_app/pins_/$pinId'
+      path: '/pins/$pinId'
+      fullPath: '/pins/$pinId'
+      preLoaderRoute: typeof AppPinsPinIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/dining_/$facilityId': {
+      id: '/_app/dining_/$facilityId'
+      path: '/dining/$facilityId'
+      fullPath: '/dining/$facilityId'
+      preLoaderRoute: typeof AppDiningFacilityIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/_dash/map': {
+      id: '/_app/_dash/map'
+      path: '/map'
+      fullPath: '/map'
+      preLoaderRoute: typeof AppDashMapRouteImport
+      parentRoute: typeof AppDashRoute
+    }
+    '/_app/_dash/alerts': {
+      id: '/_app/_dash/alerts'
       path: '/alerts'
-      fullPath: '/admin/alerts'
-      preLoaderRoute: typeof DashAdminAlertsRouteImport
-      parentRoute: typeof DashAdminRoute
+      fullPath: '/alerts'
+      preLoaderRoute: typeof AppDashAlertsRouteImport
+      parentRoute: typeof AppDashRoute
     }
-    '/_dash/admin/achievements': {
-      id: '/_dash/admin/achievements'
+    '/_app/_dash/admin': {
+      id: '/_app/_dash/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AppDashAdminRouteImport
+      parentRoute: typeof AppDashRoute
+    }
+    '/_app/_dash/achievements': {
+      id: '/_app/_dash/achievements'
       path: '/achievements'
-      fullPath: '/admin/achievements'
-      preLoaderRoute: typeof DashAdminAchievementsRouteImport
-      parentRoute: typeof DashAdminRoute
+      fullPath: '/achievements'
+      preLoaderRoute: typeof AppDashAchievementsRouteImport
+      parentRoute: typeof AppDashRoute
     }
-    '/_dash/account/security': {
-      id: '/_dash/account/security'
-      path: '/security'
-      fullPath: '/account/security'
-      preLoaderRoute: typeof DashAccountSecurityRouteImport
-      parentRoute: typeof DashAccountRoute
+    '/_app/_dash/account': {
+      id: '/_app/_dash/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AppDashAccountRouteImport
+      parentRoute: typeof AppDashRoute
     }
-    '/_dash/account/profile': {
-      id: '/_dash/account/profile'
-      path: '/profile'
-      fullPath: '/account/profile'
-      preLoaderRoute: typeof DashAccountProfileRouteImport
-      parentRoute: typeof DashAccountRoute
+    '/_app/_dash/admin/': {
+      id: '/_app/_dash/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AppDashAdminIndexRouteImport
+      parentRoute: typeof AppDashAdminRoute
     }
-    '/_dash/account/connections': {
-      id: '/_dash/account/connections'
-      path: '/connections'
-      fullPath: '/account/connections'
-      preLoaderRoute: typeof DashAccountConnectionsRouteImport
-      parentRoute: typeof DashAccountRoute
-    }
-    '/_dash/account/alerts': {
-      id: '/_dash/account/alerts'
-      path: '/alerts'
-      fullPath: '/account/alerts'
-      preLoaderRoute: typeof DashAccountAlertsRouteImport
-      parentRoute: typeof DashAccountRoute
+    '/_app/_dash/account/': {
+      id: '/_app/_dash/account/'
+      path: '/'
+      fullPath: '/account/'
+      preLoaderRoute: typeof AppDashAccountIndexRouteImport
+      parentRoute: typeof AppDashAccountRoute
     }
     '/og/resort/$slug/card.png': {
       id: '/og/resort/$slug/card.png'
@@ -988,12 +919,75 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OgDiningFacilityIdCardDotpngRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/dining_/$facilityId_/item/$slug': {
-      id: '/dining_/$facilityId_/item/$slug'
-      path: '/dining/$facilityId/item/$slug'
-      fullPath: '/dining/$facilityId/item/$slug'
-      preLoaderRoute: typeof DiningFacilityIdItemSlugRouteImport
-      parentRoute: typeof rootRouteImport
+    '/_app/_dash/shop/$slug': {
+      id: '/_app/_dash/shop/$slug'
+      path: '/shop/$slug'
+      fullPath: '/shop/$slug'
+      preLoaderRoute: typeof AppDashShopSlugRouteImport
+      parentRoute: typeof AppDashRoute
+    }
+    '/_app/_dash/park/$slug': {
+      id: '/_app/_dash/park/$slug'
+      path: '/park/$slug'
+      fullPath: '/park/$slug'
+      preLoaderRoute: typeof AppDashParkSlugRouteImport
+      parentRoute: typeof AppDashRoute
+    }
+    '/_app/_dash/admin/removal-requests': {
+      id: '/_app/_dash/admin/removal-requests'
+      path: '/removal-requests'
+      fullPath: '/admin/removal-requests'
+      preLoaderRoute: typeof AppDashAdminRemovalRequestsRouteImport
+      parentRoute: typeof AppDashAdminRoute
+    }
+    '/_app/_dash/admin/blog': {
+      id: '/_app/_dash/admin/blog'
+      path: '/blog'
+      fullPath: '/admin/blog'
+      preLoaderRoute: typeof AppDashAdminBlogRouteImport
+      parentRoute: typeof AppDashAdminRoute
+    }
+    '/_app/_dash/admin/alerts': {
+      id: '/_app/_dash/admin/alerts'
+      path: '/alerts'
+      fullPath: '/admin/alerts'
+      preLoaderRoute: typeof AppDashAdminAlertsRouteImport
+      parentRoute: typeof AppDashAdminRoute
+    }
+    '/_app/_dash/admin/achievements': {
+      id: '/_app/_dash/admin/achievements'
+      path: '/achievements'
+      fullPath: '/admin/achievements'
+      preLoaderRoute: typeof AppDashAdminAchievementsRouteImport
+      parentRoute: typeof AppDashAdminRoute
+    }
+    '/_app/_dash/account/security': {
+      id: '/_app/_dash/account/security'
+      path: '/security'
+      fullPath: '/account/security'
+      preLoaderRoute: typeof AppDashAccountSecurityRouteImport
+      parentRoute: typeof AppDashAccountRoute
+    }
+    '/_app/_dash/account/profile': {
+      id: '/_app/_dash/account/profile'
+      path: '/profile'
+      fullPath: '/account/profile'
+      preLoaderRoute: typeof AppDashAccountProfileRouteImport
+      parentRoute: typeof AppDashAccountRoute
+    }
+    '/_app/_dash/account/connections': {
+      id: '/_app/_dash/account/connections'
+      path: '/connections'
+      fullPath: '/account/connections'
+      preLoaderRoute: typeof AppDashAccountConnectionsRouteImport
+      parentRoute: typeof AppDashAccountRoute
+    }
+    '/_app/_dash/account/alerts': {
+      id: '/_app/_dash/account/alerts'
+      path: '/alerts'
+      fullPath: '/account/alerts'
+      preLoaderRoute: typeof AppDashAccountAlertsRouteImport
+      parentRoute: typeof AppDashAccountRoute
     }
     '/og/ride/$parkSlug/$rideSlug/card.png': {
       id: '/og/ride/$parkSlug/$rideSlug/card.png'
@@ -1002,110 +996,143 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OgRideParkSlugRideSlugCardDotpngRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_dash/park/$slug_/ride/$rideSlug': {
-      id: '/_dash/park/$slug_/ride/$rideSlug'
+    '/_app/dining_/$facilityId_/item/$slug': {
+      id: '/_app/dining_/$facilityId_/item/$slug'
+      path: '/dining/$facilityId/item/$slug'
+      fullPath: '/dining/$facilityId/item/$slug'
+      preLoaderRoute: typeof AppDiningFacilityIdItemSlugRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/_dash/park/$slug_/ride/$rideSlug': {
+      id: '/_app/_dash/park/$slug_/ride/$rideSlug'
       path: '/park/$slug/ride/$rideSlug'
       fullPath: '/park/$slug/ride/$rideSlug'
-      preLoaderRoute: typeof DashParkSlugRideRideSlugRouteImport
-      parentRoute: typeof DashRoute
+      preLoaderRoute: typeof AppDashParkSlugRideRideSlugRouteImport
+      parentRoute: typeof AppDashRoute
     }
   }
 }
 
-interface DashAccountRouteChildren {
-  DashAccountAlertsRoute: typeof DashAccountAlertsRoute
-  DashAccountConnectionsRoute: typeof DashAccountConnectionsRoute
-  DashAccountProfileRoute: typeof DashAccountProfileRoute
-  DashAccountSecurityRoute: typeof DashAccountSecurityRoute
-  DashAccountIndexRoute: typeof DashAccountIndexRoute
+interface AppDashAccountRouteChildren {
+  AppDashAccountAlertsRoute: typeof AppDashAccountAlertsRoute
+  AppDashAccountConnectionsRoute: typeof AppDashAccountConnectionsRoute
+  AppDashAccountProfileRoute: typeof AppDashAccountProfileRoute
+  AppDashAccountSecurityRoute: typeof AppDashAccountSecurityRoute
+  AppDashAccountIndexRoute: typeof AppDashAccountIndexRoute
 }
 
-const DashAccountRouteChildren: DashAccountRouteChildren = {
-  DashAccountAlertsRoute: DashAccountAlertsRoute,
-  DashAccountConnectionsRoute: DashAccountConnectionsRoute,
-  DashAccountProfileRoute: DashAccountProfileRoute,
-  DashAccountSecurityRoute: DashAccountSecurityRoute,
-  DashAccountIndexRoute: DashAccountIndexRoute,
+const AppDashAccountRouteChildren: AppDashAccountRouteChildren = {
+  AppDashAccountAlertsRoute: AppDashAccountAlertsRoute,
+  AppDashAccountConnectionsRoute: AppDashAccountConnectionsRoute,
+  AppDashAccountProfileRoute: AppDashAccountProfileRoute,
+  AppDashAccountSecurityRoute: AppDashAccountSecurityRoute,
+  AppDashAccountIndexRoute: AppDashAccountIndexRoute,
 }
 
-const DashAccountRouteWithChildren = DashAccountRoute._addFileChildren(
-  DashAccountRouteChildren,
+const AppDashAccountRouteWithChildren = AppDashAccountRoute._addFileChildren(
+  AppDashAccountRouteChildren,
 )
 
-interface DashAdminRouteChildren {
-  DashAdminAchievementsRoute: typeof DashAdminAchievementsRoute
-  DashAdminAlertsRoute: typeof DashAdminAlertsRoute
-  DashAdminBlogRoute: typeof DashAdminBlogRoute
-  DashAdminRemovalRequestsRoute: typeof DashAdminRemovalRequestsRoute
-  DashAdminIndexRoute: typeof DashAdminIndexRoute
+interface AppDashAdminRouteChildren {
+  AppDashAdminAchievementsRoute: typeof AppDashAdminAchievementsRoute
+  AppDashAdminAlertsRoute: typeof AppDashAdminAlertsRoute
+  AppDashAdminBlogRoute: typeof AppDashAdminBlogRoute
+  AppDashAdminRemovalRequestsRoute: typeof AppDashAdminRemovalRequestsRoute
+  AppDashAdminIndexRoute: typeof AppDashAdminIndexRoute
 }
 
-const DashAdminRouteChildren: DashAdminRouteChildren = {
-  DashAdminAchievementsRoute: DashAdminAchievementsRoute,
-  DashAdminAlertsRoute: DashAdminAlertsRoute,
-  DashAdminBlogRoute: DashAdminBlogRoute,
-  DashAdminRemovalRequestsRoute: DashAdminRemovalRequestsRoute,
-  DashAdminIndexRoute: DashAdminIndexRoute,
+const AppDashAdminRouteChildren: AppDashAdminRouteChildren = {
+  AppDashAdminAchievementsRoute: AppDashAdminAchievementsRoute,
+  AppDashAdminAlertsRoute: AppDashAdminAlertsRoute,
+  AppDashAdminBlogRoute: AppDashAdminBlogRoute,
+  AppDashAdminRemovalRequestsRoute: AppDashAdminRemovalRequestsRoute,
+  AppDashAdminIndexRoute: AppDashAdminIndexRoute,
 }
 
-const DashAdminRouteWithChildren = DashAdminRoute._addFileChildren(
-  DashAdminRouteChildren,
+const AppDashAdminRouteWithChildren = AppDashAdminRoute._addFileChildren(
+  AppDashAdminRouteChildren,
 )
 
-interface DashRouteChildren {
-  DashAccountRoute: typeof DashAccountRouteWithChildren
-  DashAchievementsRoute: typeof DashAchievementsRoute
-  DashAdminRoute: typeof DashAdminRouteWithChildren
-  DashAlertsRoute: typeof DashAlertsRoute
-  DashMapRoute: typeof DashMapRoute
-  DashIndexRoute: typeof DashIndexRoute
-  DashParkSlugRoute: typeof DashParkSlugRoute
-  DashShopSlugRoute: typeof DashShopSlugRoute
-  DashParkSlugRideRideSlugRoute: typeof DashParkSlugRideRideSlugRoute
+interface AppDashRouteChildren {
+  AppDashAccountRoute: typeof AppDashAccountRouteWithChildren
+  AppDashAchievementsRoute: typeof AppDashAchievementsRoute
+  AppDashAdminRoute: typeof AppDashAdminRouteWithChildren
+  AppDashAlertsRoute: typeof AppDashAlertsRoute
+  AppDashMapRoute: typeof AppDashMapRoute
+  AppDashIndexRoute: typeof AppDashIndexRoute
+  AppDashParkSlugRoute: typeof AppDashParkSlugRoute
+  AppDashShopSlugRoute: typeof AppDashShopSlugRoute
+  AppDashParkSlugRideRideSlugRoute: typeof AppDashParkSlugRideRideSlugRoute
 }
 
-const DashRouteChildren: DashRouteChildren = {
-  DashAccountRoute: DashAccountRouteWithChildren,
-  DashAchievementsRoute: DashAchievementsRoute,
-  DashAdminRoute: DashAdminRouteWithChildren,
-  DashAlertsRoute: DashAlertsRoute,
-  DashMapRoute: DashMapRoute,
-  DashIndexRoute: DashIndexRoute,
-  DashParkSlugRoute: DashParkSlugRoute,
-  DashShopSlugRoute: DashShopSlugRoute,
-  DashParkSlugRideRideSlugRoute: DashParkSlugRideRideSlugRoute,
+const AppDashRouteChildren: AppDashRouteChildren = {
+  AppDashAccountRoute: AppDashAccountRouteWithChildren,
+  AppDashAchievementsRoute: AppDashAchievementsRoute,
+  AppDashAdminRoute: AppDashAdminRouteWithChildren,
+  AppDashAlertsRoute: AppDashAlertsRoute,
+  AppDashMapRoute: AppDashMapRoute,
+  AppDashIndexRoute: AppDashIndexRoute,
+  AppDashParkSlugRoute: AppDashParkSlugRoute,
+  AppDashShopSlugRoute: AppDashShopSlugRoute,
+  AppDashParkSlugRideRideSlugRoute: AppDashParkSlugRideRideSlugRoute,
 }
 
-const DashRouteWithChildren = DashRoute._addFileChildren(DashRouteChildren)
+const AppDashRouteWithChildren =
+  AppDashRoute._addFileChildren(AppDashRouteChildren)
+
+interface AppRouteChildren {
+  AppDashRoute: typeof AppDashRouteWithChildren
+  AppDiningRoute: typeof AppDiningRoute
+  AppDisclaimersRoute: typeof AppDisclaimersRoute
+  AppPinsRoute: typeof AppPinsRoute
+  AppPredictionsRoute: typeof AppPredictionsRoute
+  AppPrivacyRoute: typeof AppPrivacyRoute
+  AppStaysRoute: typeof AppStaysRoute
+  AppTicketsRoute: typeof AppTicketsRoute
+  AppDiningFacilityIdRoute: typeof AppDiningFacilityIdRoute
+  AppPinsPinIdRoute: typeof AppPinsPinIdRoute
+  AppPinsCollectionRoute: typeof AppPinsCollectionRoute
+  AppPinsScanRoute: typeof AppPinsScanRoute
+  AppPinsTradesRoute: typeof AppPinsTradesRoute
+  AppResortSlugRoute: typeof AppResortSlugRoute
+  AppStaysAlertsRoute: typeof AppStaysAlertsRoute
+  AppDiningFacilityIdItemSlugRoute: typeof AppDiningFacilityIdItemSlugRoute
+}
+
+const AppRouteChildren: AppRouteChildren = {
+  AppDashRoute: AppDashRouteWithChildren,
+  AppDiningRoute: AppDiningRoute,
+  AppDisclaimersRoute: AppDisclaimersRoute,
+  AppPinsRoute: AppPinsRoute,
+  AppPredictionsRoute: AppPredictionsRoute,
+  AppPrivacyRoute: AppPrivacyRoute,
+  AppStaysRoute: AppStaysRoute,
+  AppTicketsRoute: AppTicketsRoute,
+  AppDiningFacilityIdRoute: AppDiningFacilityIdRoute,
+  AppPinsPinIdRoute: AppPinsPinIdRoute,
+  AppPinsCollectionRoute: AppPinsCollectionRoute,
+  AppPinsScanRoute: AppPinsScanRoute,
+  AppPinsTradesRoute: AppPinsTradesRoute,
+  AppResortSlugRoute: AppResortSlugRoute,
+  AppStaysAlertsRoute: AppStaysAlertsRoute,
+  AppDiningFacilityIdItemSlugRoute: AppDiningFacilityIdItemSlugRoute,
+}
+
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
-  DashRoute: DashRouteWithChildren,
+  AppRoute: AppRouteWithChildren,
   DeepLinkRoute: DeepLinkRoute,
-  DiningRoute: DiningRoute,
-  DisclaimersRoute: DisclaimersRoute,
   LoginRoute: LoginRoute,
-  PinsRoute: PinsRoute,
-  PredictionsRoute: PredictionsRoute,
-  PrivacyRoute: PrivacyRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
-  StaysRoute: StaysRoute,
-  TicketsRoute: TicketsRoute,
   UnsubscribeRoute: UnsubscribeRoute,
   WelcomeRoute: WelcomeRoute,
   BlogSlugRoute: BlogSlugRoute,
   BlogRssDotxmlRoute: BlogRssDotxmlRoute,
-  DiningFacilityIdRoute: DiningFacilityIdRoute,
-  PinsPinIdRoute: PinsPinIdRoute,
-  PinsCollectionRoute: PinsCollectionRoute,
-  PinsScanRoute: PinsScanRoute,
-  PinsTradesRoute: PinsTradesRoute,
-  ResortSlugRoute: ResortSlugRoute,
-  StaysAlertsRoute: StaysAlertsRoute,
   BlogIndexRoute: BlogIndexRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiPushSubscribeRoute: ApiPushSubscribeRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,
-  DiningFacilityIdItemSlugRoute: DiningFacilityIdItemSlugRoute,
   OgDiningFacilityIdCardDotpngRoute: OgDiningFacilityIdCardDotpngRoute,
   OgParkSlugCardDotpngRoute: OgParkSlugCardDotpngRoute,
   OgResortSlugCardDotpngRoute: OgResortSlugCardDotpngRoute,

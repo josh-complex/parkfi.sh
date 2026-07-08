@@ -41,7 +41,7 @@ import { authClient } from "#/lib/auth-client.ts";
 
 const PAGE_SIZE = 12;
 
-const diningRoute = getRouteApi("/dining");
+const diningRoute = getRouteApi("/_app/dining");
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);

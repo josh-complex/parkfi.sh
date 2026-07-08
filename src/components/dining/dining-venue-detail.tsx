@@ -36,7 +36,7 @@ import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
 import { cn } from "#/lib/utils.ts";
 
-const venueRoute = getRouteApi("/dining_/$facilityId");
+const venueRoute = getRouteApi("/_app/dining_/$facilityId");
 
 /** Items/venues first seen within this many days read as "new". */
 const NEW_WINDOW_DAYS = 30;
