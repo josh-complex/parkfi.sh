@@ -316,11 +316,11 @@ const LEVEL_TITLES: readonly string[] = [
   "The Mouse Knows Your Name",
 ];
 
-/** Total XP needed to *reach* level n (level 1 = 0). Curve: 100·(n−1)^1.7, capped at MAX_LEVEL 20. */
+/** Total XP needed to *reach* level n (level 1 = 0). Curve: 200·(n−1)^2, capped at MAX_LEVEL 20. */
 export function xpForLevel(n: number): number {
   const level = Math.min(n, MAX_LEVEL);
   if (level <= 1) return 0;
-  return Math.round(100 * Math.pow(level - 1, 1.7));
+  return Math.round(300 * Math.pow(level - 1, 2));
 }
 
 export interface LevelInfo {

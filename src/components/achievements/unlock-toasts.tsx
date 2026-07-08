@@ -14,9 +14,9 @@ const TOAST_CLASS = "achv-toast";
 // Small gap between cards so their squish-ins (and duration-driven exits)
 // cascade a beat apart rather than firing in unison.
 const ENTRY_STAGGER_MS = 110;
-const UNLOCK_MS = 6000;
+const UNLOCK_MS = 4000;
 // How long the fully-assembled level-up stack rests before it starts clearing.
-const CELEBRATION_HOLD_MS = 8000;
+const CELEBRATION_HOLD_MS = 6000;
 
 // Bumped once per level-up celebration so its cards get fresh toast ids. Reusing
 // a stable id right after `toast.dismiss()` collides with the same toast still
