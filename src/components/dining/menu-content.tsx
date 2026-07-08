@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Link } from "@tanstack/react-router";
 import { TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 
 import { Skeleton } from "#/components/ui/skeleton.tsx";
@@ -212,14 +213,21 @@ function MenuItem({
   isKids,
   highlight,
   change,
+  isNew,
+  facilityId,
 }: {
   item: MenuItemData;
   allergyFriendly: boolean;
   isKids: boolean;
   highlight: boolean;
   change?: MenuItemChange;
+  /** Item was added (or renamed into) the menu within the last month. */
+  isNew?: boolean;
+  /** When set, the title links to the item's detail/price-history page. */
+  facilityId?: string;
 }) {
   const price = formatPrice(item.price, item.currency);
+  const slug = slugifyMenuItem(item.title);
   return (
     <div
       id={menuItemAnchorId(item.title)}
@@ -231,7 +239,22 @@ function MenuItem({
     >
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-1.5">
-          <p className="text-sm font-medium leading-snug">{item.title}</p>
+          {facilityId ? (
+            <Link
+              to="/dining/$facilityId/item/$slug"
+              params={{ facilityId, slug }}
+              className="text-sm font-medium leading-snug hover:underline"
+            >
+              {item.title}
+            </Link>
+          ) : (
+            <p className="text-sm font-medium leading-snug">{item.title}</p>
+          )}
+          {isNew && (
+            <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold leading-none text-emerald-700 dark:text-emerald-400">
+              New
+            </span>
+          )}
           {isKids && <ItemBadge>Kids</ItemBadge>}
           {allergyFriendly && (
             <span className="inline-flex items-center rounded border border-emerald-200 px-1 py-px text-[10px] font-medium leading-none text-emerald-600">
@@ -276,6 +299,8 @@ export function MenuBody({
   menuIsLoading,
   highlightSlug,
   changesBySlug,
+  newSlugs,
+  facilityId,
 }: {
   periods: Array<{ mealPeriod: string; groups: RawGroup[] }>;
   activePeriodIdx: number;
@@ -289,6 +314,10 @@ export function MenuBody({
   menuIsLoading: boolean;
   highlightSlug?: string | null;
   changesBySlug?: MenuChangeMap;
+  /** Slugs of items introduced in the last month, for the "New" badge. */
+  newSlugs?: Set<string>;
+  /** When set, item titles link to their detail pages. */
+  facilityId?: string;
 }) {
   const hasMultiplePeriods = periods.length > 1;
   const hasTypeSections = typeSections.length > 1;
@@ -336,6 +365,8 @@ export function MenuBody({
                   isKids={group.isKids}
                   highlight={!!highlightSlug && slug === highlightSlug}
                   change={changesBySlug?.get(slug)}
+                  isNew={newSlugs?.has(slug)}
+                  facilityId={facilityId}
                 />
               );
             })}
@@ -448,6 +479,11 @@ export function useMenuState(facilityId: string, open: boolean, targetItemSlug?:
     ...trpc.dining.menuChanges.queryOptions({ facilityId, sinceDays: 30, limit: 200 }),
     enabled: open,
   });
+  // Recent item lifecycle events, so the menu can flag newly-added items.
+  const eventsQ = useQuery({
+    ...trpc.dining.recentItemEvents.queryOptions({ facilityId, sinceDays: 30 }),
+    enabled: open,
+  });
 
   const periods = (menuQ.data?.mealPeriods ?? []) as Array<{
     mealPeriod: string;
@@ -478,6 +514,19 @@ export function useMenuState(facilityId: string, open: boolean, targetItemSlug?:
     }
     return m;
   }, [changesQ.data, currentPeriod]);
+
+  // Slugs of items added (or renamed into) the menu within the last month, for
+  // the current meal period — drives the inline "New" badges.
+  const newSlugs = React.useMemo<Set<string>>(() => {
+    const s = new Set<string>();
+    const period = currentPeriod?.mealPeriod;
+    if (!period) return s;
+    for (const e of eventsQ.data ?? []) {
+      if (e.mealPeriod !== period) continue;
+      if (e.changeType === "added" || e.changeType === "renamed") s.add(slugifyMenuItem(e.title));
+    }
+    return s;
+  }, [eventsQ.data, currentPeriod]);
 
   const sectionRefs = React.useRef<Map<string, HTMLElement>>(new Map());
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -524,5 +573,6 @@ export function useMenuState(facilityId: string, open: boolean, targetItemSlug?:
     jumpToType,
     highlightSlug,
     changesBySlug,
+    newSlugs,
   };
 }

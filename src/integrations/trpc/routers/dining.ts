@@ -111,6 +111,7 @@ export const diningRouter = {
       bookable: boolean;
       has_menu: boolean;
       last_checked_at: string | null;
+      first_seen_at: string;
       location_type: string | null;
     }>(sql`
       SELECT r.facility_id, r.name, r.cuisine, r.experience_type, r.price_range, r.park_resort,
@@ -124,6 +125,7 @@ export const diningRouter = {
              r.priority, r.bookable,
              (m.facility_id IS NOT NULL AND m.item_count > 0) AS has_menu,
              m.last_checked_at,
+             r.first_seen_at,
              dl.location_type
       FROM restaurant_dim r
       LEFT JOIN dining_menu_snapshot m ON m.facility_id = r.facility_id
@@ -167,6 +169,7 @@ export const diningRouter = {
       entertainmentType: r.entertainment_type ?? [],
       hasMenu: r.has_menu,
       lastCheckedAt: r.last_checked_at,
+      firstSeenAt: r.first_seen_at,
       requiresParkTicket: r.location_type === "theme-park" || r.location_type === "water-park",
       // `dining.availability` only returns rows for swept venues (priority &&
       // bookable); the detail page gates its inline reservation UI on this.
@@ -464,9 +467,11 @@ export const diningRouter = {
     }),
 
   /**
-   * Venues with recent menu activity — the price-change log rolled up per
-   * facility, newest activity first, carrying the card fields the browse shelf
-   * needs plus a small sample of the changed item titles.
+   * Venues with recent menu activity, newest first — the price-change log AND
+   * the item lifecycle log (added / removed / renamed) unioned and rolled up per
+   * facility. Carries the card fields the browse shelf needs, a per-type
+   * breakdown for the activity badges, and a short sample of the touched item
+   * titles (preferring newly-added items for the subtitle).
    */
   recentlyUpdated: publicProcedure
     .input(
@@ -488,34 +493,291 @@ export const diningRouter = {
         price_range: string | null;
         image_url: string | null;
         change_count: string;
+        added_count: string;
+        removed_count: string;
+        renamed_count: string;
+        price_count: string;
         last_changed_at: string;
         sample_titles: string[] | null;
+        added_titles: string[] | null;
       }>(sql`
+        WITH activity AS (
+          SELECT facility_id, title, changed_at, 'price' AS kind
+          FROM dining_menu_price_change
+          WHERE changed_at >= now() - make_interval(days => ${sinceDays})
+          UNION ALL
+          SELECT facility_id, title, changed_at, change_type AS kind
+          FROM dining_menu_event
+          WHERE changed_at >= now() - make_interval(days => ${sinceDays})
+        )
         SELECT r.facility_id, r.name, r.cuisine, r.park_resort, r.price_range, r.image_url,
                count(*) AS change_count,
-               max(c.changed_at) AS last_changed_at,
-               (array_agg(c.title ORDER BY c.changed_at DESC))[1:6] AS sample_titles
-        FROM dining_menu_price_change c
-        JOIN restaurant_dim r ON r.facility_id = c.facility_id
-        WHERE c.changed_at >= now() - make_interval(days => ${sinceDays})
-          AND r.active = true
+               count(*) FILTER (WHERE a.kind = 'added') AS added_count,
+               count(*) FILTER (WHERE a.kind = 'removed') AS removed_count,
+               count(*) FILTER (WHERE a.kind = 'renamed') AS renamed_count,
+               count(*) FILTER (WHERE a.kind = 'price') AS price_count,
+               max(a.changed_at) AS last_changed_at,
+               (array_agg(a.title ORDER BY a.changed_at DESC))[1:8] AS sample_titles,
+               (array_agg(a.title ORDER BY a.changed_at DESC)
+                  FILTER (WHERE a.kind = 'added'))[1:6] AS added_titles
+        FROM activity a
+        JOIN restaurant_dim r ON r.facility_id = a.facility_id
+        WHERE r.active = true
         GROUP BY r.facility_id, r.name, r.cuisine, r.park_resort, r.price_range, r.image_url
         ORDER BY last_changed_at DESC
         LIMIT ${limit}
       `);
+      return result.rows.map((r) => {
+        // Prefer newly-added items for the subtitle (they read as "what's new"),
+        // falling back to whatever was touched. Collapse duplicates (same item
+        // across meal periods) to a short unique list.
+        const added = [...new Set(r.added_titles ?? [])];
+        const sample = added.length ? added : [...new Set(r.sample_titles ?? [])];
+        return {
+          facilityId: r.facility_id,
+          name: r.name,
+          cuisine: r.cuisine,
+          parkResort: r.park_resort,
+          priceRange: r.price_range,
+          imageUrl: r.image_url,
+          changeCount: Number(r.change_count),
+          addedCount: Number(r.added_count),
+          removedCount: Number(r.removed_count),
+          renamedCount: Number(r.renamed_count),
+          priceCount: Number(r.price_count),
+          lastChangedAt: r.last_changed_at,
+          sampleTitles: sample.slice(0, 3),
+        };
+      });
+    }),
+
+  /**
+   * Recent item lifecycle events for one venue (the `dining_menu_event` log) —
+   * added / removed / renamed within the window, newest first. Powers the "New!"
+   * badges on the menu (adds + renames introduced within the last month) and the
+   * "recently removed" note on the venue page. Kept separate from `menuChanges`
+   * (price moves) so each surface fetches only what it renders.
+   */
+  recentItemEvents: publicProcedure
+    .input(
+      z.object({
+        facilityId: z.string(),
+        sinceDays: z.number().int().min(1).max(120).default(30),
+        limit: z.number().int().min(1).max(500).default(300),
+      }),
+    )
+    .query(async ({ input }) => {
+      const result = await db.execute<{
+        change_type: string;
+        meal_period: string;
+        group_name: string | null;
+        title: string;
+        old_title: string | null;
+        price: number | null;
+        currency: string | null;
+        changed_at: string;
+      }>(sql`
+        SELECT change_type, meal_period, group_name, title, old_title, price, currency, changed_at
+        FROM dining_menu_event
+        WHERE facility_id = ${input.facilityId}
+          AND changed_at >= now() - make_interval(days => ${input.sinceDays})
+        ORDER BY changed_at DESC
+        LIMIT ${input.limit}
+      `);
       return result.rows.map((r) => ({
-        facilityId: r.facility_id,
-        name: r.name,
-        cuisine: r.cuisine,
-        parkResort: r.park_resort,
-        priceRange: r.price_range,
-        imageUrl: r.image_url,
-        changeCount: Number(r.change_count),
-        lastChangedAt: r.last_changed_at,
-        // The over-fetched sample collapses duplicates (same item across meal
-        // periods) down to a short unique list for the card subtitle.
-        sampleTitles: [...new Set(r.sample_titles ?? [])].slice(0, 3),
+        changeType: r.change_type as "added" | "removed" | "renamed",
+        mealPeriod: r.meal_period,
+        groupName: r.group_name,
+        title: r.title,
+        oldTitle: r.old_title,
+        price: r.price === null ? null : Number(r.price),
+        currency: r.currency,
+        changedAt: r.changed_at,
       }));
+    }),
+
+  /**
+   * Full history for a single menu item, keyed by (facility, title slug). The
+   * slug mirrors the client's `slugifyMenuItem`, recomputed in SQL so the item
+   * detail deep link resolves. Returns the item's current live-menu occurrence
+   * (null if it's been removed), its price-point series (stitched across any
+   * prior names it was renamed from), the rename chain, and its first-seen date.
+   */
+  menuItem: publicProcedure
+    .input(z.object({ facilityId: z.string(), slug: z.string() }))
+    .query(async ({ input }) => {
+      const fid = input.facilityId;
+      // Mirror of client `slugifyMenuItem`: lowercase, non-alphanumerics → "-",
+      // trim leading/trailing dashes.
+      const slugOf = (col: string) =>
+        sql.raw(`trim(both '-' from regexp_replace(lower(${col}), '[^a-z0-9]+', '-', 'g'))`);
+
+      // Current live-menu occurrence (prefer a priced row; there may be several
+      // across meal periods — take the first by capture order).
+      const curRes = await db.execute<{
+        title: string;
+        description: string | null;
+        price: number | null;
+        price_type: string | null;
+        currency: string | null;
+        meal_period: string;
+        group_name: string | null;
+        item_type: string | null;
+      }>(sql`
+        SELECT i.title, i.description, i.price, i.price_type, i.currency,
+               i.meal_period, i.group_name, i.item_type
+        FROM dining_menu_item i
+        JOIN dining_menu_snapshot s
+          ON s.facility_id = i.facility_id AND s.observed_at = i.observed_at
+        WHERE i.facility_id = ${fid} AND ${slugOf("i.title")} = ${input.slug}
+        ORDER BY (i.price IS NULL), i.id
+        LIMIT 1
+      `);
+      const cur = curRes.rows[0] ?? null;
+
+      // Events touching this slug, plus the venue's full rename log (to walk the
+      // chain of former names this item carried).
+      const evRes = await db.execute<{
+        change_type: string;
+        title: string;
+        old_title: string | null;
+        changed_at: string;
+      }>(sql`
+        SELECT change_type, title, old_title, changed_at
+        FROM dining_menu_event
+        WHERE facility_id = ${fid}
+          AND (${slugOf("title")} = ${input.slug} OR ${slugOf("old_title")} = ${input.slug})
+        ORDER BY changed_at DESC
+      `);
+      const events = evRes.rows;
+
+      // Local mirror of client `slugifyMenuItem` for disambiguating which side of
+      // a rename this slug matched (server can't import the client component).
+      const slugify = (t: string) =>
+        t
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "");
+
+      // Resolve the item's display title + lifecycle status. The live occurrence
+      // wins; otherwise the events tell us whether it was renamed away (this slug
+      // is a former name) or simply removed.
+      let title: string | null = null;
+      let status: "active" | "removed" | "renamed" = "active";
+      let renamedTo: string | null = null;
+      if (cur) {
+        title = cur.title;
+      } else {
+        const renamedAway = events.find(
+          (e) => e.change_type === "renamed" && e.old_title && slugify(e.old_title) === input.slug,
+        );
+        const removedEv = events.find(
+          (e) => e.change_type === "removed" && slugify(e.title) === input.slug,
+        );
+        if (renamedAway) {
+          title = renamedAway.old_title!;
+          renamedTo = renamedAway.title;
+          status = "renamed";
+        } else if (removedEv) {
+          title = removedEv.title;
+          status = "removed";
+        } else {
+          title = events[0]?.title ?? null;
+          status = "removed";
+        }
+      }
+      if (!title) {
+        // Nothing on record under this slug at this venue.
+        return null;
+      }
+
+      // Walk the rename chain backward from the current title to collect every
+      // name this item has held, so its price series stitches across renames.
+      const renames = await db.execute<{ title: string; old_title: string | null }>(sql`
+        SELECT title, old_title
+        FROM dining_menu_event
+        WHERE facility_id = ${fid} AND change_type = 'renamed'
+      `);
+      const priorOf = new Map<string, string>();
+      for (const r of renames.rows) if (r.old_title) priorOf.set(r.title, r.old_title);
+      const names = new Set<string>([title]);
+      let n: string | undefined = title;
+      while (n && priorOf.has(n) && !names.has(priorOf.get(n)!)) {
+        n = priorOf.get(n)!;
+        names.add(n);
+      }
+      const nameList = [...names];
+
+      // Price history across every name, oldest first.
+      const pcRes = await db.execute<{
+        old_price: number | null;
+        new_price: number | null;
+        currency: string | null;
+        changed_at: string;
+      }>(sql`
+        SELECT old_price, new_price, currency, changed_at
+        FROM dining_menu_price_change
+        WHERE facility_id = ${fid} AND lower(title) = ANY(${sql`ARRAY[${sql.join(
+          nameList.map((s) => sql`${s.toLowerCase()}`),
+          sql`, `,
+        )}]`})
+        ORDER BY changed_at ASC
+      `);
+
+      // First-seen: earliest 'added' event under any of the item's names.
+      const firstSeenAt =
+        events
+          .filter((e) => e.change_type === "added")
+          .map((e) => e.changed_at)
+          .sort()[0] ?? null;
+
+      // Stitch the price series: anchor at the oldest known price, then one point
+      // per move, then the current price so the line ends at "today".
+      const points: Array<{ t: number; price: number }> = [];
+      const changes = pcRes.rows;
+      if (changes.length > 0) {
+        const first = changes[0];
+        const anchor = firstSeenAt ? Date.parse(firstSeenAt) : Date.parse(first.changed_at);
+        if (first.old_price != null) points.push({ t: anchor, price: Number(first.old_price) });
+        for (const c of changes) {
+          if (c.new_price != null)
+            points.push({ t: Date.parse(c.changed_at), price: Number(c.new_price) });
+        }
+      }
+      if (cur?.price != null) {
+        const last = points[points.length - 1];
+        if (!last || last.price !== Number(cur.price)) {
+          points.push({ t: Date.now(), price: Number(cur.price) });
+        }
+      }
+
+      const lastChangedAt =
+        events[0]?.changed_at ?? (changes.length ? changes[changes.length - 1].changed_at : null);
+
+      return {
+        facilityId: fid,
+        slug: input.slug,
+        title,
+        status,
+        renamedTo,
+        current: cur
+          ? {
+              title: cur.title,
+              description: cur.description,
+              price: cur.price === null ? null : Number(cur.price),
+              priceType: cur.price_type,
+              currency: cur.currency,
+              mealPeriod: cur.meal_period,
+              groupName: cur.group_name,
+              itemType: cur.item_type,
+            }
+          : null,
+        firstSeenAt,
+        lastChangedAt,
+        priceHistory: points,
+        // Former names this item was renamed from, most recent first.
+        formerNames: nameList.slice(1),
+      };
     }),
 
   availability: publicProcedure

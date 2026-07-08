@@ -56,6 +56,7 @@ import { Route as DashAccountAlertsRouteImport } from './routes/_dash/account/al
 import { Route as OgResortSlugCardDotpngRouteImport } from './routes/og.resort.$slug.card[.]png'
 import { Route as OgParkSlugCardDotpngRouteImport } from './routes/og.park.$slug.card[.]png'
 import { Route as OgDiningFacilityIdCardDotpngRouteImport } from './routes/og.dining.$facilityId.card[.]png'
+import { Route as DiningFacilityIdItemSlugRouteImport } from './routes/dining_.$facilityId_.item.$slug'
 import { Route as OgRideParkSlugRideSlugCardDotpngRouteImport } from './routes/og.ride.$parkSlug.$rideSlug.card[.]png'
 import { Route as DashParkSlugRideRideSlugRouteImport } from './routes/_dash/park.$slug_.ride.$rideSlug'
 
@@ -295,6 +296,12 @@ const OgDiningFacilityIdCardDotpngRoute =
     path: '/og/dining/$facilityId/card.png',
     getParentRoute: () => rootRouteImport,
   } as any)
+const DiningFacilityIdItemSlugRoute =
+  DiningFacilityIdItemSlugRouteImport.update({
+    id: '/dining_/$facilityId_/item/$slug',
+    path: '/dining/$facilityId/item/$slug',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const OgRideParkSlugRideSlugCardDotpngRoute =
   OgRideParkSlugRideSlugCardDotpngRouteImport.update({
     id: '/og/ride/$parkSlug/$rideSlug/card.png',
@@ -352,6 +359,7 @@ export interface FileRoutesByFullPath {
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/account/': typeof DashAccountIndexRoute
   '/admin/': typeof DashAdminIndexRoute
+  '/dining/$facilityId/item/$slug': typeof DiningFacilityIdItemSlugRoute
   '/og/dining/$facilityId/card.png': typeof OgDiningFacilityIdCardDotpngRoute
   '/og/park/$slug/card.png': typeof OgParkSlugCardDotpngRoute
   '/og/resort/$slug/card.png': typeof OgResortSlugCardDotpngRoute
@@ -400,6 +408,7 @@ export interface FileRoutesByTo {
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/account': typeof DashAccountIndexRoute
   '/admin': typeof DashAdminIndexRoute
+  '/dining/$facilityId/item/$slug': typeof DiningFacilityIdItemSlugRoute
   '/og/dining/$facilityId/card.png': typeof OgDiningFacilityIdCardDotpngRoute
   '/og/park/$slug/card.png': typeof OgParkSlugCardDotpngRoute
   '/og/resort/$slug/card.png': typeof OgResortSlugCardDotpngRoute
@@ -452,6 +461,7 @@ export interface FileRoutesById {
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/_dash/account/': typeof DashAccountIndexRoute
   '/_dash/admin/': typeof DashAdminIndexRoute
+  '/dining_/$facilityId_/item/$slug': typeof DiningFacilityIdItemSlugRoute
   '/og/dining/$facilityId/card.png': typeof OgDiningFacilityIdCardDotpngRoute
   '/og/park/$slug/card.png': typeof OgParkSlugCardDotpngRoute
   '/og/resort/$slug/card.png': typeof OgResortSlugCardDotpngRoute
@@ -504,6 +514,7 @@ export interface FileRouteTypes {
     | '/api/trpc/$'
     | '/account/'
     | '/admin/'
+    | '/dining/$facilityId/item/$slug'
     | '/og/dining/$facilityId/card.png'
     | '/og/park/$slug/card.png'
     | '/og/resort/$slug/card.png'
@@ -552,6 +563,7 @@ export interface FileRouteTypes {
     | '/api/trpc/$'
     | '/account'
     | '/admin'
+    | '/dining/$facilityId/item/$slug'
     | '/og/dining/$facilityId/card.png'
     | '/og/park/$slug/card.png'
     | '/og/resort/$slug/card.png'
@@ -603,6 +615,7 @@ export interface FileRouteTypes {
     | '/api/trpc/$'
     | '/_dash/account/'
     | '/_dash/admin/'
+    | '/dining_/$facilityId_/item/$slug'
     | '/og/dining/$facilityId/card.png'
     | '/og/park/$slug/card.png'
     | '/og/resort/$slug/card.png'
@@ -637,6 +650,7 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiPushSubscribeRoute: typeof ApiPushSubscribeRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
+  DiningFacilityIdItemSlugRoute: typeof DiningFacilityIdItemSlugRoute
   OgDiningFacilityIdCardDotpngRoute: typeof OgDiningFacilityIdCardDotpngRoute
   OgParkSlugCardDotpngRoute: typeof OgParkSlugCardDotpngRoute
   OgResortSlugCardDotpngRoute: typeof OgResortSlugCardDotpngRoute
@@ -974,6 +988,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OgDiningFacilityIdCardDotpngRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dining_/$facilityId_/item/$slug': {
+      id: '/dining_/$facilityId_/item/$slug'
+      path: '/dining/$facilityId/item/$slug'
+      fullPath: '/dining/$facilityId/item/$slug'
+      preLoaderRoute: typeof DiningFacilityIdItemSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/og/ride/$parkSlug/$rideSlug/card.png': {
       id: '/og/ride/$parkSlug/$rideSlug/card.png'
       path: '/og/ride/$parkSlug/$rideSlug/card.png'
@@ -1084,6 +1105,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiPushSubscribeRoute: ApiPushSubscribeRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,
+  DiningFacilityIdItemSlugRoute: DiningFacilityIdItemSlugRoute,
   OgDiningFacilityIdCardDotpngRoute: OgDiningFacilityIdCardDotpngRoute,
   OgParkSlugCardDotpngRoute: OgParkSlugCardDotpngRoute,
   OgResortSlugCardDotpngRoute: OgResortSlugCardDotpngRoute,

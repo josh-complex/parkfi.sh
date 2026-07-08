@@ -28,6 +28,7 @@ import { and, eq, inArray, lt, notInArray, sql } from "drizzle-orm";
 import { db } from "#/db/index.ts";
 import {
   diningLocation,
+  diningMenuEvent,
   diningMenuItem,
   diningMenuPriceChange,
   diningMenuSnapshot,
@@ -47,6 +48,7 @@ import {
   fetchDisneyDiningCatalog,
   type DiningCatalogRow,
 } from "#/server/dining/disney-finder-catalog.ts";
+import { diffMenu } from "#/server/dining/menu-diff.ts";
 import { fetchDisneyShopsCatalog } from "#/server/shops/disney-finder-shops.ts";
 
 // WDW resort-wide destination — the ancestor the finder lists all dining under.
@@ -76,59 +78,6 @@ function menuHash(rows: Array<DiningMenuItemRow>): string {
   return createHash("sha256").update(lines.join("")).digest("hex");
 }
 
-type PrevMenuRow = Pick<
-  DiningMenuItemRow,
-  "mealPeriod" | "groupName" | "title" | "price" | "priceType" | "currency"
->;
-
-/**
- * Price moves between the previous generation and the new one. Items are matched
- * by (meal period, group, title, price type) and aligned by occurrence order so
- * duplicate titles (e.g. two beers named alike) line up. Only persisting items
- * whose price actually changed are emitted; adds/removes are left to the
- * snapshot generations.
- */
-function priceChanges(
-  facilityId: string,
-  prev: Array<PrevMenuRow>,
-  next: Array<DiningMenuItemRow>,
-): Array<typeof diningMenuPriceChange.$inferInsert> {
-  const keyOf = (r: PrevMenuRow): string =>
-    `${r.mealPeriod}${r.groupName ?? ""}${r.title}${r.priceType ?? ""}`;
-  const bucket = (rows: Array<PrevMenuRow>): Map<string, Array<PrevMenuRow>> => {
-    const m = new Map<string, Array<PrevMenuRow>>();
-    for (const r of rows) {
-      const key = keyOf(r);
-      const list = m.get(key);
-      if (list) list.push(r);
-      else m.set(key, [r]);
-    }
-    return m;
-  };
-  const prevByKey = bucket(prev);
-  const out: Array<typeof diningMenuPriceChange.$inferInsert> = [];
-  for (const [key, nextRows] of bucket(next)) {
-    const prevRows = prevByKey.get(key) ?? [];
-    for (let i = 0; i < Math.min(prevRows.length, nextRows.length); i++) {
-      const oldPrice = prevRows[i].price ?? null;
-      const newPrice = nextRows[i].price ?? null;
-      if (oldPrice === newPrice) continue;
-      const r = nextRows[i];
-      out.push({
-        facilityId,
-        mealPeriod: r.mealPeriod,
-        groupName: r.groupName,
-        title: r.title,
-        oldPrice,
-        newPrice,
-        priceType: r.priceType,
-        currency: r.currency,
-      });
-    }
-  }
-  return out;
-}
-
 /**
  * Per-venue detail enrichment. Schedules (slug-keyed) full-replace each
  * refreshed venue. Menus (id-keyed) are APPEND-ONLY + change-only: a venue's
@@ -138,7 +87,9 @@ function priceChanges(
  * bad fetch. Schedules fan out at a small concurrency (the finder host allows
  * it); menus go strictly serial and capped per run (the dinemenu API Gateway
  * rejects concurrency + rate-caps per IP) — least-recently-checked first, so
- * the catalog rolls through over successive weekly runs.
+ * anything the per-run cap can't reach leads the next run. The cap is sized to
+ * cover the whole catalog in one run, so change detection is only as stale as
+ * the cron cadence (see `config.diningMenuMaxPerRun`).
  */
 async function enrichDetails(rows: Array<DiningCatalogRow>, now: Date): Promise<void> {
   const today = isoDate(now);
@@ -167,8 +118,9 @@ async function enrichDetails(rows: Array<DiningCatalogRow>, now: Date): Promise<
 
   // --- Menus: the dinemenu API Gateway rejects concurrency and rate-caps per
   // IP, so go strictly serial with a gap, capped per run. Refresh the least-
-  // recently-checked venues first (never-checked lead) so coverage rolls across
-  // weekly runs. The change-only generational model makes partial runs correct.
+  // recently-checked venues first (never-checked lead) so a cap that can't cover
+  // the catalog still rolls through. The change-only generational model makes
+  // partial runs correct.
   const existingChecks = await db
     .select({
       facilityId: diningMenuSnapshot.facilityId,
@@ -228,6 +180,7 @@ async function enrichDetails(rows: Array<DiningCatalogRow>, now: Date): Promise<
   const newItems: Array<typeof diningMenuItem.$inferInsert> = [];
   const snapUpserts: Array<typeof diningMenuSnapshot.$inferInsert> = [];
   const priceRows: Array<typeof diningMenuPriceChange.$inferInsert> = [];
+  const eventRows: Array<typeof diningMenuEvent.$inferInsert> = [];
   const unchanged: Array<string> = [];
 
   for (const fid of menuOk) {
@@ -243,7 +196,9 @@ async function enrichDetails(rows: Array<DiningCatalogRow>, now: Date): Promise<
         .select({
           mealPeriod: diningMenuItem.mealPeriod,
           groupName: diningMenuItem.groupName,
+          itemType: diningMenuItem.itemType,
           title: diningMenuItem.title,
+          description: diningMenuItem.description,
           price: diningMenuItem.price,
           priceType: diningMenuItem.priceType,
           currency: diningMenuItem.currency,
@@ -252,7 +207,9 @@ async function enrichDetails(rows: Array<DiningCatalogRow>, now: Date): Promise<
         .where(
           and(eq(diningMenuItem.facilityId, fid), eq(diningMenuItem.observedAt, snap.observedAt)),
         );
-      priceRows.push(...priceChanges(fid, prev, next));
+      const diff = diffMenu(fid, prev, next);
+      priceRows.push(...diff.priceRows);
+      eventRows.push(...diff.eventRows);
     }
     for (const r of next) newItems.push({ ...r, observedAt: now });
     snapUpserts.push({
@@ -292,11 +249,17 @@ async function enrichDetails(rows: Array<DiningCatalogRow>, now: Date): Promise<
   for (let i = 0; i < priceRows.length; i += 500) {
     await db.insert(diningMenuPriceChange).values(priceRows.slice(i, i + 500));
   }
+  for (let i = 0; i < eventRows.length; i += 500) {
+    await db.insert(diningMenuEvent).values(eventRows.slice(i, i + 500));
+  }
 
+  const added = eventRows.filter((e) => e.changeType === "added").length;
+  const removed = eventRows.filter((e) => e.changeType === "removed").length;
+  const renamed = eventRows.filter((e) => e.changeType === "renamed").length;
   console.log(
     `[dining-facilities] schedules: ${scheduleRows.length} rows / ${scheduleOk.length} venues (${schedErr} failed); ` +
       `menus: ${menuOk.length} fetched (${menuErr} failed), ${snapUpserts.length} changed / ${unchanged.length} unchanged, ` +
-      `${priceRows.length} price changes`,
+      `${priceRows.length} price changes, ${added} added / ${removed} removed / ${renamed} renamed`,
   );
 }
 

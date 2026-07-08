@@ -123,6 +123,8 @@ function DesktopMenuDialog({ facilityId, name }: { facilityId: string; name: str
                     twoColumn
                     menuIsLoading={state.menuQ.isLoading}
                     changesBySlug={state.changesBySlug}
+                    newSlugs={state.newSlugs}
+                    facilityId={facilityId}
                   />
                 </motion.div>
               </motion.div>
@@ -164,6 +166,8 @@ function MobileMenuDrawer({ facilityId, name }: { facilityId: string; name: stri
           twoColumn={false}
           menuIsLoading={state.menuQ.isLoading}
           changesBySlug={state.changesBySlug}
+          newSlugs={state.newSlugs}
+          facilityId={facilityId}
         />
       </DrawerContent>
     </Drawer>

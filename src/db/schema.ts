@@ -539,6 +539,10 @@ export const restaurantDim = pgTable("restaurant_dim", {
     .default(3)
     .references(() => refSource.id),
   active: boolean("active").notNull().default(true),
+  // When this venue first appeared in the catalog — set on insert, preserved on
+  // conflict (never overwritten). Powers the "newly added restaurant" badge; a
+  // soft-deleted venue that re-appears keeps its original first-seen date.
+  firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -780,6 +784,54 @@ export const diningMenuPriceChange = pgTable(
     changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("dining_menu_price_change_facility_idx").on(t.facilityId, t.changedAt)],
+);
+
+/**
+ * (F.6) Menu item lifecycle log — one row per item added, removed, or renamed
+ * between two generations. The companion to `dining_menu_price_change`: that
+ * table tracks price moves on persisting items; this one tracks the item roster
+ * itself. Derived by the cron when a venue's menu changes, by diffing the item
+ * titles per (meal period, group) against the previous generation:
+ *   • 'added'   — a title present in the new generation but not the old.
+ *   • 'removed' — a title present in the old generation but not the new.
+ *   • 'renamed' — a removed+added pair in the same group matched by identical
+ *     description (or identical price + type), collapsed into one event with the
+ *     prior title in `old_title`. Best-effort, so a true rename never
+ *     double-counts as a churn of one add + one remove.
+ * Append-only; never written on a venue's FIRST capture (no baseline to diff),
+ * so the initial menu load doesn't masquerade as a flood of "new" items. Powers
+ * the "New!" badges (adds within the last month), the recently-updated feed's
+ * add/remove counts, and the per-item history on the item detail page.
+ */
+export const diningMenuEvent = pgTable(
+  "dining_menu_event",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    facilityId: text("facility_id")
+      .notNull()
+      .references(() => restaurantDim.facilityId),
+    // 'added' | 'removed' | 'renamed'
+    changeType: text("change_type").notNull(),
+    mealPeriod: text("meal_period").notNull(),
+    groupName: text("group_name"),
+    itemType: text("item_type"),
+    // Current title (the new title for a rename, the dropped title for a remove).
+    title: text("title").notNull(),
+    // Rename only: the title this item carried in the previous generation.
+    oldTitle: text("old_title"),
+    price: real("price"),
+    priceType: text("price_type"),
+    currency: text("currency"),
+    changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Feed roll-up + per-venue history reads.
+    index("dining_menu_event_facility_idx").on(t.facilityId, t.changedAt),
+    // "New items across the resort in the last month" reads scan by type + time.
+    index("dining_menu_event_type_idx").on(t.changeType, t.changedAt),
+    // Item detail page resolves an item's history by (facility, lower(title)).
+    index("dining_menu_event_title_idx").on(t.facilityId, sql`lower(${t.title})`),
+  ],
 );
 
 /**

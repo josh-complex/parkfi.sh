@@ -38,6 +38,15 @@ import { cn } from "#/lib/utils.ts";
 
 const venueRoute = getRouteApi("/dining_/$facilityId");
 
+/** Items/venues first seen within this many days read as "new". */
+const NEW_WINDOW_DAYS = 30;
+
+function isWithinDays(iso: string | null | undefined, days: number): boolean {
+  if (!iso) return false;
+  const t = Date.parse(iso);
+  return Number.isFinite(t) && Date.now() - t <= days * 86_400_000;
+}
+
 /** A venue's attribute badges — price, format, dining plan, discounts, perks. */
 function VenueBadges({
   venue,
@@ -349,7 +358,14 @@ export function DiningVenueDetail({
             </div>
           )}
           <div className="flex flex-col gap-2">
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{venue.name}</h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{venue.name}</h1>
+              {isWithinDays(venue.firstSeenAt, NEW_WINDOW_DAYS) && (
+                <Badge className="bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-400">
+                  Newly added
+                </Badge>
+              )}
+            </div>
             {subtitle && <p className="text-muted-foreground">{subtitle}</p>}
             {venue.land && (
               <p className="inline-flex items-center gap-1 text-sm text-muted-foreground">
@@ -427,6 +443,8 @@ export function DiningVenueDetail({
                 menuIsLoading={state.menuQ.isLoading}
                 highlightSlug={state.highlightSlug}
                 changesBySlug={state.changesBySlug}
+                newSlugs={state.newSlugs}
+                facilityId={facilityId}
               />
             </div>
           ) : (

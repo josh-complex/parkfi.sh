@@ -114,10 +114,19 @@ export const config = {
   diningDetailConcurrency: num("DINING_DETAIL_CONCURRENCY", 3),
   // Menus hit an AWS API Gateway that rejects *concurrent* access outright and
   // enforces a rolling per-IP rate cap. So menus are fetched strictly serially
-  // with a polite gap, and bounded per run — the least-recently-checked venues
-  // are refreshed each week (the change-only generational model makes partial
-  // coverage correct). Over a few runs the whole catalog rolls through.
-  diningMenuMaxPerRun: num("DINING_MENU_MAX_PER_RUN", 120),
+  // with a polite gap, and bounded per run — least-recently-checked first, so
+  // whatever the cap can't reach this run leads the next (the change-only
+  // generational model makes partial coverage correct).
+  //
+  // Sized to cover the full active WDW dining catalog (~350–400 venues) in a
+  // single run at the 700ms gap (~5 min of serial fetching), so menu change
+  // detection is only as stale as the cron cadence — not the per-run cap. The
+  // complementary lever lives in the Railway schedule: run this cron daily (not
+  // weekly) to catch menu adds/removes/price moves within a day, matching what a
+  // dedicated menu-diff tracker surfaces. The gap stays at 700ms to respect the
+  // rate cap — throughput comes from a longer run + more frequent runs, never a
+  // faster burst.
+  diningMenuMaxPerRun: num("DINING_MENU_MAX_PER_RUN", 500),
   diningMenuDelayMs: num("DINING_MENU_DELAY_MS", 700),
 
   /**
