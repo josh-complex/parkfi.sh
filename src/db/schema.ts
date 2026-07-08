@@ -187,7 +187,13 @@ export const attractions = pgTable(
     longitude: doublePrecision("longitude"),
     category: text("category"),
   },
-  (t) => [index("attractions_park_slug_idx").on(t.parkId, t.slug)],
+  (t) => [
+    index("attractions_park_slug_idx").on(t.parkId, t.slug),
+    // Trigram index powering omni-search attraction lookup (search.query).
+    // Created out-of-band in drizzle/20260708170000_search_name_trgm — mirrored
+    // here for documentation; we hand-write migrations (no drizzle-kit generate).
+    index("attractions_name_trgm").using("gin", sql`${t.name} gin_trgm_ops`),
+  ],
 );
 
 /**
@@ -473,79 +479,88 @@ export const skuPriceObs = pgTable(
  * never hard-delete, so `dining_obs` keeps FK integrity + history. Each
  * operator's catalog cron scopes its upsert/soft-delete to its own `source`.
  */
-export const restaurantDim = pgTable("restaurant_dim", {
-  facilityId: text("facility_id").primaryKey(),
-  // 'restaurant' | 'dinner-show' | 'dining-event'
-  entityType: text("entity_type").notNull(),
-  name: text("name").notNull(),
-  // Finder slug ("jaleo") — keys the `details-entity-simple` schedule endpoint
-  // and the detail/menu web URLs (the numeric `facility_id` keys the dinemenu API).
-  urlFriendlyId: text("url_friendly_id"),
-  cuisine: text("cuisine"),
-  experienceType: text("experience_type"),
-  priceRange: text("price_range"),
-  parkResort: text("park_resort"),
-  parkResortId: text("park_resort_id"),
-  // reservations-accepted/checkAvail facet + sellableOnline => sweepable candidate
-  bookable: boolean("bookable").notNull().default(false),
-  sellableOnline: boolean("sellable_online").notNull().default(false),
-  // hot tier the availability poller actually sweeps (config-controlled, not catalog)
-  priority: boolean("priority").notNull().default(false),
-  // Optional card metadata (UOR places carry these; WDW leaves them null).
-  imageUrl: text("image_url"),
-  detailUrl: text("detail_url"),
-  // Map metadata from the Disney finder marker (null for UOR). `land` is the
-  // granular in-park area (finer than park_resort); `map_pin` is the marker
-  // category ('dine' | 'characters' | 'shop').
-  latitude: doublePrecision("latitude"),
-  longitude: doublePrecision("longitude"),
-  mapPin: text("map_pin"),
-  land: text("land"),
-  // Granular in-park land entity id from the finder ("80007973"), finer than
-  // `land` (a label) and `park_resort`. FK-shaped against `dining_location`.
-  landId: text("land_id"),
-  // Booking party-size cap (mostly dining-events); null when unbounded.
-  maximumPartySize: integer("maximum_party_size"),
-  // Catalog attribute flags (DISNEY_DIRECT only; UOR leaves them at default).
-  // Derived in `disney-finder-catalog.toRow` from the finder facets. Power the
-  // "no reservation needed" / "mobile order" / "character dining" filters.
-  walkupWaitList: boolean("walkup_wait_list").notNull().default(false),
-  mobileOrder: boolean("mobile_order").notNull().default(false),
-  characterDining: boolean("character_dining").notNull().default(false),
-  fineDining: boolean("fine_dining").notNull().default(false),
-  // Dining package / dining-event: fireworks dessert parties, Fantasmic! &
-  // fireworks dining packages, festival concert packages. Derived from the
-  // finder `tableService` "dine-events" / "dessert-events" tags.
-  diningPackage: boolean("dining_package").notNull().default(false),
-  annualPassDiscount: boolean("annual_pass_discount").notNull().default(false),
-  disneyVisaDiscount: boolean("disney_visa_discount").notNull().default(false),
-  tripAdvisorAward: boolean("trip_advisor_award").notNull().default(false),
-  // Which Disney Dining Plan credit tiers apply (2026/2027 QS + TS meals).
-  diningPlanQs: boolean("dining_plan_qs").notNull().default(false),
-  diningPlanTs: boolean("dining_plan_ts").notNull().default(false),
-  // Recommendation/taxonomy arrays that feed the "Disney Picks" shelves:
-  // franchise affinity (`star-wars-rec`…), rec buckets (`character-dining-rec`…),
-  // venue entertainment (`live-music`…), and premium-events categories.
-  disneyFavorites: text("disney_favorites").array().notNull().default([]),
-  diningInterests: text("dining_interests").array().notNull().default([]),
-  entertainmentType: text("entertainment_type").array().notNull().default([]),
-  eecCategory: text("eec_category").array().notNull().default([]),
-  // Internal `dine-product-svc` product links (menu/product data per venue).
-  productUrls: text("product_urls").array().notNull().default([]),
-  // Operator/source that owns this row (DISNEY_DIRECT default backfills the
-  // pre-existing WDW catalog). Scopes each catalog cron's upsert + soft-delete.
-  source: smallint("source")
-    .notNull()
-    .default(3)
-    .references(() => refSource.id),
-  active: boolean("active").notNull().default(true),
-  // When this venue first appeared in the catalog — set on insert, preserved on
-  // conflict (never overwritten). Powers the "newly added restaurant" badge; a
-  // soft-deleted venue that re-appears keeps its original first-seen date.
-  firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
-  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const restaurantDim = pgTable(
+  "restaurant_dim",
+  {
+    facilityId: text("facility_id").primaryKey(),
+    // 'restaurant' | 'dinner-show' | 'dining-event'
+    entityType: text("entity_type").notNull(),
+    name: text("name").notNull(),
+    // Finder slug ("jaleo") — keys the `details-entity-simple` schedule endpoint
+    // and the detail/menu web URLs (the numeric `facility_id` keys the dinemenu API).
+    urlFriendlyId: text("url_friendly_id"),
+    cuisine: text("cuisine"),
+    experienceType: text("experience_type"),
+    priceRange: text("price_range"),
+    parkResort: text("park_resort"),
+    parkResortId: text("park_resort_id"),
+    // reservations-accepted/checkAvail facet + sellableOnline => sweepable candidate
+    bookable: boolean("bookable").notNull().default(false),
+    sellableOnline: boolean("sellable_online").notNull().default(false),
+    // hot tier the availability poller actually sweeps (config-controlled, not catalog)
+    priority: boolean("priority").notNull().default(false),
+    // Optional card metadata (UOR places carry these; WDW leaves them null).
+    imageUrl: text("image_url"),
+    detailUrl: text("detail_url"),
+    // Map metadata from the Disney finder marker (null for UOR). `land` is the
+    // granular in-park area (finer than park_resort); `map_pin` is the marker
+    // category ('dine' | 'characters' | 'shop').
+    latitude: doublePrecision("latitude"),
+    longitude: doublePrecision("longitude"),
+    mapPin: text("map_pin"),
+    land: text("land"),
+    // Granular in-park land entity id from the finder ("80007973"), finer than
+    // `land` (a label) and `park_resort`. FK-shaped against `dining_location`.
+    landId: text("land_id"),
+    // Booking party-size cap (mostly dining-events); null when unbounded.
+    maximumPartySize: integer("maximum_party_size"),
+    // Catalog attribute flags (DISNEY_DIRECT only; UOR leaves them at default).
+    // Derived in `disney-finder-catalog.toRow` from the finder facets. Power the
+    // "no reservation needed" / "mobile order" / "character dining" filters.
+    walkupWaitList: boolean("walkup_wait_list").notNull().default(false),
+    mobileOrder: boolean("mobile_order").notNull().default(false),
+    characterDining: boolean("character_dining").notNull().default(false),
+    fineDining: boolean("fine_dining").notNull().default(false),
+    // Dining package / dining-event: fireworks dessert parties, Fantasmic! &
+    // fireworks dining packages, festival concert packages. Derived from the
+    // finder `tableService` "dine-events" / "dessert-events" tags.
+    diningPackage: boolean("dining_package").notNull().default(false),
+    annualPassDiscount: boolean("annual_pass_discount").notNull().default(false),
+    disneyVisaDiscount: boolean("disney_visa_discount").notNull().default(false),
+    tripAdvisorAward: boolean("trip_advisor_award").notNull().default(false),
+    // Which Disney Dining Plan credit tiers apply (2026/2027 QS + TS meals).
+    diningPlanQs: boolean("dining_plan_qs").notNull().default(false),
+    diningPlanTs: boolean("dining_plan_ts").notNull().default(false),
+    // Recommendation/taxonomy arrays that feed the "Disney Picks" shelves:
+    // franchise affinity (`star-wars-rec`…), rec buckets (`character-dining-rec`…),
+    // venue entertainment (`live-music`…), and premium-events categories.
+    disneyFavorites: text("disney_favorites").array().notNull().default([]),
+    diningInterests: text("dining_interests").array().notNull().default([]),
+    entertainmentType: text("entertainment_type").array().notNull().default([]),
+    eecCategory: text("eec_category").array().notNull().default([]),
+    // Internal `dine-product-svc` product links (menu/product data per venue).
+    productUrls: text("product_urls").array().notNull().default([]),
+    // Operator/source that owns this row (DISNEY_DIRECT default backfills the
+    // pre-existing WDW catalog). Scopes each catalog cron's upsert + soft-delete.
+    source: smallint("source")
+      .notNull()
+      .default(3)
+      .references(() => refSource.id),
+    active: boolean("active").notNull().default(true),
+    // When this venue first appeared in the catalog — set on insert, preserved on
+    // conflict (never overwritten). Powers the "newly added restaurant" badge; a
+    // soft-deleted venue that re-appears keeps its original first-seen date.
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Trigram index powering omni-search venue lookup (search.query). Created
+    // out-of-band in drizzle/20260708170000_search_name_trgm — mirrored here for
+    // documentation; we hand-write migrations (no drizzle-kit generate).
+    index("restaurant_dim_name_trgm").using("gin", sql`${t.name} gin_trgm_ops`),
+  ],
+);
 
 /**
  * (F.1) Dining ancestor locations — the 43 reference entities the WDW finder
@@ -734,7 +749,7 @@ export const diningMenuItem = pgTable(
   },
   (t) => [
     index("dining_menu_item_facility_idx").on(t.facilityId, t.observedAt),
-    // Trigram index powering omni-search menu-item lookup (search.menuItems).
+    // Trigram index powering omni-search menu-item lookup (search.query).
     // Created out-of-band in drizzle/20260614130000_menu_item_trgm — mirrored
     // here for documentation; we hand-write migrations (no drizzle-kit generate).
     index("dining_menu_item_title_trgm").using("gin", sql`lower(${t.title}) gin_trgm_ops`),
@@ -1458,6 +1473,9 @@ export const blogPost = pgTable(
   (t) => [
     uniqueIndex("blog_post_slug_uq").on(t.slug),
     index("blog_post_status_published_idx").on(t.status, t.publishedAt),
+    // Trigram index powering omni-search blog lookup (search.query). Created
+    // out-of-band in drizzle/20260708170000_search_name_trgm.
+    index("blog_post_title_trgm").using("gin", sql`${t.title} gin_trgm_ops`),
   ],
 );
 

@@ -40,6 +40,11 @@ export interface Restaurant {
   hasMenu: boolean;
   dinnerShow: boolean;
   requiresParkTicket: boolean;
+  // True only for priority && bookable venues (the availability sweep set). When
+  // false the venue is a cart / quick-service spot: the card shows a mobile-order
+  // badge instead of a reservation grid.
+  availabilityEligible: boolean;
+  bookable: boolean;
 }
 
 /** Catalog-attribute toggles. Selecting several narrows to venues with ALL of them. */
@@ -253,6 +258,17 @@ export function cuisineEmoji(cuisine: string): string {
     if (key.includes(needle)) return emoji;
   }
   return "🍽️";
+}
+
+/**
+ * Best-effort deep link to Disney Mobile Order for a venue. Disney exposes no
+ * public per-facility mobile-order URL — ordering lives in the My Disney
+ * Experience app — so we link to the venue's official page, which hosts the
+ * "Order Food" CTA that hands off to the app / web order flow. Returns null when
+ * we have no detail URL (e.g. Universal venues).
+ */
+export function mobileOrderUrl(r: Pick<Restaurant, "detailUrl">): string | null {
+  return r.detailUrl ?? null;
 }
 
 /** Leading `$` run of a price-range string ("$$ ($15–$34.99)") → "$$". */

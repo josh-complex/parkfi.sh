@@ -1,10 +1,12 @@
 "use client";
 
 import { Link } from "@tanstack/react-router";
+import { SmartphoneIcon } from "lucide-react";
 
 import { DiningAlertButton } from "#/components/dining/dining-alert-button.tsx";
 import { DiningMenuDrawer } from "#/components/dining/dining-menu-drawer.tsx";
 import {
+  mobileOrderUrl,
   priceTier,
   type AvailabilityEntry,
   type AvailabilityMap,
@@ -187,18 +189,35 @@ export function RestaurantCard({
           </span>
         )}
 
-        <span className="flex items-center gap-1.5 text-xs">
-          {availLabel ? (
-            <>
-              <span className="bg-primary size-2 shrink-0 rounded-sm" />
-              <span className="font-medium">{availLabel}</span>
-            </>
-          ) : (
-            <span className="text-muted-foreground">
-              {availability ? "No tables in range" : "No observations yet"}
-            </span>
-          )}
-        </span>
+        {/* Availability line for reservable venues; a mobile-order badge for
+            carts / quick-service (which have no reservation sweep). */}
+        {restaurant.availabilityEligible ? (
+          <span className="flex items-center gap-1.5 text-xs">
+            {availLabel ? (
+              <>
+                <span className="bg-primary size-2 shrink-0 rounded-sm" />
+                <span className="font-medium">{availLabel}</span>
+              </>
+            ) : (
+              <span className="text-muted-foreground">
+                {availability ? "No tables in range" : "No observations yet"}
+              </span>
+            )}
+          </span>
+        ) : restaurant.mobileOrder && mobileOrderUrl(restaurant) ? (
+          <a
+            href={mobileOrderUrl(restaurant)!}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="flex w-fit items-center gap-1.5 text-xs font-medium text-emerald-600 hover:underline"
+          >
+            <SmartphoneIcon className="size-3.5 shrink-0" />
+            Mobile order available
+          </a>
+        ) : restaurant.walkupWaitList ? (
+          <span className="text-muted-foreground text-xs">Walk-up · no reservations</span>
+        ) : null}
 
         <div className="mt-auto flex items-center gap-2 pt-0.5">
           {restaurant.hasMenu ? (
@@ -208,12 +227,15 @@ export function RestaurantCard({
           ) : (
             <div className="flex-1" />
           )}
-          <DiningAlertButton
-            facilityId={restaurant.facilityId}
-            restaurantName={restaurant.name}
-            defaultPartySize={defaultPartySize}
-            loggedIn={loggedIn}
-          />
+          {/* Reservation alerts only make sense for the bookable sweep set. */}
+          {restaurant.availabilityEligible && (
+            <DiningAlertButton
+              facilityId={restaurant.facilityId}
+              restaurantName={restaurant.name}
+              defaultPartySize={defaultPartySize}
+              loggedIn={loggedIn}
+            />
+          )}
         </div>
       </div>
     </div>

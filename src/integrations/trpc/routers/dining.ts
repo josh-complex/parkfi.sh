@@ -31,6 +31,8 @@ export const diningRouter = {
       has_menu: boolean;
       entity_type: string;
       location_type: string | null;
+      priority: boolean;
+      bookable: boolean;
     }>(sql`
       SELECT r.facility_id, r.name, r.cuisine, r.experience_type, r.price_range, r.park_resort,
              r.image_url, r.detail_url, r.source,
@@ -39,11 +41,12 @@ export const diningRouter = {
              r.annual_pass_discount, r.disney_visa_discount, r.dining_plan_qs, r.dining_plan_ts,
              (m.facility_id IS NOT NULL AND m.item_count > 0) AS has_menu,
              r.entity_type,
-             dl.location_type
+             dl.location_type,
+             r.priority, r.bookable
       FROM restaurant_dim r
       LEFT JOIN dining_menu_snapshot m ON m.facility_id = r.facility_id
       LEFT JOIN dining_location dl ON split_part(dl.id, ';', 1) = r.park_resort_id
-      WHERE r.priority = true AND r.active = true AND r.bookable = true
+      WHERE r.active = true
       ORDER BY r.park_resort NULLS LAST, r.name
     `);
     return result.rows.map((r) => ({
@@ -68,6 +71,11 @@ export const diningRouter = {
       hasMenu: r.has_menu,
       dinnerShow: r.entity_type === "dinner-show",
       requiresParkTicket: r.location_type === "theme-park" || r.location_type === "water-park",
+      // The availability sweep only covers priority && bookable venues; the board
+      // renders a reservation grid for those and a mobile-order badge for the
+      // rest (snack carts, quick service).
+      availabilityEligible: r.priority && r.bookable,
+      bookable: r.bookable,
     }));
   }),
 
@@ -194,13 +202,16 @@ export const diningRouter = {
       detail_url: string | null;
       character_dining: boolean;
       fine_dining: boolean;
+      bookable: boolean;
+      mobile_order: boolean;
       dining_interests: string[] | null;
       disney_favorites: string[] | null;
     }>(sql`
       SELECT facility_id, name, cuisine, park_resort, price_range, image_url, detail_url,
-             character_dining, fine_dining, dining_interests, disney_favorites
+             character_dining, fine_dining, bookable, mobile_order,
+             dining_interests, disney_favorites
       FROM restaurant_dim
-      WHERE source = 3 AND active = true AND bookable = true
+      WHERE source = 3 AND active = true
       ORDER BY name
     `);
 
@@ -214,13 +225,23 @@ export const diningRouter = {
       detailUrl: r.detail_url,
       characterDining: r.character_dining,
       fineDining: r.fine_dining,
+      bookable: r.bookable,
+      mobileOrder: r.mobile_order,
       diningInterests: r.dining_interests ?? [],
       disneyFavorites: r.disney_favorites ?? [],
     }));
     type Venue = (typeof venues)[number];
 
+    // Snack/cart signal from the venue name + cuisine (Disney files carts as
+    // plain "Quick Service" restaurants, so there's no facility-type flag to key
+    // on — we match the treat vocabulary instead).
+    const SNACK_RE =
+      /ice cream|churro|popcorn|pretzel|funnel|sweet|dessert|bakery|candy|snack|treat|frozen|sundae|cookie|donut|gelato|coffee|refreshment|kiosk|\bcart\b/i;
+    const isSnack = (v: Venue) => SNACK_RE.test(`${v.name} ${v.cuisine ?? ""}`);
+
     // Ordered shelf definitions. `match` decides membership; the first few keys
-    // are high-signal experiences, the franchise shelves come after.
+    // are high-signal reservable experiences, then franchise shelves, then the
+    // dedicated cart / quick-service shelves (non-bookable venues).
     const BUCKETS: Array<{
       key: string;
       title: string;
@@ -268,6 +289,19 @@ export const diningRouter = {
         title: "Pixar Dining",
         subtitle: "From Toy Story to Coco",
         match: (v) => v.disneyFavorites.includes("pixar-rec"),
+      },
+      // Dedicated non-bookable (cart / quick-service) shelves.
+      {
+        key: "sweet-treats",
+        title: "Snacks & Sweet Treats",
+        subtitle: "Ice cream, churros, popcorn & more",
+        match: (v) => !v.bookable && isSnack(v),
+      },
+      {
+        key: "quick-bites",
+        title: "Quick Bites & Mobile Order",
+        subtitle: "Grab-and-go counter service",
+        match: (v) => !v.bookable && v.mobileOrder && !isSnack(v),
       },
     ];
 
@@ -492,6 +526,7 @@ export const diningRouter = {
         park_resort: string | null;
         price_range: string | null;
         image_url: string | null;
+        bookable: boolean;
         change_count: string;
         added_count: string;
         removed_count: string;
@@ -511,6 +546,7 @@ export const diningRouter = {
           WHERE changed_at >= now() - make_interval(days => ${sinceDays})
         )
         SELECT r.facility_id, r.name, r.cuisine, r.park_resort, r.price_range, r.image_url,
+               r.bookable,
                count(*) AS change_count,
                count(*) FILTER (WHERE a.kind = 'added') AS added_count,
                count(*) FILTER (WHERE a.kind = 'removed') AS removed_count,
@@ -523,7 +559,8 @@ export const diningRouter = {
         FROM activity a
         JOIN restaurant_dim r ON r.facility_id = a.facility_id
         WHERE r.active = true
-        GROUP BY r.facility_id, r.name, r.cuisine, r.park_resort, r.price_range, r.image_url
+        GROUP BY r.facility_id, r.name, r.cuisine, r.park_resort, r.price_range, r.image_url,
+                 r.bookable
         ORDER BY last_changed_at DESC
         LIMIT ${limit}
       `);
@@ -540,6 +577,9 @@ export const diningRouter = {
           parkResort: r.park_resort,
           priceRange: r.price_range,
           imageUrl: r.image_url,
+          // Split the shelf: bookable = table-service restaurants, non-bookable =
+          // quick-service & carts (Aloha Isle, popcorn carts, kiosks…).
+          bookable: r.bookable,
           changeCount: Number(r.change_count),
           addedCount: Number(r.added_count),
           removedCount: Number(r.removed_count),

@@ -160,10 +160,8 @@ export function ResultsView({
         </Empty>
       ) : !hasRestaurants ? (
         <Empty>
-          <EmptyTitle>No priority restaurants</EmptyTitle>
-          <EmptyDescription>
-            The dining sweep only covers restaurants marked as priority. None are configured yet.
-          </EmptyDescription>
+          <EmptyTitle>No restaurants yet</EmptyTitle>
+          <EmptyDescription>The dining catalog hasn't loaded any venues yet.</EmptyDescription>
         </Empty>
       ) : total === 0 ? (
         <Empty>

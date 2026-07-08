@@ -106,163 +106,247 @@ async function fetchLatestPosts(limit?: number) {
 }
 
 /**
- * The omni-search is a "canned" index: the searchable corpus (parks,
- * attractions, priority dining, published posts) is small and slow-changing, so
- * we ship it to the client once and filter in-memory there. That keeps typing
- * instant (no per-keystroke round-trips) and lets React Query cache the payload
- * across opens. Each row carries enough card metadata (thumbnail, context line)
- * for a rich result list. See `OmniSearch` for the client-side matching.
+ * The omni-search runs entirely server-side. The empty-state drawer loads a lean
+ * `defaults` set (a few parks + latest posts); once the user types, a single
+ * debounced `query` call fuzzy-matches every section against the DB — backed by
+ * pg_trgm GIN indexes (see drizzle/20260708170000_search_name_trgm) so each
+ * keystroke is an indexed lookup, not a corpus shipped to the client and
+ * filtered in-memory. Every section is capped so no query is unbounded.
  */
+
+/** Per-section row cap for `search.query`. Keeps every section bounded. */
+const MAX_PER_SECTION = 25;
+
+/**
+ * Reusable fuzzy predicate + ranking for a text column, built for a pg_trgm GIN
+ * index. Matches substrings (`ILIKE '%q%'`) and near-misses (the `<%`
+ * word-similarity operator — the query's trigrams vs the closest *word* in the
+ * value, so "aloa"→"Aloha Isle", "cosmc"→"Cosmic Ray's"). Ranks exact-prefix
+ * hits first, then by word similarity, then shortest name. Both `ILIKE` and `<%`
+ * are served by the `gin_trgm_ops` index. `escaped` has LIKE metacharacters
+ * neutralised; `raw` is the user's text for the similarity operators.
+ */
+function fuzzy(col: string, raw: string, escaped: string) {
+  const c = sql.raw(col);
+  const like = `%${escaped}%`;
+  const prefix = `${escaped}%`;
+  return {
+    where: sql`(${c} ILIKE ${like} ESCAPE '\\' OR ${raw} <% ${c})`,
+    order: sql`(${c} ILIKE ${prefix} ESCAPE '\\') DESC, word_similarity(${raw}, ${c}) DESC, length(${c}), ${c}`,
+  };
+}
+
 export const searchRouter = {
   /**
    * Lean pre-search set: just the handful of parks + latest posts the drawer
    * shows before the user types. Loads fast so the drawer opens instantly, while
-   * the heavy `index` loads lazily once the user actually searches.
+   * the full fuzzy `query` runs only once the user actually searches.
    */
   defaults: publicProcedure.query(async () => {
     const [parks, blogPosts] = await Promise.all([fetchParks(), fetchLatestPosts(6)]);
     return { parks, blogPosts };
   }),
 
-  index: publicProcedure.query(async () => {
-    const [parks, attractions, dining, blogPosts] = await Promise.all([
-      fetchParks(),
-      db.execute<{
-        id: string;
-        name: string;
-        slug: string;
-        park_slug: string;
-        park_name: string;
-        category: string | null;
-        land: string | null;
-        image_thumb_url: string | null;
-      }>(sql`
-        SELECT a.id, a.name, a.slug, p.slug AS park_slug, p.name AS park_name,
-               a.category, m.land, m.image_thumb_url
-        FROM attractions a
-        JOIN parks p ON p.id = a.park_id
-        LEFT JOIN attraction_meta m ON m.attraction_id = a.id
-        WHERE a.active = true AND a.entity_type = 'ATTRACTION'
-        ORDER BY a.name
-      `),
-      db.execute<{
-        facility_id: string;
-        name: string;
-        park_resort: string | null;
-        cuisine: string | null;
-        price_range: string | null;
-        image_url: string | null;
-        character_dining: boolean;
-        dinner_show: boolean;
-        dining_package: boolean;
-        requires_park_ticket: boolean;
-      }>(sql`
-        SELECT r.facility_id, r.name, r.park_resort, r.cuisine, r.price_range, r.image_url,
-               r.character_dining,
-               (r.entity_type = 'dinner-show') AS dinner_show,
-               r.dining_package,
-               (dl.location_type IN ('theme-park', 'water-park')) AS requires_park_ticket
-        FROM restaurant_dim r
-        LEFT JOIN dining_location dl ON split_part(dl.id, ';', 1) = r.park_resort_id
-        WHERE r.priority = true AND r.active = true
-        ORDER BY r.name
-      `),
-      fetchLatestPosts(),
-    ]);
-
-    return {
-      parks,
-      attractions: attractions.rows.map((a) => ({
-        type: "attraction" as const,
-        id: a.id,
-        name: a.name,
-        // Per-park slug — pairs with `parkSlug` for the nested ride detail URL.
-        slug: a.slug,
-        parkName: a.park_name,
-        parkSlug: a.park_slug,
-        category: a.category,
-        land: a.land,
-        imageUrl: a.image_thumb_url,
-      })),
-      dining: dining.rows.map((d) => ({
-        type: "dining" as const,
-        id: d.facility_id,
-        name: d.name,
-        parkName: d.park_resort,
-        cuisine: d.cuisine,
-        priceRange: d.price_range,
-        imageUrl: d.image_url,
-        characterDining: d.character_dining,
-        dinnerShow: d.dinner_show,
-        diningPackage: d.dining_package,
-        requiresParkTicket: d.requires_park_ticket ?? false,
-      })),
-      blogPosts,
-      // Resort hotels are a static catalog (the `/stays` browse set), so they
-      // ship straight from `RESORT_CATALOG` rather than a DB query — they land
-      // on `/resort/$slug`.
-      resorts: RESORT_CATALOG.map((r) => ({
-        type: "resort" as const,
-        id: r.id,
-        name: r.name,
-        slug: r.slug,
-        tier: r.tier,
-        area: r.area,
-        imageUrl: r.image,
-      })),
-    };
-  }),
-
   /**
-   * Server-side menu-item search. Menu items number in the thousands and change
-   * far more often than the canned `index` corpus, so they don't ship to the
-   * client — the omni-search calls this per (debounced) query instead. Matches
-   * item titles in each venue's live menu generation, dedupes the same item
-   * across meal periods, and ranks prefix hits first. See `OmniSearch`.
+   * Server-side fuzzy omni-search. One call per (debounced) keystroke; matches
+   * parks, attractions, all active dining (NO priority gate — snack carts and
+   * quick-service now surface), live menu items, resorts, and published posts.
+   * Each section is independently capped at `limit` (≤ 100). Backed by pg_trgm
+   * so it stays an indexed lookup at any catalog size.
    */
-  menuItems: publicProcedure
-    .input(z.object({ q: z.string(), limit: z.number().int().min(1).max(20).default(8) }))
+  query: publicProcedure
+    .input(
+      z.object({
+        q: z.string(),
+        limit: z.number().int().min(1).max(MAX_PER_SECTION).default(MAX_PER_SECTION),
+      }),
+    )
     .query(async ({ input }) => {
       const q = input.q.trim();
-      if (q.length < 2) return [];
-      // Escape LIKE metacharacters so a user's "%" / "_" matches literally.
+      const empty = {
+        parks: [],
+        attractions: [],
+        dining: [],
+        menuItems: [],
+        resorts: [],
+        blogPosts: [],
+      };
+      if (q.length < 2) return empty;
+      const limit = input.limit;
+      // Neutralise LIKE metacharacters so a user's "%"/"_" matches literally.
       const escaped = q.replace(/[\\%_]/g, (c) => `\\${c}`);
-      const result = await db.execute<{
-        facility_id: string;
-        restaurant_name: string;
-        park_resort: string | null;
-        title: string;
-        price: number | null;
-        currency: string | null;
-      }>(sql`
-        WITH matches AS (
-          SELECT i.facility_id, r.name AS restaurant_name, r.park_resort,
-                 i.title, i.price, i.currency,
-                 row_number() OVER (
-                   PARTITION BY i.facility_id, lower(i.title)
-                   ORDER BY i.price NULLS LAST
-                 ) AS rn,
-                 (lower(i.title) LIKE lower(${escaped}) || '%') AS prefix
-          FROM dining_menu_item i
-          JOIN dining_menu_snapshot s
-            ON s.facility_id = i.facility_id AND s.observed_at = i.observed_at
-          JOIN restaurant_dim r ON r.facility_id = i.facility_id
-          WHERE r.active = true
-            AND i.title ILIKE '%' || ${escaped} || '%' ESCAPE '\\'
+      const like = `%${escaped}%`;
+
+      const attrFuzzy = fuzzy("a.name", q, escaped);
+      const dineFuzzy = fuzzy("r.name", q, escaped);
+      const blogFuzzy = fuzzy("title", q, escaped);
+      const prefix = `${escaped}%`;
+
+      const [allParks, attractions, dining, menuItems, blogPosts] = await Promise.all([
+        fetchParks(),
+        db.execute<{
+          id: string;
+          name: string;
+          slug: string;
+          park_slug: string;
+          park_name: string;
+          category: string | null;
+          land: string | null;
+          image_thumb_url: string | null;
+        }>(sql`
+          SELECT a.id, a.name, a.slug, p.slug AS park_slug, p.name AS park_name,
+                 a.category, m.land, m.image_thumb_url
+          FROM attractions a
+          JOIN parks p ON p.id = a.park_id
+          LEFT JOIN attraction_meta m ON m.attraction_id = a.id
+          WHERE a.active = true AND a.entity_type = 'ATTRACTION' AND ${attrFuzzy.where}
+          ORDER BY ${attrFuzzy.order}
+          LIMIT ${limit}
+        `),
+        db.execute<{
+          facility_id: string;
+          name: string;
+          park_resort: string | null;
+          cuisine: string | null;
+          price_range: string | null;
+          image_url: string | null;
+          character_dining: boolean;
+          dinner_show: boolean;
+          dining_package: boolean;
+          mobile_order: boolean;
+          bookable: boolean;
+          requires_park_ticket: boolean;
+        }>(sql`
+          SELECT r.facility_id, r.name, r.park_resort, r.cuisine, r.price_range, r.image_url,
+                 r.character_dining,
+                 (r.entity_type = 'dinner-show') AS dinner_show,
+                 r.dining_package, r.mobile_order, r.bookable,
+                 (dl.location_type IN ('theme-park', 'water-park')) AS requires_park_ticket
+          FROM restaurant_dim r
+          LEFT JOIN dining_location dl ON split_part(dl.id, ';', 1) = r.park_resort_id
+          WHERE r.active = true AND ${dineFuzzy.where}
+          ORDER BY ${dineFuzzy.order}
+          LIMIT ${limit}
+        `),
+        db.execute<{
+          facility_id: string;
+          restaurant_name: string;
+          park_resort: string | null;
+          title: string;
+          price: number | null;
+          currency: string | null;
+        }>(sql`
+          WITH matches AS (
+            SELECT i.facility_id, r.name AS restaurant_name, r.park_resort,
+                   i.title, i.price, i.currency,
+                   row_number() OVER (
+                     PARTITION BY i.facility_id, lower(i.title)
+                     ORDER BY i.price NULLS LAST
+                   ) AS rn,
+                   (lower(i.title) LIKE lower(${prefix})) AS prefix
+            FROM dining_menu_item i
+            JOIN dining_menu_snapshot s
+              ON s.facility_id = i.facility_id AND s.observed_at = i.observed_at
+            JOIN restaurant_dim r ON r.facility_id = i.facility_id
+            WHERE r.active = true
+              AND i.title ILIKE ${like} ESCAPE '\\'
+          )
+          SELECT facility_id, restaurant_name, park_resort, title, price, currency
+          FROM matches
+          WHERE rn = 1
+          ORDER BY prefix DESC, length(title), title
+          LIMIT ${limit}
+        `),
+        db.execute<{
+          id: string;
+          slug: string;
+          title: string;
+          dek: string;
+          hero_image_url: string | null;
+        }>(sql`
+          SELECT id, slug, title, dek, hero_image_url
+          FROM blog_post
+          WHERE status = 'published'
+            AND (${blogFuzzy.where} OR dek ILIKE ${like} ESCAPE '\\')
+          ORDER BY ${blogFuzzy.order}
+          LIMIT ${limit}
+        `),
+      ]);
+
+      // Parks are a tiny fixed set (≈10) already loaded with today's "from"
+      // price, so we filter them in-memory rather than round-trip a fuzzy query.
+      const needle = q.toLowerCase();
+      const parks = allParks
+        .filter(
+          (p) =>
+            p.name.toLowerCase().includes(needle) || !!p.resortName?.toLowerCase().includes(needle),
         )
-        SELECT facility_id, restaurant_name, park_resort, title, price, currency
-        FROM matches
-        WHERE rn = 1
-        ORDER BY prefix DESC, length(title), title
-        LIMIT ${input.limit}
-      `);
-      return result.rows.map((r) => ({
-        facilityId: r.facility_id,
-        restaurantName: r.restaurant_name,
-        parkResort: r.park_resort,
-        title: r.title,
-        price: r.price === null ? null : Number(r.price),
-        currency: r.currency,
-      }));
+        .slice(0, limit);
+
+      // Resort hotels are a static catalog (the `/stays` browse set), matched
+      // in-memory here rather than via a DB query — they land on `/resort/$slug`.
+      const resorts = RESORT_CATALOG.filter(
+        (r) => r.name.toLowerCase().includes(needle) || r.area?.toLowerCase().includes(needle),
+      )
+        .slice(0, limit)
+        .map((r) => ({
+          type: "resort" as const,
+          id: r.id,
+          name: r.name,
+          slug: r.slug,
+          tier: r.tier,
+          area: r.area,
+          imageUrl: r.image,
+        }));
+
+      return {
+        parks,
+        attractions: attractions.rows.map((a) => ({
+          type: "attraction" as const,
+          id: a.id,
+          name: a.name,
+          // Per-park slug — pairs with `parkSlug` for the nested ride detail URL.
+          slug: a.slug,
+          parkName: a.park_name,
+          parkSlug: a.park_slug,
+          category: a.category,
+          land: a.land,
+          imageUrl: a.image_thumb_url,
+        })),
+        dining: dining.rows.map((d) => ({
+          type: "dining" as const,
+          id: d.facility_id,
+          name: d.name,
+          parkName: d.park_resort,
+          cuisine: d.cuisine,
+          priceRange: d.price_range,
+          imageUrl: d.image_url,
+          characterDining: d.character_dining,
+          dinnerShow: d.dinner_show,
+          diningPackage: d.dining_package,
+          // Carts/quick-service surface now; flag them so the client can badge a
+          // non-bookable venue as "Mobile order" rather than "reservations".
+          mobileOrder: d.mobile_order,
+          bookable: d.bookable,
+          requiresParkTicket: d.requires_park_ticket ?? false,
+        })),
+        menuItems: menuItems.rows.map((r) => ({
+          facilityId: r.facility_id,
+          restaurantName: r.restaurant_name,
+          parkResort: r.park_resort,
+          title: r.title,
+          price: r.price === null ? null : Number(r.price),
+          currency: r.currency,
+        })),
+        resorts,
+        blogPosts: blogPosts.rows.map((b) => ({
+          type: "blog" as const,
+          id: b.id,
+          title: b.title,
+          slug: b.slug,
+          dek: b.dek,
+          imageUrl: b.hero_image_url,
+        })),
+      };
     }),
 } satisfies TRPCRouterRecord;

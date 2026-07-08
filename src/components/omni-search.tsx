@@ -228,15 +228,6 @@ export function OmniSearch({
     staleTime: 5 * 60 * 1000,
   });
 
-  // The full corpus is fetched on open (see the warm-up effect below) so it's
-  // ready by the time the user types; then cached and filtered in-memory so
-  // subsequent keystrokes never hit the network.
-  const indexQ = useQuery({
-    ...trpc.search.index.queryOptions(),
-    enabled: open,
-    staleTime: 5 * 60 * 1000,
-  });
-
   const queryClient = useQueryClient();
 
   // Prefetch the lean default set during idle time after mount, so even the very
@@ -257,19 +248,21 @@ export function OmniSearch({
     return () => clearTimeout(t);
   }, [queryClient, trpc]);
 
-  // Menu items don't ship in the canned index (too many, change too often), so
-  // they're searched on the server. Debounce the query so typing doesn't fire a
-  // request per keystroke; only search once there are ≥2 characters.
+  // The whole corpus is searched on the server (pg_trgm fuzzy match), so we
+  // debounce the query to one request per typing pause rather than per keystroke,
+  // and only search once there are ≥2 characters.
   const [debouncedQuery, setDebouncedQuery] = React.useState("");
   React.useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query.trim()), 160);
+    const t = setTimeout(() => setDebouncedQuery(query.trim()), 150);
     return () => clearTimeout(t);
   }, [query]);
 
-  const menuQ = useQuery({
-    ...trpc.search.menuItems.queryOptions({ q: debouncedQuery, limit: LIMITS.Menu }),
+  const searchQ = useQuery({
+    ...trpc.search.query.queryOptions({ q: debouncedQuery }),
     enabled: open && debouncedQuery.length >= 2,
     staleTime: 60 * 1000,
+    // Keep the previous results on screen while the next fuzzy query resolves, so
+    // the list doesn't flash empty between keystrokes.
     placeholderData: (prev) => prev,
   });
 
@@ -329,56 +322,51 @@ export function OmniSearch({
       ];
     }
 
-    const data = indexQ.data;
+    // Results are already fuzzy-matched, ranked, and capped server-side; we just
+    // slice each section to its display density (LIMITS) for the dropdown.
+    const data = searchQ.data;
     if (!data) return [];
-    const m = (s: string | null | undefined) => !!s && s.toLowerCase().includes(q);
     return [
-      ...data.parks
-        .filter((p) => m(p.name) || m(p.resortName))
-        .slice(0, LIMITS.Parks)
-        .map<Item>((p) => ({
-          key: `park-${p.id}`,
-          group: "Parks",
-          title: p.name,
-          subtitle: p.resortName,
-          image: p.imageUrl,
-          ...parkPrice(p.ticketPriceCents),
-          onSelect: go(() => navigate({ to: "/park/$slug", params: { slug: p.slug } })),
-        })),
-      ...data.attractions
-        .filter((a) => m(a.name) || m(a.land))
-        .slice(0, LIMITS.Attractions)
-        .map<Item>((a) => ({
-          key: `attr-${a.id}`,
-          group: "Attractions",
-          title: a.name,
-          subtitle: [a.parkName, a.land].filter(Boolean).join(" · "),
-          image: a.imageUrl,
-          onSelect: go(() =>
-            navigate({
-              to: "/park/$slug/ride/$rideSlug",
-              params: { slug: a.parkSlug, rideSlug: a.slug },
-            }),
-          ),
-        })),
-      ...data.dining
-        .filter((d) => m(d.name) || m(d.cuisine))
-        .slice(0, LIMITS.Dining)
-        .map<Item>((d) => ({
-          key: `dining-${d.id}`,
-          group: "Dining",
-          title: d.name,
-          subtitle: [d.cuisine, d.parkName, d.priceRange].filter(Boolean).join(" · "),
-          image: d.imageUrl,
-          tags: [
-            d.requiresParkTicket && "Needs Park Entry",
-            d.characterDining && "Characters",
-            d.dinnerShow && "Dinner show",
-            d.diningPackage && "Package",
-          ].filter((t): t is string => Boolean(t)),
-          onSelect: go(() => navigate({ to: "/dining/$facilityId", params: { facilityId: d.id } })),
-        })),
-      ...(menuQ.data ?? []).map<Item>((mi) => ({
+      ...data.parks.slice(0, LIMITS.Parks).map<Item>((p) => ({
+        key: `park-${p.id}`,
+        group: "Parks",
+        title: p.name,
+        subtitle: p.resortName,
+        image: p.imageUrl,
+        ...parkPrice(p.ticketPriceCents),
+        onSelect: go(() => navigate({ to: "/park/$slug", params: { slug: p.slug } })),
+      })),
+      ...data.attractions.slice(0, LIMITS.Attractions).map<Item>((a) => ({
+        key: `attr-${a.id}`,
+        group: "Attractions",
+        title: a.name,
+        subtitle: [a.parkName, a.land].filter(Boolean).join(" · "),
+        image: a.imageUrl,
+        onSelect: go(() =>
+          navigate({
+            to: "/park/$slug/ride/$rideSlug",
+            params: { slug: a.parkSlug, rideSlug: a.slug },
+          }),
+        ),
+      })),
+      ...data.dining.slice(0, LIMITS.Dining).map<Item>((d) => ({
+        key: `dining-${d.id}`,
+        group: "Dining",
+        title: d.name,
+        subtitle: [d.cuisine, d.parkName, d.priceRange].filter(Boolean).join(" · "),
+        image: d.imageUrl,
+        tags: [
+          d.requiresParkTicket && "Needs Park Entry",
+          d.characterDining && "Characters",
+          d.dinnerShow && "Dinner show",
+          d.diningPackage && "Package",
+          // Non-bookable venues (snack carts / quick service) surface now — badge
+          // mobile order so they read differently from reservable restaurants.
+          !d.bookable && d.mobileOrder && "Mobile order",
+        ].filter((t): t is string => Boolean(t)),
+        onSelect: go(() => navigate({ to: "/dining/$facilityId", params: { facilityId: d.id } })),
+      })),
+      ...data.menuItems.slice(0, LIMITS.Menu).map<Item>((mi) => ({
         key: `menu-${mi.facilityId}-${mi.title}`,
         group: "Menu",
         title: mi.title,
@@ -393,30 +381,24 @@ export function OmniSearch({
           }),
         ),
       })),
-      ...data.resorts
-        .filter((r) => m(r.name) || m(r.area))
-        .slice(0, LIMITS.Resorts)
-        .map<Item>((r) => ({
-          key: `resort-${r.id}`,
-          group: "Resorts",
-          title: r.name,
-          subtitle: r.area,
-          image: r.imageUrl,
-          onSelect: go(() => navigate({ to: "/resort/$slug", params: { slug: r.slug } })),
-        })),
-      ...data.blogPosts
-        .filter((b) => m(b.title) || m(b.dek))
-        .slice(0, LIMITS.Blog)
-        .map<Item>((b) => ({
-          key: `blog-${b.id}`,
-          group: "Blog",
-          title: b.title,
-          subtitle: b.dek,
-          image: b.imageUrl,
-          onSelect: go(() => navigate({ to: "/blog/$slug", params: { slug: b.slug } })),
-        })),
+      ...data.resorts.slice(0, LIMITS.Resorts).map<Item>((r) => ({
+        key: `resort-${r.id}`,
+        group: "Resorts",
+        title: r.name,
+        subtitle: r.area,
+        image: r.imageUrl,
+        onSelect: go(() => navigate({ to: "/resort/$slug", params: { slug: r.slug } })),
+      })),
+      ...data.blogPosts.slice(0, LIMITS.Blog).map<Item>((b) => ({
+        key: `blog-${b.id}`,
+        group: "Blog",
+        title: b.title,
+        subtitle: b.dek,
+        image: b.imageUrl,
+        onSelect: go(() => navigate({ to: "/blog/$slug", params: { slug: b.slug } })),
+      })),
     ];
-  }, [defaultsQ.data, indexQ.data, menuQ.data, query, navigate, close, track]);
+  }, [defaultsQ.data, searchQ.data, query, navigate, close, track]);
 
   // Keep the highlight valid as the result set changes under the cursor.
   React.useEffect(() => {
@@ -443,7 +425,7 @@ export function OmniSearch({
   }, [active]);
 
   // Show the spinner for whichever query backs the current view.
-  const showLoading = open && (hasQuery ? indexQ.isLoading : defaultsQ.isLoading);
+  const showLoading = open && (hasQuery ? searchQ.isLoading : defaultsQ.isLoading);
 
   return (
     <>
