@@ -1,13 +1,7 @@
 import * as React from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import {
-  ArrowUpDownIcon,
-  ChevronDownIcon,
-  LayoutGridIcon,
-  ListIcon,
-  SlidersHorizontalIcon,
-} from "lucide-react";
+import { ArrowUpDownIcon, LayoutGridIcon, ListIcon, SlidersHorizontalIcon } from "lucide-react";
 
 import { RideCategoryChips } from "#/components/rides/ride-category-chips.tsx";
 import { RideFilterControls, RideFilterFooter } from "#/components/rides/ride-filter-button.tsx";
@@ -94,7 +88,7 @@ function WaitBadge({ ride, className }: { ride: Ride; className?: string }) {
   return (
     <Badge
       className={cn(
-        "border-0 text-xs font-semibold tabular-nums shadow",
+        "border-0 text-xs font-normal tabular-nums shadow",
         waitBadgeClass(ride),
         className,
       )}
@@ -122,7 +116,7 @@ function RideCard({ ride }: { ride: Ride }) {
               className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
             />
           ) : null}
-          <WaitBadge ride={ride} className="absolute right-2 top-2" />
+          <WaitBadge ride={ride} className="absolute left-2 top-2" />
         </div>
         <div className="flex flex-col gap-0.5 px-0.5">
           <span className="line-clamp-1 text-sm font-medium group-hover:underline">
@@ -265,8 +259,8 @@ function ViewToggle({
 }
 
 /**
- * The Waits page: every ride across all parks in collapsible per-park sections,
- * styled after the Eats/Stays shelves — a horizontal card carousel per park
+ * The Waits page: every ride across all parks in per-park sections, styled
+ * after the Eats/Stays shelves — a horizontal card carousel per park
  * ("grid", the default) or a plain vertical list, toggled from the controls and
  * remembered across visits. Sort + filter live in a desktop toolbar and a mobile
  * FAB (both share the ride-filter drawer with the map via `useRideFilter`).
@@ -277,7 +271,6 @@ export function CrossParkWaits() {
   const { filter } = useRideFilter();
   const [sort, setSort] = React.useState<Sort>("wait");
   const [view, setView] = React.useState<View>("grid");
-  const [collapsed, setCollapsed] = React.useState<Set<string>>(() => new Set());
 
   // Read the remembered view after mount (SSR renders the default so server and
   // first client render agree — no hydration mismatch).
@@ -297,15 +290,6 @@ export function CrossParkWaits() {
     } catch {
       /* ignore */
     }
-  }, []);
-
-  const toggleCollapse = React.useCallback((slug: string) => {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(slug)) next.delete(slug);
-      else next.add(slug);
-      return next;
-    });
   }, []);
 
   // Freeze the display order so cards don't jump as live waits tick: rank ride
@@ -359,30 +343,32 @@ export function CrossParkWaits() {
   }, [rides]);
 
   return (
-    <div className="flex flex-col p-4 pb-28 lg:px-6">
-      {/* Mobile quick attraction-type filters, tucked under the header's omnisearch. */}
-      <div className="-mx-4 lg:-mx-6">
-        <RideCategoryChips categories={categoryOptions} />
-      </div>
+    <div className="flex flex-col">
+      {/* Mobile quick attraction-type filters, tucked right under the header's
+          omnisearch (the chip row's own py-2 sets the gap, like Eats/Stays). */}
+      <RideCategoryChips categories={categoryOptions} />
 
-      {/* Desktop controls — mirrors the Eats/Stays top bar; mobile uses the FAB. */}
-      <div className="hidden items-center justify-end gap-2 pb-2 md:flex">
-        <SortDrawer sort={sort} onSort={setSort} variant="outline" />
-        <FilterDrawer variant="outline" />
-        <ViewToggle view={view} onView={setViewPersist} variant="outline" />
-      </div>
-
-      {isLoading && <div className="py-16 text-center text-sm text-muted-foreground">Loading…</div>}
-
-      {!isLoading && shown === 0 && (
-        <div className="py-16 text-center text-sm text-muted-foreground">
-          No rides match your filters.
+      {/* Padded content container — mirrors the Eats/Stays browse wrapper; the
+          shelves bleed back to the edges with their own -mx. */}
+      <div className="flex flex-col gap-4 p-4 pb-28 lg:px-6">
+        {/* Desktop controls — mirrors the Eats/Stays top bar; mobile uses the FAB. */}
+        <div className="hidden items-center justify-end gap-2 md:flex">
+          <SortDrawer sort={sort} onSort={setSort} variant="outline" />
+          <FilterDrawer variant="outline" />
+          <ViewToggle view={view} onView={setViewPersist} variant="outline" />
         </div>
-      )}
 
-      <div className="flex flex-col gap-2">
+        {isLoading && (
+          <div className="py-16 text-center text-sm text-muted-foreground">Loading…</div>
+        )}
+
+        {!isLoading && shown === 0 && (
+          <div className="py-16 text-center text-sm text-muted-foreground">
+            No rides match your filters.
+          </div>
+        )}
+
         {groups.map((g) => {
-          const isCollapsed = collapsed.has(g.parkSlug);
           const subtitle =
             g.isOpen && g.avg != null
               ? `${g.avg} min average wait`
@@ -396,58 +382,38 @@ export function CrossParkWaits() {
               opts={{ align: "start", dragFree: true }}
               className="-mx-4 lg:-mx-6"
             >
-              <section className="flex flex-col gap-3 py-3">
+              <section className="flex flex-col gap-3">
                 <div className="flex items-end justify-between gap-4 px-4 lg:px-6">
-                  <button
-                    type="button"
-                    onClick={() => toggleCollapse(g.parkSlug)}
-                    aria-expanded={!isCollapsed}
-                    className="-my-1 flex min-w-0 items-center gap-2 rounded-lg py-1 pr-2 text-left transition-colors hover:opacity-80"
-                  >
-                    <ChevronDownIcon
-                      className={cn(
-                        "size-5 shrink-0 self-center text-muted-foreground transition-transform",
-                        isCollapsed && "-rotate-90",
-                      )}
-                    />
-                    <span className="flex min-w-0 flex-col gap-0.5">
-                      <span className="truncate text-lg font-semibold tracking-tight">
-                        {g.parkName}
-                      </span>
-                      <span className="truncate text-sm text-muted-foreground">{subtitle}</span>
-                    </span>
-                  </button>
-                  {!isCollapsed && <CarouselArrows className="hidden shrink-0 md:flex" />}
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <h3 className="truncate text-lg font-semibold tracking-tight">{g.parkName}</h3>
+                    <p className="truncate text-sm text-muted-foreground">{subtitle}</p>
+                  </div>
+                  <CarouselArrows className="hidden shrink-0 md:flex" />
                 </div>
 
-                {!isCollapsed &&
-                  (view === "grid" ? (
-                    <CarouselContent
-                      className="ml-0 gap-4 px-4 lg:px-6"
-                      viewportClassName="[mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%_-_1.5rem),transparent)]"
-                    >
+                {view === "grid" ? (
+                  <CarouselContent
+                    className="-ml-4"
+                    viewportClassName="px-4 lg:px-6 [mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%_-_1.5rem),transparent)]"
+                  >
+                    {g.rides.map((r) => (
+                      <CarouselItem
+                        key={r.id}
+                        className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5"
+                      >
+                        <RideCard ride={r} />
+                      </CarouselItem>
+                    ))}
+                  </CarouselContent>
+                ) : (
+                  <div className="px-4 lg:px-6">
+                    <div className="mx-auto flex w-full max-w-3xl flex-col rounded-2xl border bg-card/40 p-1">
                       {g.rides.map((r) => (
-                        <CarouselItem
-                          key={r.id}
-                          // Embla only reads the last slide's margin for the end
-                          // gap — the track's padding-right is ignored — so
-                          // last:mr keeps the final card off the device edge at
-                          // full scroll.
-                          className="basis-[42%] pl-0 last:mr-4 sm:basis-1/3 md:basis-1/4 lg:basis-1/5 lg:last:mr-6 xl:basis-1/6"
-                        >
-                          <RideCard ride={r} />
-                        </CarouselItem>
+                        <RideRow key={r.id} ride={r} />
                       ))}
-                    </CarouselContent>
-                  ) : (
-                    <div className="px-4 lg:px-6">
-                      <div className="mx-auto flex w-full max-w-3xl flex-col rounded-2xl border bg-card/40 p-1">
-                        {g.rides.map((r) => (
-                          <RideRow key={r.id} ride={r} />
-                        ))}
-                      </div>
                     </div>
-                  ))}
+                  </div>
+                )}
               </section>
             </Carousel>
           );

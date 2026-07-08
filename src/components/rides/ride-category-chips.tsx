@@ -14,7 +14,7 @@ import { cn } from "#/lib/utils.ts";
 export function RideCategoryChips({
   categories,
 }: {
-  categories: ReadonlyArray<{ key: string; label: string }>;
+  categories: ReadonlyArray<{ key: string; label: string; emoji: string }>;
 }) {
   const { filter, setFilter } = useRideFilter();
   if (!categories.length) return null;
@@ -48,6 +48,7 @@ export function RideCategoryChips({
                 : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
             )}
           >
+            <span aria-hidden>{c.emoji}</span>
             {c.label}
           </button>
         );

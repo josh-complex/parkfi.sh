@@ -189,7 +189,7 @@ export function DiningRecentlyUpdated({ variant }: { variant?: "restaurants" | "
   const restaurantsShelf = (
     <UpdatedShelf
       title="Recently updated menus"
-      subtitle="Fresh prices & items at restaurants in the last 30 days"
+      subtitle="Fresh updates at restaurants in the last 30 days"
       venues={restaurants}
     />
   );

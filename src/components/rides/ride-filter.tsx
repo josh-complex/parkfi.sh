@@ -56,14 +56,14 @@ export const EMPTY_RIDE_FILTER: RideFilter = {
 };
 
 /** Selectable categories (matches the marker icon set in park-map/shared.tsx). */
-export const RIDE_CATEGORIES: ReadonlyArray<{ key: string; label: string }> = [
-  { key: "thrill", label: "Thrill" },
-  { key: "attraction", label: "Rides" },
-  { key: "water", label: "Water" },
-  { key: "show", label: "Shows" },
-  { key: "character", label: "Characters" },
-  { key: "dine", label: "Dining" },
-  { key: "shop", label: "Shops" },
+export const RIDE_CATEGORIES: ReadonlyArray<{ key: string; label: string; emoji: string }> = [
+  { key: "thrill", label: "Thrill", emoji: "🎢" },
+  { key: "attraction", label: "Rides", emoji: "🎡" },
+  { key: "water", label: "Water", emoji: "💦" },
+  { key: "show", label: "Shows", emoji: "🎭" },
+  { key: "character", label: "Characters", emoji: "🐭" },
+  { key: "dine", label: "Dining", emoji: "🍽️" },
+  { key: "shop", label: "Shops", emoji: "🛍️" },
 ];
 
 /** The standby thresholds offered by the "max wait" control. */
