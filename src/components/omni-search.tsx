@@ -253,7 +253,7 @@ export function OmniSearch({
   // and only search once there are ≥2 characters.
   const [debouncedQuery, setDebouncedQuery] = React.useState("");
   React.useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query.trim()), 150);
+    const t = setTimeout(() => setDebouncedQuery(query.trim()), 100);
     return () => clearTimeout(t);
   }, [query]);
 
@@ -372,12 +372,10 @@ export function OmniSearch({
         title: mi.title,
         subtitle: [mi.restaurantName, mi.parkResort].filter(Boolean).join(" · "),
         price: mi.price == null ? null : formatPrice(mi.price, mi.currency),
-        // Deep link to the venue page, scrolled to (and highlighting) the item.
         onSelect: go(() =>
           navigate({
-            to: "/dining/$facilityId",
-            params: { facilityId: mi.facilityId },
-            hash: `menu-${slugifyMenuItem(mi.title)}`,
+            to: "/dining/$facilityId/item/$slug",
+            params: { facilityId: mi.facilityId, slug: slugifyMenuItem(mi.title) },
           }),
         ),
       })),

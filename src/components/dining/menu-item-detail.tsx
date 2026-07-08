@@ -4,7 +4,7 @@ import * as React from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNowStrict } from "date-fns";
-import { ArrowLeftIcon, ChevronRightIcon, TrendingDownIcon, TrendingUpIcon } from "lucide-react";
+import { ArrowLeftIcon, TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 
 import { MenuItemPriceChart } from "#/components/dining/menu-item-price-chart.tsx";
 import { menuItemAnchorId } from "#/components/dining/menu-content.tsx";
@@ -17,6 +17,12 @@ import {
   CardHeader,
   CardTitle,
 } from "#/components/ui/card.tsx";
+import {
+  Carousel,
+  CarouselArrows,
+  CarouselContent,
+  CarouselItem,
+} from "#/components/ui/carousel.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { cn } from "#/lib/utils.ts";
@@ -51,6 +57,52 @@ function Stat({ label, children }: { label: string; children: React.ReactNode })
       </span>
       <span className="text-sm font-semibold tabular-nums">{children}</span>
     </div>
+  );
+}
+
+/** A shelf card for a venue that serves an item by the same name — mirrors the
+ *  photo card used on eats-page pick shelves (`PickCard`). */
+function ElsewhereCard({
+  facilityId,
+  slug,
+  name,
+  parkResort,
+  imageUrl,
+  price,
+  currency,
+}: {
+  facilityId: string;
+  slug: string;
+  name: string;
+  parkResort: string | null;
+  imageUrl: string | null;
+  price: number | null;
+  currency: string | null;
+}) {
+  return (
+    <Link to="/dining/$facilityId/item/$slug" params={{ facilityId, slug }} className="block">
+      <div className="group flex flex-col gap-2 outline-none">
+        <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-muted">
+          {imageUrl ? (
+            <img
+              src={imageUrl}
+              alt={name}
+              loading="lazy"
+              className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
+            />
+          ) : null}
+          <Badge className="absolute bottom-2 right-2 border-0 bg-black/60 text-xs font-normal text-white shadow-none backdrop-blur-sm">
+            {formatPrice(price, currency) ?? "—"}
+          </Badge>
+        </div>
+        <div className="flex flex-col gap-0.5 px-0.5">
+          <span className="line-clamp-1 text-sm font-medium group-hover:underline">{name}</span>
+          {parkResort && (
+            <span className="line-clamp-1 text-xs text-muted-foreground">{parkResort}</span>
+          )}
+        </div>
+      </div>
+    </Link>
   );
 }
 
@@ -181,61 +233,99 @@ export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug:
         )}
       </header>
 
-      {/* Summary + current price */}
-      <Card className="overflow-hidden">
-        <CardContent className="flex flex-col gap-5 p-5 sm:p-6">
-          <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
-            <div className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                {item.status === "removed" ? "Last known price" : "Current price"}
-                {item.current?.priceType ? ` · ${item.current.priceType}` : ""}
-              </span>
-              <span className="text-4xl font-bold leading-none tabular-nums">
-                {currentPrice ?? (stats ? formatPrice(stats.current, currency) : "—")}
-              </span>
-            </div>
-            {stats && Math.abs(stats.delta) >= 0.01 && (
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold",
-                  stats.delta > 0
-                    ? "bg-rose-500/10 text-rose-600 dark:text-rose-400"
-                    : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-                )}
-              >
-                {stats.delta > 0 ? (
-                  <TrendingUpIcon className="size-4" />
-                ) : (
-                  <TrendingDownIcon className="size-4" />
-                )}
-                {formatPrice(Math.abs(stats.delta), currency)} {stats.delta > 0 ? "up" : "down"}
-                <span className="font-normal opacity-80">since first tracked</span>
-              </span>
-            )}
-          </div>
-          <div
+      {/* Current price — isolated, directly under the item's identity block. */}
+      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            {item.status === "removed" ? "Last known price" : "Current price"}
+            {item.current?.priceType ? ` · ${item.current.priceType}` : ""}
+          </span>
+          <span className="text-4xl font-bold leading-none tabular-nums">
+            {currentPrice ?? (stats ? formatPrice(stats.current, currency) : "—")}
+          </span>
+        </div>
+        {stats && Math.abs(stats.delta) >= 0.01 && (
+          <span
             className={cn(
-              "grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border",
-              stats && "sm:grid-cols-4",
+              "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold",
+              stats.delta > 0
+                ? "bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
             )}
           >
-            {stats && (
-              <>
-                <Stat label="Lowest tracked">{formatPrice(stats.min, currency)}</Stat>
-                <Stat label="Highest tracked">{formatPrice(stats.max, currency)}</Stat>
-              </>
+            {stats.delta > 0 ? (
+              <TrendingUpIcon className="size-4" />
+            ) : (
+              <TrendingDownIcon className="size-4" />
             )}
-            <Stat label="First seen">
-              {item.firstSeenAt
-                ? `${formatDistanceToNowStrict(new Date(item.firstSeenAt))} ago`
-                : "Since we began tracking"}
-            </Stat>
-            <Stat label="Last change">
-              {item.lastChangedAt
-                ? `${formatDistanceToNowStrict(new Date(item.lastChangedAt))} ago`
-                : "No changes yet"}
-            </Stat>
-          </div>
+            {formatPrice(Math.abs(stats.delta), currency)} {stats.delta > 0 ? "up" : "down"}
+            <span className="font-normal opacity-80">since first tracked</span>
+          </span>
+        )}
+      </div>
+
+      {/* Same item name at other venues — many items recur verbatim across the
+          resort, and the shared title slug deep-links to each venue's copy. */}
+      {elsewhere.length > 0 && (
+        <Carousel opts={{ align: "start", dragFree: true }} className="-mx-4 lg:-mx-6">
+          <section className="flex flex-col gap-3">
+            <div className="flex items-end justify-between gap-4 px-4 lg:px-6">
+              <div className="flex flex-col gap-0.5">
+                <h3 className="text-lg font-semibold tracking-tight">Also found at</h3>
+                <p className="text-sm text-muted-foreground">
+                  {elsewhere.length === 1
+                    ? "One other location serves an item by this name"
+                    : `${elsewhere.length} other locations serve an item by this name`}
+                </p>
+              </div>
+              <CarouselArrows className="hidden md:flex" />
+            </div>
+            <CarouselContent
+              className="-ml-4"
+              viewportClassName="px-4 lg:px-6 [mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%_-_1.5rem),transparent)]"
+            >
+              {elsewhere.map((e) => (
+                <CarouselItem
+                  key={e.facilityId}
+                  className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5"
+                >
+                  <ElsewhereCard
+                    facilityId={e.facilityId}
+                    slug={slug}
+                    name={e.name}
+                    parkResort={e.parkResort}
+                    imageUrl={e.imageUrl}
+                    price={e.price}
+                    currency={e.currency}
+                  />
+                </CarouselItem>
+              ))}
+            </CarouselContent>
+          </section>
+        </Carousel>
+      )}
+
+      {/* Tracked-range stats — its own card now that the price lives above. */}
+      <Card className="overflow-hidden py-0">
+        <CardContent
+          className={cn("grid grid-cols-2 gap-px bg-border p-0", stats && "sm:grid-cols-4")}
+        >
+          {stats && (
+            <>
+              <Stat label="Lowest tracked">{formatPrice(stats.min, currency)}</Stat>
+              <Stat label="Highest tracked">{formatPrice(stats.max, currency)}</Stat>
+            </>
+          )}
+          <Stat label="First seen">
+            {item.firstSeenAt
+              ? `${formatDistanceToNowStrict(new Date(item.firstSeenAt))} ago`
+              : "Since we began tracking"}
+          </Stat>
+          <Stat label="Last change">
+            {item.lastChangedAt
+              ? `${formatDistanceToNowStrict(new Date(item.lastChangedAt))} ago`
+              : "No changes yet"}
+          </Stat>
         </CardContent>
       </Card>
 
@@ -300,47 +390,6 @@ export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug:
                   </li>
                 );
               })}
-            </ul>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Same item name at other venues — many items recur verbatim across the
-          resort, and the shared title slug deep-links to each venue's copy. */}
-      {elsewhere.length > 0 && (
-        <Card className="overflow-hidden">
-          <CardHeader>
-            <CardTitle className="text-base">Also found at</CardTitle>
-            <CardDescription>
-              {elsewhere.length === 1
-                ? "One other location serves an item by this name"
-                : `${elsewhere.length} other locations serve an item by this name`}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            <ul className="divide-y divide-border">
-              {elsewhere.map((e) => (
-                <li key={e.facilityId}>
-                  <Link
-                    to="/dining/$facilityId/item/$slug"
-                    params={{ facilityId: e.facilityId, slug }}
-                    className="flex items-center gap-3 px-5 py-3 transition-colors hover:bg-muted/50 sm:px-6"
-                  >
-                    <div className="flex min-w-0 flex-col">
-                      <span className="truncate text-sm font-medium">{e.name}</span>
-                      {e.parkResort && (
-                        <span className="truncate text-xs text-muted-foreground">
-                          {e.parkResort}
-                        </span>
-                      )}
-                    </div>
-                    <span className="ml-auto shrink-0 text-sm font-semibold tabular-nums">
-                      {formatPrice(e.price, e.currency) ?? "—"}
-                    </span>
-                    <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />
-                  </Link>
-                </li>
-              ))}
             </ul>
           </CardContent>
         </Card>

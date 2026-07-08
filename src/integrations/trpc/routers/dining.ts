@@ -806,13 +806,14 @@ export const diningRouter = {
         facility_id: string;
         name: string;
         park_resort: string | null;
+        image_url: string | null;
         title: string;
         price: number | null;
         currency: string | null;
         price_type: string | null;
       }>(sql`
         SELECT DISTINCT ON (i.facility_id)
-               r.facility_id, r.name, r.park_resort,
+               r.facility_id, r.name, r.park_resort, r.image_url,
                i.title, i.price, i.currency, i.price_type
         FROM dining_menu_item i
         JOIN dining_menu_snapshot s
@@ -829,6 +830,7 @@ export const diningRouter = {
           facilityId: r.facility_id,
           name: r.name,
           parkResort: r.park_resort,
+          imageUrl: r.image_url,
           title: r.title,
           price: r.price === null ? null : Number(r.price),
           currency: r.currency,
