@@ -136,7 +136,7 @@ export const secondaryCtaButton: React.CSSProperties = {
   display: "inline-block",
   fontSize: "15px",
   fontWeight: 600,
-  marginLeft: "10px",
+  marginTop: "12px",
   padding: "11px 20px",
   textDecoration: "none",
 };

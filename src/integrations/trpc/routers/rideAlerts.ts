@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { db } from "#/db/index.ts";
 import { rideAlert } from "#/db/schema.ts";
+import { wrapDeepLink } from "#/server/notifications/deepLinkRedirect.ts";
 import { QueueState, QueueType } from "#/server/parks/codes.ts";
 import { config } from "#/server/parks/config.ts";
 import { protectedProcedure } from "../init.ts";
@@ -60,7 +61,10 @@ const latestLl = (attractionCol: string) => sql`
  * parkfi has no delegated read of. The best honest link is "My Genie Day" for
  * today, which lands the user on the day's LL/Genie+ screen so they can grab
  * the ride themselves — a couple of taps, not zero-touch, same ceiling as the
- * dining deep link.
+ * dining deep link. Returned wrapped through `/deep-link` (see
+ * `deepLinkRedirect.ts`) since a raw `mdx://` href gets silently stripped by
+ * email HTML sanitizers — moot for the manager UI's own anchor tag, but this
+ * keeps one code path instead of two.
  */
 function buildLightningLaneDeepLink(completionDeepLink: string): string {
   const today = new Date().toISOString().slice(0, 10);
@@ -69,7 +73,7 @@ function buildLightningLaneDeepLink(completionDeepLink: string): string {
     displayDate: today,
     completionDeepLink,
   });
-  return `mdx://magicaccess/mygenieday?${qs.toString()}`;
+  return wrapDeepLink(`mdx://magicaccess/mygenieday?${qs.toString()}`);
 }
 
 const modeSchema = z.union([z.literal(1), z.literal(2), z.literal(3)]);

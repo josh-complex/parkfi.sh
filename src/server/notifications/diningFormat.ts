@@ -4,6 +4,7 @@
  * mailer renders from it. Framework-free so both the worker and the evaluator can
  * import it without pulling in React. Mirrors `stayFormat.ts`.
  */
+import { wrapDeepLink } from "#/server/notifications/deepLinkRedirect.ts";
 
 /** What we persist on `dining_notification.payload` — enough to render + audit. */
 export interface DiningNotificationPayload {
@@ -49,7 +50,9 @@ export function diningDateLabel(serviceDate: string | null, windowDays: number |
  * straight into the reservation flow, pre-scoped to a facility/party/time;
  * `completionDeepLink` bounces the user back once they're done. `serviceDate`
  * + `offerTime` combine into a local (no-offset) ISO 8601 datetime — dining
- * times are park-local, and MDE expects that, not UTC.
+ * times are park-local, and MDE expects that, not UTC. Returned wrapped
+ * through `/deep-link` (see `deepLinkRedirect.ts`) since a raw `mdx://` href
+ * gets silently stripped by email HTML sanitizers.
  */
 export function buildDiningDeepLink(params: {
   facilityId: string;
@@ -64,5 +67,5 @@ export function buildDiningDeepLink(params: {
     dateTime: `${params.serviceDate}T${params.offerTime}`,
     completionDeepLink: params.completionDeepLink,
   });
-  return `mdx://dining/reservation?${qs.toString()}`;
+  return wrapDeepLink(`mdx://dining/reservation?${qs.toString()}`);
 }

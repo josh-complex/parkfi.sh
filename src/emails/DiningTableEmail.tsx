@@ -38,9 +38,12 @@ export function DiningTableEmail({
           Find a time
         </Button>
         {deepLinkUrl ? (
-          <Button style={secondaryCtaButton} href={deepLinkUrl}>
-            Open in Disney App
-          </Button>
+          <>
+            <br />
+            <Button style={secondaryCtaButton} href={deepLinkUrl}>
+              Open in Disney App
+            </Button>
+          </>
         ) : null}
       </Section>
     </AlertLayout>

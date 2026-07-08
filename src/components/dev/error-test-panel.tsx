@@ -114,7 +114,15 @@ export function ErrorTestPanel() {
   );
   const fireMyDiningAlert = useMutation(
     trpc.adminAlerts.fireMyDiningAlert.mutationOptions({
-      onSuccess: (r) => toast.success(`Fired: ${r.payload.subject}`),
+      onSuccess: (r) =>
+        toast.success(`Fired: ${r.payload.subject}`, {
+          action: r.payload.deepLink
+            ? {
+                label: "Open in Disney App",
+                onClick: () => window.open(r.payload.deepLink!, "_blank"),
+              }
+            : undefined,
+        }),
       onError: (err) => toast.error(err.message || "Could not fire alert"),
     }),
   );

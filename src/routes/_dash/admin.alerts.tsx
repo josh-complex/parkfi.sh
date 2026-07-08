@@ -227,7 +227,12 @@ function ForceFireDiningCard() {
     trpc.adminAlerts.forceFireDiningAlert.mutationOptions({
       onSuccess: (r) =>
         toast.success(`Fired: ${r.payload.subject}`, {
-          description: r.payload.deepLink ?? undefined,
+          action: r.payload.deepLink
+            ? {
+                label: "Open in Disney App",
+                onClick: () => window.open(r.payload.deepLink!, "_blank"),
+              }
+            : undefined,
         }),
       onError: (err) => toast.error(err.message || "Could not fire alert"),
     }),

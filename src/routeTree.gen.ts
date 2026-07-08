@@ -20,6 +20,7 @@ import { Route as PinsRouteImport } from './routes/pins'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DisclaimersRouteImport } from './routes/disclaimers'
 import { Route as DiningRouteImport } from './routes/dining'
+import { Route as DeepLinkRouteImport } from './routes/deep-link'
 import { Route as DashRouteImport } from './routes/_dash'
 import { Route as BlogIndexRouteImport } from './routes/blog/index'
 import { Route as DashIndexRouteImport } from './routes/_dash/index'
@@ -111,6 +112,11 @@ const DisclaimersRoute = DisclaimersRouteImport.update({
 const DiningRoute = DiningRouteImport.update({
   id: '/dining',
   path: '/dining',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DeepLinkRoute = DeepLinkRouteImport.update({
+  id: '/deep-link',
+  path: '/deep-link',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashRoute = DashRouteImport.update({
@@ -304,6 +310,7 @@ const DashParkSlugRideRideSlugRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof DashIndexRoute
+  '/deep-link': typeof DeepLinkRoute
   '/dining': typeof DiningRoute
   '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
@@ -352,6 +359,7 @@ export interface FileRoutesByFullPath {
   '/og/ride/$parkSlug/$rideSlug/card.png': typeof OgRideParkSlugRideSlugCardDotpngRoute
 }
 export interface FileRoutesByTo {
+  '/deep-link': typeof DeepLinkRoute
   '/dining': typeof DiningRoute
   '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
@@ -401,6 +409,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_dash': typeof DashRouteWithChildren
+  '/deep-link': typeof DeepLinkRoute
   '/dining': typeof DiningRoute
   '/disclaimers': typeof DisclaimersRoute
   '/login': typeof LoginRoute
@@ -453,6 +462,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/deep-link'
     | '/dining'
     | '/disclaimers'
     | '/login'
@@ -501,6 +511,7 @@ export interface FileRouteTypes {
     | '/og/ride/$parkSlug/$rideSlug/card.png'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/deep-link'
     | '/dining'
     | '/disclaimers'
     | '/login'
@@ -549,6 +560,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_dash'
+    | '/deep-link'
     | '/dining'
     | '/disclaimers'
     | '/login'
@@ -600,6 +612,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   DashRoute: typeof DashRouteWithChildren
+  DeepLinkRoute: typeof DeepLinkRoute
   DiningRoute: typeof DiningRoute
   DisclaimersRoute: typeof DisclaimersRoute
   LoginRoute: typeof LoginRoute
@@ -707,6 +720,13 @@ declare module '@tanstack/react-router' {
       path: '/dining'
       fullPath: '/dining'
       preLoaderRoute: typeof DiningRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/deep-link': {
+      id: '/deep-link'
+      path: '/deep-link'
+      fullPath: '/deep-link'
+      preLoaderRoute: typeof DeepLinkRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_dash': {
@@ -1039,6 +1059,7 @@ const DashRouteWithChildren = DashRoute._addFileChildren(DashRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   DashRoute: DashRouteWithChildren,
+  DeepLinkRoute: DeepLinkRoute,
   DiningRoute: DiningRoute,
   DisclaimersRoute: DisclaimersRoute,
   LoginRoute: LoginRoute,
