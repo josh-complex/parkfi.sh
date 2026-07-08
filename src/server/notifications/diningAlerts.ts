@@ -97,8 +97,11 @@ function isDirty(a: DiningAlertRow, d: DiningAlertDecision): boolean {
   );
 }
 
-/** Build the persisted payload + subject for a firing alert. */
-function buildPayload(a: DiningAlertRow): DiningNotificationPayload {
+/**
+ * Build the persisted payload + subject for a firing alert. Exported so the
+ * admin debug tool can build an identical payload for a force-fired alert.
+ */
+export function buildDiningNotificationPayload(a: DiningAlertRow): DiningNotificationPayload {
   const restaurantName = a.matchedName ?? "a Disney restaurant";
   const matchedDate = a.matchedDate ?? "";
   const dateLabel = diningDateLabel(a.serviceDate, a.windowDays);
@@ -126,6 +129,42 @@ function buildPayload(a: DiningAlertRow): DiningNotificationPayload {
     subject,
     deepLink,
   };
+}
+
+/**
+ * Fire the push + (unless opted out) email delivery for one matched dining
+ * alert. Shared by the real sweep and the admin debug tool's force-fire, so
+ * both exercise the exact same delivery path (including the mdx deep link).
+ */
+export async function dispatchDiningFire(params: {
+  alertId: number;
+  userId: string;
+  payload: DiningNotificationPayload;
+  pushUrl: string;
+  emailOptOut: boolean;
+}): Promise<void> {
+  await getPushQueue().add("dining-alert", {
+    userId: params.userId,
+    title: params.payload.subject,
+    body: `Party of ${params.payload.partySize} · ${params.payload.dateLabel}`,
+    url: params.pushUrl,
+  });
+  if (!params.emailOptOut) {
+    // Durable log FIRST (status queued), then enqueue carrying its id — a
+    // crash between the two leaves a queued row to reconcile, never a silent
+    // send.
+    const [row] = await db
+      .insert(diningNotification)
+      .values({
+        alertId: params.alertId,
+        userId: params.userId,
+        channel: "email",
+        payload: params.payload,
+        status: "queued",
+      })
+      .returning({ id: diningNotification.id });
+    await getDiningAlertQueue().add("dining-alert", { notificationId: row.id });
+  }
 }
 
 /**
@@ -207,32 +246,14 @@ export async function evaluateDiningAlerts(now: number = Date.now()): Promise<nu
   for (const a of rows) {
     const decision = decideDiningAlert(a, now, config.alertCooldownMs);
     if (decision.fire) {
-      const payload = buildPayload(a);
-      // Push first: it's the fast, opt-in-by-subscription channel and never
-      // waits on the durable email log. A user with no registered device just
-      // gets a harmless no-op (the worker logs and drops it).
-      await getPushQueue().add("dining-alert", {
+      const payload = buildDiningNotificationPayload(a);
+      await dispatchDiningFire({
+        alertId: a.id,
         userId: a.userId,
-        title: payload.subject,
-        body: `Party of ${a.partySize} · ${payload.dateLabel}`,
-        url: a.matchedFacilityId ? `/dining/${a.matchedFacilityId}` : "/dining",
+        payload,
+        pushUrl: a.matchedFacilityId ? `/dining/${a.matchedFacilityId}` : "/dining",
+        emailOptOut: a.emailOptOut,
       });
-      if (!a.emailOptOut) {
-        // Durable log FIRST (status queued), then enqueue carrying its id — a
-        // crash between the two leaves a queued row to reconcile, never a
-        // silent send.
-        const [row] = await db
-          .insert(diningNotification)
-          .values({
-            alertId: a.id,
-            userId: a.userId,
-            channel: "email",
-            payload,
-            status: "queued",
-          })
-          .returning({ id: diningNotification.id });
-        await getDiningAlertQueue().add("dining-alert", { notificationId: row.id });
-      }
       fired++;
     }
     if (isDirty(a, decision)) {

@@ -92,6 +92,33 @@ export function ErrorTestPanel() {
     }),
   );
 
+  // Alerts QA — runs the real sweeps/dispatch path against live data (admin-only
+  // server-side, see adminAlerts.ts).
+  const runDiningSweep = useMutation(
+    trpc.adminAlerts.runDiningSweep.mutationOptions({
+      onSuccess: (r) => toast.success(`Dining sweep fired ${r.fired} alert(s)`),
+      onError: (err) => toast.error(err.message || "Sweep failed"),
+    }),
+  );
+  const runRideSweep = useMutation(
+    trpc.adminAlerts.runRideSweep.mutationOptions({
+      onSuccess: (r) => toast.success(`Ride/Lightning Lane sweep fired ${r.fired} alert(s)`),
+      onError: (err) => toast.error(err.message || "Sweep failed"),
+    }),
+  );
+  const sendTestPushToMe = useMutation(
+    trpc.adminAlerts.sendTestPushToMe.mutationOptions({
+      onSuccess: () => toast.success("Push enqueued — check this device"),
+      onError: (err) => toast.error(err.message || "Could not send push"),
+    }),
+  );
+  const fireMyDiningAlert = useMutation(
+    trpc.adminAlerts.fireMyDiningAlert.mutationOptions({
+      onSuccess: (r) => toast.success(`Fired: ${r.payload.subject}`),
+      onError: (err) => toast.error(err.message || "Could not fire alert"),
+    }),
+  );
+
   // Hooks above run unconditionally; gate rendering only after them.
   if (!enabled) return null;
   if (crash) return <Boom />;
@@ -206,6 +233,27 @@ export function ErrorTestPanel() {
           label: "Reset my achievements",
           run: () => devReset.mutate(),
           danger: true,
+        },
+      ],
+    },
+    {
+      heading: "Alerts",
+      actions: [
+        {
+          label: "Run dining sweep",
+          run: () => runDiningSweep.mutate(),
+        },
+        {
+          label: "Run ride / Lightning Lane sweep",
+          run: () => runRideSweep.mutate(),
+        },
+        {
+          label: "Send myself a test push",
+          run: () => sendTestPushToMe.mutate(),
+        },
+        {
+          label: "Fire my dining alert",
+          run: () => fireMyDiningAlert.mutate(),
         },
       ],
     },

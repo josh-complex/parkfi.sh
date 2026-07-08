@@ -941,7 +941,8 @@ export const rideAlert = pgTable(
       .references(() => attractions.id),
 
     // rule: 1 = threshold (fire when standby <= thresholdMin),
-    //       2 = change   (fire on status flip or |Δ standby| >= changeDelta)
+    //       2 = change     (fire on status flip or |Δ standby| >= changeDelta)
+    //       3 = ll_available (fire when Lightning Lane — Multi or Single — opens)
     mode: smallint("mode").notNull(),
     thresholdMin: integer("threshold_min"),
     changeDelta: integer("change_delta"),
@@ -951,6 +952,12 @@ export const rideAlert = pgTable(
     lastFiredAt: timestamp("last_fired_at", { withTimezone: true }),
     lastWaitMin: integer("last_wait_min"),
     lastStatus: smallint("last_status"),
+    // Mode 3's edge-detect baseline: the last observed `queue_obs.state` for
+    // whichever LL product (RETURN_TIME/PAID_RETURN_TIME) was most recently
+    // reported. Kept separate from `lastStatus` (attraction operating status,
+    // a different code space) since both are always carried forward regardless
+    // of mode.
+    lastLlState: smallint("last_ll_state"),
 
     active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

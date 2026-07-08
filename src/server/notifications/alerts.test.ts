@@ -19,8 +19,10 @@ function row(overrides: Partial<AlertRow>): AlertRow {
     lastFiredAt: null,
     lastWaitMin: null,
     lastStatus: 1,
+    lastLlState: null,
     wait: null,
     status: 1,
+    llState: null,
     ...overrides,
   };
 }
@@ -103,5 +105,46 @@ describe("decideAlert — bookkeeping", () => {
   it("always carries the latest status into lastStatus for edge detection", () => {
     const d = decideAlert(row({ wait: 30, status: 2, lastStatus: 1, armed: false }), NOW, COOLDOWN);
     expect(d.set.lastStatus).toBe(2);
+  });
+
+  it("always carries the latest LL state into lastLlState for edge detection", () => {
+    const d = decideAlert(row({ llState: 3, lastLlState: 1, armed: false }), NOW, COOLDOWN);
+    expect(d.set.lastLlState).toBe(3);
+  });
+});
+
+describe("decideAlert — ll_available mode", () => {
+  const ll = (o: Partial<AlertRow>) =>
+    row({ mode: AlertMode.LL_AVAILABLE, thresholdMin: null, ...o });
+
+  it("fires when Lightning Lane becomes available while armed and cooled", () => {
+    const d = decideAlert(ll({ llState: 1 /* AVAILABLE */ }), NOW, COOLDOWN);
+    expect(d.fire).toBe(true);
+    expect(d.set.armed).toBe(false);
+  });
+
+  it("fires when Lightning Lane is limited (not fully available)", () => {
+    const d = decideAlert(ll({ llState: 2 /* LIMITED */ }), NOW, COOLDOWN);
+    expect(d.fire).toBe(true);
+  });
+
+  it("does not fire when sold out, and re-arms", () => {
+    const d = decideAlert(ll({ llState: 3 /* SOLD_OUT */, armed: false }), NOW, COOLDOWN);
+    expect(d.fire).toBe(false);
+    expect(d.set.armed).toBe(true);
+  });
+
+  it("does not fire when the ride has no LL product at all", () => {
+    const d = decideAlert(ll({ llState: null }), NOW, COOLDOWN);
+    expect(d.fire).toBe(false);
+  });
+
+  it("is suppressed by cooldown even when armed and available", () => {
+    const d = decideAlert(
+      ll({ llState: 1, armed: true, lastFiredAt: new Date(NOW - 5 * 60_000) }),
+      NOW,
+      COOLDOWN,
+    );
+    expect(d.fire).toBe(false);
   });
 });

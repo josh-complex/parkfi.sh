@@ -1,5 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { FileText, ShieldAlert, Trophy } from "lucide-react";
+import { BellRing, FileText, ShieldAlert, Trophy } from "lucide-react";
 
 import { Card, CardDescription, CardHeader, CardTitle } from "#/components/ui/card.tsx";
 import { seo } from "#/lib/seo.ts";
@@ -35,6 +35,12 @@ const TOOLS: AdminTool[] = [
     description: "Inspect user stats and revoke achievement unlocks for testing.",
     to: "/admin/achievements",
     icon: Trophy,
+  },
+  {
+    title: "Alerts",
+    description: "Run alert sweeps on demand and fire test push/dining notifications.",
+    to: "/admin/alerts",
+    icon: BellRing,
   },
 ];
 

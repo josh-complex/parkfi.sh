@@ -223,11 +223,26 @@ export function categoryFromDisneyPoi(
  * slots, so swapping in 800x450 yields a clean hero. Returns null when the URL
  * doesn't carry the expected segment (degrade to the thumbnail).
  */
+const MW_IMAGE_RESIZE_RE = /\/resize\/mwImage\/1\/\d+\/\d+\/75\//;
+
 export function disneyHeroUrl(thumbUrl?: string | null): string | null {
   if (!thumbUrl) return null;
-  const re = /\/resize\/mwImage\/1\/\d+\/\d+\/75\//;
-  if (!re.test(thumbUrl)) return null;
-  return thumbUrl.replace(re, "/resize/mwImage/1/800/450/75/");
+  if (!MW_IMAGE_RESIZE_RE.test(thumbUrl)) return null;
+  return thumbUrl.replace(MW_IMAGE_RESIZE_RE, "/resize/mwImage/1/800/450/75/");
+}
+
+/**
+ * Rewrite a Disney CDN image URL's resize segment down to a small list-tile
+ * size. The resort catalog stores a single full 1600x900 hero URL (used as-is
+ * on the detail page); shelf/grid cards render only a couple hundred px wide,
+ * so requesting a proportionally smaller asset here cuts payload size and
+ * load time for the browse/search views. Returns null when the URL doesn't
+ * carry the expected resize segment (degrade to the original).
+ */
+export function disneyThumbUrl(url?: string | null): string | null {
+  if (!url) return null;
+  if (!MW_IMAGE_RESIZE_RE.test(url)) return null;
+  return url.replace(MW_IMAGE_RESIZE_RE, "/resize/mwImage/1/640/360/75/");
 }
 
 /**

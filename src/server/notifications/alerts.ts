@@ -11,6 +11,7 @@ import { sql } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
 import { rideAlert } from "#/db/schema.ts";
+import { QueueState, QueueType } from "#/server/parks/codes.ts";
 import { config } from "#/server/parks/config.ts";
 import { getPushQueue, type PushJob } from "#/server/notifications/queue.ts";
 
@@ -18,6 +19,7 @@ import { getPushQueue, type PushJob } from "#/server/notifications/queue.ts";
 export const AlertMode = {
   THRESHOLD: 1,
   CHANGE: 2,
+  LL_AVAILABLE: 3,
 } as const;
 export type AlertModeCode = (typeof AlertMode)[keyof typeof AlertMode];
 
@@ -35,9 +37,13 @@ export interface AlertRow {
   lastFiredAt: Date | null;
   lastWaitMin: number | null;
   lastStatus: number | null;
+  lastLlState: number | null;
   // latest observed (null when the ride has no recent data)
   wait: number | null;
   status: number | null;
+  // latest `queue_obs.state` for whichever LL product (Multi/Single) was most
+  // recently reported; null when the ride has no LL product at all.
+  llState: number | null;
 }
 
 /** Columns the evaluator writes back after deciding a row. */
@@ -46,6 +52,7 @@ export interface AlertStateUpdate {
   lastFiredAt?: Date;
   lastWaitMin?: number | null;
   lastStatus: number | null;
+  lastLlState: number | null;
 }
 
 export interface AlertDecision {
@@ -69,6 +76,9 @@ function ruleMet(a: AlertRow): boolean {
       Math.abs(a.wait - a.lastWaitMin) >= a.changeDelta;
     return statusFlipped || drifted;
   }
+  if (a.mode === AlertMode.LL_AVAILABLE) {
+    return a.llState === QueueState.AVAILABLE || a.llState === QueueState.LIMITED;
+  }
   return false;
 }
 
@@ -78,12 +88,13 @@ function ruleMet(a: AlertRow): boolean {
  *
  * Edge-trigger: fire only on the arming edge (armed && met), then disarm; re-arm
  * once the rule stops matching. Cooldown gates repeat fires while still matched.
- * `lastStatus` is always refreshed so status flips are edge-detected next tick.
+ * `lastStatus`/`lastLlState` are always refreshed so a flip is edge-detected next
+ * tick, regardless of the alert's own mode.
  */
 export function decideAlert(a: AlertRow, now: number, cooldownMs: number): AlertDecision {
   const met = ruleMet(a);
   const cooled = a.lastFiredAt == null || now - a.lastFiredAt.getTime() >= cooldownMs;
-  const set: AlertStateUpdate = { lastStatus: a.status };
+  const set: AlertStateUpdate = { lastStatus: a.status, lastLlState: a.llState };
 
   if (met && a.armed && cooled) {
     set.armed = false;
@@ -102,10 +113,15 @@ function buildJob(a: AlertRow): PushJob {
   const body =
     a.mode === AlertMode.THRESHOLD
       ? `Standby dropped to ${a.wait} min (alert: ≤${a.thresholdMin} min)`
-      : `Standby is now ${a.wait != null ? `${a.wait} min` : "updated"}`;
+      : a.mode === AlertMode.LL_AVAILABLE
+        ? "Lightning Lane just opened up"
+        : `Standby is now ${a.wait != null ? `${a.wait} min` : "updated"}`;
   return {
     userId: a.userId,
-    title: `${a.attractionName} — ${wait}`,
+    title:
+      a.mode === AlertMode.LL_AVAILABLE
+        ? `${a.attractionName} — Lightning Lane`
+        : `${a.attractionName} — ${wait}`,
     body,
     url: `/park/${a.parkSlug}`,
   };
@@ -117,7 +133,8 @@ function isDirty(a: AlertRow, d: AlertDecision): boolean {
     d.set.armed !== undefined ||
     d.set.lastFiredAt !== undefined ||
     d.set.lastWaitMin !== undefined ||
-    a.lastStatus !== a.status
+    a.lastStatus !== a.status ||
+    a.lastLlState !== a.llState
   );
 }
 
@@ -139,13 +156,15 @@ export async function evaluateAlerts(now: number = Date.now()): Promise<number> 
     last_fired_at: string | null;
     last_wait_min: number | null;
     last_status: number | null;
+    last_ll_state: number | null;
     wait: number | null;
     status: number | null;
+    ll_state: number | null;
   }>(sql`
     SELECT ra.id, ra.user_id, ra.attraction_id, a.name AS attraction_name, p.slug AS park_slug,
            ra.mode, ra.threshold_min, ra.change_delta, ra.armed, ra.last_fired_at,
-           ra.last_wait_min, ra.last_status,
-           sb.wait_min AS wait, st.status AS status
+           ra.last_wait_min, ra.last_status, ra.last_ll_state,
+           sb.wait_min AS wait, st.status AS status, ll.state AS ll_state
     FROM ride_alert ra
     JOIN attractions a ON a.id = ra.attraction_id
     JOIN parks p ON p.id = ra.park_id
@@ -153,7 +172,7 @@ export async function evaluateAlerts(now: number = Date.now()): Promise<number> 
       SELECT q.wait_min
       FROM queue_obs q
       WHERE q.attraction_id = ra.attraction_id
-        AND q.queue_type = 1
+        AND q.queue_type = ${QueueType.STANDBY}
         AND q.observed_at >= now() - INTERVAL '24 hours'
       ORDER BY q.observed_at DESC
       LIMIT 1
@@ -165,6 +184,15 @@ export async function evaluateAlerts(now: number = Date.now()): Promise<number> 
       ORDER BY s.observed_at DESC
       LIMIT 1
     ) st ON true
+    LEFT JOIN LATERAL (
+      SELECT q.state
+      FROM queue_obs q
+      WHERE q.attraction_id = ra.attraction_id
+        AND q.queue_type IN (${QueueType.RETURN_TIME}, ${QueueType.PAID_RETURN_TIME})
+        AND q.observed_at >= now() - INTERVAL '24 hours'
+      ORDER BY q.observed_at DESC
+      LIMIT 1
+    ) ll ON true
     WHERE ra.active = true
   `);
 
@@ -181,8 +209,10 @@ export async function evaluateAlerts(now: number = Date.now()): Promise<number> 
     lastFiredAt: r.last_fired_at ? new Date(r.last_fired_at) : null,
     lastWaitMin: r.last_wait_min,
     lastStatus: r.last_status,
+    lastLlState: r.last_ll_state,
     wait: r.wait,
     status: r.status,
+    llState: r.ll_state,
   }));
 
   let fired = 0;

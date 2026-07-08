@@ -31,6 +31,7 @@ export interface RideAlertEntry {
 
 const THRESHOLD = 1;
 const CHANGE = 2;
+const LL_AVAILABLE = 3;
 const DEFAULT_THRESHOLD = 20;
 const DEFAULT_DELTA = 15;
 
@@ -99,18 +100,22 @@ export function RideAlertButton({
   function pickMode(next: number) {
     setMode(next);
     // Carry a sensible default when switching rule types.
-    setValue(next === THRESHOLD ? DEFAULT_THRESHOLD : DEFAULT_DELTA);
+    if (next !== LL_AVAILABLE) setValue(next === THRESHOLD ? DEFAULT_THRESHOLD : DEFAULT_DELTA);
   }
 
   function submit() {
-    if (!Number.isFinite(value) || value <= 0) {
+    if (mode !== LL_AVAILABLE && (!Number.isFinite(value) || value <= 0)) {
       toast.error("Enter a number greater than zero");
       return;
     }
     save.mutate({
       attractionId,
-      mode: mode === CHANGE ? CHANGE : THRESHOLD,
-      ...(mode === THRESHOLD ? { thresholdMin: value } : { changeDelta: value }),
+      mode: mode === CHANGE ? CHANGE : mode === LL_AVAILABLE ? LL_AVAILABLE : THRESHOLD,
+      ...(mode === THRESHOLD
+        ? { thresholdMin: value }
+        : mode === CHANGE
+          ? { changeDelta: value }
+          : {}),
     });
   }
 
@@ -151,7 +156,7 @@ export function RideAlertButton({
               <PopoverDescription>Notify me when…</PopoverDescription>
             </PopoverHeader>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <Button
                 type="button"
                 size="sm"
@@ -168,31 +173,45 @@ export function RideAlertButton({
               >
                 Changes by
               </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={mode === LL_AVAILABLE ? "default" : "outline"}
+                onClick={() => pickMode(LL_AVAILABLE)}
+              >
+                Lightning Lane
+              </Button>
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="ride-alert-value">
-                {mode === THRESHOLD ? "Target standby wait" : "Change amount"}
-              </Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  id="ride-alert-value"
-                  type="number"
-                  min={1}
-                  max={600}
-                  inputMode="numeric"
-                  value={Number.isFinite(value) ? value : ""}
-                  onChange={(e) => setValue(e.target.valueAsNumber)}
-                  className="w-24"
-                />
-                <span className="text-muted-foreground text-sm">minutes</span>
-              </div>
+            {mode === LL_AVAILABLE ? (
               <p className="text-muted-foreground text-xs">
-                {mode === THRESHOLD
-                  ? `Alerts once standby is ${Number.isFinite(value) ? value : "—"} min or less.`
-                  : `Alerts when standby moves by ${Number.isFinite(value) ? value : "—"} min, or the ride opens/closes.`}
+                Alerts the moment Lightning Lane opens up for this ride.
               </p>
-            </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="ride-alert-value">
+                  {mode === THRESHOLD ? "Target standby wait" : "Change amount"}
+                </Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="ride-alert-value"
+                    type="number"
+                    min={1}
+                    max={600}
+                    inputMode="numeric"
+                    value={Number.isFinite(value) ? value : ""}
+                    onChange={(e) => setValue(e.target.valueAsNumber)}
+                    className="w-24"
+                  />
+                  <span className="text-muted-foreground text-sm">minutes</span>
+                </div>
+                <p className="text-muted-foreground text-xs">
+                  {mode === THRESHOLD
+                    ? `Alerts once standby is ${Number.isFinite(value) ? value : "—"} min or less.`
+                    : `Alerts when standby moves by ${Number.isFinite(value) ? value : "—"} min, or the ride opens/closes.`}
+                </p>
+              </div>
+            )}
 
             <div className="flex items-center gap-2 pt-1">
               <Button size="sm" className="flex-1" disabled={pending} onClick={submit}>

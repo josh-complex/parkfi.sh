@@ -21,11 +21,14 @@ type AlertItem = {
   changeDelta: number | null;
   currentWait: number | null;
   status: string | null;
+  llAvailable: boolean;
+  deepLink: string | null;
 };
 
 /** Human description of an alert's rule for the management list. */
 function ruleLabel(a: AlertItem): string {
   if (a.mode === 1) return `When standby ≤ ${a.thresholdMin} min`;
+  if (a.mode === 3) return "When Lightning Lane opens up";
   return `When standby changes by ${a.changeDelta} min or it opens/closes`;
 }
 
@@ -56,6 +59,11 @@ function AlertRow({ alert }: { alert: AlertItem }) {
           <p className="text-muted-foreground text-xs lowercase">{alert.status}</p>
         ) : null}
       </div>
+      {alert.deepLink ? (
+        <Button size="sm" render={<a href={alert.deepLink} />}>
+          Open in Disney App
+        </Button>
+      ) : null}
       <RideAlertButton
         attractionId={alert.attractionId}
         attractionName={alert.attractionName}

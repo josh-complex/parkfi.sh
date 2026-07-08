@@ -4,6 +4,8 @@ import { z } from "zod";
 
 import { db } from "#/db/index.ts";
 import { rideAlert } from "#/db/schema.ts";
+import { QueueState, QueueType } from "#/server/parks/codes.ts";
+import { config } from "#/server/parks/config.ts";
 import { protectedProcedure } from "../init.ts";
 
 /** Max active alerts a user may keep per park (app rule; see schema invariant). */
@@ -24,7 +26,7 @@ const latestWait = (attractionCol: string) => sql`
     SELECT q.wait_min
     FROM queue_obs q
     WHERE q.attraction_id = ${sql.raw(attractionCol)}
-      AND q.queue_type = 1
+      AND q.queue_type = ${QueueType.STANDBY}
       AND q.observed_at >= now() - INTERVAL '24 hours'
     ORDER BY q.observed_at DESC
     LIMIT 1
@@ -37,8 +39,40 @@ const latestStatus = (attractionCol: string) => sql`
     ORDER BY s.observed_at DESC
     LIMIT 1
   ) st ON true`;
+// Latest Lightning Lane state (either product — Multi=RETURN_TIME or
+// Single=PAID_RETURN_TIME, whichever last reported) for mode-3 alerts.
+const latestLl = (attractionCol: string) => sql`
+  LEFT JOIN LATERAL (
+    SELECT q.state
+    FROM queue_obs q
+    WHERE q.attraction_id = ${sql.raw(attractionCol)}
+      AND q.queue_type IN (${QueueType.RETURN_TIME}, ${QueueType.PAID_RETURN_TIME})
+      AND q.observed_at >= now() - INTERVAL '24 hours'
+    ORDER BY q.observed_at DESC
+    LIMIT 1
+  ) ll ON true`;
 
-const modeSchema = z.union([z.literal(1), z.literal(2)]);
+/**
+ * My Disney Experience's `mdx://` deep-link scheme (route table recovered by
+ * static decompile, see `docs/plans/jiminy/write-spike.md`). There is no
+ * ride-scoped "open this Lightning Lane" route in that table — Multi/Single
+ * *modify* links need a `planId`/`orderId` from the user's own MDE plan, which
+ * parkfi has no delegated read of. The best honest link is "My Genie Day" for
+ * today, which lands the user on the day's LL/Genie+ screen so they can grab
+ * the ride themselves — a couple of taps, not zero-touch, same ceiling as the
+ * dining deep link.
+ */
+function buildLightningLaneDeepLink(completionDeepLink: string): string {
+  const today = new Date().toISOString().slice(0, 10);
+  const qs = new URLSearchParams({
+    tab: "day",
+    displayDate: today,
+    completionDeepLink,
+  });
+  return `mdx://magicaccess/mygenieday?${qs.toString()}`;
+}
+
+const modeSchema = z.union([z.literal(1), z.literal(2), z.literal(3)]);
 
 // mode 1 (threshold) requires a target wait; mode 2 (change) requires a delta.
 const needsThreshold = (v: { mode: number; thresholdMin?: number }) =>
@@ -101,16 +135,18 @@ export const rideAlertsRouter = {
       last_fired_at: string | null;
       current_wait: number | null;
       status: number | null;
+      ll_state: number | null;
     }>(sql`
       SELECT ra.id, ra.attraction_id, a.name AS attraction_name, a.slug AS attraction_slug,
              ra.park_id, p.slug AS park_slug, p.name AS park_name,
              ra.mode, ra.threshold_min, ra.change_delta, ra.armed, ra.last_fired_at,
-             sb.wait_min AS current_wait, st.status AS status
+             sb.wait_min AS current_wait, st.status AS status, ll.state AS ll_state
       FROM ride_alert ra
       JOIN attractions a ON a.id = ra.attraction_id
       JOIN parks p ON p.id = ra.park_id
       ${latestWait("ra.attraction_id")}
       ${latestStatus("ra.attraction_id")}
+      ${latestLl("ra.attraction_id")}
       WHERE ra.user_id = ${ctx.userId} AND ra.active = true
       ORDER BY p.name, a.name
     `);
@@ -135,6 +171,8 @@ export const rideAlertsRouter = {
           lastFiredAt: string | null;
           currentWait: number | null;
           status: string | null;
+          llAvailable: boolean;
+          deepLink: string | null;
         }>;
       }
     >();
@@ -154,6 +192,13 @@ export const rideAlertsRouter = {
         byPark.set(parkId, group);
       }
       group.used++;
+      const llAvailable = r.ll_state === QueueState.AVAILABLE || r.ll_state === QueueState.LIMITED;
+      const deepLink =
+        Number(r.mode) === 3 && llAvailable
+          ? buildLightningLaneDeepLink(
+              `${config.appBaseUrl}/park/${r.park_slug}/ride/${r.attraction_slug}`,
+            )
+          : null;
       group.alerts.push({
         id: Number(r.id),
         attractionId: Number(r.attraction_id),
@@ -166,6 +211,8 @@ export const rideAlertsRouter = {
         lastFiredAt: r.last_fired_at,
         currentWait: r.current_wait,
         status: r.status == null ? null : (STATUS_CODE[r.status] ?? null),
+        llAvailable,
+        deepLink,
       });
     }
 
@@ -180,11 +227,13 @@ export const rideAlertsRouter = {
       park_id: string;
       wait: number | null;
       status: number | null;
+      ll_state: number | null;
     }>(sql`
-      SELECT a.park_id, sb.wait_min AS wait, st.status AS status
+      SELECT a.park_id, sb.wait_min AS wait, st.status AS status, ll.state AS ll_state
       FROM attractions a
       ${latestWait("a.id")}
       ${latestStatus("a.id")}
+      ${latestLl("a.id")}
       WHERE a.id = ${input.attractionId}
     `);
     const info = resolved.rows[0];
@@ -217,6 +266,7 @@ export const rideAlertsRouter = {
         armed: true,
         lastWaitMin: info.wait,
         lastStatus: info.status,
+        lastLlState: info.ll_state,
         active: true,
       })
       .onConflictDoUpdate({
@@ -228,6 +278,7 @@ export const rideAlertsRouter = {
           lastFiredAt: null,
           lastWaitMin: info.wait,
           lastStatus: info.status,
+          lastLlState: info.ll_state,
           active: true,
         },
       });
@@ -237,11 +288,16 @@ export const rideAlertsRouter = {
 
   /** Edit an existing alert's rule and re-arm it. */
   update: protectedProcedure.input(updateInput).mutation(async ({ ctx, input }) => {
-    const seed = await db.execute<{ wait: number | null; status: number | null }>(sql`
-      SELECT sb.wait_min AS wait, st.status AS status
+    const seed = await db.execute<{
+      wait: number | null;
+      status: number | null;
+      ll_state: number | null;
+    }>(sql`
+      SELECT sb.wait_min AS wait, st.status AS status, ll.state AS ll_state
       FROM ride_alert ra
       ${latestWait("ra.attraction_id")}
       ${latestStatus("ra.attraction_id")}
+      ${latestLl("ra.attraction_id")}
       WHERE ra.id = ${input.id} AND ra.user_id = ${ctx.userId} AND ra.active = true
     `);
     const info = seed.rows[0];
@@ -255,6 +311,7 @@ export const rideAlertsRouter = {
         lastFiredAt: null,
         lastWaitMin: info.wait,
         lastStatus: info.status,
+        lastLlState: info.ll_state,
       })
       .where(and(eq(rideAlert.id, input.id), eq(rideAlert.userId, ctx.userId)));
 

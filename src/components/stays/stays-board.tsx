@@ -22,6 +22,7 @@ import {
   useCloseOnScroll,
 } from "#/components/core-search.tsx";
 import { StayAlertButton, type StayAlertDims } from "#/components/stays/stay-alert-button.tsx";
+import { StaysAreaChips } from "#/components/stays/stays-area-chips.tsx";
 import {
   EMPTY_FILTERS,
   STAY_OPERATORS,
@@ -29,6 +30,7 @@ import {
   TIER_LABEL,
   TIER_META,
   activeFilterCount,
+  deriveAreas,
   reasonLabel,
   sortOffers,
   type StayFilters,
@@ -69,6 +71,7 @@ import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
 import { cn } from "#/lib/utils.ts";
+import { disneyThumbUrl } from "#/server/parks/codes.ts";
 import {
   RESORT_CATALOG,
   type ResortCatalogEntry,
@@ -77,6 +80,9 @@ import {
 
 /** Resort facility id → catalog slug, for linking availability rows to detail pages. */
 const SLUG_BY_ID = new Map(RESORT_CATALOG.map((r) => [r.id, r.slug]));
+
+/** Distinct resort areas in the catalog, for the mobile quick-filter chips. */
+const AREAS = deriveAreas(RESORT_CATALOG);
 
 const ISO = "yyyy-MM-dd";
 
@@ -134,7 +140,7 @@ function ResortCard({
       <div className="bg-muted relative aspect-[4/3] w-full overflow-hidden rounded-2xl">
         {image ? (
           <img
-            src={image}
+            src={disneyThumbUrl(image) ?? image}
             alt={name}
             loading="lazy"
             className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
@@ -302,6 +308,7 @@ export function StaysBoard() {
   const [kidsOpen, setKidsOpen] = React.useState(false);
   const [search, setSearch] = React.useState<SearchState | null>(null);
   const [tierFilter, setTierFilter] = React.useState<ResortTier | "ALL">("ALL");
+  const [areaFilter, setAreaFilter] = React.useState<string | null>(null);
   const [sortKey, setSortKey] = React.useState<StaySortKey>("recommended");
 
   // Close any open search segment when the page scrolls under the sticky bar.
@@ -376,6 +383,7 @@ export function StaysBoard() {
   const onClear = React.useCallback(() => {
     applyFilters(EMPTY_FILTERS);
     setTierFilter("ALL");
+    setAreaFilter(null);
   }, [applyFilters]);
 
   const mobileSearchLabel =
@@ -405,7 +413,9 @@ export function StaysBoard() {
   }, [range, adults, children, isMobile]);
 
   const offers = availabilityQ.data?.offers ?? [];
-  const tierScoped = tierFilter === "ALL" ? offers : offers.filter((o) => o.tier === tierFilter);
+  const areaScoped = areaFilter ? offers.filter((o) => o.area === areaFilter) : offers;
+  const tierScoped =
+    tierFilter === "ALL" ? areaScoped : areaScoped.filter((o) => o.tier === tierFilter);
   const filteredOffers = sortOffers(
     tierScoped.filter((o) => o.available),
     sortKey,
@@ -414,11 +424,12 @@ export function StaysBoard() {
 
   // Browse rows (pre-search): catalog grouped by tier, in TIER_META order.
   const byTier = React.useMemo(() => {
+    const scoped = areaFilter ? catalog.filter((r) => r.area === areaFilter) : catalog;
     return TIER_META.map((meta) => ({
       meta,
-      resorts: catalog.filter((r) => r.tier === meta.key),
+      resorts: scoped.filter((r) => r.tier === meta.key),
     })).filter((g) => g.resorts.length > 0);
-  }, [catalog]);
+  }, [catalog, areaFilter]);
 
   return (
     <div className="relative isolate flex flex-col">
@@ -814,7 +825,10 @@ export function StaysBoard() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-8 px-4 py-6 pb-24 lg:px-6">
+      {/* Mobile quick area filters, tucked under the header's omnisearch. */}
+      <StaysAreaChips areas={AREAS} value={areaFilter} onChange={setAreaFilter} />
+
+      <div className="flex flex-col gap-8 p-4 pb-24 lg:px-6">
         {search ? (
           <ResultsView
             isLoading={availabilityQ.isLoading}
@@ -823,6 +837,7 @@ export function StaysBoard() {
             totalAvailable={availableCount}
             tierFilter={tierFilter}
             onTierFilter={setTierFilter}
+            onAreaFilter={setAreaFilter}
             nights={nights}
             filters={filters}
             onApplyFilters={applyFilters}
@@ -891,11 +906,15 @@ function BrowseView({
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-4">
       {groups.map(({ meta, resorts }) => (
-        <Carousel key={meta.key} opts={{ align: "start", dragFree: true }} className="w-full">
-          <section className="flex flex-col gap-3 py-4">
-            <div className="flex items-end justify-between gap-4">
+        <Carousel
+          key={meta.key}
+          opts={{ align: "start", dragFree: true }}
+          className="-mx-4 lg:-mx-6"
+        >
+          <section className="flex flex-col gap-3">
+            <div className="flex items-end justify-between gap-4 px-4 lg:px-6">
               <div className="flex flex-col gap-0.5">
                 <button
                   type="button"
@@ -908,11 +927,14 @@ function BrowseView({
               </div>
               <CarouselArrows className="hidden md:flex" />
             </div>
-            <CarouselContent className="-ml-4">
+            <CarouselContent
+              className="-ml-4"
+              viewportClassName="px-4 lg:px-6 [mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%_-_1.5rem),transparent)]"
+            >
               {resorts.map((r) => (
                 <CarouselItem
                   key={r.id}
-                  className="basis-1/2 pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5"
+                  className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5"
                 >
                   <ResortCard
                     name={r.name}
@@ -1003,6 +1025,7 @@ function ResultsView({
   offers,
   tierFilter,
   onTierFilter,
+  onAreaFilter,
   nights,
   filters,
   onApplyFilters,
@@ -1029,6 +1052,7 @@ function ResultsView({
   totalAvailable: number;
   tierFilter: ResortTier | "ALL";
   onTierFilter: (t: ResortTier | "ALL") => void;
+  onAreaFilter: (a: string | null) => void;
   nights: number;
   filters: StayFilters;
   onApplyFilters: (patch: Partial<StayFilters>) => void;
@@ -1048,7 +1072,8 @@ function ResultsView({
   const onClear = React.useCallback(() => {
     onApplyFilters(EMPTY_FILTERS);
     onTierFilter("ALL");
-  }, [onApplyFilters, onTierFilter]);
+    onAreaFilter(null);
+  }, [onApplyFilters, onTierFilter, onAreaFilter]);
 
   const countLabel = isLoading
     ? "Searching resorts…"
