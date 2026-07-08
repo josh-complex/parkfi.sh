@@ -221,7 +221,7 @@ export function NavOverlay({
     return (
       <div
         data-map-chrome="bottom"
-        className="pointer-events-auto absolute inset-x-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] z-10 mx-auto flex max-w-md flex-col gap-3 rounded-2xl bg-green-700 px-4 py-4 text-white shadow-lg ring-1 ring-white/15 md:bottom-3"
+        className="pointer-events-auto absolute inset-x-3 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+0.75rem)] z-10 mx-auto flex max-w-md flex-col gap-3 rounded-2xl bg-green-700 px-4 py-4 text-white shadow-lg ring-1 ring-white/15 md:bottom-3"
       >
         <div className="flex items-center gap-3">
           <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-white/15">
@@ -342,7 +342,7 @@ export function NavOverlay({
           onClick={onToggleHeadingUp}
           aria-label={headingUp ? "Lock map to north" : "Rotate map to my heading"}
           aria-pressed={!headingUp}
-          className="pointer-events-auto absolute left-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+4.75rem)] z-10 inline-flex size-11 items-center justify-center rounded-full bg-green-700 text-white shadow-lg ring-1 ring-white/15 transition active:scale-95 md:bottom-[4.75rem]"
+          className="pointer-events-auto absolute left-3 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+4.75rem)] z-10 inline-flex size-11 items-center justify-center rounded-full bg-green-700 text-white shadow-lg ring-1 ring-white/15 transition active:scale-95 md:bottom-[4.75rem]"
         >
           <CompassIcon
             // North-lock engaged → fill just the needle (the icon's polygon), not
@@ -357,7 +357,7 @@ export function NavOverlay({
       {/* Bottom ETA bar — sits where the Filter button was. */}
       <div
         data-map-chrome="bottom"
-        className="pointer-events-auto absolute inset-x-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] z-10 mx-auto flex max-w-md items-center gap-3 rounded-2xl bg-green-700 px-4 py-2.5 text-white shadow-lg ring-1 ring-white/15 md:bottom-3"
+        className="pointer-events-auto absolute inset-x-3 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+0.75rem)] z-10 mx-auto flex max-w-md items-center gap-3 rounded-2xl bg-green-700 px-4 py-2.5 text-white shadow-lg ring-1 ring-white/15 md:bottom-3"
       >
         <div className="min-w-0 flex-1">
           {routed ? (

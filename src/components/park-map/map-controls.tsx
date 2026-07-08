@@ -42,7 +42,7 @@ const MAP_CTRL_3D =
  *  in the bottom-center slot the play HUD would otherwise occupy. */
 export function PlayHint({ children }: { children: React.ReactNode }) {
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-2 pointer-events-none absolute left-1/2 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+3rem)] z-10 -translate-x-1/2 rounded-full border bg-background/90 px-4 py-2 text-center text-xs shadow-sm backdrop-blur duration-200 md:bottom-4">
+    <div className="animate-in fade-in slide-in-from-bottom-2 pointer-events-none absolute left-1/2 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+3rem)] z-10 -translate-x-1/2 rounded-full border bg-background/90 px-4 py-2 text-center text-xs shadow-sm backdrop-blur duration-200 md:bottom-4">
       {children}
     </div>
   );
@@ -70,8 +70,8 @@ export function ZoomControl({
       className={cn(
         "pointer-events-none absolute right-3 z-10",
         raised
-          ? "bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+8rem)] md:bottom-[8rem]"
-          : "bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+3.75rem)] md:bottom-[3.75rem]",
+          ? "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+8rem)] md:bottom-[8rem]"
+          : "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+3.75rem)] md:bottom-[3.75rem]",
       )}
     >
       <div className="btn-3d-outline border-3d shadow-3d pointer-events-auto flex flex-col overflow-hidden rounded-2xl bg-background/95 backdrop-blur dark:border-[color-mix(in_oklch,var(--border),white_25%)]">
@@ -132,8 +132,8 @@ export function LocateButton({
         MAP_CTRL_3D,
         "absolute right-3 z-10 rounded-full",
         raised
-          ? "bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+5rem)] md:bottom-[5rem]"
-          : "bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] md:bottom-3",
+          ? "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+5rem)] md:bottom-[5rem]"
+          : "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+0.75rem)] md:bottom-3",
         active && "text-blue-600",
         off && "text-muted-foreground",
       )}

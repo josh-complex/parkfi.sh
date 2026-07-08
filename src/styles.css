@@ -53,6 +53,22 @@
      scrollbar app-wide via the inherited rule in the base layer below. */
   --scrollbar-thumb: oklch(0.78 0 0);
   --scrollbar-thumb-hover: oklch(0.62 0 0);
+  /* Bottom inset for the floating mobile nav and every bit of map chrome that
+     clears it. In a browser tab this is the device safe-area (home-indicator)
+     inset. In an installed standalone PWA there is no browser toolbar, so on the
+     full-bleed map that tall reservation just reads as dead space under the nav
+     — collapse it to 0 there (the standalone override below). The nav's own
+     `max(…, 0.5rem)` floor still keeps its keys off the very edge. */
+  --safe-bottom: env(safe-area-inset-bottom);
+}
+
+/* Installed PWA (home-screen, no Safari chrome): drop the safe-area padding the
+   bottom nav + map chrome reserve, so the app fills to the edge instead of
+   floating above a phantom toolbar gap. Browser tabs keep the real inset. */
+@media all and (display-mode: standalone) {
+  :root {
+    --safe-bottom: 0px;
+  }
 }
 
 .dark {

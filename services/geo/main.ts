@@ -131,7 +131,12 @@ interface AttractionGeo {
   category: MapCategory;
 }
 
-/** Bulk-write lat/lng + default category for resolved attractions. */
+/**
+ * Bulk-write lat/lng + default category for resolved attractions. Also
+ * re-activates the row: these ids came straight off the current `/children`
+ * payload, so if one was previously flagged stale by `deactivateStaleAttractions`
+ * and has since come back (a delisted ride reopening, e.g.), it un-deactivates.
+ */
 async function writeAttractionGeo(rows: Array<AttractionGeo>): Promise<void> {
   for (let i = 0; i < rows.length; i += 500) {
     const chunk = rows.slice(i, i + 500);
@@ -144,7 +149,7 @@ async function writeAttractionGeo(rows: Array<AttractionGeo>): Promise<void> {
     );
     await db.execute(sql`
       UPDATE attractions AS a
-      SET latitude = v.lat, longitude = v.lng, category = v.category
+      SET latitude = v.lat, longitude = v.lng, category = v.category, active = true
       FROM (VALUES ${values}) AS v(id, lat, lng, category)
       WHERE a.id = v.id
     `);
@@ -256,6 +261,37 @@ async function deactivateStaleParkPoi(parkId: number, seenIds: Array<string>): P
     UPDATE park_poi
     SET active = false, updated_at = now()
     WHERE park_id = ${parkId} AND source = ${Source.DISNEY_DIRECT} AND active = true ${notSeen}
+  `);
+}
+
+/**
+ * Soft-delete this park's THEMEPARKS_WIKI-sourced attractions that fell out of
+ * the latest `/children` payload (active=false, keep the row + history — status
+ * history, queue history, alerts, etc. all still reference the id). Scoped to
+ * attractions with a THEMEPARKS_WIKI external id so degraded queue-times-only
+ * rides (which this feed can't see) are never touched. An empty `seenIds` (the
+ * children fetch resolved nothing) deactivates all of them.
+ */
+async function deactivateStaleAttractions(parkId: number, seenIds: Array<number>): Promise<void> {
+  const notSeen =
+    seenIds.length > 0
+      ? sql`AND a.id NOT IN (${sql.join(
+          seenIds.map((id) => sql`${id}`),
+          sql`, `,
+        )})`
+      : sql``;
+  await db.execute(sql`
+    UPDATE attractions AS a
+    SET active = false
+    WHERE a.park_id = ${parkId}
+      AND a.active = true
+      ${notSeen}
+      AND EXISTS (
+        SELECT 1 FROM external_ids e
+        WHERE e.entity_kind = ${KIND_ATTRACTION}
+          AND e.entity_id = a.id
+          AND e.source = ${Source.THEMEPARKS_WIKI}
+      )
   `);
 }
 
@@ -419,6 +455,7 @@ async function ingestChildren(park: ParkRow): Promise<Map<string, number>> {
   }
 
   if (geoRows.length > 0) await writeAttractionGeo(geoRows);
+  await deactivateStaleAttractions(park.id, [...idMap.values()]);
 
   const bounds = computeBounds(parkCoords);
   if (bounds) {

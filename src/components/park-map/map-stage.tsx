@@ -588,7 +588,7 @@ export function MapStageProvider({
             {attached && engine && roam && !playMode && roamFocusSlug && !navigating && (
               <div
                 data-map-chrome="bottom"
-                className="pointer-events-none absolute left-3 bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] z-10 flex flex-col items-start gap-2 md:bottom-3"
+                className="pointer-events-none absolute left-3 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+0.75rem)] z-10 flex flex-col items-start gap-2 md:bottom-3"
               >
                 <ParkDetailButton slug={roamFocusSlug} />
                 <RideFilterButton className="pointer-events-auto gap-1.5 px-4 py-2 text-sm [&>svg]:size-4" />
