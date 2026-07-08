@@ -18,7 +18,7 @@ import {
   type ScheduleEntry,
 } from "#/components/dining/dining-hours.ts";
 import { AvailabilityCalendar } from "#/components/dining/dining-restaurant-card.tsx";
-import { MenuBody, RecentChangesPanel, useMenuState } from "#/components/dining/menu-content.tsx";
+import { MenuBody, useMenuState } from "#/components/dining/menu-content.tsx";
 import { LocationMap } from "#/components/maps/location-map.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { DatePicker } from "#/components/ui/date-picker.tsx";
@@ -425,10 +425,20 @@ export function DiningVenueDetail({
       {venue && (
         <section id="menu" ref={menuSectionRef} className="flex scroll-mt-16 flex-col gap-3">
           <div className="flex items-baseline justify-between gap-3">
-            <h2 className="text-lg font-semibold tracking-tight">Menu</h2>
+            <div className="flex items-baseline gap-3">
+              <h2 className="text-lg font-semibold tracking-tight">Menu</h2>
+              {state.recentChanges.length > 0 && (
+                <button
+                  type="button"
+                  onClick={state.showChanges}
+                  className="text-xs font-medium text-primary hover:underline"
+                >
+                  Show recent changes
+                </button>
+              )}
+            </div>
             <p className="text-xs text-muted-foreground">Prices excl. tax &amp; gratuity</p>
           </div>
-          <RecentChangesPanel changes={state.recentChanges} facilityId={facilityId} />
           {state.menuQ.isLoading || hasMenu ? (
             <div className="flex h-[60vh] min-h-0 flex-col overflow-hidden rounded-2xl border bg-card sm:h-[70vh] sm:min-h-[420px]">
               <MenuBody
@@ -446,6 +456,9 @@ export function DiningVenueDetail({
                 changesBySlug={state.changesBySlug}
                 newSlugs={state.newSlugs}
                 facilityId={facilityId}
+                recentChanges={state.recentChanges}
+                viewingChanges={state.viewingChanges}
+                onShowChanges={state.showChanges}
               />
             </div>
           ) : (

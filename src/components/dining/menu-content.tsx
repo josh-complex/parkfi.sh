@@ -3,13 +3,8 @@
 import * as React from "react";
 import { Link } from "@tanstack/react-router";
 import { formatDistanceToNowStrict } from "date-fns";
-import { ChevronDownIcon, TrendingDownIcon, TrendingUpIcon } from "lucide-react";
+import { TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "#/components/ui/collapsible.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { useQuery } from "@tanstack/react-query";
@@ -307,28 +302,17 @@ function MenuItem({
 function RecentChangeRow({ change, facilityId }: { change: MenuChangeEntry; facilityId: string }) {
   const slug = slugifyMenuItem(change.title);
   const addedPrice = change.kind === "added" ? formatPrice(change.price, change.currency) : null;
+  const newPrice = change.kind === "price" ? formatPrice(change.newPrice, change.currency) : null;
   return (
     <div className="flex items-start justify-between gap-3 border-b border-border/40 py-3 last:border-0">
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-baseline gap-1.5">
-          <Link
-            to="/dining/$facilityId/item/$slug"
-            params={{ facilityId, slug }}
-            className="text-sm font-medium leading-snug hover:underline"
-          >
-            {change.title}
-          </Link>
-          {change.kind === "added" && (
-            <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold leading-none text-emerald-700 dark:text-emerald-400">
-              New
-            </span>
-          )}
-          {change.kind === "removed" && (
-            <span className="inline-flex items-center rounded border border-amber-200 px-1 py-px text-[10px] font-medium leading-none text-amber-600 dark:border-amber-900">
-              Removed
-            </span>
-          )}
-        </div>
+        <Link
+          to="/dining/$facilityId/item/$slug"
+          params={{ facilityId, slug }}
+          className="text-sm font-medium leading-snug hover:underline"
+        >
+          {change.title}
+        </Link>
         <p className="mt-0.5 text-xs text-muted-foreground/70">
           {change.mealPeriod} · {formatDistanceToNowStrict(new Date(change.changedAt))} ago
         </p>
@@ -337,6 +321,9 @@ function RecentChangeRow({ change, facilityId }: { change: MenuChangeEntry; faci
         <div className="flex shrink-0 flex-col items-end gap-0.5">
           {addedPrice && (
             <span className="text-sm tabular-nums text-muted-foreground">{addedPrice}</span>
+          )}
+          {newPrice && (
+            <span className="text-sm tabular-nums text-muted-foreground">{newPrice}</span>
           )}
           {change.kind === "price" && (
             <PriceChangeIndicator
@@ -350,49 +337,6 @@ function RecentChangeRow({ change, facilityId }: { change: MenuChangeEntry; faci
         </div>
       )}
     </div>
-  );
-}
-
-/**
- * Compact, collapsible digest of a venue's recent menu activity — a smaller
- * echo of the main menu container (same card chrome) that surfaces just the
- * items with a change, newest first, so guests don't have to scan the whole
- * menu to spot what's new. Renders nothing when there's no recent activity;
- * each row links to the item's detail page, same as the full menu.
- */
-export function RecentChangesPanel({
-  changes,
-  facilityId,
-  defaultOpen = true,
-}: {
-  changes: Array<MenuChangeEntry>;
-  facilityId: string;
-  defaultOpen?: boolean;
-}) {
-  if (!changes.length) return null;
-  return (
-    <Collapsible defaultOpen={defaultOpen} className="overflow-hidden rounded-2xl border bg-card">
-      <CollapsibleTrigger className="group flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-sm font-semibold">Recent changes</span>
-          <span className="text-xs text-muted-foreground">
-            {changes.length} update{changes.length === 1 ? "" : "s"} in the last 30 days
-          </span>
-        </div>
-        <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[panel-open]:rotate-180" />
-      </CollapsibleTrigger>
-      <CollapsibleContent className="border-t px-4">
-        <div className="max-h-72 overflow-y-auto">
-          {changes.map((c, i) => (
-            <RecentChangeRow
-              key={`${c.kind}-${c.title}-${c.changedAt}-${i}`}
-              change={c}
-              facilityId={facilityId}
-            />
-          ))}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
   );
 }
 
@@ -419,6 +363,9 @@ export function MenuBody({
   changesBySlug,
   newSlugs,
   facilityId,
+  recentChanges,
+  viewingChanges,
+  onShowChanges,
 }: {
   periods: Array<{ mealPeriod: string; groups: RawGroup[] }>;
   activePeriodIdx: number;
@@ -436,9 +383,30 @@ export function MenuBody({
   newSlugs?: Set<string>;
   /** When set, item titles link to their detail pages. */
   facilityId?: string;
+  /** Venue-wide activity feed backing the "Changed" pseudo-tab. */
+  recentChanges?: Array<MenuChangeEntry>;
+  /** When true, the "Changed" tab is active instead of a meal period. */
+  viewingChanges?: boolean;
+  onShowChanges?: () => void;
 }) {
   const hasMultiplePeriods = periods.length > 1;
   const hasTypeSections = typeSections.length > 1;
+
+  const [activeChangeKind, setActiveChangeKind] = React.useState<
+    "price" | "added" | "removed" | null
+  >(null);
+  const priceChanges = (recentChanges ?? []).filter((c) => c.kind === "price");
+  const additions = (recentChanges ?? []).filter((c) => c.kind === "added");
+  const removals = (recentChanges ?? []).filter((c) => c.kind === "removed");
+  const hasChanges = (recentChanges?.length ?? 0) > 0;
+  const changeKindTabs = [
+    { key: "price" as const, label: "Price changes", items: priceChanges },
+    { key: "added" as const, label: "Additions", items: additions },
+    { key: "removed" as const, label: "Removals", items: removals },
+  ];
+  const activeKind =
+    activeChangeKind ?? (priceChanges.length ? "price" : additions.length ? "added" : "removed");
+  const activeChangeList = changeKindTabs.find((t) => t.key === activeKind)?.items ?? [];
 
   // Scroll the deep-linked item into view once it (and its period) are rendered.
   React.useEffect(() => {
@@ -496,8 +464,8 @@ export function MenuBody({
 
   return (
     <>
-      {/* Period tabs */}
-      {hasMultiplePeriods && (
+      {/* Period tabs, plus a "Changed" pseudo-tab for recent menu activity */}
+      {(hasMultiplePeriods || hasChanges) && (
         <div className="flex shrink-0 gap-2 border-b px-4 py-3">
           {periods.map((p, i) => (
             <button
@@ -506,7 +474,7 @@ export function MenuBody({
               onClick={() => onSwitchPeriod(i)}
               className={cn(
                 "rounded-full px-4 py-1.5 text-sm font-semibold transition-colors",
-                i === activePeriodIdx
+                !viewingChanges && i === activePeriodIdx
                   ? "bg-foreground text-background"
                   : "text-muted-foreground hover:text-foreground",
               )}
@@ -514,31 +482,89 @@ export function MenuBody({
               {p.mealPeriod}
             </button>
           ))}
+          {hasChanges && (
+            <button
+              type="button"
+              onClick={onShowChanges}
+              className={cn(
+                "rounded-full px-4 py-1.5 text-sm font-semibold transition-colors",
+                viewingChanges
+                  ? "bg-foreground text-background"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              Changed
+            </button>
+          )}
         </div>
       )}
 
-      {/* Type quick-jump pills — stateless, clicking just scrolls to that section */}
-      {hasTypeSections && (
-        <div
-          ref={pillsRef}
-          className="flex shrink-0 snap-x snap-mandatory gap-1.5 overflow-x-auto border-b px-4 py-2.5 [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-          {typeSections.map((s) => (
-            <button
-              key={s.typeKey}
-              type="button"
-              onClick={() => onJumpToType(s.typeKey)}
-              className="shrink-0 snap-start rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
+      {/* Quick-jump pills — category chips normally, or the change-kind filter
+          when the "Changed" tab is active. Same chip styling either way. */}
+      {viewingChanges
+        ? hasChanges && (
+            <div
+              ref={pillsRef}
+              className="flex shrink-0 snap-x snap-mandatory gap-1.5 overflow-x-auto scroll-px-4 border-b px-4 py-2.5 [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             >
-              {s.label}
-            </button>
-          ))}
-        </div>
-      )}
+              {changeKindTabs.map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setActiveChangeKind(t.key)}
+                  className={cn(
+                    "shrink-0 snap-start rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                    activeKind === t.key
+                      ? "border-foreground bg-foreground text-background"
+                      : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
+                  )}
+                >
+                  {t.label} ({t.items.length})
+                </button>
+              ))}
+            </div>
+          )
+        : hasTypeSections && (
+            <div
+              ref={pillsRef}
+              className="flex shrink-0 snap-x snap-mandatory gap-1.5 overflow-x-auto scroll-px-4 border-b px-4 py-2.5 [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            >
+              {typeSections.map((s) => (
+                <button
+                  key={s.typeKey}
+                  type="button"
+                  onClick={() => onJumpToType(s.typeKey)}
+                  className="shrink-0 snap-start rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          )}
 
       {/* Scrollable sections */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        {menuIsLoading ? (
+        {viewingChanges ? (
+          <div className="px-4 pt-4 pb-10">
+            {activeChangeList.length ? (
+              activeChangeList.map((c, i) => (
+                <RecentChangeRow
+                  key={`${activeKind}-${c.title}-${c.changedAt}-${i}`}
+                  change={c}
+                  facilityId={facilityId ?? ""}
+                />
+              ))
+            ) : (
+              <p className="py-16 text-center text-sm text-muted-foreground">
+                {activeKind === "price"
+                  ? "No price changes in the last 30 days."
+                  : activeKind === "added"
+                    ? "No new items in the last 30 days."
+                    : "No removed items in the last 30 days."}
+              </p>
+            )}
+          </div>
+        ) : menuIsLoading ? (
           <div className="flex flex-col gap-0 px-6 pt-6">
             {Array.from({ length: 8 }).map((_, i) => (
               <div
@@ -610,6 +636,7 @@ export function useMenuState(facilityId: string, open: boolean, targetItemSlug?:
 
   const [activePeriodIdx, setActivePeriodIdx] = React.useState(0);
   const [highlightSlug, setHighlightSlug] = React.useState<string | null>(null);
+  const [viewingChanges, setViewingChanges] = React.useState(false);
 
   const currentPeriod = periods[activePeriodIdx];
   const typeSections = React.useMemo(
@@ -699,6 +726,7 @@ export function useMenuState(facilityId: string, open: boolean, targetItemSlug?:
 
   function switchPeriod(idx: number) {
     setActivePeriodIdx(idx);
+    setViewingChanges(false);
     setHighlightSlug(null);
     sectionRefs.current.clear();
     scrollRef.current?.scrollTo({ top: 0, behavior: "instant" });
@@ -706,6 +734,12 @@ export function useMenuState(facilityId: string, open: boolean, targetItemSlug?:
 
   function jumpToType(key: string) {
     sectionRefs.current.get(key)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function showChanges() {
+    setViewingChanges(true);
+    setHighlightSlug(null);
+    scrollRef.current?.scrollTo({ top: 0, behavior: "instant" });
   }
 
   return {
@@ -722,5 +756,7 @@ export function useMenuState(facilityId: string, open: boolean, targetItemSlug?:
     changesBySlug,
     newSlugs,
     recentChanges,
+    viewingChanges,
+    showChanges,
   };
 }
