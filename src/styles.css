@@ -727,6 +727,33 @@
   }
 }
 
+/* ── Achievements: level hero ─────────────────────────────────────────────── *
+ * The persistent "Level N" panel atop the Achievements page — same gold
+ * language as the level-up toast (.achv-card--gold) and the nav's level coin
+ * (.achv-level-coin below), so leveling up in a toast and glancing at this
+ * page read as the same character. Static (no sweep-in animation) since it's
+ * page layout, not a fly-in celebration; padding/radius live on the element
+ * via Tailwind classes instead of baked in here. */
+.achv-hero {
+  position: relative;
+  isolation: isolate;
+  color: oklch(0.3 0.08 66);
+  background-image: linear-gradient(
+    155deg,
+    oklch(0.9 0.15 96) 0%,
+    oklch(0.82 0.16 78) 55%,
+    oklch(0.78 0.17 66) 100%
+  );
+  box-shadow:
+    0 3px 0 0 oklch(0.66 0.15 72),
+    inset 0 1px 0 0 oklch(1 0 0 / 0.5),
+    0 14px 34px -14px oklch(0.7 0.16 78 / 0.55);
+}
+.achv-hero .achv-sparkle {
+  color: oklch(1 0.04 95 / 0.95);
+  filter: drop-shadow(0 0 4px oklch(0.95 0.12 90 / 0.7));
+}
+
 /* Gold level coin — the level-number chip on the user button and mobile avatar,
    matched to the gold level-up toast. */
 .achv-level-coin {

@@ -5,7 +5,7 @@ import { cn } from "#/lib/utils.ts";
 import type { AchievementFamily, AchievementTier, LevelInfo } from "#/lib/achievements.ts";
 
 /** Four-point twinkle. Two sit at opposite corners of a card and pulse offset. */
-function Sparkle({ className }: { className?: string }) {
+export function Sparkle({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden className={cn("achv-sparkle", className)}>
       <path

@@ -2,17 +2,18 @@ import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
+import { Sparkle } from "#/components/achievements/achievement-toast.tsx";
+import { LevelBadge } from "#/components/achievements/level-badge.tsx";
+import { TierBadge } from "#/components/achievements/tier-badge.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "#/components/ui/card.tsx";
+  Carousel,
+  CarouselArrows,
+  CarouselContent,
+  CarouselItem,
+} from "#/components/ui/carousel.tsx";
 import { Progress } from "#/components/ui/progress.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
-import { Tooltip, TooltipContent, TooltipTrigger } from "#/components/ui/tooltip.tsx";
 import { hasGrantedLocationBefore } from "#/hooks/use-geolocation.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import {
@@ -32,6 +33,11 @@ export const Route = createFileRoute("/_dash/achievements")({
 
 const TOTAL_TIERS = ACHIEVEMENTS.reduce((n, f) => n + f.tiers.length, 0);
 
+/**
+ * The "Level N" hero — the same gold, sparkle-accented treatment as the
+ * level-up toast (`achievement-toast.tsx`) and the nav's level coin, rather
+ * than a plain bordered stat card.
+ */
 function LevelHeaderCard({
   level,
   xp,
@@ -45,34 +51,50 @@ function LevelHeaderCard({
     ? Math.min(100, Math.round((level.intoLevel / level.forNext) * 100))
     : 100;
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-2xl">
-          <span>Level {level.level}</span>
-          <span className="text-base font-normal text-muted-foreground">{level.title}</span>
-        </CardTitle>
-        <CardDescription>
+    <div className="achv-hero flex items-start gap-4 rounded-3xl p-5 sm:p-6">
+      <Sparkle className="achv-sparkle--tl" />
+      <Sparkle className="achv-sparkle--br" />
+      <LevelBadge level={level.level} size="lg" className="mt-0.5" />
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-bold tracking-widest uppercase opacity-70">
+          Level {level.level}
+        </p>
+        <p className="text-xl leading-tight font-black text-balance sm:text-2xl">{level.title}</p>
+        <p className="mt-1 text-sm font-medium opacity-80">
           {xp.toLocaleString()} XP total · {unlockedCount}/{TOTAL_TIERS} unlocked
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+        </p>
         {level.forNext != null ? (
-          <div className="space-y-1.5">
-            <Progress value={pct} />
-            <p className="text-xs text-muted-foreground">
+          <div className="mt-3 space-y-1">
+            <div
+              className="h-2.5 w-full overflow-hidden rounded-full"
+              style={{ background: "oklch(0 0 0 / 0.12)" }}
+            >
+              <div
+                className="h-full rounded-full transition-all"
+                style={{ width: `${pct}%`, background: "oklch(0.3 0.08 66)" }}
+              />
+            </div>
+            <p className="text-xs font-medium opacity-70">
               {level.intoLevel.toLocaleString()} / {level.forNext.toLocaleString()} XP to level{" "}
               {level.level + 1}
             </p>
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">Max level reached — you've seen it all.</p>
+          <p className="mt-2 text-sm font-medium opacity-80">
+            Max level reached — you've seen it all.
+          </p>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
-function FamilyCard({
+/**
+ * A family's tiers as a horizontally-scrolling shelf of color-ramped
+ * medallions (grid on desktop via arrows, drag on mobile) — mirrors the
+ * Eats/Stays picks shelves rather than a bordered card of flat pills.
+ */
+function FamilyShelf({
   family,
   stats,
   unlockedIds,
@@ -84,47 +106,55 @@ function FamilyCard({
   const value = stats[family.stat] ?? 0;
   const maxed = family.tiers.every((t) => unlockedIds.has(t.id));
   const nextTier = family.tiers.find((t) => !unlockedIds.has(t.id));
+  const tierCount = family.tiers.length;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <span className="text-xl leading-none">{family.icon}</span>
-          {family.title}
-        </CardTitle>
-        <CardDescription>{formatStatValue(family.unit, value)}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex flex-wrap gap-1.5">
-          {family.tiers.map((tier) => {
-            const unlocked = unlockedIds.has(tier.id);
-            return (
-              <Tooltip key={tier.id}>
-                <TooltipTrigger>
-                  <Badge variant={unlocked ? "default" : "outline"}>{tier.name}</Badge>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-56 text-pretty">
-                  <p className="font-medium">{tier.name}</p>
-                  <p>{tier.description}</p>
-                </TooltipContent>
-              </Tooltip>
-            );
-          })}
+    <Carousel opts={{ align: "start", dragFree: true }} className="-mx-4 lg:-mx-6">
+      <section className="flex flex-col gap-3">
+        <div className="flex items-end justify-between gap-4 px-4 lg:px-6">
+          <div className="flex flex-col gap-0.5">
+            <h3 className="flex items-center gap-2 text-base font-semibold tracking-tight">
+              <span className="text-xl leading-none" aria-hidden>
+                {family.icon}
+              </span>
+              {family.title}
+            </h3>
+            <p className="text-muted-foreground text-sm">{formatStatValue(family.unit, value)}</p>
+          </div>
+          <CarouselArrows className="hidden md:flex" />
         </div>
 
-        {maxed ? (
-          <Badge variant="secondary">Maxed</Badge>
-        ) : nextTier ? (
-          <div className="space-y-1">
-            <Progress value={Math.min(100, (value / nextTier.threshold) * 100)} />
-            <p className="text-xs text-muted-foreground">
-              {formatStatValue(family.unit, value)} /{" "}
-              {formatStatValue(family.unit, nextTier.threshold)}
-            </p>
-          </div>
-        ) : null}
-      </CardContent>
-    </Card>
+        <CarouselContent viewportClassName="px-4 lg:px-6 [mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%_-_1.5rem),transparent)]">
+          {family.tiers.map((tier, i) => (
+            <CarouselItem key={tier.id} className="basis-auto">
+              <TierBadge
+                familyKey={family.key}
+                icon={family.icon}
+                name={tier.name}
+                description={tier.description}
+                rank={tierCount > 1 ? i / (tierCount - 1) : 1}
+                unlocked={unlockedIds.has(tier.id)}
+                next={tier.id === nextTier?.id}
+              />
+            </CarouselItem>
+          ))}
+        </CarouselContent>
+
+        <div className="px-4 lg:px-6">
+          {maxed ? (
+            <Badge variant="secondary">Maxed</Badge>
+          ) : nextTier ? (
+            <div className="space-y-1">
+              <Progress value={Math.min(100, (value / nextTier.threshold) * 100)} />
+              <p className="text-xs text-muted-foreground">
+                {formatStatValue(family.unit, value)} /{" "}
+                {formatStatValue(family.unit, nextTier.threshold)}
+              </p>
+            </div>
+          ) : null}
+        </div>
+      </section>
+    </Carousel>
   );
 }
 
@@ -145,13 +175,18 @@ function AchievementsPage() {
 
   if (isPending) {
     return (
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6 lg:px-6">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-6 lg:px-6">
         <Skeleton className="h-32 w-full rounded-2xl" />
-        <div className="grid gap-4 sm:grid-cols-2">
-          {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-40 w-full rounded-2xl" />
-          ))}
-        </div>
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="flex flex-col gap-3">
+            <Skeleton className="h-5 w-40" />
+            <div className="flex gap-3">
+              {[1, 2, 3, 4, 5].map((j) => (
+                <Skeleton key={j} className="aspect-square w-24 shrink-0 rounded-2xl" />
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     );
   }
@@ -184,9 +219,9 @@ function AchievementsPage() {
         <Skeleton className="h-32 w-full rounded-2xl" />
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="flex flex-col gap-8">
         {ACHIEVEMENTS.map((family) => (
-          <FamilyCard
+          <FamilyShelf
             key={family.key}
             family={family}
             stats={data?.stats ?? {}}

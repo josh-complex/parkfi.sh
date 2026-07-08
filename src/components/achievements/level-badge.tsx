@@ -16,7 +16,7 @@ export function LevelBadge({
   className,
 }: {
   level: number;
-  size?: "sm" | "md";
+  size?: "sm" | "md" | "lg";
   className?: string;
 }) {
   return (
@@ -24,7 +24,11 @@ export function LevelBadge({
       aria-label={`Level ${level}`}
       className={cn(
         "achv-level-coin inline-grid shrink-0 place-items-center rounded-full font-black tabular-nums",
-        size === "sm" ? "size-4.5 text-[0.6rem]" : "size-6 text-xs",
+        size === "sm"
+          ? "size-4.5 text-[0.6rem]"
+          : size === "lg"
+            ? "size-14 text-2xl"
+            : "size-6 text-xs",
         className,
       )}
     >
