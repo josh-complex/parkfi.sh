@@ -4,7 +4,7 @@ import * as React from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNowStrict } from "date-fns";
-import { ArrowLeftIcon, TrendingDownIcon, TrendingUpIcon } from "lucide-react";
+import { ArrowLeftIcon, ChevronRightIcon, TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 
 import { MenuItemPriceChart } from "#/components/dining/menu-item-price-chart.tsx";
 import { menuItemAnchorId, slugifyMenuItem } from "#/components/dining/menu-content.tsx";
@@ -42,12 +42,14 @@ function isWithinDays(iso: string | null | undefined, days: number): boolean {
 
 const NEW_WINDOW_DAYS = 30;
 
-/** A single stat cell in the summary card. */
+/** A single stat cell in the summary card — a hairline-separated tile. */
 function Stat({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="text-sm font-medium tabular-nums">{children}</span>
+    <div className="flex flex-col gap-1 bg-card px-3.5 py-3">
+      <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      <span className="text-sm font-semibold tabular-nums">{children}</span>
     </div>
   );
 }
@@ -63,8 +65,10 @@ export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug:
   const trpc = useTRPC();
   const itemQ = useQuery(trpc.dining.menuItem.queryOptions({ facilityId, slug }));
   const venueQ = useQuery(trpc.dining.venue.queryOptions({ facilityId }));
+  const elsewhereQ = useQuery(trpc.dining.menuItemElsewhere.queryOptions({ facilityId, slug }));
   const item = itemQ.data;
   const venue = venueQ.data;
+  const elsewhere = elsewhereQ.data ?? [];
 
   const currency = item?.current?.currency ?? null;
   const points = item?.priceHistory ?? [];
@@ -196,24 +200,24 @@ export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug:
 
       {/* Summary + current price */}
       <Card className="overflow-hidden">
-        <CardHeader>
-          <CardTitle className="text-base">
-            {item.status === "removed" ? "Last known price" : "Current price"}
-          </CardTitle>
-          {item.current?.priceType && <CardDescription>{item.current.priceType}</CardDescription>}
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span className="text-3xl font-semibold tabular-nums">
-              {currentPrice ?? (stats ? formatPrice(stats.current, currency) : "—")}
-            </span>
+        <CardContent className="flex flex-col gap-5 p-5 sm:p-6">
+          <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                {item.status === "removed" ? "Last known price" : "Current price"}
+                {item.current?.priceType ? ` · ${item.current.priceType}` : ""}
+              </span>
+              <span className="text-4xl font-bold leading-none tabular-nums">
+                {currentPrice ?? (stats ? formatPrice(stats.current, currency) : "—")}
+              </span>
+            </div>
             {stats && Math.abs(stats.delta) >= 0.01 && (
               <span
                 className={cn(
-                  "inline-flex items-center gap-1 text-sm font-medium",
+                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold",
                   stats.delta > 0
-                    ? "text-rose-600 dark:text-rose-400"
-                    : "text-emerald-600 dark:text-emerald-400",
+                    ? "bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                    : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
                 )}
               >
                 {stats.delta > 0 ? (
@@ -221,12 +225,17 @@ export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug:
                 ) : (
                   <TrendingDownIcon className="size-4" />
                 )}
-                {formatPrice(Math.abs(stats.delta), currency)} {stats.delta > 0 ? "up" : "down"}{" "}
-                since first tracked
+                {formatPrice(Math.abs(stats.delta), currency)} {stats.delta > 0 ? "up" : "down"}
+                <span className="font-normal opacity-80">since first tracked</span>
               </span>
             )}
           </div>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div
+            className={cn(
+              "grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border",
+              stats && "sm:grid-cols-4",
+            )}
+          >
             {stats && (
               <>
                 <Stat label="Lowest tracked">{formatPrice(stats.min, currency)}</Stat>
@@ -247,29 +256,24 @@ export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug:
         </CardContent>
       </Card>
 
-      {/* Price trend */}
-      <Card className="overflow-hidden">
-        <CardHeader>
-          <CardTitle className="text-base">Price history</CardTitle>
-          <CardDescription>Every price we&rsquo;ve observed for this item</CardDescription>
-        </CardHeader>
-        <CardContent className="px-2 pb-4 sm:px-4">
-          <ChartErrorBoundary
-            label="Price history"
-            fallback={<Empty>Price history unavailable right now.</Empty>}
-          >
-            {points.length < 2 ? (
-              <Empty>
-                {points.length === 1 && stats
-                  ? `We just started tracking this item at ${formatPrice(stats.current, currency)}. The trend fills in as prices move.`
-                  : "No price history recorded yet — the trend fills in once we catch a price change."}
-              </Empty>
-            ) : (
+      {/* Price trend — only once we have more than a single observation; a
+          two-point straight line reads as noise, so we gate on real history. */}
+      {points.length >= 2 && (
+        <Card className="overflow-hidden">
+          <CardHeader>
+            <CardTitle className="text-base">Price history</CardTitle>
+            <CardDescription>Every price we&rsquo;ve observed for this item</CardDescription>
+          </CardHeader>
+          <CardContent className="px-2 pb-4 sm:px-4">
+            <ChartErrorBoundary
+              label="Price history"
+              fallback={<Empty>Price history unavailable right now.</Empty>}
+            >
               <MenuItemPriceChart points={points} currency={currency} />
-            )}
-          </ChartErrorBoundary>
-        </CardContent>
-      </Card>
+            </ChartErrorBoundary>
+          </CardContent>
+        </Card>
+      )}
 
       {/* History: renames + individual price moves */}
       {(item.formerNames.length > 0 || moves.length > 0) && (
@@ -328,6 +332,47 @@ export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug:
                 })}
               </ul>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Same item name at other venues — many items recur verbatim across the
+          resort, and the shared title slug deep-links to each venue's copy. */}
+      {elsewhere.length > 0 && (
+        <Card className="overflow-hidden">
+          <CardHeader>
+            <CardTitle className="text-base">Also found at</CardTitle>
+            <CardDescription>
+              {elsewhere.length === 1
+                ? "One other location serves an item by this name"
+                : `${elsewhere.length} other locations serve an item by this name`}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <ul className="divide-y divide-border">
+              {elsewhere.map((e) => (
+                <li key={e.facilityId}>
+                  <Link
+                    to="/dining/$facilityId/item/$slug"
+                    params={{ facilityId: e.facilityId, slug }}
+                    className="flex items-center gap-3 px-5 py-3 transition-colors hover:bg-muted/50 sm:px-6"
+                  >
+                    <div className="flex min-w-0 flex-col">
+                      <span className="truncate text-sm font-medium">{e.name}</span>
+                      {e.parkResort && (
+                        <span className="truncate text-xs text-muted-foreground">
+                          {e.parkResort}
+                        </span>
+                      )}
+                    </div>
+                    <span className="ml-auto shrink-0 text-sm font-semibold tabular-nums">
+                      {formatPrice(e.price, e.currency) ?? "—"}
+                    </span>
+                    <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
           </CardContent>
         </Card>
       )}

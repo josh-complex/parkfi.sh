@@ -731,13 +731,29 @@ export const diningRouter = {
           .map((e) => e.changed_at)
           .sort()[0] ?? null;
 
+      // When we have no 'added' event, fall back to when we first captured this
+      // venue's menu — an honest "since we began tracking" date to anchor the
+      // pre-change price against, so the series doesn't collapse onto the first
+      // change's own timestamp (which draws as a confusing vertical line).
+      const snapRes = await db.execute<{ first_seen_at: string | null }>(sql`
+        SELECT first_seen_at FROM dining_menu_snapshot WHERE facility_id = ${fid} LIMIT 1
+      `);
+      const snapshotFirstSeen = snapRes.rows[0]?.first_seen_at ?? null;
+
       // Stitch the price series: anchor at the oldest known price, then one point
       // per move, then the current price so the line ends at "today".
       const points: Array<{ t: number; price: number }> = [];
       const changes = pcRes.rows;
+      const now = Date.now();
       if (changes.length > 0) {
         const first = changes[0];
-        const anchor = firstSeenAt ? Date.parse(firstSeenAt) : Date.parse(first.changed_at);
+        const changeT = Date.parse(first.changed_at);
+        // Prefer a real earlier timestamp for the pre-change price; if we have
+        // none, back it off a day so the two points don't share an x.
+        const anchorSrc = firstSeenAt ?? snapshotFirstSeen;
+        const anchorT = anchorSrc ? Date.parse(anchorSrc) : NaN;
+        const anchor =
+          Number.isFinite(anchorT) && anchorT < changeT ? anchorT : changeT - 86_400_000;
         if (first.old_price != null) points.push({ t: anchor, price: Number(first.old_price) });
         for (const c of changes) {
           if (c.new_price != null)
@@ -746,8 +762,14 @@ export const diningRouter = {
       }
       if (cur?.price != null) {
         const last = points[points.length - 1];
-        if (!last || last.price !== Number(cur.price)) {
-          points.push({ t: Date.now(), price: Number(cur.price) });
+        // Append the live price so the line runs to today; when it matches the
+        // last observed move, still extend the flat run rather than duplicate.
+        if (!last) {
+          points.push({ t: now, price: Number(cur.price) });
+        } else if (last.price !== Number(cur.price)) {
+          points.push({ t: now, price: Number(cur.price) });
+        } else if (now - last.t > 3_600_000) {
+          points.push({ t: now, price: Number(cur.price) });
         }
       }
 
@@ -778,6 +800,56 @@ export const diningRouter = {
         // Former names this item was renamed from, most recent first.
         formerNames: nameList.slice(1),
       };
+    }),
+
+  /**
+   * Other venues whose current menu carries an item with the same name (same
+   * title slug), excluding the venue we came from. Powers the "Also found at"
+   * cross-links on the item detail page — many items (DOLE Whip, Mickey
+   * pretzels) recur verbatim across the resort, and the shared slug means each
+   * row deep-links straight to that venue's copy of the item.
+   */
+  menuItemElsewhere: publicProcedure
+    .input(z.object({ facilityId: z.string(), slug: z.string() }))
+    .query(async ({ input }) => {
+      const slugOf = (col: string) =>
+        sql.raw(`trim(both '-' from regexp_replace(lower(${col}), '[^a-z0-9]+', '-', 'g'))`);
+
+      // One row per other venue: the priced occurrence of this item on its
+      // current live menu, joined to the restaurant for name/location.
+      const res = await db.execute<{
+        facility_id: string;
+        name: string;
+        park_resort: string | null;
+        title: string;
+        price: number | null;
+        currency: string | null;
+        price_type: string | null;
+      }>(sql`
+        SELECT DISTINCT ON (i.facility_id)
+               r.facility_id, r.name, r.park_resort,
+               i.title, i.price, i.currency, i.price_type
+        FROM dining_menu_item i
+        JOIN dining_menu_snapshot s
+          ON s.facility_id = i.facility_id AND s.observed_at = i.observed_at
+        JOIN restaurant_dim r ON r.facility_id = i.facility_id
+        WHERE ${slugOf("i.title")} = ${input.slug}
+          AND i.facility_id <> ${input.facilityId}
+          AND r.active = true
+        ORDER BY i.facility_id, (i.price IS NULL), i.id
+      `);
+
+      return res.rows
+        .map((r) => ({
+          facilityId: r.facility_id,
+          name: r.name,
+          parkResort: r.park_resort,
+          title: r.title,
+          price: r.price === null ? null : Number(r.price),
+          currency: r.currency,
+          priceType: r.price_type,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
     }),
 
   availability: publicProcedure

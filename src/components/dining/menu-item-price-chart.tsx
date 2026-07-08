@@ -5,10 +5,11 @@ import { bisector, extent } from "d3-array";
 import { AxisBottom, AxisRight } from "@visx/axis";
 import { curveStepAfter } from "@visx/curve";
 import { localPoint } from "@visx/event";
+import { LinearGradient } from "@visx/gradient";
 import { GridRows } from "@visx/grid";
 import { Group } from "@visx/group";
 import { scaleLinear, scaleTime } from "@visx/scale";
-import { Bar, Circle, Line, LinePath } from "@visx/shape";
+import { AreaClosed, Bar, Circle, Line, LinePath } from "@visx/shape";
 
 import {
   AXIS_INK,
@@ -62,11 +63,12 @@ function Plot({
   const innerW = Math.max(0, width - margin.left - margin.right);
   const usd = priceFmt(currency);
 
+  const [t0, t1] = extent(points, (d) => d.t) as [number, number];
+  // Breathe out the time domain so endpoints don't glue to the edges (and a
+  // near-instant two-point series still spans the plot instead of stacking).
+  const tPad = Math.max(12 * 3_600_000, (t1 - t0) * 0.08);
   const x = scaleTime({
-    domain: (extent(points, (d) => d.t) as [number, number]).map((t) => new Date(t)) as [
-      Date,
-      Date,
-    ],
+    domain: [new Date(t0 - tPad), new Date(t1 + tPad)],
     range: [0, innerW],
   });
   const [lo, hi] = extent(points, (d) => d.price) as [number, number];
@@ -92,8 +94,26 @@ function Plot({
   return (
     <div className="relative w-full" style={{ height: PLOT_H + 24 }}>
       <svg width={width} height={PLOT_H + 24} className="overflow-visible">
+        <LinearGradient
+          id="menu-price-fill"
+          from={PRIMARY}
+          to={PRIMARY}
+          fromOpacity={0.22}
+          toOpacity={0.02}
+        />
         <Group left={margin.left} top={margin.top}>
           <GridRows scale={y} width={innerW} stroke={GRID_INK} strokeOpacity={0.5} numTicks={4} />
+
+          {/* Filled step area — reads as a clear "held at X, then moved" shape
+              even with only a couple of observations. */}
+          <AreaClosed
+            data={points}
+            x={(d) => x(new Date(d.t))}
+            y={(d) => y(d.price)}
+            yScale={y}
+            curve={curveStepAfter}
+            fill="url(#menu-price-fill)"
+          />
 
           {/* Step line — prices hold flat between the runs we observed them change. */}
           <LinePath

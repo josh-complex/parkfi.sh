@@ -25,6 +25,12 @@ export const Route = createFileRoute("/dining_/$facilityId_/item/$slug")({
       context.queryClient.ensureQueryData(
         context.trpc.dining.venue.queryOptions({ facilityId: params.facilityId }),
       ),
+      context.queryClient.ensureQueryData(
+        context.trpc.dining.menuItemElsewhere.queryOptions({
+          facilityId: params.facilityId,
+          slug: params.slug,
+        }),
+      ),
     ]);
     return { itemTitle: item?.title ?? null, venueName: venue?.name ?? null };
   },
