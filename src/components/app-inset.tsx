@@ -20,8 +20,9 @@ import type { ReactNode } from "react";
  * It renders as the sidebar's peer `<main>` (via `SidebarInset`) so the inset
  * margins still track the sidebar's open/collapsed state — we just strip the
  * card chrome off the outer element and reapply it to the inner card so the
- * toolbar can breathe on the blue background. On mobile the card is transparent
- * so the shell stays the same blue app surface it was before.
+ * toolbar can breathe on the blue background. The card itself carries the
+ * theme background at every breakpoint, so mobile always shows the light/dark
+ * surface rather than the blue shell.
  */
 export function AppInset({ children, className }: { children: ReactNode; className?: string }) {
   return (
@@ -50,12 +51,13 @@ export function AppInset({ children, className }: { children: ReactNode; classNa
         </div>
         <BuyMeACoffee className="" />
       </div>
-      {/* White content card. Transparent on mobile so the blue shell shows through.
-          Reserve room at the bottom on mobile so scrolling content clears the
-          floating nav island (the fullscreen map route opts out via absolute fill). */}
+      {/* Content card: theme background (white/dark) at every breakpoint, and
+          rounded into a floating card on desktop only. Reserve room at the
+          bottom on mobile so scrolling content clears the floating nav island
+          (the fullscreen map route opts out via absolute fill). */}
       <div
         className={cn(
-          "relative flex min-h-0 w-full flex-1 flex-col pb-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom))] md:rounded-2xl md:bg-background md:pb-0 md:shadow-sm",
+          "relative flex min-h-0 w-full flex-1 flex-col bg-background pb-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom))] md:rounded-2xl md:pb-0 md:shadow-sm",
           className,
         )}
       >
