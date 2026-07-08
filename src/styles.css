@@ -69,6 +69,24 @@
   :root {
     --safe-bottom: 0px;
   }
+
+  /* iOS-only bottom-gap fix. Our `apple-mobile-web-app-status-bar-style` is
+     `black-translucent`, so in an installed PWA iOS renders the web view
+     edge-to-edge *behind* the status bar. WebKit then computes `svh`/`100%` short
+     by the top safe-area inset, so the `min-h-svh` shell (and the document) stop
+     ~1 status-bar-height above the true screen bottom — leaving a stranded band
+     (painted with the manifest `background_color`) that the `fixed` bottom-nav
+     floats above. Pin the document and shell to the full layout viewport: with no
+     browser chrome in standalone, `100vh` is stable and equals the real screen, so
+     this reaches the physical bottom without the classic in-tab `100vh` overflow.
+     Scoped to standalone, so browser tabs are untouched. */
+  html,
+  body {
+    min-height: 100vh;
+  }
+  [data-slot="sidebar-wrapper"] {
+    min-height: 100vh;
+  }
 }
 
 .dark {
