@@ -9,8 +9,10 @@ import {
   SlidersHorizontalIcon,
 } from "lucide-react";
 
+import { RideCategoryChips } from "#/components/rides/ride-category-chips.tsx";
 import { RideFilterControls, RideFilterFooter } from "#/components/rides/ride-filter-button.tsx";
 import {
+  RIDE_CATEGORIES,
   rideFilterCount,
   rideMatchesFilter,
   useRideFilter,
@@ -349,8 +351,20 @@ export function CrossParkWaits() {
 
   const shown = groups.reduce((n, g) => n + g.rides.length, 0);
 
+  // Quick-filter chips only offer categories actually present in the data
+  // (dine/shop never appear here — `allRides` is scoped to entity_type ATTRACTION).
+  const categoryOptions = React.useMemo(() => {
+    const present = new Set((rides ?? []).map((r) => r.category).filter((c) => c != null));
+    return RIDE_CATEGORIES.filter((c) => present.has(c.key));
+  }, [rides]);
+
   return (
     <div className="flex flex-col p-4 pb-28 lg:px-6">
+      {/* Mobile quick attraction-type filters, tucked under the header's omnisearch. */}
+      <div className="-mx-4 lg:-mx-6">
+        <RideCategoryChips categories={categoryOptions} />
+      </div>
+
       {/* Desktop controls — mirrors the Eats/Stays top bar; mobile uses the FAB. */}
       <div className="hidden items-center justify-end gap-2 pb-2 md:flex">
         <SortDrawer sort={sort} onSort={setSort} variant="outline" />
@@ -408,7 +422,10 @@ export function CrossParkWaits() {
 
                 {!isCollapsed &&
                   (view === "grid" ? (
-                    <CarouselContent className="ml-0 gap-4 px-4 lg:px-6">
+                    <CarouselContent
+                      className="ml-0 gap-4 px-4 lg:px-6"
+                      viewportClassName="[mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%_-_1.5rem),transparent)]"
+                    >
                       {g.rides.map((r) => (
                         <CarouselItem
                           key={r.id}
