@@ -425,18 +425,7 @@ export function DiningVenueDetail({
       {venue && (
         <section id="menu" ref={menuSectionRef} className="flex scroll-mt-16 flex-col gap-3">
           <div className="flex items-baseline justify-between gap-3">
-            <div className="flex items-baseline gap-3">
-              <h2 className="text-lg font-semibold tracking-tight">Menu</h2>
-              {state.recentChanges.length > 0 && (
-                <button
-                  type="button"
-                  onClick={state.showChanges}
-                  className="text-xs font-medium text-primary hover:underline"
-                >
-                  Show recent changes
-                </button>
-              )}
-            </div>
+            <h2 className="text-lg font-semibold tracking-tight">Menu</h2>
             <p className="text-xs text-muted-foreground">Prices excl. tax &amp; gratuity</p>
           </div>
           {state.menuQ.isLoading || hasMenu ? (

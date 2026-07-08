@@ -188,8 +188,8 @@ export function MobileBottomNav() {
           icon={<TicketIcon />}
           label="Tickets"
           offline={offline.has("tickets")}
-          className="-mr-4"
-          contentClassName="-translate-x-2"
+          className="-mr-2"
+          contentClassName="-translate-x-1"
         />
         <MapButton active={mapActive} />
         <Seg
@@ -198,8 +198,8 @@ export function MobileBottomNav() {
           icon={<UtensilsIcon />}
           label="Eats"
           offline={offline.has("dining")}
-          className="-ml-4"
-          contentClassName="translate-x-2"
+          className="-ml-2"
+          contentClassName="translate-x-1"
         />
         <Seg
           to="/stays"

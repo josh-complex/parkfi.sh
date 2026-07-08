@@ -383,9 +383,9 @@ export function MenuBody({
   newSlugs?: Set<string>;
   /** When set, item titles link to their detail pages. */
   facilityId?: string;
-  /** Venue-wide activity feed backing the "Changed" pseudo-tab. */
+  /** Venue-wide activity feed backing the "Updates" pseudo-tab. */
   recentChanges?: Array<MenuChangeEntry>;
-  /** When true, the "Changed" tab is active instead of a meal period. */
+  /** When true, the "Updates" tab is active instead of a meal period. */
   viewingChanges?: boolean;
   onShowChanges?: () => void;
 }) {
@@ -464,7 +464,7 @@ export function MenuBody({
 
   return (
     <>
-      {/* Period tabs, plus a "Changed" pseudo-tab for recent menu activity */}
+      {/* Period tabs, plus an "Updates" pseudo-tab for recent menu activity */}
       {(hasMultiplePeriods || hasChanges) && (
         <div className="flex shrink-0 gap-2 border-b px-4 py-3">
           {periods.map((p, i) => (
@@ -493,14 +493,14 @@ export function MenuBody({
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
-              Changed
+              Updates
             </button>
           )}
         </div>
       )}
 
       {/* Quick-jump pills — category chips normally, or the change-kind filter
-          when the "Changed" tab is active. Same chip styling either way. */}
+          when the "Updates" tab is active. Same chip styling either way. */}
       {viewingChanges
         ? hasChanges && (
             <div
