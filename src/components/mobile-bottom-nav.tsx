@@ -169,7 +169,7 @@ export function MobileBottomNav() {
     <nav
       aria-label="Primary"
       className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center md:hidden"
-      style={{ paddingBottom: "max(var(--safe-bottom), 0.5rem)" }}
+      style={{ paddingBottom: "max(var(--safe-bottom), 1rem)" }}
     >
       {livingEnabled && mapActive ? <PlayButton /> : null}
       {/* One connected row; `items-end` aligns every segment's base so the bar is

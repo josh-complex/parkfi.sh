@@ -58,7 +58,7 @@
      inset. In an installed standalone PWA there is no browser toolbar, so on the
      full-bleed map that tall reservation just reads as dead space under the nav
      — collapse it to 0 there (the standalone override below). The nav's own
-     `max(…, 0.5rem)` floor still keeps its keys off the very edge. */
+     `max(…, 1rem)` floor still keeps its keys off the very edge. */
   --safe-bottom: env(safe-area-inset-bottom);
 }
 
