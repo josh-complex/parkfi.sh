@@ -341,8 +341,11 @@ export function MapStageProvider({
     if (typeof document === "undefined") return null;
     const el = document.createElement("div");
     // `relative` so the overlay controls (locate / filter / directions) anchor to
-    // the map area itself, whatever slot it's currently lent to.
-    el.className = "relative size-full overflow-hidden";
+    // the map area itself, whatever slot it's currently lent to. Rounded to match
+    // the desktop content card (app-inset.tsx) so the square-cornered maplibre
+    // canvas doesn't poke past its rounded corners; mobile's fullscreen slot has
+    // no rounding to match, so this is a no-op there.
+    el.className = "relative size-full overflow-hidden md:rounded-2xl";
     return el;
   });
   const parkRef = React.useRef<HTMLDivElement>(null);

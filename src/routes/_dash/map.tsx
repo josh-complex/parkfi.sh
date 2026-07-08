@@ -27,7 +27,7 @@ function MapPage() {
     // floating top bar (z-30) and bottom nav (z-40), so both bars show the map
     // through their transparent areas. On desktop it's a fixed-height card.
     <>
-      <MapSlot className="roam-map fixed inset-0 z-0 md:static md:z-auto md:h-[calc(100svh-var(--header-height)-var(--toolbar-height)-0.5rem)]" />
+      <MapSlot className="roam-map fixed inset-0 z-0 md:static md:z-auto md:h-[calc(100svh-var(--toolbar-height)-0.5rem)]" />
     </>
   );
 }
