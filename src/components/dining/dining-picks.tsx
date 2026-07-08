@@ -26,7 +26,7 @@ import {
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
-interface PickVenue {
+export interface PickVenue {
   facilityId: string;
   name: string;
   cuisine: string | null;
@@ -46,7 +46,7 @@ function formatNextAvail(date: string, referenceDate: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function PickCard({
+export function PickCard({
   venue,
   nextAvail,
   schedules,

@@ -322,6 +322,44 @@ export const diningRouter = {
   }),
 
   /**
+   * Dining venues located at a given resort hotel (exact `park_resort` text
+   * match — the finder catalog stores the resort's display name verbatim, same
+   * string as `RESORT_CATALOG[].name`). Powers the resort detail page's "Eats
+   * here" shelf; same card fields as `picks` plus `bookable` so the shelf can
+   * split table-service restaurants from quick-service / carts.
+   */
+  byResort: publicProcedure.input(z.object({ resortName: z.string() })).query(async ({ input }) => {
+    const result = await db.execute<{
+      facility_id: string;
+      name: string;
+      cuisine: string | null;
+      park_resort: string | null;
+      price_range: string | null;
+      image_url: string | null;
+      detail_url: string | null;
+      bookable: boolean;
+      mobile_order: boolean;
+    }>(sql`
+      SELECT facility_id, name, cuisine, park_resort, price_range, image_url, detail_url,
+             bookable, mobile_order
+      FROM restaurant_dim
+      WHERE active = true AND park_resort = ${input.resortName}
+      ORDER BY name
+    `);
+    return result.rows.map((r) => ({
+      facilityId: r.facility_id,
+      name: r.name,
+      cuisine: r.cuisine,
+      parkResort: r.park_resort,
+      priceRange: r.price_range,
+      imageUrl: r.image_url,
+      detailUrl: r.detail_url,
+      bookable: r.bookable,
+      mobileOrder: r.mobile_order,
+    }));
+  }),
+
+  /**
    * Operating hours for a single date (default: today), keyed by facility. Reads
    * the weekly-refreshed `dining_schedule` window. The client compares the
    * returned start/end times against the current park-local time to drive

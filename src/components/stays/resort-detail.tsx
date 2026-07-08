@@ -8,6 +8,7 @@ import { type DateRange } from "react-day-picker";
 import { ArrowLeftIcon, CalendarIcon, ExternalLinkIcon } from "lucide-react";
 
 import { LocationMap } from "#/components/maps/location-map.tsx";
+import { ResortDiningShelf } from "#/components/dining/resort-dining-shelf.tsx";
 import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
 import { ResortPriceChart } from "#/components/stays/resort-price-chart.tsx";
 import { StayAlertButton } from "#/components/stays/stay-alert-button.tsx";
@@ -39,6 +40,17 @@ const RESORT_BY_SLUG = new Map(RESORT_CATALOG.map((r) => [r.slug, r]));
 
 export function resortBySlug(slug: string) {
   return RESORT_BY_SLUG.get(slug) ?? null;
+}
+
+/**
+ * Dining's `park_resort` text is the resort's display name verbatim, so this
+ * reverses the catalog into a name → slug lookup for cross-linking a dining
+ * venue back to its resort's detail page.
+ */
+const RESORT_SLUG_BY_NAME = new Map(RESORT_CATALOG.map((r) => [r.name, r.slug]));
+
+export function resortSlugByName(name: string) {
+  return RESORT_SLUG_BY_NAME.get(name) ?? null;
 }
 
 const ISO = "yyyy-MM-dd";
@@ -457,6 +469,8 @@ export function ResortDetail({ slug }: { slug: string }) {
       </header>
 
       <ResortAvailability resort={resort} committed={search} onCommit={setSearch} />
+
+      <ResortDiningShelf resortName={resort.name} />
 
       {coords && (
         <section className="flex flex-col gap-3">

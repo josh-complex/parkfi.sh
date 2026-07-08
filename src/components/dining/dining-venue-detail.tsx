@@ -21,6 +21,7 @@ import { AvailabilityCalendar } from "#/components/dining/dining-restaurant-card
 import { MenuBody, useMenuState } from "#/components/dining/menu-content.tsx";
 import { LocationMap } from "#/components/maps/location-map.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
+import { Card } from "#/components/ui/card.tsx";
 import { DatePicker } from "#/components/ui/date-picker.tsx";
 import {
   Select,
@@ -32,6 +33,7 @@ import {
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
+import { resortSlugByName } from "#/components/stays/resort-detail.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
 import { cn } from "#/lib/utils.ts";
@@ -204,7 +206,7 @@ function ReservationsSection({
           />
         </div>
       </div>
-      <div className="rounded-2xl border bg-card p-4">
+      <Card size="sm" className="px-4">
         {availabilityQ.isLoading ? (
           <Skeleton className="h-12 w-full" />
         ) : days.length > 0 ? (
@@ -237,7 +239,7 @@ function ReservationsSection({
             above.
           </p>
         )}
-      </div>
+      </Card>
     </section>
   );
 }
@@ -279,9 +281,13 @@ export function DiningVenueDetail({
     menuSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [scrollToMenu, menuReady]);
 
-  const subtitle = venue
-    ? [venue.parkResort, venue.experienceType ?? venue.cuisine].filter(Boolean).join(" · ")
-    : "";
+  // A resort-hosted venue (no park ticket required) cross-links back to its
+  // resort's detail page; theme-park venues just show the plain text.
+  const resortSlug =
+    venue && !venue.requiresParkTicket && venue.parkResort
+      ? resortSlugByName(venue.parkResort)
+      : null;
+  const subtitleRest = venue ? (venue.experienceType ?? venue.cuisine) : null;
 
   const schedules = hoursQ.data?.find((h) => h.facilityId === facilityId)?.schedules ?? [];
 
@@ -366,8 +372,25 @@ export function DiningVenueDetail({
                 </Badge>
               )}
             </div>
-            {subtitle && <p className="text-muted-foreground">{subtitle}</p>}
-            {venue.land && (
+            {(venue.parkResort || subtitleRest) && (
+              <p className="text-muted-foreground flex flex-wrap items-center gap-x-1.5">
+                {venue.parkResort &&
+                  (resortSlug ? (
+                    <Link
+                      to="/resort/$slug"
+                      params={{ slug: resortSlug }}
+                      className="hover:text-foreground hover:underline"
+                    >
+                      {venue.parkResort}
+                    </Link>
+                  ) : (
+                    <span>{venue.parkResort}</span>
+                  ))}
+                {venue.parkResort && subtitleRest && <span aria-hidden>·</span>}
+                {subtitleRest && <span>{subtitleRest}</span>}
+              </p>
+            )}
+            {venue.land && venue.land !== venue.parkResort && (
               <p className="inline-flex items-center gap-1 text-sm text-muted-foreground">
                 <MapPinIcon className="size-3.5" />
                 {venue.land}
@@ -415,7 +438,9 @@ export function DiningVenueDetail({
             longitude={venue.longitude}
             label={venue.name}
             zoom={17}
-            caption={[venue.land, venue.parkResort].filter(Boolean).join(", ") || undefined}
+            caption={
+              [...new Set([venue.land, venue.parkResort].filter(Boolean))].join(", ") || undefined
+            }
             className="h-48 w-full overflow-hidden rounded-2xl border sm:h-72"
           />
         </section>

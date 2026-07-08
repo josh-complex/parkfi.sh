@@ -213,10 +213,10 @@ export function LocationMap({
         aria-label={label ? `Map showing ${label}` : "Location map"}
         className={cn("isolate", className)}
       />
-      <p className="text-[10px] text-muted-foreground">
-        {caption ? `${caption} · ` : ""}
-        {MAPTILER_ATTRIBUTION}
-      </p>
+      <div className="flex flex-col text-[10px] text-muted-foreground">
+        {caption && <p>{caption}</p>}
+        <p>{MAPTILER_ATTRIBUTION}</p>
+      </div>
     </div>
   );
 }
