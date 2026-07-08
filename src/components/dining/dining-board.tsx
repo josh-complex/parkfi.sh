@@ -67,8 +67,15 @@ function BrowseView({ isLoading }: { isLoading: boolean }) {
   }
   return (
     <div className="flex flex-col gap-4">
-      <DiningRecentlyUpdated />
-      <DiningPicks />
+      <DiningRecentlyUpdated variant="restaurants" />
+      {/* Character Dining sits above the cart/quick-service activity shelf, with
+          Snacks & Sweet Treats and a dedicated Mobile Ordering shelf right below
+          it (in that order); the remaining curated picks follow. */}
+      <DiningPicks include={["character"]} />
+      <DiningRecentlyUpdated variant="carts" />
+      <DiningPicks include={["sweet-treats"]} />
+      <DiningPicks include={["mobile-order"]} />
+      <DiningPicks exclude={["character", "sweet-treats", "mobile-order"]} />
     </div>
   );
 }

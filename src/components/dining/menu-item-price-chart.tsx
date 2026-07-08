@@ -206,11 +206,10 @@ function Plot({
 }
 
 /**
- * Observed price trend for one menu item, stitched across any prior names it was
- * renamed from (`dining.menuItem.priceHistory`). A step line — a Disney menu
- * price holds until the next time we catch it move — with a dot on every
- * observed price. Renders nothing above the fixed height; callers gate the
- * thin-data / empty states.
+ * Observed price trend for one menu item (`dining.menuItem.priceHistory`). A
+ * step line — a Disney menu price holds until the next time we catch it
+ * move — with a dot on every observed price. Renders nothing above the fixed
+ * height; callers gate the thin-data / empty states.
  */
 export function MenuItemPriceChart({
   points,

@@ -802,17 +802,16 @@ export const diningMenuPriceChange = pgTable(
 );
 
 /**
- * (F.6) Menu item lifecycle log — one row per item added, removed, or renamed
- * between two generations. The companion to `dining_menu_price_change`: that
- * table tracks price moves on persisting items; this one tracks the item roster
+ * (F.6) Menu item lifecycle log — one row per item added or removed between
+ * two generations. The companion to `dining_menu_price_change`: that table
+ * tracks price moves on persisting items; this one tracks the item roster
  * itself. Derived by the cron when a venue's menu changes, by diffing the item
  * titles per (meal period, group) against the previous generation:
  *   • 'added'   — a title present in the new generation but not the old.
  *   • 'removed' — a title present in the old generation but not the new.
- *   • 'renamed' — a removed+added pair in the same group matched by identical
- *     description (or identical price + type), collapsed into one event with the
- *     prior title in `old_title`. Best-effort, so a true rename never
- *     double-counts as a churn of one add + one remove.
+ * A renamed item shows up as one 'removed' row and one 'added' row — matching
+ * a removed+added pair as a rename proved too unreliable to ship (false
+ * matches on identical description/price between unrelated items).
  * Append-only; never written on a venue's FIRST capture (no baseline to diff),
  * so the initial menu load doesn't masquerade as a flood of "new" items. Powers
  * the "New!" badges (adds within the last month), the recently-updated feed's
@@ -825,15 +824,12 @@ export const diningMenuEvent = pgTable(
     facilityId: text("facility_id")
       .notNull()
       .references(() => restaurantDim.facilityId),
-    // 'added' | 'removed' | 'renamed'
+    // 'added' | 'removed'
     changeType: text("change_type").notNull(),
     mealPeriod: text("meal_period").notNull(),
     groupName: text("group_name"),
     itemType: text("item_type"),
-    // Current title (the new title for a rename, the dropped title for a remove).
     title: text("title").notNull(),
-    // Rename only: the title this item carried in the previous generation.
-    oldTitle: text("old_title"),
     price: real("price"),
     priceType: text("price_type"),
     currency: text("currency"),

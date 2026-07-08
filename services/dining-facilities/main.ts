@@ -255,11 +255,10 @@ async function enrichDetails(rows: Array<DiningCatalogRow>, now: Date): Promise<
 
   const added = eventRows.filter((e) => e.changeType === "added").length;
   const removed = eventRows.filter((e) => e.changeType === "removed").length;
-  const renamed = eventRows.filter((e) => e.changeType === "renamed").length;
   console.log(
     `[dining-facilities] schedules: ${scheduleRows.length} rows / ${scheduleOk.length} venues (${schedErr} failed); ` +
       `menus: ${menuOk.length} fetched (${menuErr} failed), ${snapUpserts.length} changed / ${unchanged.length} unchanged, ` +
-      `${priceRows.length} price changes, ${added} added / ${removed} removed / ${renamed} renamed`,
+      `${priceRows.length} price changes, ${added} added / ${removed} removed`,
   );
 }
 

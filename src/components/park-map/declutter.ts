@@ -47,6 +47,7 @@ const DOT_ORDER: ReadonlyArray<MapItemKind> = [
   "shows",
   "shops",
   "eats",
+  "quickService",
   "services",
   "entertainment",
   "tours",
@@ -56,8 +57,11 @@ const EMPTY_COUNTS: ReadonlyMap<MapItemKind, number> = new Map();
 /**
  * Set the cluster's overflow indicator — one colour-coded count badge per *type*
  * of marker in the group (a group of 3 rides + 4 shops + 6 eats shows three
- * badges: blue "3", violet "4", amber "6"). Top-centered on the anchor's disc.
- * Passing empty counts clears it, so a lone marker carries no badges.
+ * badges: blue "3", violet "4", amber "6"). Arced along the anchor disc's own
+ * top rim — like beads strung around its curve — rather than a flat row, so a
+ * single dot sits dead-center and each additional one fans out symmetrically,
+ * following the circle instead of cutting a straight line across it. Passing
+ * empty counts clears it, so a lone marker carries no badges.
  */
 function setClusterDots(detail: HTMLElement, counts: ReadonlyMap<MapItemKind, number>): void {
   const wrap = detail.firstElementChild as HTMLElement | null;
@@ -69,15 +73,26 @@ function setClusterDots(detail: HTMLElement, counts: ReadonlyMap<MapItemKind, nu
     if (!badge) {
       badge = document.createElement("span");
       badge.setAttribute("data-cluster-count", "");
-      badge.className =
-        "pointer-events-none absolute -top-2 left-1/2 flex -translate-x-1/2 items-center gap-0.5";
+      badge.className = "pointer-events-none absolute inset-0";
       wrap.appendChild(badge);
     }
+    // Radius = the disc's own half-width, so each dot's center lands right on its
+    // edge (half overlapping the photo, half poking past it — the "hugging the
+    // curve" look). Falls back to a typical disc size if measured at 0 (detached).
+    const r = wrap.offsetWidth / 2 || 26;
+    const n = present.length;
+    // Total arc the dots fan across, widening with more of them but capped short
+    // of wrapping around to the disc's sides.
+    const spread = Math.min(30 * (n - 1), 160);
+    const step = n > 1 ? spread / (n - 1) : 0;
     badge.innerHTML = present
-      .map(
-        (k) =>
-          `<span class="flex min-w-[1rem] items-center justify-center rounded-full border border-white px-1 text-[9px] leading-[14px] font-bold text-white shadow" style="background:${MAP_TYPE_COLOR[k]}">${counts.get(k)}</span>`,
-      )
+      .map((k, i) => {
+        const deg = -spread / 2 + i * step;
+        const rad = (deg * Math.PI) / 180;
+        const x = (r * Math.sin(rad)).toFixed(1);
+        const y = (-r * Math.cos(rad)).toFixed(1);
+        return `<span class="absolute flex min-w-[1rem] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white px-1 text-[9px] leading-[14px] font-bold text-white shadow" style="left:calc(50% + ${x}px);top:calc(50% + ${y}px);background:${MAP_TYPE_COLOR[k]}">${counts.get(k)}</span>`;
+      })
       .join("");
     badge.classList.remove("hidden");
   } else if (badge) {

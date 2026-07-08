@@ -649,8 +649,14 @@ export function ParkMapLeaflet({
               (p.category === "entertainment" || p.category === "character")) ||
             (layers.tours && p.category === "tour"),
         );
+        // The dining feed carries both reservable table-service venues and
+        // non-bookable quick service/carts (tagged 'quick-service' — see
+        // `parks.dining`); split it across the two layers so each toggles
+        // independently instead of lumping carts in with sit-down dining.
+        const diningData = diningQ.data ?? [];
         const pois = [
-          ...(layers.dining ? (diningQ.data ?? []) : []),
+          ...(layers.dining ? diningData.filter((p) => p.category !== "quick-service") : []),
+          ...(layers.quickService ? diningData.filter((p) => p.category === "quick-service") : []),
           ...(layers.shops ? (shopsQ.data ?? []) : []),
           ...overlayPoi,
         ];
@@ -992,8 +998,10 @@ export function ParkMapLeaflet({
         map.flyTo([ORLANDO_CENTER[1], ORLANDO_CENTER[0]], ORLANDO_ZOOM, { duration: FLY_SECONDS });
         return;
       }
+      const roamPad = chromePadding(containerRef.current);
       map.flyToBounds(L.latLngBounds(coords), {
-        padding: [80, 80],
+        paddingTopLeft: L.point(roamPad.left, roamPad.top),
+        paddingBottomRight: L.point(roamPad.right, roamPad.bottom),
         maxZoom: 12,
         duration: FLY_SECONDS,
       });
@@ -1012,7 +1020,13 @@ export function ParkMapLeaflet({
         return;
       }
       const b = L.latLngBounds(coords);
-      map.flyToBounds(b, { padding: [80, 80], maxZoom: 12, duration: FLY_SECONDS });
+      const overviewPad = chromePadding(containerRef.current);
+      map.flyToBounds(b, {
+        paddingTopLeft: L.point(overviewPad.left, overviewPad.top),
+        paddingBottomRight: L.point(overviewPad.right, overviewPad.bottom),
+        maxZoom: 12,
+        duration: FLY_SECONDS,
+      });
       map.once("moveend", () => map.setMaxBounds(b.pad(0.6)));
       return;
     }

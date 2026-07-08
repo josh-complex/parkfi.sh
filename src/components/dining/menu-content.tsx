@@ -2,8 +2,14 @@
 
 import * as React from "react";
 import { Link } from "@tanstack/react-router";
-import { TrendingDownIcon, TrendingUpIcon } from "lucide-react";
+import { formatDistanceToNowStrict } from "date-fns";
+import { ChevronDownIcon, TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "#/components/ui/collapsible.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { useQuery } from "@tanstack/react-query";
@@ -95,6 +101,24 @@ export interface MenuItemChange {
 
 /** Map of item slug → its recent price change, for the active meal period. */
 export type MenuChangeMap = Map<string, MenuItemChange>;
+
+/**
+ * One entry in a venue's recent-activity feed — a price move or an item
+ * add/remove event (from `dining.menuChanges` + `dining.recentItemEvents`),
+ * normalized to a common shape and sorted newest-first for the "Recent changes"
+ * panel. Unlike `changesBySlug`/`newSlugs`, this isn't scoped to the active meal
+ * period — it's a flat feed across the whole venue.
+ */
+export interface MenuChangeEntry {
+  kind: "added" | "removed" | "price";
+  title: string;
+  price: number | null;
+  oldPrice: number | null;
+  newPrice: number | null;
+  currency: string | null;
+  mealPeriod: string;
+  changedAt: string;
+}
 
 export interface RawGroup {
   groupName: string | null;
@@ -221,7 +245,7 @@ function MenuItem({
   isKids: boolean;
   highlight: boolean;
   change?: MenuItemChange;
-  /** Item was added (or renamed into) the menu within the last month. */
+  /** Item was added to the menu within the last month. */
   isNew?: boolean;
   /** When set, the title links to the item's detail/price-history page. */
   facilityId?: string;
@@ -275,6 +299,100 @@ function MenuItem({
         </div>
       )}
     </div>
+  );
+}
+
+// ── Recent changes panel ────────────────────────────────────────────────────────
+
+function RecentChangeRow({ change, facilityId }: { change: MenuChangeEntry; facilityId: string }) {
+  const slug = slugifyMenuItem(change.title);
+  const addedPrice = change.kind === "added" ? formatPrice(change.price, change.currency) : null;
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-border/40 py-3 last:border-0">
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-baseline gap-1.5">
+          <Link
+            to="/dining/$facilityId/item/$slug"
+            params={{ facilityId, slug }}
+            className="text-sm font-medium leading-snug hover:underline"
+          >
+            {change.title}
+          </Link>
+          {change.kind === "added" && (
+            <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold leading-none text-emerald-700 dark:text-emerald-400">
+              New
+            </span>
+          )}
+          {change.kind === "removed" && (
+            <span className="inline-flex items-center rounded border border-amber-200 px-1 py-px text-[10px] font-medium leading-none text-amber-600 dark:border-amber-900">
+              Removed
+            </span>
+          )}
+        </div>
+        <p className="mt-0.5 text-xs text-muted-foreground/70">
+          {change.mealPeriod} · {formatDistanceToNowStrict(new Date(change.changedAt))} ago
+        </p>
+      </div>
+      {(addedPrice || change.kind === "price") && (
+        <div className="flex shrink-0 flex-col items-end gap-0.5">
+          {addedPrice && (
+            <span className="text-sm tabular-nums text-muted-foreground">{addedPrice}</span>
+          )}
+          {change.kind === "price" && (
+            <PriceChangeIndicator
+              change={{
+                oldPrice: change.oldPrice,
+                newPrice: change.newPrice,
+                currency: change.currency,
+              }}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Compact, collapsible digest of a venue's recent menu activity — a smaller
+ * echo of the main menu container (same card chrome) that surfaces just the
+ * items with a change, newest first, so guests don't have to scan the whole
+ * menu to spot what's new. Renders nothing when there's no recent activity;
+ * each row links to the item's detail page, same as the full menu.
+ */
+export function RecentChangesPanel({
+  changes,
+  facilityId,
+  defaultOpen = true,
+}: {
+  changes: Array<MenuChangeEntry>;
+  facilityId: string;
+  defaultOpen?: boolean;
+}) {
+  if (!changes.length) return null;
+  return (
+    <Collapsible defaultOpen={defaultOpen} className="overflow-hidden rounded-2xl border bg-card">
+      <CollapsibleTrigger className="group flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-sm font-semibold">Recent changes</span>
+          <span className="text-xs text-muted-foreground">
+            {changes.length} update{changes.length === 1 ? "" : "s"} in the last 30 days
+          </span>
+        </div>
+        <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[panel-open]:rotate-180" />
+      </CollapsibleTrigger>
+      <CollapsibleContent className="border-t px-4">
+        <div className="max-h-72 overflow-y-auto">
+          {changes.map((c, i) => (
+            <RecentChangeRow
+              key={`${c.kind}-${c.title}-${c.changedAt}-${i}`}
+              change={c}
+              facilityId={facilityId}
+            />
+          ))}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -515,18 +633,47 @@ export function useMenuState(facilityId: string, open: boolean, targetItemSlug?:
     return m;
   }, [changesQ.data, currentPeriod]);
 
-  // Slugs of items added (or renamed into) the menu within the last month, for
-  // the current meal period — drives the inline "New" badges.
+  // Slugs of items added to the menu within the last month, for the current
+  // meal period — drives the inline "New" badges.
   const newSlugs = React.useMemo<Set<string>>(() => {
     const s = new Set<string>();
     const period = currentPeriod?.mealPeriod;
     if (!period) return s;
     for (const e of eventsQ.data ?? []) {
       if (e.mealPeriod !== period) continue;
-      if (e.changeType === "added" || e.changeType === "renamed") s.add(slugifyMenuItem(e.title));
+      if (e.changeType === "added") s.add(slugifyMenuItem(e.title));
     }
     return s;
   }, [eventsQ.data, currentPeriod]);
+
+  // Flat, venue-wide activity feed for the "Recent changes" panel — unlike
+  // `changesBySlug`/`newSlugs` above, not scoped to the active meal period, since
+  // it's meant to be scanned independently of whichever period is on screen.
+  const recentChanges = React.useMemo<Array<MenuChangeEntry>>(() => {
+    const priceEntries: Array<MenuChangeEntry> = (changesQ.data ?? []).map((c) => ({
+      kind: "price",
+      title: c.title,
+      price: null,
+      oldPrice: c.oldPrice,
+      newPrice: c.newPrice,
+      currency: c.currency,
+      mealPeriod: c.mealPeriod,
+      changedAt: c.changedAt,
+    }));
+    const eventEntries: Array<MenuChangeEntry> = (eventsQ.data ?? []).map((e) => ({
+      kind: e.changeType,
+      title: e.title,
+      price: e.price,
+      oldPrice: null,
+      newPrice: null,
+      currency: e.currency,
+      mealPeriod: e.mealPeriod,
+      changedAt: e.changedAt,
+    }));
+    return [...priceEntries, ...eventEntries].sort(
+      (a, b) => Date.parse(b.changedAt) - Date.parse(a.changedAt),
+    );
+  }, [changesQ.data, eventsQ.data]);
 
   const sectionRefs = React.useRef<Map<string, HTMLElement>>(new Map());
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -574,5 +721,6 @@ export function useMenuState(facilityId: string, open: boolean, targetItemSlug?:
     highlightSlug,
     changesBySlug,
     newSlugs,
+    recentChanges,
   };
 }

@@ -55,15 +55,13 @@ function titleExcess<T extends { title: string }>(
 
 /**
  * Diff a venue's previous menu generation against the next one, producing both
- * the price-move log rows and the item lifecycle events (added / removed /
- * renamed). Two independent passes:
+ * the price-move log rows and the item lifecycle events (added / removed).
+ * Two independent passes:
  *   • Price moves — persisting items matched by (period, group, title, type),
  *     aligned by occurrence order so duplicate titles line up; only a differing
  *     price emits a row.
  *   • Roster — per (period, group), the multiset title difference gives the
- *     candidate adds and removes; within each group a removed+added pair is
- *     collapsed into a 'renamed' event when their descriptions match (or, failing
- *     that, their price + type + item type), so a rename doesn't read as churn.
+ *     items added and removed.
  * Composite keys join fields with a U+0001 delimiter (a control char that can't
  * occur in a title/group name) so adjacent fields can't fuse into one key.
  */
@@ -102,66 +100,30 @@ export function diffMenu(
     }
   }
 
-  // --- Roster changes (adds / removes / renames), per (period, group). ---
+  // --- Roster changes (adds / removes), per (period, group). ---
   const groupKey = (r: PrevMenuRow | DiningMenuItemRow): string =>
     `${r.mealPeriod}${r.groupName ?? ""}`;
   const prevGroups = bucketBy(prev, groupKey);
   const nextGroups = bucketBy(next, groupKey);
-  const norm = (s: string | null): string | null => s?.trim().toLowerCase() || null;
 
   for (const g of new Set([...prevGroups.keys(), ...nextGroups.keys()])) {
     const removed = titleExcess(prevGroups.get(g) ?? [], nextGroups.get(g) ?? []);
     const added = titleExcess(nextGroups.get(g) ?? [], prevGroups.get(g) ?? []);
-    const usedAdded = new Set<number>();
 
     for (const rem of removed) {
-      const remDesc = norm(rem.description);
-      // Prefer a description match (survives a simultaneous price change); fall
-      // back to price + type for items that carry no description.
-      let matchIdx = remDesc
-        ? added.findIndex((a, i) => !usedAdded.has(i) && norm(a.description) === remDesc)
-        : -1;
-      if (matchIdx === -1 && rem.price != null) {
-        matchIdx = added.findIndex(
-          (a, i) =>
-            !usedAdded.has(i) &&
-            a.price === rem.price &&
-            (a.priceType ?? "") === (rem.priceType ?? "") &&
-            (a.itemType ?? "") === (rem.itemType ?? ""),
-        );
-      }
-      if (matchIdx >= 0) {
-        usedAdded.add(matchIdx);
-        const a = added[matchIdx];
-        eventRows.push({
-          facilityId,
-          changeType: "renamed",
-          mealPeriod: a.mealPeriod,
-          groupName: a.groupName,
-          itemType: a.itemType,
-          title: a.title,
-          oldTitle: rem.title,
-          price: a.price,
-          priceType: a.priceType,
-          currency: a.currency,
-        });
-      } else {
-        eventRows.push({
-          facilityId,
-          changeType: "removed",
-          mealPeriod: rem.mealPeriod,
-          groupName: rem.groupName,
-          itemType: rem.itemType,
-          title: rem.title,
-          oldTitle: null,
-          price: rem.price,
-          priceType: rem.priceType,
-          currency: rem.currency,
-        });
-      }
+      eventRows.push({
+        facilityId,
+        changeType: "removed",
+        mealPeriod: rem.mealPeriod,
+        groupName: rem.groupName,
+        itemType: rem.itemType,
+        title: rem.title,
+        price: rem.price,
+        priceType: rem.priceType,
+        currency: rem.currency,
+      });
     }
-    added.forEach((a, i) => {
-      if (usedAdded.has(i)) return;
+    for (const a of added) {
       eventRows.push({
         facilityId,
         changeType: "added",
@@ -169,12 +131,11 @@ export function diffMenu(
         groupName: a.groupName,
         itemType: a.itemType,
         title: a.title,
-        oldTitle: null,
         price: a.price,
         priceType: a.priceType,
         currency: a.currency,
       });
-    });
+    }
   }
 
   return { priceRows, eventRows };

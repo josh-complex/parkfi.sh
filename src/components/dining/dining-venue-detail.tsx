@@ -18,7 +18,7 @@ import {
   type ScheduleEntry,
 } from "#/components/dining/dining-hours.ts";
 import { AvailabilityCalendar } from "#/components/dining/dining-restaurant-card.tsx";
-import { MenuBody, useMenuState } from "#/components/dining/menu-content.tsx";
+import { MenuBody, RecentChangesPanel, useMenuState } from "#/components/dining/menu-content.tsx";
 import { LocationMap } from "#/components/maps/location-map.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { DatePicker } from "#/components/ui/date-picker.tsx";
@@ -428,6 +428,7 @@ export function DiningVenueDetail({
             <h2 className="text-lg font-semibold tracking-tight">Menu</h2>
             <p className="text-xs text-muted-foreground">Prices excl. tax &amp; gratuity</p>
           </div>
+          <RecentChangesPanel changes={state.recentChanges} facilityId={facilityId} />
           {state.menuQ.isLoading || hasMenu ? (
             <div className="flex h-[60vh] min-h-0 flex-col overflow-hidden rounded-2xl border bg-card sm:h-[70vh] sm:min-h-[420px]">
               <MenuBody

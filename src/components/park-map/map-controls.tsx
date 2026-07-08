@@ -10,6 +10,7 @@ import {
   LocateFixedIcon,
   MinusIcon,
   PlusIcon,
+  PopcornIcon,
   RollerCoasterIcon,
   ShoppingBagIcon,
   SparklesIcon,
@@ -215,10 +216,11 @@ const SHOW_CATEGORY_KEYS = ["show", "character"] as const;
  * The on-map toggle row: labeled pills for what the map draws — grouped ride
  * categories (which ride markers show, shared with the Waits filter) and the
  * optional overlay layers (dining/shops markers). Two category groups ("Rides",
- * "Shows") each cover several underlying categories; Shops and Eats are overlay
- * layers (on the map only ride markers render, so a per-venue ride category would
- * have nothing to act on — the venues live in the layers instead). Sized to match
- * the filter button, in a scroll-if-it-overflows row with the scrollbar hidden.
+ * "Shows") each cover several underlying categories; Shops, Eats, and Quick
+ * Service are overlay layers (on the map only ride markers render, so a
+ * per-venue ride category would have nothing to act on — the venues live in the
+ * layers instead). Sized to match the filter button, in a scroll-if-it-overflows
+ * row with the scrollbar hidden.
  */
 type MapToggle = { label: string; Icon: LucideIcon; color: MapItemKind } & (
   | { kind: "category"; keys: ReadonlyArray<string> }
@@ -236,6 +238,13 @@ const MAP_TOGGLES: ReadonlyArray<MapToggle> = [
   { kind: "category", label: "Shows", Icon: DramaIcon, keys: SHOW_CATEGORY_KEYS, color: "shows" },
   { kind: "layer", key: "shops", label: "Shops", Icon: ShoppingBagIcon, color: "shops" },
   { kind: "layer", key: "dining", label: "Eats", Icon: UtensilsIcon, color: "eats" },
+  {
+    kind: "layer",
+    key: "quickService",
+    label: "Carts",
+    Icon: PopcornIcon,
+    color: "quickService",
+  },
   {
     kind: "layer",
     key: "entertainment",

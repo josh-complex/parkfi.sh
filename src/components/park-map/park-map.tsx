@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import maplibregl from "maplibre-gl";
 import { useTheme } from "next-themes";
 
+import { maptilerStyleUrl } from "#/components/maps/maptiler-style.ts";
 import {
   anyMapLayerActive,
   rideMatchesFilter,
@@ -51,18 +52,14 @@ import "maplibre-gl/dist/maplibre-gl.css";
 
 import type { FeatureCollection, Point } from "geojson";
 
-// MapTiler API key (client-side, domain-restricted — safe to expose via VITE_).
-const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY as string | undefined;
-
 /**
  * Vector basemap, per the app theme. We use a custom MapTiler GL style —
  * vector, not raster, so its labels live in addressable `symbol` layers we can
  * selectively strip (see `stripLabels`) instead of being baked into tile pixels.
+ * The style itself doesn't yet vary by theme (see `maptilerStyleUrl`).
  */
-const MAPTILER_STYLE_ID = "019f3593-8a6f-771b-96d5-db0fec38726e";
-
 function basemapStyleUrl(_dark: boolean): string {
-  return `https://api.maptiler.com/maps/${MAPTILER_STYLE_ID}/style.json?key=${MAPTILER_KEY}`;
+  return maptilerStyleUrl();
 }
 
 /**
@@ -1098,8 +1095,14 @@ export function ParkMap({
               (p.category === "entertainment" || p.category === "character")) ||
             (layers?.tours && p.category === "tour"),
         );
+        // The dining feed carries both reservable table-service venues and
+        // non-bookable quick service/carts (tagged 'quick-service' — see
+        // `parks.dining`); split it across the two layers so each toggles
+        // independently instead of lumping carts in with sit-down dining.
+        const diningData = diningQ.data ?? [];
         const pois = [
-          ...(layers?.dining ? (diningQ.data ?? []) : []),
+          ...(layers?.dining ? diningData.filter((p) => p.category !== "quick-service") : []),
+          ...(layers?.quickService ? diningData.filter((p) => p.category === "quick-service") : []),
           ...(layers?.shops ? (shopsQ.data ?? []) : []),
           ...overlayPoi,
         ];
@@ -1463,7 +1466,11 @@ export function ParkMap({
       }
       const b = new maplibregl.LngLatBounds();
       for (const p of coords) b.extend([p.longitude, p.latitude]);
-      map.fitBounds(b, { padding: 80, maxZoom: 12, duration: MAP_FLY_MS });
+      map.fitBounds(b, {
+        padding: chromePadding(containerRef.current),
+        maxZoom: 12,
+        duration: MAP_FLY_MS,
+      });
       return;
     }
 
@@ -1482,7 +1489,11 @@ export function ParkMap({
       }
       const b = new maplibregl.LngLatBounds();
       for (const p of coords) b.extend([p.longitude, p.latitude]);
-      map.fitBounds(b, { padding: 80, maxZoom: 12, duration: MAP_FLY_MS });
+      map.fitBounds(b, {
+        padding: chromePadding(containerRef.current),
+        maxZoom: 12,
+        duration: MAP_FLY_MS,
+      });
       void map.once("moveend", () => map.setMaxBounds(paddedBounds(b, 0.6)));
       return;
     }

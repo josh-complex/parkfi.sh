@@ -3,7 +3,7 @@
  * generations.
  *
  * The old dining-facilities impl only logged price moves; it discarded item
- * adds/removes/renames. But `dining_menu_item` is append-only and never pruned,
+ * adds/removes. But `dining_menu_item` is append-only and never pruned,
  * so every historical menu generation is still on disk. This script replays the
  * SAME `diffMenu` the cron now runs over each venue's consecutive generations,
  * stamping the reconstructed events at the newer generation's `observed_at` — so
@@ -65,7 +65,6 @@ async function main() {
   let facilitiesWithHistory = 0;
   let added = 0;
   let removed = 0;
-  let renamed = 0;
   const eventRows: Array<typeof diningMenuEvent.$inferInsert> = [];
 
   for (const [facilityId, observedAts] of gensByFacility) {
@@ -116,8 +115,7 @@ async function main() {
       for (const e of evs) {
         eventRows.push({ ...e, changedAt: observedAts[i] });
         if (e.changeType === "added") added++;
-        else if (e.changeType === "removed") removed++;
-        else renamed++;
+        else removed++;
       }
     }
   }
@@ -128,7 +126,7 @@ async function main() {
 
   console.log(
     `[backfill] ${facilitiesWithHistory} venues with ≥2 generations → ` +
-      `${eventRows.length} events (${added} added / ${removed} removed / ${renamed} renamed)`,
+      `${eventRows.length} events (${added} added / ${removed} removed)`,
   );
 }
 

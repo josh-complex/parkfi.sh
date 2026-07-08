@@ -298,10 +298,10 @@ export const diningRouter = {
         match: (v) => !v.bookable && isSnack(v),
       },
       {
-        key: "quick-bites",
-        title: "Quick Bites & Mobile Order",
-        subtitle: "Grab-and-go counter service",
-        match: (v) => !v.bookable && v.mobileOrder && !isSnack(v),
+        key: "mobile-order",
+        title: "Mobile Ordering",
+        subtitle: "Order ahead & skip the line",
+        match: (v) => v.mobileOrder,
       },
     ];
 
@@ -502,7 +502,7 @@ export const diningRouter = {
 
   /**
    * Venues with recent menu activity, newest first — the price-change log AND
-   * the item lifecycle log (added / removed / renamed) unioned and rolled up per
+   * the item lifecycle log (added / removed) unioned and rolled up per
    * facility. Carries the card fields the browse shelf needs, a per-type
    * breakdown for the activity badges, and a short sample of the touched item
    * titles (preferring newly-added items for the subtitle).
@@ -530,7 +530,6 @@ export const diningRouter = {
         change_count: string;
         added_count: string;
         removed_count: string;
-        renamed_count: string;
         price_count: string;
         last_changed_at: string;
         sample_titles: string[] | null;
@@ -550,7 +549,6 @@ export const diningRouter = {
                count(*) AS change_count,
                count(*) FILTER (WHERE a.kind = 'added') AS added_count,
                count(*) FILTER (WHERE a.kind = 'removed') AS removed_count,
-               count(*) FILTER (WHERE a.kind = 'renamed') AS renamed_count,
                count(*) FILTER (WHERE a.kind = 'price') AS price_count,
                max(a.changed_at) AS last_changed_at,
                (array_agg(a.title ORDER BY a.changed_at DESC))[1:8] AS sample_titles,
@@ -583,7 +581,6 @@ export const diningRouter = {
           changeCount: Number(r.change_count),
           addedCount: Number(r.added_count),
           removedCount: Number(r.removed_count),
-          renamedCount: Number(r.renamed_count),
           priceCount: Number(r.price_count),
           lastChangedAt: r.last_changed_at,
           sampleTitles: sample.slice(0, 3),
@@ -593,10 +590,10 @@ export const diningRouter = {
 
   /**
    * Recent item lifecycle events for one venue (the `dining_menu_event` log) —
-   * added / removed / renamed within the window, newest first. Powers the "New!"
-   * badges on the menu (adds + renames introduced within the last month) and the
-   * "recently removed" note on the venue page. Kept separate from `menuChanges`
-   * (price moves) so each surface fetches only what it renders.
+   * added / removed within the window, newest first. Powers the "New!" badges
+   * on the menu (adds introduced within the last month) and the "recently
+   * removed" note on the venue page. Kept separate from `menuChanges` (price
+   * moves) so each surface fetches only what it renders.
    */
   recentItemEvents: publicProcedure
     .input(
@@ -612,12 +609,11 @@ export const diningRouter = {
         meal_period: string;
         group_name: string | null;
         title: string;
-        old_title: string | null;
         price: number | null;
         currency: string | null;
         changed_at: string;
       }>(sql`
-        SELECT change_type, meal_period, group_name, title, old_title, price, currency, changed_at
+        SELECT change_type, meal_period, group_name, title, price, currency, changed_at
         FROM dining_menu_event
         WHERE facility_id = ${input.facilityId}
           AND changed_at >= now() - make_interval(days => ${input.sinceDays})
@@ -625,11 +621,10 @@ export const diningRouter = {
         LIMIT ${input.limit}
       `);
       return result.rows.map((r) => ({
-        changeType: r.change_type as "added" | "removed" | "renamed",
+        changeType: r.change_type as "added" | "removed",
         mealPeriod: r.meal_period,
         groupName: r.group_name,
         title: r.title,
-        oldTitle: r.old_title,
         price: r.price === null ? null : Number(r.price),
         currency: r.currency,
         changedAt: r.changed_at,
@@ -640,8 +635,8 @@ export const diningRouter = {
    * Full history for a single menu item, keyed by (facility, title slug). The
    * slug mirrors the client's `slugifyMenuItem`, recomputed in SQL so the item
    * detail deep link resolves. Returns the item's current live-menu occurrence
-   * (null if it's been removed), its price-point series (stitched across any
-   * prior names it was renamed from), the rename chain, and its first-seen date.
+   * (null if it's been removed), its price-point series, and its first-seen
+   * date.
    */
   menuItem: publicProcedure
     .input(z.object({ facilityId: z.string(), slug: z.string() }))
@@ -675,80 +670,36 @@ export const diningRouter = {
       `);
       const cur = curRes.rows[0] ?? null;
 
-      // Events touching this slug, plus the venue's full rename log (to walk the
-      // chain of former names this item carried).
+      // Events touching this slug.
       const evRes = await db.execute<{
         change_type: string;
         title: string;
-        old_title: string | null;
         changed_at: string;
       }>(sql`
-        SELECT change_type, title, old_title, changed_at
+        SELECT change_type, title, changed_at
         FROM dining_menu_event
-        WHERE facility_id = ${fid}
-          AND (${slugOf("title")} = ${input.slug} OR ${slugOf("old_title")} = ${input.slug})
+        WHERE facility_id = ${fid} AND ${slugOf("title")} = ${input.slug}
         ORDER BY changed_at DESC
       `);
       const events = evRes.rows;
 
-      // Local mirror of client `slugifyMenuItem` for disambiguating which side of
-      // a rename this slug matched (server can't import the client component).
-      const slugify = (t: string) =>
-        t
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-+|-+$/g, "");
-
-      // Resolve the item's display title + lifecycle status. The live occurrence
-      // wins; otherwise the events tell us whether it was renamed away (this slug
-      // is a former name) or simply removed.
+      // Resolve the item's display title + lifecycle status. The live
+      // occurrence wins; otherwise the most recent 'removed' event does.
       let title: string | null = null;
-      let status: "active" | "removed" | "renamed" = "active";
-      let renamedTo: string | null = null;
+      let status: "active" | "removed" = "active";
       if (cur) {
         title = cur.title;
       } else {
-        const renamedAway = events.find(
-          (e) => e.change_type === "renamed" && e.old_title && slugify(e.old_title) === input.slug,
-        );
-        const removedEv = events.find(
-          (e) => e.change_type === "removed" && slugify(e.title) === input.slug,
-        );
-        if (renamedAway) {
-          title = renamedAway.old_title!;
-          renamedTo = renamedAway.title;
-          status = "renamed";
-        } else if (removedEv) {
-          title = removedEv.title;
-          status = "removed";
-        } else {
-          title = events[0]?.title ?? null;
-          status = "removed";
-        }
+        const removedEv = events.find((e) => e.change_type === "removed");
+        title = removedEv?.title ?? events[0]?.title ?? null;
+        status = "removed";
       }
       if (!title) {
         // Nothing on record under this slug at this venue.
         return null;
       }
 
-      // Walk the rename chain backward from the current title to collect every
-      // name this item has held, so its price series stitches across renames.
-      const renames = await db.execute<{ title: string; old_title: string | null }>(sql`
-        SELECT title, old_title
-        FROM dining_menu_event
-        WHERE facility_id = ${fid} AND change_type = 'renamed'
-      `);
-      const priorOf = new Map<string, string>();
-      for (const r of renames.rows) if (r.old_title) priorOf.set(r.title, r.old_title);
-      const names = new Set<string>([title]);
-      let n: string | undefined = title;
-      while (n && priorOf.has(n) && !names.has(priorOf.get(n)!)) {
-        n = priorOf.get(n)!;
-        names.add(n);
-      }
-      const nameList = [...names];
-
-      // Price history across every name, oldest first.
+      // Price history for this item, oldest first.
       const pcRes = await db.execute<{
         old_price: number | null;
         new_price: number | null;
@@ -757,10 +708,7 @@ export const diningRouter = {
       }>(sql`
         SELECT old_price, new_price, currency, changed_at
         FROM dining_menu_price_change
-        WHERE facility_id = ${fid} AND lower(title) = ANY(${sql`ARRAY[${sql.join(
-          nameList.map((s) => sql`${s.toLowerCase()}`),
-          sql`, `,
-        )}]`})
+        WHERE facility_id = ${fid} AND lower(title) = ${title.toLowerCase()}
         ORDER BY changed_at ASC
       `);
 
@@ -821,7 +769,6 @@ export const diningRouter = {
         slug: input.slug,
         title,
         status,
-        renamedTo,
         current: cur
           ? {
               title: cur.title,
@@ -837,8 +784,6 @@ export const diningRouter = {
         firstSeenAt,
         lastChangedAt,
         priceHistory: points,
-        // Former names this item was renamed from, most recent first.
-        formerNames: nameList.slice(1),
       };
     }),
 

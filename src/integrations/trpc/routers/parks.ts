@@ -343,8 +343,11 @@ export const parksRouter = {
   /**
    * Dining venues plottable on the map — every active WDW `restaurant_dim` row
    * with coordinates (resort-wide; the map filters to the focused park by its
-   * boundary, mirroring the roam focus logic). Drives the optional "Dining"
-   * marker layer. `category` is the finder map-pin ('dine' | 'characters').
+   * boundary, mirroring the roam focus logic). Drives the optional "Eats" /
+   * "Quick Service" marker layers. `category` is the finder map-pin ('dine' |
+   * 'characters'), downgraded to 'quick-service' for non-bookable venues
+   * (counter-service restaurants and snack carts/kiosks) so the map can offer
+   * them as a separate layer from reservable table-service dining.
    */
   dining: publicProcedure.query(async () => {
     const result = await db.execute<{
@@ -355,10 +358,12 @@ export const parksRouter = {
       longitude: number | null;
       land: string | null;
       map_pin: string | null;
+      bookable: boolean;
       image_url: string | null;
       detail_url: string | null;
     }>(sql`
-      SELECT facility_id, name, url_friendly_id, latitude, longitude, land, map_pin, image_url, detail_url
+      SELECT facility_id, name, url_friendly_id, latitude, longitude, land, map_pin, bookable,
+             image_url, detail_url
       FROM restaurant_dim
       WHERE active = true AND latitude IS NOT NULL AND longitude IS NOT NULL
       ORDER BY name
@@ -372,7 +377,10 @@ export const parksRouter = {
       latitude: r.latitude,
       longitude: r.longitude,
       land: r.land,
-      category: r.map_pin ?? "dine",
+      // Character dining keeps its own pin regardless of bookable status;
+      // everything else non-bookable (quick service + carts) becomes its own
+      // category rather than lumping into 'dine'.
+      category: !r.bookable && r.map_pin !== "characters" ? "quick-service" : (r.map_pin ?? "dine"),
       imageUrl: r.image_url,
       detailUrl: r.detail_url,
     }));

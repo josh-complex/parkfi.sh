@@ -16,6 +16,7 @@ import {
   FilmIcon,
   GlobeIcon,
   InfoIcon,
+  PopcornIcon,
   RocketIcon,
   RollerCoasterIcon,
   ShoppingBagIcon,
@@ -131,6 +132,7 @@ const CATEGORY_ICON = {
   water: WavesIcon,
   show: DramaIcon,
   dine: UtensilsIcon,
+  "quick-service": PopcornIcon,
   shop: ShoppingBagIcon,
   character: SmileIcon,
   info: InfoIcon,
@@ -275,6 +277,7 @@ export type MapItemKind =
   | "shows"
   | "shops"
   | "eats"
+  | "quickService"
   | "services"
   | "entertainment"
   | "tours";
@@ -283,6 +286,7 @@ export const MAP_TYPE_COLOR: Record<MapItemKind, string> = {
   shows: "#e11d48", // rose
   shops: "#9333ea", // violet — matches the shop POI ring
   eats: "#d97706", // amber — matches the dining POI ring
+  quickService: "#ea580c", // orange — walk-up quick service + snack carts/kiosks
   services: "#0d9488", // teal — guest-service POIs
   entertainment: "#c026d3", // fuchsia — parades/fireworks/character-meet POIs
   tours: "#059669", // emerald — events + tours POIs
@@ -300,14 +304,18 @@ export function attractionKind(category: string | null): MapItemKind {
 /**
  * Which toggle group a POI belongs to — drives the cluster overflow-dot colour.
  * Dining venues (`dine`, plus dining character spots keyed `characters`) are
- * "eats"; shops "shops"; and the `park_poi` overlays map to their own groups:
- * guest services (`info`) → services, character meets (`character`, singular) +
- * `entertainment` → entertainment, `tour` → tours.
+ * "eats"; non-bookable walk-up dining (`quick-service` — counter-service
+ * restaurants and snack carts/kiosks) is its own "quickService" group; shops
+ * "shops"; and the `park_poi` overlays map to their own groups: guest services
+ * (`info`) → services, character meets (`character`, singular) + `entertainment`
+ * → entertainment, `tour` → tours.
  */
 export function poiKind(category: string): MapItemKind {
   switch (category) {
     case "shop":
       return "shops";
+    case "quick-service":
+      return "quickService";
     case "info":
       return "services";
     case "tour":
@@ -916,8 +924,9 @@ export type PoiItem = {
   latitude: number | null;
   longitude: number | null;
   land: string | null;
-  /** Map-pin class: 'dine' | 'characters' | 'shop' (facility layers) or an
-   *  overlay POI class 'info' | 'entertainment' | 'character' | 'tour'. */
+  /** Map-pin class: 'dine' | 'characters' | 'quick-service' | 'shop' (facility
+   *  layers) or an overlay POI class 'info' | 'entertainment' | 'character' |
+   *  'tour'. */
   category: string;
   imageUrl: string | null;
   detailUrl?: string | null;
@@ -941,6 +950,7 @@ const POI_KIND_LABEL: Record<string, string> = {
   shop: "Shop",
   characters: "Character Spot",
   dine: "Dining",
+  "quick-service": "Quick Service",
   info: "Guest Service",
   entertainment: "Entertainment",
   character: "Character Meet",
@@ -984,11 +994,12 @@ export function poiCardBodyHtml(poi: PoiItem): string {
   )}</div>${actions}`;
 }
 
-// Accent per POI kind — warm amber for dining, violet for shops, pink for
-// character spots. Distinct from the wait-status palette so POIs never read as
-// a ride's crowd level.
+// Accent per POI kind — warm amber for dining, orange for quick service/carts,
+// violet for shops, pink for character spots. Distinct from the wait-status
+// palette so POIs never read as a ride's crowd level.
 const POI_COLOR: Record<string, string> = {
   dine: "#d97706",
+  "quick-service": "#ea580c",
   characters: "#db2777",
   shop: "#9333ea",
   // park_poi overlay categories. `character` (singular) is a meet-and-greet POI,

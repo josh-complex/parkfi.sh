@@ -120,7 +120,21 @@ function PickCard({
  * franchises…). Pure catalog data (`dining.picks`), independent of the
  * availability sweep, shown only while the board is pre-search.
  */
-export function DiningPicks() {
+/**
+ * @param include Render only these shelf keys, in the given order (for slotting
+ *   a single shelf — e.g. "character" — into a specific place in the browse
+ *   flow). @param exclude Render every shelf except these keys. When both are
+ *   omitted, all shelves render. The targeted (`include`) instances stay quiet
+ *   while the shared picks query loads so only the primary instance holds space
+ *   with a skeleton.
+ */
+export function DiningPicks({
+  include,
+  exclude,
+}: {
+  include?: Array<string>;
+  exclude?: Array<string>;
+} = {}) {
   const trpc = useTRPC();
   const partySize = useStore(diningStore, (s) => s.partySize);
   const picksQ = useQuery(trpc.dining.picks.queryOptions());
@@ -151,6 +165,9 @@ export function DiningPicks() {
   const nowMin = parkNowMinutes();
 
   if (picksQ.isLoading) {
+    // Only the primary instance holds space with a skeleton; the small targeted
+    // (include) instances stay quiet until the shared query resolves.
+    if (include) return null;
     return (
       <div className="flex flex-col gap-4">
         {Array.from({ length: 3 }).map((_, g) => (
@@ -167,7 +184,14 @@ export function DiningPicks() {
     );
   }
 
-  const shelves = picksQ.data ?? [];
+  const all = picksQ.data ?? [];
+  let shelves = all;
+  if (include) {
+    const byKey = new Map(all.map((s) => [s.key, s]));
+    shelves = include.map((k) => byKey.get(k)).filter((s): s is (typeof all)[number] => !!s);
+  } else if (exclude) {
+    shelves = all.filter((s) => !exclude.includes(s.key));
+  }
   if (!shelves.length) return null;
 
   return (

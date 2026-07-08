@@ -12,8 +12,11 @@ import * as React from "react";
  * ignored by `rideMatchesFilter` (they don't gate the rides).
  */
 export interface MapLayers {
-  /** Plot dining venues (restaurant_dim) as markers. */
+  /** Plot bookable dining venues (restaurant_dim) as markers. */
   dining: boolean;
+  /** Plot non-bookable walk-up dining — quick-service restaurants and snack
+   *  carts/kiosks (restaurant_dim, `bookable = false`) — as markers. */
+  quickService: boolean;
   /** Plot shops (shop_dim) as markers. */
   shops: boolean;
   /** Plot guest-service POIs (park_poi, category 'info') as markers. */
@@ -42,7 +45,14 @@ export const EMPTY_RIDE_FILTER: RideFilter = {
   openOnly: false,
   maxWait: null,
   noHeightReq: false,
-  layers: { dining: false, shops: false, services: false, entertainment: false, tours: false },
+  layers: {
+    dining: false,
+    quickService: false,
+    shops: false,
+    services: false,
+    entertainment: false,
+    tours: false,
+  },
 };
 
 /** Selectable categories (matches the marker icon set in park-map/shared.tsx). */
@@ -61,7 +71,14 @@ export const MAX_WAIT_OPTIONS: ReadonlyArray<number> = [15, 30, 45, 60];
 
 /** True when any optional POI overlay layer (dining/shops/services/…) is on. */
 export function anyMapLayerActive(layers: MapLayers): boolean {
-  return layers.dining || layers.shops || layers.services || layers.entertainment || layers.tours;
+  return (
+    layers.dining ||
+    layers.quickService ||
+    layers.shops ||
+    layers.services ||
+    layers.entertainment ||
+    layers.tours
+  );
 }
 
 export function rideFilterActive(f: RideFilter): boolean {

@@ -7,7 +7,7 @@ import { formatDistanceToNowStrict } from "date-fns";
 import { ArrowLeftIcon, ChevronRightIcon, TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 
 import { MenuItemPriceChart } from "#/components/dining/menu-item-price-chart.tsx";
-import { menuItemAnchorId, slugifyMenuItem } from "#/components/dining/menu-content.tsx";
+import { menuItemAnchorId } from "#/components/dining/menu-content.tsx";
 import { ChartErrorBoundary } from "#/components/chart-error-boundary.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import {
@@ -57,9 +57,8 @@ function Stat({ label, children }: { label: string; children: React.ReactNode })
 /**
  * Standalone menu-item detail page: one item's identity, its current price
  * framed against the tracked range, a price-trend chart, and its history
- * (renames + every observed price move). Reached from a menu item's title link
- * (`/dining/$facilityId/item/$slug`). Handles active, removed, and renamed-away
- * items — the last two link forward/back so a stale deep link still resolves.
+ * (every observed price move). Reached from a menu item's title link
+ * (`/dining/$facilityId/item/$slug`). Handles both active and removed items.
  */
 export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug: string }) {
   const trpc = useTRPC();
@@ -165,7 +164,6 @@ export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug:
             </Badge>
           )}
           {item.status === "removed" && <Badge variant="secondary">No longer offered</Badge>}
-          {item.status === "renamed" && <Badge variant="secondary">Renamed</Badge>}
         </div>
         {chips.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
@@ -182,21 +180,6 @@ export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug:
           </p>
         )}
       </header>
-
-      {/* Renamed-away / removed notices with a forward link when we have one. */}
-      {item.status === "renamed" && item.renamedTo && (
-        <div className="rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm">
-          This item is now listed as{" "}
-          <Link
-            to="/dining/$facilityId/item/$slug"
-            params={{ facilityId, slug: slugifyMenuItem(item.renamedTo) }}
-            className="font-medium text-primary hover:underline"
-          >
-            {item.renamedTo}
-          </Link>
-          .
-        </div>
-      )}
 
       {/* Summary + current price */}
       <Card className="overflow-hidden">
@@ -275,63 +258,49 @@ export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug:
         </Card>
       )}
 
-      {/* History: renames + individual price moves */}
-      {(item.formerNames.length > 0 || moves.length > 0) && (
+      {/* History: individual price moves */}
+      {moves.length > 0 && (
         <Card className="overflow-hidden">
           <CardHeader>
             <CardTitle className="text-base">History</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            {item.formerNames.length > 0 && (
-              <div className="flex flex-col gap-1">
-                <span className="text-xs text-muted-foreground">Previously known as</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {item.formerNames.map((n) => (
-                    <Badge key={n} variant="outline" className="font-normal line-through">
-                      {n}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-            {moves.length > 0 && (
-              <ul className="flex flex-col divide-y divide-border/50">
-                {moves.map((m, i) => {
-                  const up = m.to > m.from;
-                  return (
-                    <li key={i} className="flex items-center justify-between gap-3 py-2 text-sm">
-                      <span className="text-muted-foreground">
-                        {new Date(m.t).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        })}
+            <ul className="flex flex-col divide-y divide-border/50">
+              {moves.map((m, i) => {
+                const up = m.to > m.from;
+                return (
+                  <li key={i} className="flex items-center justify-between gap-3 py-2 text-sm">
+                    <span className="text-muted-foreground">
+                      {new Date(m.t).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </span>
+                    <span className="inline-flex items-center gap-2 tabular-nums">
+                      <span className="text-muted-foreground line-through">
+                        {formatPrice(m.from, currency)}
                       </span>
-                      <span className="inline-flex items-center gap-2 tabular-nums">
-                        <span className="text-muted-foreground line-through">
-                          {formatPrice(m.from, currency)}
-                        </span>
-                        <span
-                          className={cn(
-                            "inline-flex items-center gap-0.5 font-medium",
-                            up
-                              ? "text-rose-600 dark:text-rose-400"
-                              : "text-emerald-600 dark:text-emerald-400",
-                          )}
-                        >
-                          {up ? (
-                            <TrendingUpIcon className="size-3.5" />
-                          ) : (
-                            <TrendingDownIcon className="size-3.5" />
-                          )}
-                          {formatPrice(m.to, currency)}
-                        </span>
+                      <span
+                        className={cn(
+                          "inline-flex items-center gap-0.5 font-medium",
+                          up
+                            ? "text-rose-600 dark:text-rose-400"
+                            : "text-emerald-600 dark:text-emerald-400",
+                        )}
+                      >
+                        {up ? (
+                          <TrendingUpIcon className="size-3.5" />
+                        ) : (
+                          <TrendingDownIcon className="size-3.5" />
+                        )}
+                        {formatPrice(m.to, currency)}
                       </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
           </CardContent>
         </Card>
       )}
