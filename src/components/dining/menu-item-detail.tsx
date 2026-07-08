@@ -206,7 +206,8 @@ export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug:
         )}
       </nav>
 
-      {/* Header */}
+      {/* Header — identity, chips, current price, and description all live in
+          one section together. */}
       <header className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{item.title}</h1>
@@ -226,6 +227,35 @@ export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug:
             ))}
           </div>
         )}
+        <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              {item.status === "removed" ? "Last known price" : "Current price"}
+              {item.current?.priceType ? ` · ${item.current.priceType}` : ""}
+            </span>
+            <span className="text-4xl font-bold leading-none tabular-nums">
+              {currentPrice ?? (stats ? formatPrice(stats.current, currency) : "—")}
+            </span>
+          </div>
+          {stats && Math.abs(stats.delta) >= 0.01 && (
+            <span
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold",
+                stats.delta > 0
+                  ? "bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                  : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+              )}
+            >
+              {stats.delta > 0 ? (
+                <TrendingUpIcon className="size-4" />
+              ) : (
+                <TrendingDownIcon className="size-4" />
+              )}
+              {formatPrice(Math.abs(stats.delta), currency)} {stats.delta > 0 ? "up" : "down"}
+              <span className="font-normal opacity-80">since first tracked</span>
+            </span>
+          )}
+        </div>
         {item.current?.description && (
           <p className="text-sm leading-relaxed text-muted-foreground">
             {item.current.description}
@@ -233,41 +263,10 @@ export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug:
         )}
       </header>
 
-      {/* Current price — isolated, directly under the item's identity block. */}
-      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
-        <div className="flex flex-col gap-1.5">
-          <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            {item.status === "removed" ? "Last known price" : "Current price"}
-            {item.current?.priceType ? ` · ${item.current.priceType}` : ""}
-          </span>
-          <span className="text-4xl font-bold leading-none tabular-nums">
-            {currentPrice ?? (stats ? formatPrice(stats.current, currency) : "—")}
-          </span>
-        </div>
-        {stats && Math.abs(stats.delta) >= 0.01 && (
-          <span
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold",
-              stats.delta > 0
-                ? "bg-rose-500/10 text-rose-600 dark:text-rose-400"
-                : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-            )}
-          >
-            {stats.delta > 0 ? (
-              <TrendingUpIcon className="size-4" />
-            ) : (
-              <TrendingDownIcon className="size-4" />
-            )}
-            {formatPrice(Math.abs(stats.delta), currency)} {stats.delta > 0 ? "up" : "down"}
-            <span className="font-normal opacity-80">since first tracked</span>
-          </span>
-        )}
-      </div>
-
       {/* Same item name at other venues — many items recur verbatim across the
           resort, and the shared title slug deep-links to each venue's copy. */}
       {elsewhere.length > 0 && (
-        <Carousel opts={{ align: "start", dragFree: true }} className="-mx-4 lg:-mx-6">
+        <Carousel opts={{ align: "start", dragFree: true }} className="-mx-4 mt-2 lg:-mx-6">
           <section className="flex flex-col gap-3">
             <div className="flex items-end justify-between gap-4 px-4 lg:px-6">
               <div className="flex flex-col gap-0.5">
@@ -306,7 +305,7 @@ export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug:
       )}
 
       {/* Tracked-range stats — its own card now that the price lives above. */}
-      <Card className="overflow-hidden py-0">
+      <Card className="mt-2 overflow-hidden py-0">
         <CardContent
           className={cn("grid grid-cols-2 gap-px bg-border p-0", stats && "sm:grid-cols-4")}
         >
