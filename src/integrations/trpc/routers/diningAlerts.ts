@@ -4,7 +4,8 @@ import { z } from "zod";
 
 import { db } from "#/db/index.ts";
 import { diningAlert } from "#/db/schema.ts";
-import { diningDateLabel } from "#/server/notifications/diningFormat.ts";
+import { buildDiningDeepLink, diningDateLabel } from "#/server/notifications/diningFormat.ts";
+import { config } from "#/server/parks/config.ts";
 import { protectedProcedure } from "../init.ts";
 
 /** Max active dining alerts a user may keep, total (no park axis). */
@@ -38,7 +39,8 @@ const createInput = z
 // alert — mirrors the dining evaluator so list reflects what would fire.
 const latestMatch = sql`
   LEFT JOIN LATERAL (
-    SELECT o.service_date AS matched_date, r.name AS matched_name
+    SELECT o.service_date AS matched_date, o.facility_id AS matched_facility_id,
+           o.offer_time AS matched_offer_time, r.name AS matched_name
     FROM dining_obs o
     JOIN restaurant_dim r ON r.facility_id = o.facility_id
     WHERE r.priority = true AND r.active = true AND r.bookable = true
@@ -74,11 +76,13 @@ export const diningAlertsRouter = {
       armed: boolean;
       last_fired_at: string | null;
       matched_date: string | null;
+      matched_facility_id: string | null;
+      matched_offer_time: string | null;
       matched_name: string | null;
     }>(sql`
       SELECT da.id, da.facility_id, rd.name AS facility_name, da.party_size,
              da.service_date, da.window_days, da.armed, da.last_fired_at,
-             m.matched_date, m.matched_name
+             m.matched_date, m.matched_facility_id, m.matched_offer_time, m.matched_name
       FROM dining_alert da
       LEFT JOIN restaurant_dim rd ON rd.facility_id = da.facility_id
       ${latestMatch}
@@ -89,6 +93,18 @@ export const diningAlertsRouter = {
     const alerts = result.rows.map((r) => {
       const serviceDate = r.service_date ? String(r.service_date).slice(0, 10) : null;
       const windowDays = r.window_days == null ? null : Number(r.window_days);
+      const matchedFacilityId = r.matched_facility_id ?? (r.facility_id || null);
+      const matchedDate = r.matched_date ? String(r.matched_date).slice(0, 10) : null;
+      const deepLink =
+        matchedDate && matchedFacilityId && r.matched_offer_time
+          ? buildDiningDeepLink({
+              facilityId: matchedFacilityId,
+              partySize: Number(r.party_size),
+              serviceDate: matchedDate,
+              offerTime: r.matched_offer_time,
+              completionDeepLink: `${config.appBaseUrl}/dining/${matchedFacilityId}`,
+            })
+          : null;
       return {
         id: Number(r.id),
         facilityId: r.facility_id,
@@ -99,8 +115,9 @@ export const diningAlertsRouter = {
         dateLabel: diningDateLabel(serviceDate, windowDays),
         armed: r.armed,
         lastFiredAt: r.last_fired_at,
-        currentAvailable: r.matched_date != null,
-        nextDate: r.matched_date ? String(r.matched_date).slice(0, 10) : null,
+        currentAvailable: matchedDate != null,
+        nextDate: matchedDate,
+        deepLink,
       };
     });
     return { alerts, limit: MAX_PER_USER };

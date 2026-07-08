@@ -46,6 +46,7 @@ export async function sendDiningNotification(notificationId: number): Promise<vo
       dateLabel={payload.dateLabel}
       partySize={payload.partySize}
       ctaUrl={`${config.appBaseUrl}/dining`}
+      deepLinkUrl={payload.deepLink ?? undefined}
       manageUrl={`${config.appBaseUrl}/account/alerts`}
       unsubscribeUrl={unsubscribeUrl}
       postalAddress={config.alertPostalAddress}

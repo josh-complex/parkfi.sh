@@ -2,9 +2,12 @@
  * Dining-alert evaluation. Runs at the end of each dining-availability sweep
  * (see services/dining-availability/main.ts): reads each active alert's latest
  * `dining_obs` generation for its (facility-or-any × party × date/window) and
- * decides whether to fire. On a fire it writes a durable `dining_notification`
- * row (status `queued`) and enqueues a `dining-alerts` job carrying that id —
- * delivery is logged + retried EMAIL, never fire-and-forget.
+ * decides whether to fire. On a fire it always enqueues an immediate PUSH job
+ * (push is opted into via browser subscription, independent of email prefs —
+ * never gated on `dining_email_opt_out`) and, unless the user opted out of
+ * dining email, also writes a durable `dining_notification` row (status
+ * `queued`) and enqueues a `dining-alerts` job carrying that id — email
+ * delivery is logged + retried, never fire-and-forget.
  *
  * The decision is a pure function (`decideDiningAlert`) over a row + clock so it
  * unit-tests in isolation; `evaluateDiningAlerts` is the DB/queue shell around
@@ -15,8 +18,9 @@ import { sql } from "drizzle-orm";
 import { db } from "#/db/index.ts";
 import { diningNotification } from "#/db/schema.ts";
 import { config } from "#/server/parks/config.ts";
-import { getDiningAlertQueue } from "#/server/notifications/queue.ts";
+import { getDiningAlertQueue, getPushQueue } from "#/server/notifications/queue.ts";
 import {
+  buildDiningDeepLink,
   diningDateLabel,
   formatServiceDate,
   type DiningNotificationPayload,
@@ -33,9 +37,13 @@ export interface DiningAlertRow {
   armed: boolean;
   lastFiredAt: Date | null;
   lastAvailable: boolean | null;
+  // Push is independent of this — it's opted into via browser subscription, not
+  // this flag. Only gates whether a fire also logs+sends the email.
+  emailOptOut: boolean;
   // latest-generation match (null when nothing is available)
   matchedDate: string | null;
   matchedFacilityId: string | null;
+  matchedOfferTime: string | null;
   matchedName: string | null;
 }
 
@@ -97,6 +105,16 @@ function buildPayload(a: DiningAlertRow): DiningNotificationPayload {
   const subject = matchedDate
     ? `${restaurantName} has a table for ${a.partySize} — ${formatServiceDate(matchedDate)}`
     : `${restaurantName} has a table for ${a.partySize}`;
+  const deepLink =
+    a.matchedFacilityId && a.matchedDate && a.matchedOfferTime
+      ? buildDiningDeepLink({
+          facilityId: a.matchedFacilityId,
+          partySize: a.partySize,
+          serviceDate: a.matchedDate,
+          offerTime: a.matchedOfferTime,
+          completionDeepLink: `${config.appBaseUrl}/dining/${a.matchedFacilityId}`,
+        })
+      : null;
   return {
     facilityId: a.facilityId,
     restaurantName,
@@ -106,13 +124,14 @@ function buildPayload(a: DiningAlertRow): DiningNotificationPayload {
     matchedDate,
     dateLabel,
     subject,
+    deepLink,
   };
 }
 
 /**
  * Evaluate every active dining alert against the latest `dining_obs` generation
- * and enqueue emails for the ones that fire. Skips users who've opted out of
- * dining email. Returns the number of alerts fired this run.
+ * and fire push + (unless opted out) email for the ones that match. Returns the
+ * number of alerts fired this run.
  */
 export async function evaluateDiningAlerts(now: number = Date.now()): Promise<number> {
   const result = await db.execute<{
@@ -125,19 +144,23 @@ export async function evaluateDiningAlerts(now: number = Date.now()): Promise<nu
     armed: boolean;
     last_fired_at: string | null;
     last_available: boolean | null;
+    email_opt_out: boolean | null;
     matched_date: string | null;
     matched_facility_id: string | null;
+    matched_offer_time: string | null;
     matched_name: string | null;
   }>(sql`
     SELECT da.id, da.user_id, da.facility_id, da.party_size,
            da.service_date, da.window_days,
            da.armed, da.last_fired_at, da.last_available,
-           m.matched_date, m.matched_facility_id, m.matched_name
+           ao.dining_email_opt_out AS email_opt_out,
+           m.matched_date, m.matched_facility_id, m.matched_offer_time, m.matched_name
     FROM dining_alert da
     LEFT JOIN alert_optout ao ON ao.user_id = da.user_id
     LEFT JOIN LATERAL (
       SELECT o.service_date AS matched_date,
              o.facility_id  AS matched_facility_id,
+             o.offer_time   AS matched_offer_time,
              r.name         AS matched_name
       FROM dining_obs o
       JOIN restaurant_dim r ON r.facility_id = o.facility_id
@@ -161,7 +184,6 @@ export async function evaluateDiningAlerts(now: number = Date.now()): Promise<nu
       LIMIT 1
     ) m ON true
     WHERE da.active = true
-      AND coalesce(ao.dining_email_opt_out, false) = false
   `);
 
   const rows: Array<DiningAlertRow> = result.rows.map((r) => ({
@@ -174,8 +196,10 @@ export async function evaluateDiningAlerts(now: number = Date.now()): Promise<nu
     armed: r.armed,
     lastFiredAt: r.last_fired_at ? new Date(r.last_fired_at) : null,
     lastAvailable: r.last_available,
+    emailOptOut: r.email_opt_out ?? false,
     matchedDate: r.matched_date ? String(r.matched_date).slice(0, 10) : null,
     matchedFacilityId: r.matched_facility_id,
+    matchedOfferTime: r.matched_offer_time,
     matchedName: r.matched_name,
   }));
 
@@ -184,19 +208,31 @@ export async function evaluateDiningAlerts(now: number = Date.now()): Promise<nu
     const decision = decideDiningAlert(a, now, config.alertCooldownMs);
     if (decision.fire) {
       const payload = buildPayload(a);
-      // Durable log FIRST (status queued), then enqueue carrying its id — a crash
-      // between the two leaves a queued row to reconcile, never a silent send.
-      const [row] = await db
-        .insert(diningNotification)
-        .values({
-          alertId: a.id,
-          userId: a.userId,
-          channel: "email",
-          payload,
-          status: "queued",
-        })
-        .returning({ id: diningNotification.id });
-      await getDiningAlertQueue().add("dining-alert", { notificationId: row.id });
+      // Push first: it's the fast, opt-in-by-subscription channel and never
+      // waits on the durable email log. A user with no registered device just
+      // gets a harmless no-op (the worker logs and drops it).
+      await getPushQueue().add("dining-alert", {
+        userId: a.userId,
+        title: payload.subject,
+        body: `Party of ${a.partySize} · ${payload.dateLabel}`,
+        url: a.matchedFacilityId ? `/dining/${a.matchedFacilityId}` : "/dining",
+      });
+      if (!a.emailOptOut) {
+        // Durable log FIRST (status queued), then enqueue carrying its id — a
+        // crash between the two leaves a queued row to reconcile, never a
+        // silent send.
+        const [row] = await db
+          .insert(diningNotification)
+          .values({
+            alertId: a.id,
+            userId: a.userId,
+            channel: "email",
+            payload,
+            status: "queued",
+          })
+          .returning({ id: diningNotification.id });
+        await getDiningAlertQueue().add("dining-alert", { notificationId: row.id });
+      }
       fired++;
     }
     if (isDirty(a, decision)) {

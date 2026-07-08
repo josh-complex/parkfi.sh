@@ -16,8 +16,10 @@ function row(overrides: Partial<DiningAlertRow>): DiningAlertRow {
     armed: true,
     lastFiredAt: null,
     lastAvailable: null,
+    emailOptOut: false,
     matchedDate: null,
     matchedFacilityId: null,
+    matchedOfferTime: null,
     matchedName: null,
     ...overrides,
   };

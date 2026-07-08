@@ -74,7 +74,7 @@ export function DiningAlertButton({
       onSuccess: () => {
         void queryClient.invalidateQueries({ queryKey: trpc.diningAlerts.list.queryKey() });
         setOpen(false);
-        toast.success(`We'll email you about ${restaurantName}`);
+        toast.success(`We'll let you know about ${restaurantName}`);
         track("alert_created");
       },
       onError: (err) => toast.error(err.message || "Could not save alert"),
@@ -119,7 +119,7 @@ export function DiningAlertButton({
             <PopoverHeader>
               <PopoverTitle>Get a heads-up</PopoverTitle>
               <PopoverDescription>
-                Sign in and we'll email you when a table opens at {restaurantName}.
+                Sign in and we'll let you know when a table opens at {restaurantName}.
               </PopoverDescription>
             </PopoverHeader>
             <Button size="sm" className="w-full" render={<Link to="/login" />}>
@@ -130,7 +130,7 @@ export function DiningAlertButton({
           <div className="space-y-3">
             <PopoverHeader>
               <PopoverTitle>{restaurantName}</PopoverTitle>
-              <PopoverDescription>Email me when a table opens…</PopoverDescription>
+              <PopoverDescription>Notify me when a table opens…</PopoverDescription>
             </PopoverHeader>
 
             <div className="space-y-1.5">

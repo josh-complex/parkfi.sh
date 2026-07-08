@@ -60,7 +60,7 @@ export function DiningAlertsManager() {
       <Empty>
         <EmptyTitle>Sign in to manage alerts</EmptyTitle>
         <EmptyDescription>
-          Dining-availability alerts are tied to your account so we know where to email you.
+          Dining-availability alerts are tied to your account so we know where to notify you.
         </EmptyDescription>
         <Button className="mt-4" render={<Link to="/login" />}>
           Sign in
@@ -75,7 +75,8 @@ export function DiningAlertsManager() {
   return (
     <div className="space-y-3">
       <p className="text-muted-foreground text-sm">
-        We'll email you when a table opens for your party. {alerts.length} of {limit} used.
+        We'll email (and push, if enabled) you when a table opens for your party. {alerts.length} of{" "}
+        {limit} used.
       </p>
 
       {alertsQ.isLoading ? (
@@ -88,7 +89,7 @@ export function DiningAlertsManager() {
           <BellIcon className="text-muted-foreground size-6" />
           <EmptyTitle>No dining alerts yet</EmptyTitle>
           <EmptyDescription>
-            Tap the bell on any restaurant to get an email when a table opens.
+            Tap the bell on any restaurant to get notified when a table opens.
           </EmptyDescription>
           <Button className="mt-4" render={<Link to="/dining" />}>
             Find a table
@@ -117,14 +118,21 @@ export function DiningAlertsManager() {
                   {statusLabel(a.currentAvailable, a.nextDate)}
                 </p>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={remove.isPending}
-                onClick={() => remove.mutate({ id: a.id })}
-              >
-                Remove
-              </Button>
+              <div className="flex shrink-0 items-center gap-2">
+                {a.deepLink ? (
+                  <Button size="sm" render={<a href={a.deepLink} />}>
+                    Open in Disney App
+                  </Button>
+                ) : null}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={remove.isPending}
+                  onClick={() => remove.mutate({ id: a.id })}
+                >
+                  Remove
+                </Button>
+              </div>
             </li>
           ))}
         </ul>

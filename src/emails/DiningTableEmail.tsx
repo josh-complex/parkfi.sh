@@ -1,13 +1,21 @@
 /** "A table opened" dining alert. */
 import { Button, Heading, Section, Text } from "react-email";
 
-import { AlertLayout, bodyText, ctaButton, heading, type DiningEmailProps } from "./components.tsx";
+import {
+  AlertLayout,
+  bodyText,
+  ctaButton,
+  heading,
+  secondaryCtaButton,
+  type DiningEmailProps,
+} from "./components.tsx";
 
 export function DiningTableEmail({
   restaurantName,
   dateLabel,
   partySize,
   ctaUrl,
+  deepLinkUrl,
   manageUrl,
   unsubscribeUrl,
   postalAddress,
@@ -29,6 +37,11 @@ export function DiningTableEmail({
         <Button style={ctaButton} href={ctaUrl}>
           Find a time
         </Button>
+        {deepLinkUrl ? (
+          <Button style={secondaryCtaButton} href={deepLinkUrl}>
+            Open in Disney App
+          </Button>
+        ) : null}
       </Section>
     </AlertLayout>
   );

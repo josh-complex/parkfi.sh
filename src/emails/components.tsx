@@ -27,6 +27,8 @@ export interface DiningEmailProps {
   partySize: number;
   /** Where the primary CTA points (the dining search). */
   ctaUrl: string;
+  /** `mdx://` deep link into the matched offer, when one could be built. */
+  deepLinkUrl?: string;
   manageUrl: string;
   unsubscribeUrl: string;
   postalAddress: string;
@@ -124,6 +126,18 @@ export const ctaButton: React.CSSProperties = {
   fontSize: "15px",
   fontWeight: 600,
   padding: "12px 20px",
+  textDecoration: "none",
+};
+export const secondaryCtaButton: React.CSSProperties = {
+  backgroundColor: "#ffffff",
+  border: "1px solid #d4d4d8",
+  borderRadius: "8px",
+  color: "#18181b",
+  display: "inline-block",
+  fontSize: "15px",
+  fontWeight: 600,
+  marginLeft: "10px",
+  padding: "11px 20px",
   textDecoration: "none",
 };
 export const heading: React.CSSProperties = {
