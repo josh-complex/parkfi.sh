@@ -26,6 +26,12 @@ export const FeatureFlag = {
    * a phone; off for everyone else.
    */
   NAV_TEST_TOOLS: "nav-test-tools",
+  /**
+   * Pin trading & collection surfaces. Unlike the other flags this one defaults
+   * *on*: when the `pins` flag is absent or enabled the pin features show;
+   * setting it off is the kill-switch that hides them (see {@link usePinsEnabled}).
+   */
+  PINS: "pins",
 } as const;
 
 export type FeatureFlagKey = (typeof FeatureFlag)[keyof typeof FeatureFlag];
@@ -71,6 +77,27 @@ export function useNavTestToolsEnabled(): boolean {
   useEffect(() => {
     if (!posthog || typeof posthog.isFeatureEnabled !== "function") return;
     const update = () => setEnabled(posthog.isFeatureEnabled(FeatureFlag.NAV_TEST_TOOLS) ?? false);
+    update();
+    return posthog.onFeatureFlags?.(update);
+  }, [posthog]);
+
+  return enabled;
+}
+
+/**
+ * True when the pin features should be shown. Inverse default of the flags
+ * above: starts `true` (pins are a shipped feature, and the server render + first
+ * client render must agree), and only flips to `false` if PostHog explicitly
+ * resolves the `pins` flag to off — the kill-switch. Absent/unconfigured flag
+ * keeps pins visible.
+ */
+export function usePinsEnabled(): boolean {
+  const posthog = usePostHog();
+  const [enabled, setEnabled] = useState(true);
+
+  useEffect(() => {
+    if (!posthog || typeof posthog.isFeatureEnabled !== "function") return;
+    const update = () => setEnabled(posthog.isFeatureEnabled(FeatureFlag.PINS) ?? true);
     update();
     return posthog.onFeatureFlags?.(update);
   }, [posthog]);

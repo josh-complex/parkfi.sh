@@ -71,8 +71,8 @@ export function ZoomControl({
       className={cn(
         "pointer-events-none absolute right-3 z-10",
         raised
-          ? "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+8rem)] md:bottom-[8rem]"
-          : "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+3.75rem)] md:bottom-[3.75rem]",
+          ? "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+8.5rem)] md:bottom-[8rem]"
+          : "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+4.25rem)] md:bottom-[3.75rem]",
       )}
     >
       <div className="btn-3d-outline border-3d shadow-3d pointer-events-auto flex flex-col overflow-hidden rounded-2xl bg-background/95 backdrop-blur dark:border-[color-mix(in_oklch,var(--border),white_25%)]">
@@ -133,8 +133,8 @@ export function LocateButton({
         MAP_CTRL_3D,
         "absolute right-3 z-10 rounded-full",
         raised
-          ? "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+5rem)] md:bottom-[5rem]"
-          : "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+0.75rem)] md:bottom-3",
+          ? "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+5.5rem)] md:bottom-[5rem]"
+          : "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+1.25rem)] md:bottom-3",
         active && "text-blue-600",
         off && "text-muted-foreground",
       )}

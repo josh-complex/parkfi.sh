@@ -7,19 +7,34 @@ import {
   Hotel,
   LineChart,
   MapPin,
-  Newspaper,
   ShieldCheck,
   Sparkles,
-  Ticket,
   TimerReset,
   Users,
-  Zap,
 } from "lucide-react";
 
 import { BlogTickerHeader } from "#/components/blog/blog-ticker-header.tsx";
+import {
+  AchievementLevelPanel,
+  AchievementsShowcase,
+  DiningShowcase,
+  LightningLaneShowcase,
+  MapScreenshotShowcase,
+  NewsShowcase,
+  PinsShowcase,
+  PredictionShowcase,
+  StayAlertShowcase,
+  TicketDuoShowcase,
+  WaitBoardShowcase,
+} from "#/components/marketing/feature-showcases.tsx";
+import { InstallPwaButton } from "#/components/marketing/install-pwa.tsx";
+import { AmbientLayer, Drift, Reveal } from "#/components/marketing/marketing-motion.tsx";
 import { OmniSearch } from "#/components/omni-search.tsx";
+import { Sparkline } from "#/components/park-dashboard/sparkline.tsx";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
 import { Button } from "#/components/ui/button.tsx";
+import { usePinsEnabled } from "#/integrations/posthog/feature-flags.ts";
+import { cn } from "#/lib/utils.ts";
 import { SITE_URL, seo } from "#/lib/seo.ts";
 
 import type { ReactNode } from "react";
@@ -31,9 +46,9 @@ export const Route = createFileRoute("/welcome")({
       title:
         "ParkFi — Live Wait Times, Dining, Stays & Alerts for Disney World & Universal Orlando",
       description:
-        "Plan a better Orlando theme park day with ParkFi: live wait times, Lightning Lane tracking, dining-reservation and resort-rate alerts, ticket-price calendars, a live park map, and daily park news. Always free — we never ask for payment.",
+        "Plan a better Orlando theme park day with ParkFi: live wait times, Lightning Lane tracking, dining-reservation and resort-rate alerts, ticket-price calendars, a live park map, crowd predictions, achievements, and daily park news. Always free — we never ask for payment.",
       keywords:
-        "Disney World wait times, Universal Orlando wait times, theme park app, Lightning Lane tracker, Disney dining alerts, resort rate alerts, ticket price calendar, Orlando park planner",
+        "Disney World wait times, Universal Orlando wait times, theme park app, Lightning Lane tracker, Disney dining alerts, resort rate alerts, ticket price calendar, Disney crowd calendar, Orlando park planner",
       path: "/welcome",
     }),
 });
@@ -43,7 +58,7 @@ export const Route = createFileRoute("/welcome")({
  * page double as organic surface area. Keep the answers in sync with the
  * <FaqList> copy below.
  * -------------------------------------------------------------------------- */
-const FAQS: ReadonlyArray<{ q: string; a: string }> = [
+const FAQS: ReadonlyArray<{ q: string; a: string; pin?: boolean }> = [
   {
     q: "Is ParkFi free?",
     a: "Yes. ParkFi is completely free to use. We will never require payment of any kind to view wait times, set alerts, track dining and resort availability, or use any feature on the site. We do not sell tickets, reservations, or rooms, and we never ask for a credit card.",
@@ -62,26 +77,30 @@ const FAQS: ReadonlyArray<{ q: string; a: string }> = [
   },
   {
     q: "Do I need an account?",
-    a: "You can browse live wait times, the park map, dining, stays, and news without an account. A free account unlocks personalized alerts so we can notify you when a wait drops, a reservation opens, or a resort rate changes.",
+    a: "You can browse live wait times, the park map, dining, stays, and news without an account. A free account unlocks personalized alerts, and it tracks your achievements and level as you visit the parks.",
   },
   {
     q: "Will ParkFi ever charge me or ask for payment to trade pins?",
     a: "Never. ParkFi will never request payment, deposits, or fees of any kind — including for pin features. If anyone claiming to be ParkFi ever asks you to pay, it is a scam. Report it to us.",
+    pin: true,
   },
   {
     q: "Does ParkFi own the pin images, and is it affiliated with PinPics?",
     a: 'No. ParkFi is not affiliated with, endorsed by, or sponsored by PinPics. Pin images, identifiers, and data labeled "PinPics" are the property of PinPics and/or their respective owners and creators. ParkFi claims no ownership of them and displays them for identification and trading-reference purposes only.',
+    pin: true,
   },
 ];
 
 function WelcomePage() {
+  const pinsEnabled = usePinsEnabled();
+  const faqs = pinsEnabled ? FAQS : FAQS.filter((f) => !f.pin);
   return (
     <div className="bg-background">
       <JsonLd
         data={{
           "@context": "https://schema.org",
           "@type": "FAQPage",
-          mainEntity: FAQS.map((f) => ({
+          mainEntity: faqs.map((f) => ({
             "@type": "Question",
             name: f.q,
             acceptedAnswer: { "@type": "Answer", text: f.a },
@@ -104,27 +123,56 @@ function WelcomePage() {
 
       <Hero />
       <ParksStrip />
-      <Features />
+      <Features pinsEnabled={pinsEnabled} />
       <HowItWorks />
-      <UseCases />
+      <UseCases pinsEnabled={pinsEnabled} />
       <FreePledge />
-      <Faq />
+      <Faq faqs={faqs} />
       <FinalCta />
-      <SiteFooter />
+      <SiteFooter pinsEnabled={pinsEnabled} />
     </div>
   );
 }
 
 /* ── Hero ─────────────────────────────────────────────────────────────────── */
 
+// A faded, drifting duplicate trend line — pure atmosphere, sits behind the
+// crisp product card. Deliberately dimmed and blurred via the layer classes.
+const HERO_TREND_A = [30, 34, 31, 40, 44, 38, 52, 60, 55, 68, 74, 70, 82, 88];
+const HERO_TREND_B = [80, 72, 66, 70, 58, 62, 48, 44, 50, 40, 36, 42, 30, 34];
+
 function Hero() {
   return (
     <section className="relative overflow-hidden border-b border-border">
-      {/* Soft brand wash behind the hero. */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-b from-primary/10 via-background to-background"
-      />
+      {/* Ambient backdrop: faint dot grid + two drifting, blurred sparklines,
+          then the soft brand wash. Everything here is decorative and dimmed. */}
+      <AmbientLayer>
+        <div
+          className="absolute inset-0 opacity-[0.05]"
+          style={{
+            backgroundImage: "radial-gradient(var(--primary) 1px, transparent 1px)",
+            backgroundSize: "22px 22px",
+          }}
+        />
+        <Drift
+          className="absolute top-24 -left-16 opacity-10 blur-[1px]"
+          x={22}
+          y={12}
+          duration={24}
+        >
+          <Sparkline data={HERO_TREND_A} width={440} height={130} />
+        </Drift>
+        <Drift
+          className="absolute -right-10 bottom-0 opacity-[0.08] blur-[2px]"
+          y={-16}
+          duration={28}
+          delay={3}
+        >
+          <Sparkline data={HERO_TREND_B} width={420} height={120} />
+        </Drift>
+        <div className="absolute inset-0 bg-gradient-to-b from-primary/10 via-background to-background" />
+      </AmbientLayer>
+
       <div className="mx-auto grid max-w-6xl items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:py-24">
         <div className="flex flex-col items-start gap-6">
           <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/5 px-3 py-1 text-xs font-semibold tracking-wide text-primary uppercase">
@@ -140,7 +188,7 @@ function Hero() {
           <p className="max-w-xl text-lg text-muted-foreground">
             ParkFi turns the chaos of an Orlando park day into a clear plan: live wait times,
             Lightning Lane tracking, dining and resort alerts, ticket-price calendars, a live map,
-            and daily park news — all in one place, always free.
+            crowd predictions, and daily park news — all in one place, always free.
           </p>
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -163,14 +211,11 @@ function Hero() {
           </p>
         </div>
 
-        {/* IMAGE: hero product shot */}
-        <ImagePlaceholder
-          id="hero-dashboard"
-          aspect="4 / 3"
-          label="Hero — ParkFi live dashboard"
-          note="App screenshot: live map + wait-time panel"
-          src="/img/marketing/hero.webp"
-        />
+        {/* Crisp, real product: the live wait board. Only the backdrop above
+            is faded — the board itself stays sharp. */}
+        <div className="flex justify-center lg:justify-end">
+          <WaitBoardShowcase />
+        </div>
       </div>
     </section>
   );
@@ -207,137 +252,321 @@ function ParksStrip() {
   );
 }
 
-/* ── Features ─────────────────────────────────────────────────────────────── */
+/* ── Features ─────────────────────────────────────────────────────────────── *
+ * A module *system*, not one repeated row. Three shapes carry different jobs:
+ *   • Spotlight — a full-bleed panel with ambient motion behind a crisp product
+ *     component; reserved for the flagship surfaces (live map, achievements).
+ *   • Split — text beside a product component. Sides alternate on purpose, and
+ *     the ordering is set at *every* breakpoint (some modules lead with the
+ *     visual on mobile) so the phone view actually varies instead of stacking
+ *     text-image-text-image the whole way down.
+ *   • Duo — two related panels side by side, for a compare/analysis moment.
+ * -------------------------------------------------------------------------- */
 
-const FEATURES = [
-  {
-    icon: Clock,
-    title: "Live wait times",
-    body: "Standby waits across every park, refreshed continuously — with trend arrows so you can see what's climbing and what's dropping right now.",
-    img: {
-      id: "feature-waits",
-      label: "Live wait-times board",
-      note: "Ride list with up/down trend chips",
-      src: "/img/marketing/wait-times.webp",
-    },
-  },
-  {
-    icon: Zap,
-    title: "Lightning Lane tracking",
-    body: "Follow Lightning Lane and paid-line availability through the day so you know the smart moment to grab a return time.",
-    img: {
-      id: "feature-ll",
-      label: "Lightning Lane tracker",
-      note: "Availability timeline for a headliner ride",
-      src: "/img/marketing/lightning.webp",
-    },
-  },
-  {
-    icon: CalendarCheck,
-    title: "Dining reservation finder",
-    body: "Hunting a hard-to-get table? Scan availability across restaurants and get alerted the moment a slot opens up.",
-    img: {
-      id: "feature-dining",
-      label: "Dining finder",
-      note: "Restaurant grid with open reservation slots",
-      src: "/img/marketing/eats.webp",
-    },
-  },
-  {
-    icon: Hotel,
-    title: "Resort & stay alerts",
-    body: "Watch nightly rates and availability for on-property resorts and get a ping when a price drops into your range.",
-    img: {
-      id: "feature-stays",
-      label: "Resort rate board",
-      note: "Resort cards with nightly-rate sparklines",
-      src: "/img/marketing/stays.webp",
-    },
-  },
-  {
-    icon: Ticket,
-    title: "Ticket-price calendar",
-    body: "See how ticket prices move by date so you can pick the cheapest day to visit before you ever buy.",
-    img: {
-      id: "feature-tickets",
-      label: "Ticket-price calendar",
-      note: "Month grid color-coded by price",
-      src: "/img/marketing/tickets.webp",
-    },
-  },
-  {
-    icon: MapPin,
-    title: "Live interactive map",
-    body: "A real-time map of every park with wait times, ride status, and dining overlaid right where you're standing.",
-    img: {
-      id: "feature-map",
-      label: "Live park map",
-      note: "Map with ride pins and wait badges",
-      src: "/img/marketing/live-map.webp",
-    },
-  },
-  {
-    icon: Newspaper,
-    title: "Daily park news",
-    body: "Plain-English daily analysis of ride updates, closures, and crowd impacts — what's changing and what it means for your trip.",
-    img: {
-      id: "feature-news",
-      label: "Park news feed",
-      note: "Blog article cards with hero images",
-      src: "/img/marketing/news.webp",
-    },
-  },
-  {
-    icon: Sparkles,
-    title: "Pin trading & collection",
-    body: "Catalog your pins, track your collection, scan new finds, and line up trades with other fans — no fees, no catch.",
-    img: {
-      id: "feature-pins",
-      label: "Pin collection",
-      note: "Grid of trading pins with trade badges",
-      src: "/img/marketing/pins.webp",
-    },
-  },
-] as const;
+interface FeatureDef {
+  eyebrow: string;
+  title: string;
+  body: ReactNode;
+  showcase: ReactNode;
+  cta?: ReactNode;
+  /** Rendered between the eyebrow and the title (e.g. the profile level chip). */
+  badge?: ReactNode;
+}
 
-function Features() {
+function FeatureCopy({ feature, onDark }: { feature: FeatureDef; onDark?: boolean }) {
   return (
-    <section id="features" className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
-      <SectionHeading
-        eyebrow="Everything in one place"
-        title="One app for the entire park day"
-        subtitle="From the moment you're planning the trip to the second you're deciding which line to join, ParkFi has the data you need."
-      />
-
-      <div className="mt-14 grid gap-12">
-        {FEATURES.map((f, i) => (
-          <FeatureRow key={f.title} feature={f} flip={i % 2 === 1} />
-        ))}
-      </div>
-    </section>
+    <div className="flex flex-col items-start">
+      <p
+        className={cn(
+          "text-xs font-semibold tracking-widest uppercase",
+          onDark ? "text-sky-300" : "text-primary",
+        )}
+      >
+        {feature.eyebrow}
+      </p>
+      {feature.badge && <div className="mt-4">{feature.badge}</div>}
+      <h3
+        className={cn(
+          "mt-4 font-heading text-2xl font-bold tracking-tight text-balance sm:text-3xl",
+          onDark && "text-white",
+        )}
+      >
+        {feature.title}
+      </h3>
+      <p className={cn("mt-3 max-w-lg", onDark ? "text-white/75" : "text-muted-foreground")}>
+        {feature.body}
+      </p>
+      {feature.cta}
+    </div>
   );
 }
 
-function FeatureRow({ feature, flip }: { feature: (typeof FEATURES)[number]; flip: boolean }) {
-  const Icon = feature.icon;
+function SplitModule({
+  feature,
+  align,
+  mobileShowcaseFirst,
+}: {
+  feature: FeatureDef;
+  /** Which side the product component sits on at the `lg` breakpoint. */
+  align: "left" | "right";
+  /** Lead with the visual on mobile (breaks the text-first stack rhythm). */
+  mobileShowcaseFirst?: boolean;
+}) {
+  const showcaseRight = align === "right";
+  const textOrder = cn(
+    mobileShowcaseFirst ? "order-2" : "order-1",
+    showcaseRight ? "lg:order-1" : "lg:order-2",
+  );
+  const showcaseOrder = cn(
+    mobileShowcaseFirst ? "order-1" : "order-2",
+    showcaseRight ? "lg:order-2" : "lg:order-1",
+  );
+
   return (
-    <div className="grid items-center gap-8 lg:grid-cols-2">
-      <div className={flip ? "lg:order-2" : undefined}>
-        <div className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-          <Icon className="size-6" aria-hidden />
+    <Reveal as="section" className="mx-auto max-w-6xl px-4 sm:px-6">
+      <div className="grid items-center gap-8 lg:grid-cols-2 lg:gap-14">
+        <div className={textOrder}>
+          <FeatureCopy feature={feature} />
         </div>
-        <h3 className="mt-5 font-heading text-2xl font-bold tracking-tight">{feature.title}</h3>
-        <p className="mt-3 max-w-lg text-muted-foreground">{feature.body}</p>
+        <div className={cn("flex justify-center", showcaseOrder)}>{feature.showcase}</div>
       </div>
-      <ImagePlaceholder
-        id={feature.img.id}
-        aspect="16 / 10"
-        label={feature.img.label}
-        note={feature.img.note}
-        src={feature.img.src}
-        className={flip ? "lg:order-1" : undefined}
+    </Reveal>
+  );
+}
+
+/**
+ * Full-bleed dark band. `isolate` makes it its own stacking context so the
+ * `-z-20` background gradient and the `-z-10` ambient layer stack correctly
+ * beneath the crisp `z-10` content instead of slipping behind the page.
+ */
+function SpotlightModule({
+  feature,
+  showcaseSide,
+  ambient,
+}: {
+  feature: FeatureDef;
+  showcaseSide: "left" | "right";
+  ambient: ReactNode;
+}) {
+  const showcaseRight = showcaseSide === "right";
+  return (
+    <Reveal
+      as="section"
+      className="relative isolate overflow-hidden py-16 text-white sm:py-20 lg:py-24"
+    >
+      <div
+        aria-hidden
+        className="absolute inset-0 -z-20"
+        style={{ background: "linear-gradient(155deg,#0c1a35,#14346b)" }}
       />
-    </div>
+      {ambient}
+      <div className="relative z-10 mx-auto grid max-w-6xl items-center gap-10 px-4 sm:px-6 lg:grid-cols-2 lg:gap-14">
+        <div className={showcaseRight ? "lg:order-1" : "lg:order-2"}>
+          <FeatureCopy feature={feature} onDark />
+        </div>
+        <div className={cn("flex justify-center", showcaseRight ? "lg:order-2" : "lg:order-1")}>
+          {feature.showcase}
+        </div>
+      </div>
+    </Reveal>
+  );
+}
+
+function DuoModule({ feature }: { feature: FeatureDef }) {
+  return (
+    <Reveal as="section" className="mx-auto max-w-6xl px-4 sm:px-6">
+      <div className="mx-auto max-w-2xl text-center">
+        <p className="text-xs font-semibold tracking-widest text-primary uppercase">
+          {feature.eyebrow}
+        </p>
+        <h3 className="mt-3 font-heading text-2xl font-bold tracking-tight text-balance sm:text-3xl">
+          {feature.title}
+        </h3>
+        <p className="mt-3 text-muted-foreground">{feature.body}</p>
+      </div>
+      <div className="mx-auto mt-8 max-w-3xl">{feature.showcase}</div>
+    </Reveal>
+  );
+}
+
+/* Ambient backdrops for the two spotlight modules — soft radial glows only, no
+   decorative shapes; the crisp product component renders above at z-10. */
+const MapAmbient = (
+  <AmbientLayer>
+    <div
+      className="absolute inset-0"
+      style={{
+        background:
+          "radial-gradient(circle at 72% 30%, color-mix(in oklch, var(--primary), transparent 80%), transparent 60%)",
+      }}
+    />
+  </AmbientLayer>
+);
+
+const AchievementsAmbient = (
+  <AmbientLayer>
+    <div
+      className="absolute inset-0"
+      style={{
+        background:
+          "radial-gradient(circle at 80% 45%, rgba(234,179,8,0.14), transparent 55%), radial-gradient(circle at 18% 22%, rgba(91,143,232,0.22), transparent 60%)",
+      }}
+    />
+  </AmbientLayer>
+);
+
+function Features({ pinsEnabled }: { pinsEnabled: boolean }) {
+  return (
+    <section id="features" className="py-20 sm:py-24">
+      <Reveal className="mx-auto max-w-6xl px-4 sm:px-6">
+        <SectionHeading
+          eyebrow="Everything in one place"
+          title="One app for the entire park day"
+          subtitle="From planning the trip to deciding which line to join, every screen below is the real ParkFi — not a mockup."
+        />
+        {/* Renders only when the PWA is installable (Chrome/Android, not already
+            installed); otherwise it's a no-op. The margin rides on the button so
+            there's no empty gap when it's hidden. Centered under the heading. */}
+        <div className="text-center">
+          <InstallPwaButton className="mt-8 px-6" />
+        </div>
+      </Reveal>
+
+      <div className="mt-14 flex flex-col gap-20 sm:gap-28">
+        <SpotlightModule
+          showcaseSide="right"
+          ambient={MapAmbient}
+          feature={{
+            eyebrow: "Live interactive map",
+            title: "See every wait, right where you're standing",
+            body: "A real-time map of all seven parks with standby waits, ride status, and dining pinned in place. Tap a pin, read the trend, and decide your next move without ever leaving the map.",
+            showcase: <MapScreenshotShowcase className="max-w-md" />,
+            // Outline-on-dark: the spotlight sets `text-white`, so a default
+            // outline button would render white text on its white pill. Force a
+            // transparent fill + white border/text (same pattern as FinalCta).
+            cta: (
+              <Button
+                variant="outline"
+                className="mt-6 h-11 border-white/30 bg-transparent px-5 text-white hover:bg-white/10 hover:text-white"
+                render={<Link to="/" />}
+              >
+                Open the live map
+                <ArrowRight className="size-4" aria-hidden />
+              </Button>
+            ),
+          }}
+        />
+
+        <SplitModule
+          align="right"
+          feature={{
+            eyebrow: "Lightning Lane tracking",
+            title: "Grab the return time before it's gone",
+            body: "Follow Lightning Lane price and availability through the day. ParkFi shows which windows are still open and the smart moment to buy — no refreshing the official app every ten minutes.",
+            showcase: <LightningLaneShowcase />,
+          }}
+        />
+
+        <SplitModule
+          align="left"
+          mobileShowcaseFirst
+          feature={{
+            eyebrow: "Dining reservations",
+            title: "Hunt hard-to-get tables — and browse the whole resort",
+            body: "Scan availability across 300+ restaurants, watch a full week at a glance, and get pinged the second a slot opens. New: browse every venue at a resort in one shelf — signature dining to snack carts — with live menus and price history.",
+            showcase: <DiningShowcase className="max-w-md" />,
+            cta: (
+              <Button variant="outline" className="mt-6 h-11 px-5" render={<Link to="/dining" />}>
+                Explore dining
+                <ArrowRight className="size-4" aria-hidden />
+              </Button>
+            ),
+          }}
+        />
+
+        <DuoModule
+          feature={{
+            eyebrow: "Ticket-price calendar",
+            title: "Find the cheapest day before you buy",
+            body: "Ticket prices swing by date. ParkFi color-codes the whole month so you can spot the low days at a glance — and see exactly what peak pricing would have cost you.",
+            showcase: <TicketDuoShowcase />,
+          }}
+        />
+
+        <SplitModule
+          align="right"
+          feature={{
+            eyebrow: "Resort & stay alerts",
+            title: "Rebook the moment a rate drops",
+            body: "Watch nightly rates and sold-out rooms for any on-property resort. Set a ceiling and we'll email you the moment a room opens or the price falls into range — even on trips you've already booked.",
+            showcase: <StayAlertShowcase />,
+            cta: (
+              <Button variant="outline" className="mt-6 h-11 px-5" render={<Link to="/stays" />}>
+                Browse stays
+                <ArrowRight className="size-4" aria-hidden />
+              </Button>
+            ),
+          }}
+        />
+
+        <SpotlightModule
+          showcaseSide="right"
+          ambient={AchievementsAmbient}
+          feature={{
+            eyebrow: "New · Levels & achievements",
+            badge: <AchievementLevelPanel />,
+            title: "Every park day earns you something",
+            body: "ParkFi quietly tracks your park days, rides, steps, rope drops and more — then turns them into 77 achievements across 22 families and 20 levels. Level up in a park and the badge shows up right on your profile.",
+            showcase: <AchievementsShowcase />,
+          }}
+        />
+
+        <SplitModule
+          align="left"
+          feature={{
+            eyebrow: "New · Crowd predictions",
+            title: "Know how busy it'll be before you go",
+            body: "ParkFi forecasts crowd levels for the week ahead so you can pick the quietest day and plan around the surge. Green means go.",
+            showcase: <PredictionShowcase />,
+          }}
+        />
+
+        <SplitModule
+          align="right"
+          feature={{
+            eyebrow: "Daily park news",
+            title: "What changed overnight, in plain English",
+            body: "Ride updates, closures, and crowd shifts — summarized every day with what it actually means for your trip. No forums to dig through.",
+            showcase: <NewsShowcase />,
+            cta: (
+              <Button variant="outline" className="mt-6 h-11 px-5" render={<Link to="/blog" />}>
+                Read today&rsquo;s news
+                <ArrowRight className="size-4" aria-hidden />
+              </Button>
+            ),
+          }}
+        />
+
+        {pinsEnabled && (
+          <SplitModule
+            align="left"
+            mobileShowcaseFirst
+            feature={{
+              eyebrow: "Pin trading & collection",
+              title: "Catalog, track, and trade — no fees, ever",
+              body: "Scan a pin to identify it, track your collection, and line up trades with other fans. ParkFi never charges to collect or trade a pin.",
+              showcase: <PinsShowcase />,
+              cta: (
+                <Button variant="outline" className="mt-6 h-11 px-5" render={<Link to="/pins" />}>
+                  Open the Pin Hub
+                  <ArrowRight className="size-4" aria-hidden />
+                </Button>
+              ),
+            }}
+          />
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -365,28 +594,29 @@ function HowItWorks() {
   return (
     <section id="how-it-works" className="border-y border-border bg-muted/30">
       <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
-        <SectionHeading
-          eyebrow="How it works"
-          title="Up and running in seconds"
-          subtitle="No download required. ParkFi runs in your browser and installs to your home screen if you want it there."
-        />
+        <Reveal>
+          <SectionHeading
+            eyebrow="How it works"
+            title="Up and running in seconds"
+            subtitle="No download required. ParkFi runs in your browser and installs to your home screen if you want it there."
+          />
+        </Reveal>
         <div className="mt-14 grid gap-8 md:grid-cols-3">
           {STEPS.map((s, i) => {
             const Icon = s.icon;
             return (
-              <div
-                key={s.title}
-                className="relative rounded-3xl border border-border bg-card p-7 shadow-sm"
-              >
-                <span className="font-heading absolute -top-3 left-7 rounded-full bg-primary px-3 py-0.5 text-xs font-bold text-primary-foreground">
-                  Step {i + 1}
-                </span>
-                <div className="flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                  <Icon className="size-5" aria-hidden />
+              <Reveal key={s.title} delay={i * 0.08}>
+                <div className="relative rounded-3xl border border-border bg-card p-7 shadow-sm">
+                  <span className="font-heading absolute -top-3 left-7 rounded-full bg-primary px-3 py-0.5 text-xs font-bold text-primary-foreground">
+                    Step {i + 1}
+                  </span>
+                  <div className="flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                    <Icon className="size-5" aria-hidden />
+                  </div>
+                  <h3 className="mt-4 font-heading text-lg font-bold">{s.title}</h3>
+                  <p className="mt-2 text-sm text-muted-foreground">{s.body}</p>
                 </div>
-                <h3 className="mt-4 font-heading text-lg font-bold">{s.title}</h3>
-                <p className="mt-2 text-sm text-muted-foreground">{s.body}</p>
-              </div>
+              </Reveal>
             );
           })}
         </div>
@@ -427,28 +657,34 @@ const PERSONAS = [
     icon: Sparkles,
     title: "Pin traders & collectors",
     body: "Catalog, track, and trade your pins with a community of fans. No fees, no listings to buy — just trading, the way it should be.",
+    pin: true,
   },
 ] as const;
 
-function UseCases() {
+function UseCases({ pinsEnabled }: { pinsEnabled: boolean }) {
+  const personas = pinsEnabled ? PERSONAS : PERSONAS.filter((p) => !("pin" in p));
   return (
     <section id="use-cases" className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
-      <SectionHeading
-        eyebrow="Who it's for"
-        title="Built for every kind of park person"
-        subtitle="However you do the parks, ParkFi meets you there."
-      />
+      <Reveal>
+        <SectionHeading
+          eyebrow="Who it's for"
+          title="Built for every kind of park person"
+          subtitle="However you do the parks, ParkFi meets you there."
+        />
+      </Reveal>
       <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {PERSONAS.map((p) => {
+        {personas.map((p, i) => {
           const Icon = p.icon;
           return (
-            <div key={p.title} className="rounded-3xl border border-border bg-card p-7">
-              <div className="flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                <Icon className="size-5" aria-hidden />
+            <Reveal key={p.title} delay={(i % 3) * 0.08}>
+              <div className="h-full rounded-3xl border border-border bg-card p-7">
+                <div className="flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                  <Icon className="size-5" aria-hidden />
+                </div>
+                <h3 className="mt-4 font-heading text-lg font-bold">{p.title}</h3>
+                <p className="mt-2 text-sm text-muted-foreground">{p.body}</p>
               </div>
-              <h3 className="mt-4 font-heading text-lg font-bold">{p.title}</h3>
-              <p className="mt-2 text-sm text-muted-foreground">{p.body}</p>
-            </div>
+            </Reveal>
           );
         })}
       </div>
@@ -461,44 +697,46 @@ function UseCases() {
 function FreePledge() {
   return (
     <section className="mx-auto max-w-6xl px-4 pb-20 sm:px-6">
-      <div className="overflow-hidden rounded-4xl border border-primary/30 bg-primary/5">
-        <div className="grid items-center gap-8 p-8 sm:p-12 lg:grid-cols-[auto_1fr]">
-          <div className="flex size-16 items-center justify-center rounded-3xl bg-primary/15 text-primary">
-            <ShieldCheck className="size-8" aria-hidden />
-          </div>
-          <div>
-            <h2 className="font-heading text-2xl font-bold tracking-tight sm:text-3xl">
-              ParkFi is free — and we will never ask you for payment.
-            </h2>
-            <p className="mt-3 max-w-3xl text-muted-foreground">
-              Every feature on ParkFi — wait times, alerts, dining and resort tracking, the map, the
-              news, and all pin-trading and collection features — is free to use. We do not sell
-              tickets, reservations, or rooms, and we will{" "}
-              <strong className="text-foreground">never require payment of any kind</strong>, ask
-              for a deposit, or request your card details to trade pins or use the app.
-            </p>
-            <p className="mt-3 max-w-3xl text-sm text-muted-foreground">
-              <strong className="text-foreground">Safety note:</strong> if anyone claiming to
-              represent ParkFi ever asks you to pay a fee — to join, to trade a pin, to unlock a
-              feature, or to &ldquo;verify&rdquo; your account — it is not us, and it is a scam.
-              Please don&rsquo;t pay, and let us know.
-            </p>
+      <Reveal>
+        <div className="overflow-hidden rounded-4xl border border-primary/30 bg-primary/5">
+          <div className="grid items-center gap-8 p-8 sm:p-12 lg:grid-cols-[auto_1fr]">
+            <div className="flex size-16 items-center justify-center rounded-3xl bg-primary/15 text-primary">
+              <ShieldCheck className="size-8" aria-hidden />
+            </div>
+            <div>
+              <h2 className="font-heading text-2xl font-bold tracking-tight sm:text-3xl">
+                ParkFi is free — and we will never ask you for payment.
+              </h2>
+              <p className="mt-3 max-w-3xl text-muted-foreground">
+                Every feature on ParkFi — wait times, alerts, dining and resort tracking, the map,
+                the news, and all pin-trading and collection features — is free to use. We do not
+                sell tickets, reservations, or rooms, and we will{" "}
+                <strong className="text-foreground">never require payment of any kind</strong>, ask
+                for a deposit, or request your card details to trade pins or use the app.
+              </p>
+              <p className="mt-3 max-w-3xl text-sm text-muted-foreground">
+                <strong className="text-foreground">Safety note:</strong> if anyone claiming to
+                represent ParkFi ever asks you to pay a fee — to join, to trade a pin, to unlock a
+                feature, or to &ldquo;verify&rdquo; your account — it is not us, and it is a scam.
+                Please don&rsquo;t pay, and let us know.
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      </Reveal>
     </section>
   );
 }
 
 /* ── FAQ ──────────────────────────────────────────────────────────────────── */
 
-function Faq() {
+function Faq({ faqs }: { faqs: ReadonlyArray<{ q: string; a: string }> }) {
   return (
     <section id="faq" className="border-y border-border bg-muted/30">
       <div className="mx-auto max-w-3xl px-4 py-20 sm:px-6">
         <SectionHeading eyebrow="FAQ" title="Questions, answered" />
         <div className="mt-12 divide-y divide-border">
-          {FAQS.map((f) => (
+          {faqs.map((f) => (
             <details key={f.q} className="group py-5">
               <summary className="flex cursor-pointer items-center justify-between gap-4 text-left font-heading text-lg font-semibold marker:content-['']">
                 {f.q}
@@ -571,12 +809,21 @@ function FooterColumn({ title, children }: { title: string; children: ReactNode 
 const footerLinkClass =
   "text-muted-foreground transition-colors hover:text-primary hover:underline underline-offset-4";
 
-function SiteFooter() {
+function SiteFooter({ pinsEnabled }: { pinsEnabled: boolean }) {
   return (
     <footer className="border-t border-border bg-muted/30">
       {/* ── Quicklinks + search ────────────────────────────────────────────── */}
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
-        <div className="grid gap-12 lg:grid-cols-[1.4fr_1fr_1fr_1fr_1fr]">
+        <div
+          className={cn(
+            "grid gap-12",
+            // One fewer column track when the Pins column is hidden, so the
+            // `lg:contents` columns still fill the row evenly.
+            pinsEnabled
+              ? "lg:grid-cols-[1.4fr_1fr_1fr_1fr_1fr]"
+              : "lg:grid-cols-[1.4fr_1fr_1fr_1fr]",
+          )}
+        >
           {/* Brand + search */}
           <div className="flex flex-col gap-5">
             <Link to="/" aria-label="ParkFi home" className="flex items-center">
@@ -625,28 +872,30 @@ function SiteFooter() {
               </li>
             </FooterColumn>
 
-            <FooterColumn title="Pins">
-              <li>
-                <Link to="/pins" className={footerLinkClass}>
-                  Pin Hub
-                </Link>
-              </li>
-              <li>
-                <Link to="/pins/collection" className={footerLinkClass}>
-                  My Collection
-                </Link>
-              </li>
-              <li>
-                <Link to="/pins/trades" className={footerLinkClass}>
-                  Trades
-                </Link>
-              </li>
-              <li>
-                <Link to="/pins/scan" className={footerLinkClass}>
-                  Scan a Pin
-                </Link>
-              </li>
-            </FooterColumn>
+            {pinsEnabled && (
+              <FooterColumn title="Pins">
+                <li>
+                  <Link to="/pins" className={footerLinkClass}>
+                    Pin Hub
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/pins/collection" className={footerLinkClass}>
+                    My Collection
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/pins/trades" className={footerLinkClass}>
+                    Trades
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/pins/scan" className={footerLinkClass}>
+                    Scan a Pin
+                  </Link>
+                </li>
+              </FooterColumn>
+            )}
 
             <FooterColumn title="On this page">
               <li>
@@ -779,62 +1028,6 @@ function SectionHeading({
         {title}
       </h2>
       {subtitle && <p className="mt-4 text-muted-foreground">{subtitle}</p>}
-    </div>
-  );
-}
-
-/**
- * Renders a marketing screenshot when `src` is provided, otherwise a labeled
- * dashed stand-in. Feature rows without a real screenshot yet (Lightning Lane,
- * daily news) keep the placeholder until an asset is dropped in.
- */
-function ImagePlaceholder({
-  id,
-  aspect,
-  label,
-  note,
-  src,
-  className,
-}: {
-  id: string;
-  aspect: string;
-  label: string;
-  note: string;
-  src?: string | null;
-  className?: string;
-}) {
-  if (src) {
-    return (
-      <img
-        src={src}
-        alt={label}
-        loading="lazy"
-        style={{ aspectRatio: aspect }}
-        className={[
-          "w-full rounded-3xl border border-border object-cover shadow-sm",
-          className ?? "",
-        ].join(" ")}
-      />
-    );
-  }
-
-  return (
-    <div
-      data-image-id={id}
-      style={{ aspectRatio: aspect }}
-      className={[
-        "flex w-full flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed border-primary/30 bg-primary/5 p-6 text-center",
-        className ?? "",
-      ].join(" ")}
-    >
-      <span className="font-heading rounded-full bg-primary/10 px-3 py-1 text-xs font-bold tracking-wide text-primary uppercase">
-        Image
-      </span>
-      <span className="font-heading text-base font-semibold text-foreground">{label}</span>
-      <span className="max-w-xs text-xs text-muted-foreground">{note}</span>
-      <code className="mt-1 rounded bg-background/70 px-2 py-0.5 text-[0.65rem] text-muted-foreground">
-        /img/marketing/{id}.webp
-      </code>
     </div>
   );
 }
