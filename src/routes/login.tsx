@@ -28,9 +28,12 @@ declare global {
           size?: "normal" | "compact" | "flexible";
           callback: (token: string) => void;
           "expired-callback": () => void;
+          "before-interactive-callback"?: () => void;
+          "after-interactive-callback"?: () => void;
         },
       ) => string;
       reset: (widgetId: string) => void;
+      remove: (widgetId: string) => void;
     };
   }
 }
@@ -67,15 +70,12 @@ function LoginPage() {
   const [passkeyPending, setPasskeyPending] = React.useState(false);
   const hasCaptcha = !!import.meta.env.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY;
   const [captchaReady, setCaptchaReady] = React.useState(!hasCaptcha);
+  // Managed Turnstile is silent on the happy path — only reveal the widget box
+  // when CF actually escalates to an interactive challenge.
+  const [captchaInteractive, setCaptchaInteractive] = React.useState(false);
   const turnstileToken = React.useRef<string | null>(null);
   const turnstileWidgetId = React.useRef<string | null>(null);
   const turnstileContainerRef = React.useRef<HTMLDivElement>(null);
-
-  // Google One Tap — fires silently; email form is always available as fallback
-  React.useEffect(() => {
-    if (!import.meta.env.VITE_GOOGLE_CLIENT_ID) return;
-    authClient.oneTap({ callbackURL: "/" }).catch(() => {});
-  }, []);
 
   // Cloudflare Turnstile widget
   React.useEffect(() => {
@@ -86,6 +86,9 @@ function LoginPage() {
 
     const initWidget = () => {
       if (!window.turnstile) return;
+      // Guard against a second render() into the same container (StrictMode / HMR / remount),
+      // which orphans the live challenge iframe and leaves a dead response input behind.
+      if (turnstileWidgetId.current) return;
       turnstileWidgetId.current = window.turnstile.render(container, {
         sitekey: siteKey,
         theme: "auto",
@@ -93,11 +96,14 @@ function LoginPage() {
         callback: (token) => {
           turnstileToken.current = token;
           setCaptchaReady(true);
+          setCaptchaInteractive(false);
         },
         "expired-callback": () => {
           turnstileToken.current = null;
           setCaptchaReady(false);
         },
+        "before-interactive-callback": () => setCaptchaInteractive(true),
+        "after-interactive-callback": () => setCaptchaInteractive(false),
       });
     };
 
@@ -114,6 +120,14 @@ function LoginPage() {
       }
       script.addEventListener("load", initWidget, { once: true });
     }
+
+    return () => {
+      if (turnstileWidgetId.current && window.turnstile) {
+        window.turnstile.remove(turnstileWidgetId.current);
+        turnstileWidgetId.current = null;
+        setCaptchaReady(false);
+      }
+    };
   }, []);
 
   const handlePasskey = async () => {
@@ -319,11 +333,16 @@ function LoginPage() {
                 />
               </div>
 
-              {/* Turnstile — invisible mode runs silently; widget only visible in test mode */}
+              {/* Turnstile (Managed) — silent on the happy path; the box expands into
+                  view only when CF escalates to an interactive challenge. */}
               {hasCaptcha && (
                 <div
-                  className="overflow-hidden rounded-xl border border-border border-t-3"
-                  style={{ height: 66 }}
+                  className={
+                    captchaInteractive
+                      ? "overflow-hidden rounded-xl border border-border border-t-3"
+                      : "overflow-hidden"
+                  }
+                  style={{ height: captchaInteractive ? 66 : 0 }}
                 >
                   <div
                     ref={turnstileContainerRef}
@@ -331,8 +350,6 @@ function LoginPage() {
                       margin: "-1px",
                       lineHeight: 0,
                       marginTop: "-1px",
-                      transform: "scale(1.0)",
-                      transformOrigin: "center",
                     }}
                   />
                 </div>

@@ -4,7 +4,6 @@ import {
   genericOAuthClient,
   inferAdditionalFields,
   lastLoginMethodClient,
-  oneTapClient,
   twoFactorClient,
 } from "better-auth/client/plugins";
 
@@ -18,9 +17,6 @@ export const authClient = createAuthClient({
         role: { type: "string", required: false, input: false },
         orgTenantId: { type: "string", required: false, input: false },
       },
-    }),
-    oneTapClient({
-      clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID,
     }),
     // Enables authClient.signIn.oauth2() for the Disney-only Microsoft provider.
     genericOAuthClient(),

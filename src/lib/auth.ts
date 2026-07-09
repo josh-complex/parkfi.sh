@@ -6,7 +6,6 @@ import {
   haveIBeenPwned,
   lastLoginMethod,
   oAuthProxy,
-  oneTap,
   twoFactor,
 } from "better-auth/plugins";
 import { genericOAuth, microsoftEntraId } from "better-auth/plugins/generic-oauth";
@@ -180,8 +179,6 @@ export const auth = betterAuth({
       productionURL: process.env.PRODUCTION_URL ?? process.env.BETTER_AUTH_URL,
       secret: process.env.OAUTH_PROXY_SECRET,
     }),
-    // Google One Tap — uses the google social provider clientId automatically
-    oneTap(),
     // Cloudflare Turnstile on email sign-in, sign-up, and password reset
     captcha({
       provider: "cloudflare-turnstile",
