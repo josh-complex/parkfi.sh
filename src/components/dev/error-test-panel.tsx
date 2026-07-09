@@ -266,6 +266,25 @@ export function ErrorTestPanel() {
       ],
     },
     {
+      heading: "Auth",
+      actions: [
+        {
+          // Mimics the Entra admin-consent block: a real full-page redirect to
+          // /login with the error params better-auth forwards — same path as a
+          // genuine OAuth failure — which opens CastMemberBlockedDialog.
+          label: "Cast-member blocked modal",
+          run: () => {
+            const qs = new URLSearchParams({
+              error: "access_denied",
+              error_description:
+                "AADSTS65001: The user or administrator has not consented to use the application.",
+            });
+            window.location.assign(`/login?${qs.toString()}`);
+          },
+        },
+      ],
+    },
+    {
       heading: "Named events",
       actions: [
         {

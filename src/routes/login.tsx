@@ -1,10 +1,11 @@
 import * as React from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { KeyRoundIcon, SparklesIcon } from "lucide-react";
+import { KeyRoundIcon, Loader2Icon, SparklesIcon } from "lucide-react";
 
 import { authClient } from "#/lib/auth-client.ts";
 import { reportError } from "#/lib/report-error.ts";
 import { AppleIcon, GoogleIcon, MicrosoftIcon } from "#/components/account/provider-icons.tsx";
+import { CastMemberBlockedDialog } from "#/components/account/cast-member-blocked-dialog.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import {
   Card,
@@ -38,6 +39,36 @@ declare global {
   }
 }
 
+// OAuth failures come back as a full-page redirect to /login with `?error=…`
+// (and sometimes `?error_description=…`). Map the codes we care about to
+// human-readable copy; everything else falls back to a generic message.
+// The admin-consent case is the important one: Entra blocks a cast member whose
+// tenant hasn't approved ParkFi before our callback ever runs, and surfaces an
+// AADSTS65001/90094 code in the description.
+function messageForOAuthError(error: string, description: string | null): string {
+  const desc = description ?? "";
+  if (/AADSTS(65001|90094|900941)/.test(desc) || /admin (consent|approval)/i.test(desc)) {
+    return "Your organization hasn't approved ParkFi yet, so Microsoft blocked the sign-in. A Walt Disney Company IT admin needs to grant access before Cast Member sign-in will work.";
+  }
+  if (error === "access_denied") {
+    return "Sign-in was cancelled, or your organization declined access to ParkFi. You can still continue as a regular guest.";
+  }
+  return "We couldn't complete that sign-in. Please try again, or use another method below.";
+}
+
+// Consent / admin-approval / access-denied failures get the reframing modal
+// (CastMemberBlockedDialog); any other OAuth error falls through to the inline
+// alert. These are the codes Entra returns when a tenant blocks the app.
+function isCastMemberBlock(error: string, description: string | null): boolean {
+  const desc = description ?? "";
+  return (
+    error === "access_denied" ||
+    error === "consent_required" ||
+    /AADSTS(65001|65004|90094|900941)/.test(desc) ||
+    /consent|admin (consent|approval)/i.test(desc)
+  );
+}
+
 function OrDivider() {
   return (
     <div className="relative flex items-center gap-3">
@@ -50,6 +81,15 @@ function OrDivider() {
 
 export const Route = createFileRoute("/login")({
   component: LoginPage,
+  // OAuth failures redirect back here with `?error=…` (and sometimes
+  // `?error_description=…`); parse them so the component can react.
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { error?: string; error_description?: string } => ({
+    error: typeof search.error === "string" ? search.error : undefined,
+    error_description:
+      typeof search.error_description === "string" ? search.error_description : undefined,
+  }),
   head: () =>
     seo({
       title: "Sign In — ParkFi",
@@ -61,7 +101,9 @@ export const Route = createFileRoute("/login")({
 
 function LoginPage() {
   const navigate = useNavigate();
+  const search = Route.useSearch();
   const [mode, setMode] = React.useState<"signin" | "signup">("signin");
+  const [blockedMessage, setBlockedMessage] = React.useState<string | null>(null);
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
@@ -69,13 +111,41 @@ function LoginPage() {
   const [pending, setPending] = React.useState(false);
   const [passkeyPending, setPasskeyPending] = React.useState(false);
   const hasCaptcha = !!import.meta.env.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY;
-  const [captchaReady, setCaptchaReady] = React.useState(!hasCaptcha);
   // Managed Turnstile is silent on the happy path — only reveal the widget box
   // when CF actually escalates to an interactive challenge.
   const [captchaInteractive, setCaptchaInteractive] = React.useState(false);
   const turnstileToken = React.useRef<string | null>(null);
   const turnstileWidgetId = React.useRef<string | null>(null);
   const turnstileContainerRef = React.useRef<HTMLDivElement>(null);
+  // Submitters that clicked before the captcha resolved. Resolved with the token once
+  // it arrives, or rejected if Turnstile escalates to an interactive challenge.
+  const captchaWaiters = React.useRef<
+    Array<{ resolve: (token: string) => void; reject: () => void }>
+  >([]);
+
+  // Returns the captcha token immediately if ready, otherwise resolves when it arrives.
+  // Rejects if the widget switches to an interactive challenge (pending submit is aborted).
+  const waitForCaptchaToken = React.useCallback((): Promise<string | null> => {
+    if (!hasCaptcha || turnstileToken.current) return Promise.resolve(turnstileToken.current);
+    return new Promise((resolve, reject) => captchaWaiters.current.push({ resolve, reject }));
+  }, [hasCaptcha]);
+
+  // Surface OAuth redirect failures: better-auth sends them back to /login with
+  // `?error=…`. Consent/admin-approval blocks open the reframing modal; anything
+  // else shows inline. Either way, strip the params afterward so a refresh
+  // doesn't re-show a stale error.
+  React.useEffect(() => {
+    const oauthError = search.error;
+    if (!oauthError) return;
+    const desc = search.error_description ?? null;
+    const message = messageForOAuthError(oauthError, desc);
+    if (isCastMemberBlock(oauthError, desc)) {
+      setBlockedMessage(message);
+    } else {
+      setError(message);
+    }
+    void navigate({ to: "/login", search: {}, replace: true });
+  }, [search.error, search.error_description, navigate]);
 
   // Cloudflare Turnstile widget
   React.useEffect(() => {
@@ -95,14 +165,20 @@ function LoginPage() {
         size: "flexible",
         callback: (token) => {
           turnstileToken.current = token;
-          setCaptchaReady(true);
           setCaptchaInteractive(false);
+          captchaWaiters.current.forEach((w) => w.resolve(token));
+          captchaWaiters.current = [];
         },
         "expired-callback": () => {
           turnstileToken.current = null;
-          setCaptchaReady(false);
         },
-        "before-interactive-callback": () => setCaptchaInteractive(true),
+        "before-interactive-callback": () => {
+          setCaptchaInteractive(true);
+          // A challenge is now required — abort any in-flight submit so the user
+          // solves the checkbox and clicks Sign in again with a fresh token.
+          captchaWaiters.current.forEach((w) => w.reject());
+          captchaWaiters.current = [];
+        },
         "after-interactive-callback": () => setCaptchaInteractive(false),
       });
     };
@@ -125,7 +201,6 @@ function LoginPage() {
       if (turnstileWidgetId.current && window.turnstile) {
         window.turnstile.remove(turnstileWidgetId.current);
         turnstileWidgetId.current = null;
-        setCaptchaReady(false);
       }
     };
   }, []);
@@ -155,8 +230,19 @@ function LoginPage() {
     setError(null);
     setPending(true);
 
-    const fetchOptions = turnstileToken.current
-      ? { headers: { "x-captcha-response": turnstileToken.current } }
+    // Submit can be clicked before the captcha resolves — keep the spinner up and
+    // wait for the token rather than blocking the button. But if Turnstile escalates
+    // to an interactive challenge, abort: the button disables (captchaInteractive)
+    // until the user solves the checkbox, then they click Sign in again.
+    let captchaToken: string | null;
+    try {
+      captchaToken = await waitForCaptchaToken();
+    } catch {
+      setPending(false);
+      return;
+    }
+    const fetchOptions = captchaToken
+      ? { headers: { "x-captcha-response": captchaToken } }
       : undefined;
 
     try {
@@ -199,6 +285,13 @@ function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
+      <CastMemberBlockedDialog
+        open={blockedMessage !== null}
+        onOpenChange={(o) => {
+          if (!o) setBlockedMessage(null);
+        }}
+        description={blockedMessage ?? ""}
+      />
       <div className="flex w-full max-w-sm flex-col gap-6">
         <div className="flex flex-col items-center gap-2">
           <img src="/img/brand/yellow_white_marker.webp" alt="ParkFi" className="size-14" />
@@ -223,7 +316,6 @@ function LoginPage() {
                   type="button"
                   aria-label="Sign in with Google"
                   className="flex-1"
-                  disabled={!captchaReady}
                   onClick={() =>
                     void authClient.signIn.social({ provider: "google", callbackURL: "/" })
                   }
@@ -235,7 +327,6 @@ function LoginPage() {
                   type="button"
                   aria-label="Sign in with Apple"
                   className="flex-1"
-                  disabled={!captchaReady}
                   onClick={() =>
                     void authClient.signIn.social({ provider: "apple", callbackURL: "/" })
                   }
@@ -247,9 +338,12 @@ function LoginPage() {
                   type="button"
                   aria-label="Sign in with Microsoft"
                   className="flex-1"
-                  disabled={!captchaReady}
                   onClick={() =>
-                    void authClient.signIn.social({ provider: "microsoft", callbackURL: "/" })
+                    void authClient.signIn.social({
+                      provider: "microsoft",
+                      callbackURL: "/",
+                      errorCallbackURL: "/login",
+                    })
                   }
                 >
                   <MicrosoftIcon />
@@ -263,7 +357,11 @@ function LoginPage() {
                   disabled={passkeyPending}
                   onClick={() => void handlePasskey()}
                 >
-                  <KeyRoundIcon className="size-4" />
+                  {passkeyPending ? (
+                    <Loader2Icon className="size-4 animate-spin" />
+                  ) : (
+                    <KeyRoundIcon className="size-4" />
+                  )}
                   {passkeyPending ? "Waiting for passkey…" : "Sign in with passkey"}
                 </Button>
               )}
@@ -276,18 +374,20 @@ function LoginPage() {
               <Button
                 type="button"
                 className="w-full gap-2 bg-[#1a3c8f] text-white hover:bg-[#152f70]"
-                disabled={!captchaReady}
                 onClick={() =>
                   void authClient.signIn.oauth2({
                     providerId: "microsoft-disney",
                     callbackURL: "/",
+                    errorCallbackURL: "/login",
                   })
                 }
               >
                 <SparklesIcon className="size-4" />
                 Sign in with your Disney account
               </Button>
-              <p className="text-xs text-muted-foreground">For Walt Disney Company cast members</p>
+              <p className="text-xs text-muted-foreground">
+                Content moderated by Walt Disney Company cast members
+              </p>
             </div>
 
             <OrDivider />
@@ -360,7 +460,12 @@ function LoginPage() {
                   {error}
                 </p>
               )}
-              <Button type="submit" disabled={pending || !captchaReady} className="w-full">
+              <Button
+                type="submit"
+                disabled={pending || captchaInteractive}
+                className="w-full gap-2"
+              >
+                {pending && <Loader2Icon className="size-4 animate-spin" />}
                 {pending
                   ? mode === "signin"
                     ? "Signing in…"
