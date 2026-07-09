@@ -164,7 +164,7 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
       </header>
 
       <Card>
-        <CardContent className="flex flex-col gap-6 pt-6">
+        <CardContent className="flex flex-col gap-6">
           <div className="flex flex-col sm:grid sm:grid-cols-4 sm:gap-6">
             <Stat label="Standby">
               {ride.standbyWait == null ? (
