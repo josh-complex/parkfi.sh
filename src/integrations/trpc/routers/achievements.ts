@@ -20,6 +20,7 @@ import {
   evaluateAndUnlock,
   ingestPing,
 } from "#/server/achievements/engine.ts";
+import { ingestRideTrace, rideTraceSchema } from "#/server/achievements/rides.ts";
 import { adminProcedure, protectedProcedure } from "../init.ts";
 
 const TRACK_EVENT_KEYS = Object.keys(TRACK_EVENTS) as [TrackEvent, ...TrackEvent[]];
@@ -40,6 +41,13 @@ export const achievementsRouter = {
   track: protectedProcedure
     .input(z.object({ event: z.enum(TRACK_EVENT_KEYS) }))
     .mutation(({ ctx, input }) => bumpEventStat(ctx.userId, input.event)),
+
+  /** Sensor-verified ride from the native ride-recorder plugin. Validated,
+   *  geofence-checked, and credited server-side; returns the same
+   *  unlock/xp/level shape the ping/track toast funnel consumes. */
+  submitRideTrace: protectedProcedure
+    .input(rideTraceSchema)
+    .mutation(({ ctx, input }) => ingestRideTrace(ctx.userId, input)),
 
   /** Full progress for the achievements page: stats + unlocked ids + xp/level.
    *  Persists any tiers the current stats already satisfy — so catalog

@@ -20,6 +20,9 @@ import { PWARegister } from "#/components/pwa-register";
 import { RouteErrorFallback } from "#/components/route-error-fallback";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
 import { seo, websiteJsonLd } from "#/lib/seo.ts";
+import { isNative } from "#/lib/platform.ts";
+import { loadToken } from "#/lib/native-token.ts";
+import { initNativeAuthDeepLinks } from "#/lib/native-oauth.ts";
 
 interface MyRouterContext {
   queryClient: QueryClient;
@@ -28,6 +31,19 @@ interface MyRouterContext {
 }
 
 export const Route = createRootRouteWithContext<MyRouterContext>()({
+  // Native shell only: hydrate the persisted bearer token into memory before any
+  // loader query fires, so the first authed request carries `Authorization`.
+  // No-op on web/SSR/prerender (isNative() is false there); loadToken() caches
+  // after the first call, so repeat navigations are instant.
+  beforeLoad: async () => {
+    if (isNative()) {
+      await loadToken();
+      // Register the OAuth deep-link handler once (idempotent) so a
+      // `parkfi://auth-callback` return is caught even if the flow started
+      // before the login route mounted.
+      initNativeAuthDeepLinks();
+    }
+  },
   head: () => {
     const base = seo({
       title: "ParkFi — Live Theme Park Wait Times, Ticket Prices & Dining",

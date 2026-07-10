@@ -13,6 +13,7 @@ import { createTRPCOptionsProxy } from "@trpc/tanstack-react-query";
 import type { TRPCRouter } from "#/integrations/trpc/router";
 import { TRPCProvider } from "#/integrations/trpc/react";
 import { CACHEABLE_TRPC_PATHS } from "#/lib/cache.ts";
+import { nativeAuthHeaders } from "#/lib/native-token.ts";
 import { reportError } from "#/lib/report-error.ts";
 
 // Type the `meta` bag so call sites get `errorToast` autocompletion and the
@@ -44,6 +45,8 @@ function trpcErrorCode(error: unknown): string | undefined {
 
 function getUrl() {
   const base = (() => {
+    // Native shell: absolute origin baked in at build time (see vite.config.ts).
+    if (import.meta.env.VITE_API_BASE) return import.meta.env.VITE_API_BASE;
     if (typeof window !== "undefined") return "";
     return `http://localhost:${process.env.PORT ?? 3000}`;
   })();
@@ -61,10 +64,13 @@ export const trpcClient = createTRPCClient<TRPCRouter>({
       true: httpLink({
         transformer: superjson,
         url: getUrl(),
+        // {} on web; { authorization: `Bearer …` } on the native shell.
+        headers: () => nativeAuthHeaders(),
       }),
       false: httpBatchStreamLink({
         transformer: superjson,
         url: getUrl(),
+        headers: () => nativeAuthHeaders(),
       }),
     }),
   ],

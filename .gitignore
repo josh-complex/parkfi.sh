@@ -11,3 +11,9 @@ dist-ssr
 .vinxi
 .claude
 __unconfig*
+
+# Capacitor native
+dist-native
+ios/App/Pods
+android/.gradle
+android/app/build

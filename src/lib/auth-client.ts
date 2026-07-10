@@ -4,10 +4,25 @@ import {
   genericOAuthClient,
   inferAdditionalFields,
   lastLoginMethodClient,
+  oneTimeTokenClient,
   twoFactorClient,
 } from "better-auth/client/plugins";
+import { currentToken, setToken } from "#/lib/native-token.ts";
 
 export const authClient = createAuthClient({
+  // On web: undefined = same-origin (cookies). On native: the absolute origin
+  // baked in at build time (see vite.config.ts) so requests reach parkfi.sh.
+  baseURL: import.meta.env.VITE_API_BASE || undefined,
+  fetchOptions: {
+    // Replay the stored bearer token on every request (empty string on web /
+    // before sign-in, which better-auth treats as no token).
+    auth: { type: "Bearer", token: () => currentToken() },
+    // Capture the rotated session token better-auth returns on sign-in.
+    onSuccess: (ctx) => {
+      const token = ctx.response.headers.get("set-auth-token");
+      if (token) void setToken(token);
+    },
+  },
   plugins: [
     // Mirror the server's server-managed user fields so `session.user.role` and
     // `orgTenantId` are typed on the client. Declared literally (not via the
@@ -23,5 +38,10 @@ export const authClient = createAuthClient({
     lastLoginMethodClient(),
     twoFactorClient(),
     passkeyClient(),
+    // Native shell only: the system-browser OAuth flow hands the app a
+    // one-time token via `parkfi://` deep link, which native-oauth.ts exchanges
+    // for a bearer session through authClient.oneTimeToken.verify(). Harmless on
+    // web (the method is just never called there).
+    oneTimeTokenClient(),
   ],
 });

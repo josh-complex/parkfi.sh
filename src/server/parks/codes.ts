@@ -39,6 +39,8 @@ export const Source = {
   UNIVERSAL_DIRECT: 4,
   // External feature feeds for wait-time forecasting (services/cron-weather).
   OPENWEATHER: 5,
+  // Hand-curated figures with no upstream feed (services/coaster-stats seed.csv).
+  MANUAL_SEED: 6,
 } as const;
 export type SourceCode = (typeof Source)[keyof typeof Source];
 

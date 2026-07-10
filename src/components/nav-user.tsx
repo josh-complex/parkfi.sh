@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { LogInIcon, LogOutIcon, SettingsIcon, TrophyIcon } from "lucide-react";
 import { authClient } from "#/lib/auth-client.ts";
+import { signOut } from "#/lib/sign-out.ts";
 import { LevelBadge, LevelDetails } from "#/components/achievements/level-badge.tsx";
 import { NotificationCenter } from "#/components/notifications/notification-center.tsx";
 import { SidebarThemeToggle } from "#/components/theme-toggle.tsx";
@@ -30,7 +31,7 @@ export function NavUser() {
   const showActions = isMobile;
 
   const handleSignOut = async () => {
-    await authClient.signOut();
+    await signOut();
     await navigate({ to: "/login" });
   };
 

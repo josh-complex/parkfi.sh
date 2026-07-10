@@ -2,9 +2,14 @@ import { useEffect } from "react";
 import posthog from "posthog-js";
 
 import { installPreloadErrorReload } from "#/lib/lazy-with-reload.tsx";
+import { isNative } from "#/lib/platform.ts";
 
 export function PWARegister() {
   useEffect(() => {
+    // The native shell has no service worker (webDir is bundled, not fetched)
+    // and the stale-chunk preload-reload logic is meaningless there.
+    if (isNative()) return;
+
     // Backstop for any dynamic import not wrapped in `lazyWithReload`: a stale
     // chunk after a redeploy fires `vite:preloadError`, which we recover from by
     // reloading once for fresh HTML rather than crashing into the error boundary.

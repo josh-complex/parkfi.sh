@@ -88,6 +88,7 @@ async function seedReference() {
       { id: Source.DISNEY_DIRECT, code: "disney_direct" },
       { id: Source.UNIVERSAL_DIRECT, code: "universal_direct" },
       { id: Source.OPENWEATHER, code: "openweather" },
+      { id: Source.MANUAL_SEED, code: "manual_seed" },
     ])
     .onConflictDoNothing();
 }

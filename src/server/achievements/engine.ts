@@ -12,6 +12,7 @@ import { and, count, desc, eq, gt, isNotNull, sql } from "drizzle-orm";
 import { db } from "#/db/index.ts";
 import {
   attractions,
+  coasterStats,
   parks,
   pinHave,
   userAchievement,
@@ -534,6 +535,18 @@ export async function computeStats(userId: string): Promise<Stats> {
 
   const [pinRow] = await db.select({ n: count() }).from(pinHave).where(eq(pinHave.userId, userId));
   stats.pins_owned = pinRow?.n ?? 0;
+
+  // Track distance is a cross-table aggregate (Σ ride_count × published track
+  // length), NOT a counter — so it becomes retroactively correct the moment
+  // coaster_stats gets seeded, without any per-ride bookkeeping.
+  const [trackRow] = await db
+    .select({
+      m: sql<number>`coalesce(sum(${userAttraction.rideCount} * ${coasterStats.trackLengthM}), 0)`,
+    })
+    .from(userAttraction)
+    .innerJoin(coasterStats, eq(coasterStats.attractionId, userAttraction.attractionId))
+    .where(eq(userAttraction.userId, userId));
+  stats.track_distance_m = trackRow?.m ?? 0;
 
   // Client-reported event counters.
   const statRows = await db.select().from(userStat).where(eq(userStat.userId, userId));

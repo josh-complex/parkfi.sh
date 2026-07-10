@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as WelcomeRouteImport } from './routes/welcome'
 import { Route as UnsubscribeRouteImport } from './routes/unsubscribe'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as NativeCallbackRouteImport } from './routes/native-callback'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DeepLinkRouteImport } from './routes/deep-link'
 import { Route as AppRouteImport } from './routes/_app'
@@ -74,6 +75,11 @@ const UnsubscribeRoute = UnsubscribeRouteImport.update({
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NativeCallbackRoute = NativeCallbackRouteImport.update({
+  id: '/native-callback',
+  path: '/native-callback',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -326,6 +332,7 @@ export interface FileRoutesByFullPath {
   '/': typeof AppDashIndexRoute
   '/deep-link': typeof DeepLinkRoute
   '/login': typeof LoginRoute
+  '/native-callback': typeof NativeCallbackRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/unsubscribe': typeof UnsubscribeRoute
   '/welcome': typeof WelcomeRoute
@@ -377,6 +384,7 @@ export interface FileRoutesByTo {
   '/': typeof AppDashIndexRoute
   '/deep-link': typeof DeepLinkRoute
   '/login': typeof LoginRoute
+  '/native-callback': typeof NativeCallbackRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/unsubscribe': typeof UnsubscribeRoute
   '/welcome': typeof WelcomeRoute
@@ -427,6 +435,7 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/deep-link': typeof DeepLinkRoute
   '/login': typeof LoginRoute
+  '/native-callback': typeof NativeCallbackRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/unsubscribe': typeof UnsubscribeRoute
   '/welcome': typeof WelcomeRoute
@@ -482,6 +491,7 @@ export interface FileRouteTypes {
     | '/'
     | '/deep-link'
     | '/login'
+    | '/native-callback'
     | '/sitemap.xml'
     | '/unsubscribe'
     | '/welcome'
@@ -533,6 +543,7 @@ export interface FileRouteTypes {
     | '/'
     | '/deep-link'
     | '/login'
+    | '/native-callback'
     | '/sitemap.xml'
     | '/unsubscribe'
     | '/welcome'
@@ -582,6 +593,7 @@ export interface FileRouteTypes {
     | '/_app'
     | '/deep-link'
     | '/login'
+    | '/native-callback'
     | '/sitemap.xml'
     | '/unsubscribe'
     | '/welcome'
@@ -636,6 +648,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   DeepLinkRoute: typeof DeepLinkRoute
   LoginRoute: typeof LoginRoute
+  NativeCallbackRoute: typeof NativeCallbackRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   UnsubscribeRoute: typeof UnsubscribeRoute
   WelcomeRoute: typeof WelcomeRoute
@@ -672,6 +685,13 @@ declare module '@tanstack/react-router' {
       path: '/sitemap.xml'
       fullPath: '/sitemap.xml'
       preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/native-callback': {
+      id: '/native-callback'
+      path: '/native-callback'
+      fullPath: '/native-callback'
+      preLoaderRoute: typeof NativeCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -1124,6 +1144,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   DeepLinkRoute: DeepLinkRoute,
   LoginRoute: LoginRoute,
+  NativeCallbackRoute: NativeCallbackRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   UnsubscribeRoute: UnsubscribeRoute,
   WelcomeRoute: WelcomeRoute,

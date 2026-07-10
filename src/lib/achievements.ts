@@ -36,7 +36,14 @@ export type StatKey =
   | "alerts_created"
   | "menus_viewed"
   | "forecast_views"
-  | "searches";
+  | "searches"
+  // sensor-derived (server-written via submitRideTrace — NOT in TRACK_EVENTS)
+  | "coaster_drops"
+  | "airtime_seconds"
+  | "max_g_best"
+  | "inversions_ridden"
+  | "vertical_m"
+  | "track_distance_m";
 
 /** Allowlisted client-reportable events → the stat they bump. */
 export const TRACK_EVENTS = {
@@ -48,7 +55,7 @@ export const TRACK_EVENTS = {
 } as const satisfies Record<string, StatKey>;
 export type TrackEvent = keyof typeof TRACK_EVENTS;
 
-export type StatUnit = "count" | "meters" | "seconds";
+export type StatUnit = "count" | "meters" | "seconds" | "g";
 
 export interface AchievementTier {
   /** `${family.key}.${n}` where n is 1-based tier number — this is what's stored in DB. */
@@ -94,7 +101,7 @@ function fam(
   };
 }
 
-/** 22 families, 77 tiers. Order is the display order on the achievements page. */
+/** 28 families, 97 tiers. Order is the display order on the achievements page. */
 export const ACHIEVEMENTS: AchievementFamily[] = [
   fam("gate", "Through the Turnstiles", "park_days", "count", "🎟️", [
     [
@@ -247,6 +254,46 @@ export const ACHIEVEMENTS: AchievementFamily[] = [
     [10, 50, "Just Asking Questions", "Ten omnisearches."],
     [50, 100, "Omnisearch, Omniscient", "Fifty searches. You find things before they're lost."],
   ]),
+  // Sensor-derived families (populated by submitRideTrace / the coaster-stats
+  // aggregate). Ship dark: no stats exist yet, so thresholds stay unsatisfied
+  // until native rides start landing.
+  fam("drops", "Gravity's Customer", "coaster_drops", "count", "🕳️", [
+    [1, 50, "Stomach, Meet Floor", "Your first sensor-verified drop."],
+    [25, 100, "Freefall Frequent Flyer", "Twenty-five drops. Your organs have a commute."],
+    [100, 200, "Terminal Velocity Fan Club", "One hundred drops survived, allegedly enjoyed."],
+    [500, 400, "Down Is a Direction", "Five hundred drops. The ground gave up on you."],
+  ]),
+  fam("airtime", "Certified Floaty", "airtime_seconds", "seconds", "🪶", [
+    [10, 75, "Brief Weightlessness", "Ten cumulative seconds out of your seat."],
+    [60, 150, "Minute of Levitation", "A full minute of airtime, collected one hill at a time."],
+    [
+      300,
+      300,
+      "Part-Time Astronaut",
+      "Five minutes weightless. NASA called; it went to voicemail.",
+    ],
+  ]),
+  fam("gforce", "G Whiz", "max_g_best", "g", "🧲", [
+    [3, 100, "Pulling Threes", "3 g sustained. Your cheeks noticed."],
+    [4, 200, "Fighter Pilot Adjacent", "4 g. Blink twice if you can."],
+    [4.5, 400, "Certified Heavy", "4.5 g. Briefly, you weighed twice as much and loved it."],
+  ]),
+  fam("inversions", "Upside-Down Economy", "inversions_ridden", "count", "🙃", [
+    [1, 75, "First Flip", "The sky and ground traded places. You allowed it."],
+    [25, 150, "Frequent Flipper", "Twenty-five inversions. Loose change fears you."],
+    [100, 300, "Corkscrew Connoisseur", "One hundred flips. Your inner ear filed a complaint."],
+  ]),
+  fam("vertical", "Elevation Enjoyer", "vertical_m", "meters", "⛰️", [
+    [500, 75, "Foothill", "500 vertical meters of coaster hills."],
+    [2_000, 150, "Alpine Start", "2,000 m of climb and plunge."],
+    [8_849, 400, "Everest, Cumulatively", "You've done Everest — 20 meters at a time."],
+  ]),
+  fam("trackmiles", "Rails to Nowhere", "track_distance_m", "meters", "🛤️", [
+    [5_000, 50, "Short Line", "Your first 5 km of track."],
+    [25_000, 100, "Commuter Rail", "25 km of coaster track under your seat."],
+    [100_000, 200, "Main Line", "100 km. Officially a rail network."],
+    [500_000, 400, "Transcontinental", "500 km of track. The railroad barons salute you."],
+  ]),
 ];
 
 export interface TierRef {
@@ -360,5 +407,7 @@ export function formatStatValue(unit: StatUnit, value: number): string {
       const minutes = totalMinutes % 60;
       return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
     }
+    case "g":
+      return `${value.toFixed(1)} g`;
   }
 }

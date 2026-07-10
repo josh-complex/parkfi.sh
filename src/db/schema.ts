@@ -51,6 +51,7 @@ const vector = (name: string, dim: number) =>
   })(name);
 
 import { user } from "./auth-schema.ts";
+import type { RideMetrics, RideTrace } from "#/lib/ride-metrics.ts";
 
 // better-auth tables (user/session/account/verification) — re-exported so
 // drizzle-kit migrations and the `db` schema object include them.
@@ -214,6 +215,33 @@ export const attractionMeta = pgTable("attraction_meta", {
   land: text("land"),
   heightRequirement: text("height_requirement"),
   tags: text("tags").array().notNull().default([]),
+  source: smallint("source")
+    .notNull()
+    .references(() => refSource.id),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Static per-coaster facts (published figures — track length, official top
+ * speed, drops, inversions), 1:1 with `attractions` like `attraction_meta`.
+ * Sparse: only coasters get rows. Hand-seeded by services/coaster-stats (RCDB
+ * has no API), so `source` is MANUAL_SEED. Feeds the ride-detail stats block
+ * and the retroactive `track_distance_m` aggregate in the achievement engine.
+ * `top_speed_kmh` is an official figure — never overwrite it with a sensor
+ * estimate.
+ */
+export const coasterStats = pgTable("coaster_stats", {
+  attractionId: bigint("attraction_id", { mode: "number" })
+    .primaryKey()
+    .references(() => attractions.id),
+  trackLengthM: doublePrecision("track_length_m"),
+  topSpeedKmh: doublePrecision("top_speed_kmh"),
+  dropHeightM: doublePrecision("drop_height_m"),
+  maxHeightM: doublePrecision("max_height_m"),
+  inversions: smallint("inversions"),
+  coasterType: text("coaster_type"), // 'steel' | 'wooden' | 'hybrid'
+  manufacturer: text("manufacturer"),
+  openedYear: smallint("opened_year"),
   source: smallint("source")
     .notNull()
     .references(() => refSource.id),
@@ -1972,5 +2000,38 @@ export const userAttraction = pgTable(
   (t) => [
     primaryKey({ columns: [t.userId, t.attractionId] }),
     index("user_attraction_user_idx").on(t.userId),
+  ],
+);
+
+/**
+ * Per-ride fact log — one row per verified ride, written by `ingestRideTrace`
+ * (sensor path) and, for dwell-only rides, potentially by the queue-dwell
+ * settle path. `user_attraction` collapses to counts; this keeps the per-ride
+ * detail (on-device `metrics`, optional downsampled `trace`) it never had.
+ * `source` is the provenance string ('dwell' | 'sensor' | 'sensor+dwell'), NOT
+ * a `ref_source` id.
+ */
+export const userRideEvent = pgTable(
+  "user_ride_event",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    attractionId: bigint("attraction_id", { mode: "number" })
+      .notNull()
+      .references(() => attractions.id),
+    parkId: bigint("park_id", { mode: "number" })
+      .notNull()
+      .references(() => parks.id),
+    riddenAt: timestamp("ridden_at", { withTimezone: true }).notNull(),
+    source: text("source").notNull(), // 'dwell' | 'sensor' | 'sensor+dwell'
+    metrics: jsonb("metrics").$type<RideMetrics>(), // null for dwell-only rides
+    trace: jsonb("trace").$type<RideTrace>(), // optional ~4 Hz audit trace
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("user_ride_event_user_idx").on(t.userId, t.riddenAt.desc()),
+    index("user_ride_event_user_attraction_idx").on(t.userId, t.attractionId),
   ],
 );

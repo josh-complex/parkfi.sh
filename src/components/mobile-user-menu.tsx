@@ -25,6 +25,7 @@ import {
 } from "#/components/ui/drawer.tsx";
 import { useUserLevel } from "#/hooks/use-level.ts";
 import { authClient } from "#/lib/auth-client.ts";
+import { signOut } from "#/lib/sign-out.ts";
 import { cn } from "#/lib/utils.ts";
 
 /**
@@ -55,7 +56,7 @@ export function MobileUserMenu({ showDot = false }: { showDot?: boolean }) {
     : (user?.email[0] ?? "U").toUpperCase();
 
   const handleSignOut = async () => {
-    await authClient.signOut();
+    await signOut();
     await navigate({ to: "/login" });
   };
 

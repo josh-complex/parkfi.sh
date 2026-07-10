@@ -4,6 +4,12 @@ import { KeyRoundIcon, Loader2Icon, SparklesIcon } from "lucide-react";
 
 import { authClient } from "#/lib/auth-client.ts";
 import { reportError } from "#/lib/report-error.ts";
+import { isNative } from "#/lib/platform.ts";
+import {
+  type NativeSocialProvider,
+  signInWithDisneyNative,
+  signInWithProviderNative,
+} from "#/lib/native-oauth.ts";
 import { AppleIcon, GoogleIcon, MicrosoftIcon } from "#/components/account/provider-icons.tsx";
 import { CastMemberBlockedDialog } from "#/components/account/cast-member-blocked-dialog.tsx";
 import { Button } from "#/components/ui/button.tsx";
@@ -110,6 +116,9 @@ function LoginPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [pending, setPending] = React.useState(false);
   const [passkeyPending, setPasskeyPending] = React.useState(false);
+  // Which provider's native sign-in is in flight (null on web / idle). Drives the
+  // per-button spinner and disables the others while the system browser is open.
+  const [socialPending, setSocialPending] = React.useState<string | null>(null);
   const hasCaptcha = !!import.meta.env.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY;
   // Managed Turnstile is silent on the happy path — only reveal the widget box
   // when CF actually escalates to an interactive challenge.
@@ -225,6 +234,52 @@ function LoginPage() {
     }
   };
 
+  // Social sign-in. On web this is the existing full-page redirect flow; on
+  // native it runs in the system browser / native Apple sheet (see native-oauth)
+  // and resolves in-process, so we navigate home on success and surface failures
+  // inline rather than via the ?error= redirect.
+  const handleSocial = async (provider: NativeSocialProvider) => {
+    if (!isNative()) {
+      void authClient.signIn.social({
+        provider,
+        callbackURL: "/",
+        ...(provider === "microsoft" ? { errorCallbackURL: "/login" } : {}),
+      });
+      return;
+    }
+    setError(null);
+    setSocialPending(provider);
+    try {
+      await signInWithProviderNative(provider);
+      await navigate({ to: "/" });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign-in failed. Please try again.");
+    } finally {
+      setSocialPending(null);
+    }
+  };
+
+  const handleDisney = async () => {
+    if (!isNative()) {
+      void authClient.signIn.oauth2({
+        providerId: "microsoft-disney",
+        callbackURL: "/",
+        errorCallbackURL: "/login",
+      });
+      return;
+    }
+    setError(null);
+    setSocialPending("microsoft-disney");
+    try {
+      await signInWithDisneyNative();
+      await navigate({ to: "/" });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign-in failed. Please try again.");
+    } finally {
+      setSocialPending(null);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -316,40 +371,50 @@ function LoginPage() {
                   type="button"
                   aria-label="Sign in with Google"
                   className="flex-1"
-                  onClick={() =>
-                    void authClient.signIn.social({ provider: "google", callbackURL: "/" })
-                  }
+                  disabled={socialPending !== null}
+                  onClick={() => void handleSocial("google")}
                 >
-                  <GoogleIcon />
+                  {socialPending === "google" ? (
+                    <Loader2Icon className="size-4 animate-spin" />
+                  ) : (
+                    <GoogleIcon />
+                  )}
                 </Button>
                 <Button
                   variant="outline"
                   type="button"
                   aria-label="Sign in with Apple"
                   className="flex-1"
-                  onClick={() =>
-                    void authClient.signIn.social({ provider: "apple", callbackURL: "/" })
-                  }
+                  disabled={socialPending !== null}
+                  onClick={() => void handleSocial("apple")}
                 >
-                  <AppleIcon />
+                  {socialPending === "apple" ? (
+                    <Loader2Icon className="size-4 animate-spin" />
+                  ) : (
+                    <AppleIcon />
+                  )}
                 </Button>
                 <Button
                   variant="outline"
                   type="button"
                   aria-label="Sign in with Microsoft"
                   className="flex-1"
-                  onClick={() =>
-                    void authClient.signIn.social({
-                      provider: "microsoft",
-                      callbackURL: "/",
-                      errorCallbackURL: "/login",
-                    })
-                  }
+                  disabled={socialPending !== null}
+                  onClick={() => void handleSocial("microsoft")}
                 >
-                  <MicrosoftIcon />
+                  {socialPending === "microsoft" ? (
+                    <Loader2Icon className="size-4 animate-spin" />
+                  ) : (
+                    <MicrosoftIcon />
+                  )}
                 </Button>
               </div>
-              {mode === "signin" && (
+              {/* Passkeys are WebAuthn credentials bound to the parkfi.sh
+                  origin; they can't be created/asserted from the native
+                  WebView's capacitor://localhost origin, so hide the button
+                  there. (Native passkeys are a later upgrade via associated
+                  domains.) */}
+              {mode === "signin" && !isNative() && (
                 <Button
                   variant="outline"
                   type="button"
@@ -374,15 +439,14 @@ function LoginPage() {
               <Button
                 type="button"
                 className="w-full gap-2 bg-[#1a3c8f] text-white hover:bg-[#152f70]"
-                onClick={() =>
-                  void authClient.signIn.oauth2({
-                    providerId: "microsoft-disney",
-                    callbackURL: "/",
-                    errorCallbackURL: "/login",
-                  })
-                }
+                disabled={socialPending !== null}
+                onClick={() => void handleDisney()}
               >
-                <SparklesIcon className="size-4" />
+                {socialPending === "microsoft-disney" ? (
+                  <Loader2Icon className="size-4 animate-spin" />
+                ) : (
+                  <SparklesIcon className="size-4" />
+                )}
                 Sign in with your Disney account
               </Button>
               <p className="text-xs text-muted-foreground">

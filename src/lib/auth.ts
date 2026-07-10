@@ -2,10 +2,12 @@ import { dash } from "@better-auth/infra";
 import { passkey } from "@better-auth/passkey";
 import { betterAuth } from "better-auth";
 import {
+  bearer,
   captcha,
   haveIBeenPwned,
   lastLoginMethod,
   oAuthProxy,
+  oneTimeToken,
   twoFactor,
 } from "better-auth/plugins";
 import { genericOAuth, microsoftEntraId } from "better-auth/plugins/generic-oauth";
@@ -156,6 +158,17 @@ export const auth = betterAuth({
       clientId: process.env.APPLE_CLIENT_ID!,
       clientSecret: process.env.APPLE_CLIENT_SECRET!,
       appBundleIdentifier: process.env.APPLE_BUNDLE_ID,
+      // Two different Apple audiences must both verify:
+      //  - web SIWA (authorization-code redirect): id_token `aud` = the Services
+      //    ID (APPLE_CLIENT_ID);
+      //  - native SIWA (@capacitor-community/apple-sign-in → idToken sign-in):
+      //    `aud` = the app bundle id (APPLE_BUNDLE_ID = sh.parkfi.app).
+      // Without an explicit list, better-auth's apple provider collapses the
+      // audience to `appBundleIdentifier` alone (see apple.mjs verifyIdToken),
+      // which would reject the web token. List both so either flow passes.
+      audience: [process.env.APPLE_CLIENT_ID, process.env.APPLE_BUNDLE_ID].filter(
+        (v): v is string => !!v,
+      ),
     },
     // Multi-tenant Entra ("common") so any Microsoft 365 org can sign in. The
     // `tid` claim on the returned token is what syncOrgRoleFromMicrosoft matches
@@ -192,6 +205,15 @@ export const auth = betterAuth({
     twoFactor(),
     // WebAuthn passkeys
     passkey(),
+    // Native (Capacitor) shell auth: the WebView origin can't hold a
+    // third-party cookie to parkfi.sh, so native sessions ride on a bearer
+    // token. `bearer()` accepts `Authorization: Bearer <token>` for session
+    // resolution and emits the token in `set-auth-token` on sign-in;
+    // `oneTimeToken()` mints the short-lived token the system-browser OAuth flow
+    // hands back to the app via deep link (see native-oauth). Web is unaffected
+    // — it never sends a bearer header and keeps using cookies.
+    bearer(),
+    oneTimeToken(),
     // Disney-only Microsoft sign-in, separate from the open `microsoft` social
     // provider above. Same Entra app, but the authority is pinned to Disney's
     // tenant GUID, so Microsoft's own login rejects non-Disney accounts and a
@@ -228,5 +250,10 @@ export const auth = betterAuth({
     // any preceding plugin's `hooks.after` to the framework cookie store.
     tanstackStartCookies(),
   ],
-  trustedOrigins: import.meta.env.DEV ? ["http://localhost:3000"] : [],
+  trustedOrigins: [
+    ...(import.meta.env.DEV ? ["http://localhost:3000"] : []),
+    "capacitor://localhost", // iOS WebView origin
+    "https://localhost", // Android WebView origin
+    "parkfi://", // deep-link callback scheme (native OAuth)
+  ],
 });
