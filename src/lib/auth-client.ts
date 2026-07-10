@@ -8,19 +8,30 @@ import {
   twoFactorClient,
 } from "better-auth/client/plugins";
 import { currentToken, setToken } from "#/lib/native-token.ts";
+import { isNative } from "#/lib/platform.ts";
 
 export const authClient = createAuthClient({
   // On web: undefined = same-origin (cookies). On native: the absolute origin
   // baked in at build time (see vite.config.ts) so requests reach parkfi.sh.
   baseURL: import.meta.env.VITE_API_BASE || undefined,
   fetchOptions: {
+    // Native auth is bearer-only (no cookies), and cors-native.ts deliberately
+    // omits Access-Control-Allow-Credentials. If this fetch still sent
+    // `credentials: "include"` (better-auth's default, for web's cookie auth),
+    // the WebView would require that header and fail every cross-origin
+    // request with a CORS error before it even reached the bearer token.
+    credentials: isNative() ? "omit" : "include",
     // Replay the stored bearer token on every request (empty string on web /
     // before sign-in, which better-auth treats as no token).
     auth: { type: "Bearer", token: () => currentToken() },
     // Capture the rotated session token better-auth returns on sign-in.
-    onSuccess: (ctx) => {
+    // Await the persistence (better-fetch awaits onSuccess): native sign-in
+    // reloads the app immediately afterward, and a fire-and-forget write would
+    // lose the race — the reload would boot before the token hit disk, so
+    // loadToken() would read an empty store and the app would start signed-out.
+    onSuccess: async (ctx) => {
       const token = ctx.response.headers.get("set-auth-token");
-      if (token) void setToken(token);
+      if (token) await setToken(token);
     },
   },
   plugins: [

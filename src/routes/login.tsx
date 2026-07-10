@@ -251,10 +251,12 @@ function LoginPage() {
     setSocialPending(provider);
     try {
       await signInWithProviderNative(provider);
-      await navigate({ to: "/" });
+      // Full reload rather than SPA navigate: the app booted signed-out, so it
+      // must re-boot to pick up the freshly-persisted bearer token and fetch the
+      // now-authenticated session (an in-place navigate keeps the stale session).
+      window.location.href = "/";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign-in failed. Please try again.");
-    } finally {
       setSocialPending(null);
     }
   };
@@ -272,10 +274,11 @@ function LoginPage() {
     setSocialPending("microsoft-disney");
     try {
       await signInWithDisneyNative();
-      await navigate({ to: "/" });
+      // Full reload (not SPA navigate) so the app re-boots with the persisted
+      // bearer token and fetches the authenticated session. See handleSocial.
+      window.location.href = "/";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign-in failed. Please try again.");
-    } finally {
       setSocialPending(null);
     }
   };
