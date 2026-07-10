@@ -143,6 +143,7 @@ export const blogRouter = {
           source: newsItem.source,
           title: newsItem.title,
           url: newsItem.url,
+          imageUrl: newsItem.imageUrl,
           publishedAt: sql<Date>`coalesce(${newsItem.publishedAt}, ${newsItem.fetchedAt})`.as("ts"),
         })
         .from(newsItem)

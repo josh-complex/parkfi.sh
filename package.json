@@ -42,6 +42,7 @@
     "dining:priority": "bun src/db/set-dining-priority.ts",
     "backfill:qt": "bun scripts/backfill-queue-times.ts",
     "backfill:dining-events": "bun scripts/backfill-dining-menu-events.ts",
+    "backfill:news-images": "bun scripts/backfill-news-images.ts",
     "living:seed-worlds": "bun scripts/seed-worlds.ts",
     "living:seed-companions": "bun scripts/seed-companions.ts",
     "living:smoke": "bun scripts/living-smoke.ts",
@@ -159,6 +160,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
     "@react-email/ui": "^6.6.0",
     "@rolldown/plugin-babel": "^0.2.3",
     "@tailwindcss/typography": "^0.5.16",

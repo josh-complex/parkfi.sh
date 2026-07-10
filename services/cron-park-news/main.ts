@@ -33,15 +33,13 @@ import { db } from "#/db/index.ts";
 import { blogPost, newsItem } from "#/db/schema.ts";
 import { parseSocialUrl, socialExists, type SocialEmbed } from "#/server/blog/embeds.ts";
 
+import { fetchOgImage, type OgImage, UA } from "./og-image.ts";
+
 const MODEL = process.env.NEWS_MODEL ?? "gemini-3.5-flash";
 /** Safety cap on drafts per run — a ceiling, not a target (skips yield fewer). */
 const MAX_DRAFTS_PER_RUN = Number(process.env.NEWS_MAX_DRAFTS ?? 2);
 /** Ignore items older than this so a quiet day / first run doesn't flood. */
 const MAX_AGE_DAYS = Number(process.env.NEWS_MAX_AGE_DAYS ?? 4);
-/** Browser-like UA — WDWMagic / Disney / Akamai 403 the default fetch agent. */
-const UA =
-  process.env.NEWS_USER_AGENT ??
-  "Mozilla/5.0 (compatible; ParkFiNewsBot/1.0; +https://parkfi.sh/blog)";
 
 /** Give the model Google Search grounding so it can verify + add context. */
 const WEB_SEARCH = (process.env.NEWS_WEB_SEARCH ?? "1") !== "0";
@@ -334,51 +332,6 @@ interface FeedItem {
   publishedAt: Date | null;
 }
 
-interface OgImage {
-  url: string;
-  alt: string | null;
-}
-
-function metaContent(html: string, ...keys: string[]): string | null {
-  for (const key of keys) {
-    // property="og:image" content="..."  OR  content="..." property="og:image"
-    const re = new RegExp(
-      `<meta[^>]+(?:property|name)=["']${key.replace(/[:]/g, "\\$&")}["'][^>]*>`,
-      "i",
-    );
-    const tag = re.exec(html)?.[0];
-    const content = tag && /content=["']([^"']+)["']/i.exec(tag)?.[1];
-    if (content) return content.trim();
-  }
-  return null;
-}
-
-/**
- * Pull the source article's OpenGraph image. News sites publish og:image
- * expecting it to be shown when their article is linked/shared — which is
- * exactly what we do (we credit + link them as a source), so it's the most
- * defensible hero. Best-effort: a failure just leaves the post image-less.
- */
-async function fetchOgImage(pageUrl: string): Promise<OgImage | null> {
-  try {
-    const res = await fetch(pageUrl, {
-      headers: { "User-Agent": UA, Accept: "text/html" },
-      signal: AbortSignal.timeout(12_000),
-      redirect: "follow",
-    });
-    if (!res.ok) return null;
-    // Only need the <head>; cap the read so a huge page doesn't stall the run.
-    const html = (await res.text()).slice(0, 200_000);
-    const raw = metaContent(html, "og:image:secure_url", "og:image", "twitter:image");
-    if (!raw) return null;
-    const url = new URL(raw, pageUrl).toString(); // resolve protocol-relative / relative
-    if (!/^https?:\/\//i.test(url)) return null;
-    return { url, alt: metaContent(html, "og:image:alt", "twitter:image:alt") };
-  } catch {
-    return null;
-  }
-}
-
 /** Real, pre-verified assets harvested from a source article for the writer. */
 interface HarvestedMedia {
   images: OgImage[];
@@ -554,8 +507,13 @@ async function allBlogSlugs(): Promise<Set<string>> {
   return new Set(rows.map((r) => r.slug));
 }
 
-/** Record an item as considered so it isn't reprocessed (idempotent). */
-async function recordSeen(item: FeedItem, clusteredInto?: number): Promise<void> {
+/** Record an item as considered so it isn't reprocessed (idempotent). Stores the
+ *  source og:image (already fetched for the draft path) so the "Around the parks"
+ *  shelves have a thumbnail without a second fetch. */
+async function recordSeen(
+  item: FeedItem,
+  opts: { clusteredInto?: number; imageUrl?: string | null } = {},
+): Promise<void> {
   await db
     .insert(newsItem)
     .values({
@@ -564,8 +522,9 @@ async function recordSeen(item: FeedItem, clusteredInto?: number): Promise<void>
       urlHash: sha256(item.url),
       title: item.title,
       summary: item.summary,
+      imageUrl: opts.imageUrl ?? null,
       publishedAt: item.publishedAt,
-      clusteredInto: clusteredInto ?? null,
+      clusteredInto: opts.clusteredInto ?? null,
     })
     .onConflictDoNothing({ target: newsItem.urlHash });
 }
@@ -896,12 +855,12 @@ async function main() {
             `tokens(thought=${u?.thoughtsTokenCount ?? "?"}, answer=${u?.candidatesTokenCount ?? "?"}, total=${u?.totalTokenCount ?? "?"}) ` +
             `raw head: ${(res.text ?? "(empty)").slice(0, 200)}`,
         );
-        await recordSeen(item); // don't reconsider a persistently unparseable item
+        await recordSeen(item, { imageUrl: og?.url }); // don't reconsider a persistently unparseable item
         continue;
       }
       if (draft.skip) {
         skipped++;
-        await recordSeen(item);
+        await recordSeen(item, { imageUrl: og?.url });
         continue;
       }
 
@@ -985,7 +944,7 @@ async function main() {
         .returning({ id: blogPost.id });
 
       if (post) {
-        await recordSeen(item, post.id);
+        await recordSeen(item, { clusteredInto: post.id, imageUrl: og?.url });
         drafted++;
         // Let later items in this same run see this one, avoiding intra-run dupes
         // and letting them backlink to it (so its slug must count as valid).

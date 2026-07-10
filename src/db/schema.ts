@@ -1442,6 +1442,10 @@ export const newsItem = pgTable(
     urlHash: char("url_hash", { length: 64 }).notNull(),
     title: text("title").notNull(),
     summary: text("summary"),
+    // The source article's OpenGraph image, harvested lazily by the park-news
+    // cron so the "Around the parks" shelves/cards can show a thumbnail. Null
+    // until backfilled, or when the article publishes no og:image.
+    imageUrl: text("image_url"),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
     clusteredInto: bigint("clustered_into", { mode: "number" }),

@@ -3,8 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 
 import { BlogSidebar } from "#/components/blog/blog-sidebar.tsx";
 import { BlogTickerHeader } from "#/components/blog/blog-ticker-header.tsx";
-import { ExternalShelves } from "#/components/blog/external-shelves.tsx";
-import { PostCard } from "#/components/blog/post-card.tsx";
+import { ExternalCard, type ExternalItem } from "#/components/blog/external-shelves.tsx";
+import { HeroCarousel, type HeroSlideData } from "#/components/blog/hero-carousel.tsx";
+import { PostCard, type PostCardData } from "#/components/blog/post-card.tsx";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { blogJsonLd, seo } from "#/lib/seo.ts";
@@ -13,6 +14,9 @@ interface BlogSearch {
   tag?: string;
   month?: string;
 }
+
+/** Cap on how many external items mix into the main feed, newest-first. */
+const MAX_MIXED_EXTERNAL = 12;
 
 export const Route = createFileRoute("/blog/")({
   component: BlogIndex,
@@ -55,14 +59,86 @@ function monthLabel(month: string): string {
   );
 }
 
+const time = (d: Date | string | null | undefined): number => (d ? new Date(d).getTime() : 0);
+
+/** One slot in the mixed feed grid — our post or an external outlet's article. */
+type FeedEntry =
+  | { kind: "post"; date: number; post: PostCardData }
+  | { kind: "external"; date: number; item: ExternalItem };
+
 function BlogIndex() {
   const { tag, month } = Route.useSearch();
   const trpc = useTRPC();
   const { data } = useQuery(trpc.blog.list.queryOptions({ limit: 20, tag, month }));
+  const { data: external } = useQuery(trpc.blog.externalFeed.queryOptions({ perSource: 12 }));
   const posts = data?.items ?? [];
 
   const filtered = Boolean(tag || month);
   const [lead, ...rest] = posts;
+
+  // The most recent item from each outlet is a hero-carousel candidate (only
+  // ones with an image — the carousel is full-bleed); every other external
+  // item, plus any latest-per-source item that lacked an image, is eligible
+  // to mix into the main grid alongside ours.
+  const shelves = external ?? [];
+  const latestPerSource: ExternalItem[] = shelves.map((s) => s.items[0]).filter(Boolean);
+
+  const heroSlides: HeroSlideData[] = [];
+  if (!filtered) {
+    if (lead?.heroImageUrl) {
+      heroSlides.push({
+        kind: "post",
+        slug: lead.slug,
+        title: lead.title,
+        dek: lead.dek,
+        tags: lead.tags,
+        heroImageUrl: lead.heroImageUrl,
+        publishedAt: lead.publishedAt,
+      });
+    }
+    for (const item of latestPerSource) {
+      if (item.imageUrl) {
+        heroSlides.push({
+          kind: "external",
+          source: item.source,
+          title: item.title,
+          url: item.url,
+          imageUrl: item.imageUrl,
+          publishedAt: item.publishedAt,
+        });
+      }
+    }
+  }
+  const heroExternalUrls = new Set(
+    heroSlides
+      .filter((s): s is Extract<HeroSlideData, { kind: "external" }> => s.kind === "external")
+      .map((s) => s.url),
+  );
+  const mixableExternal: ExternalItem[] = shelves
+    .flatMap((s) => s.items)
+    .filter((i) => !heroExternalUrls.has(i.url))
+    .sort((a, b) => time(b.publishedAt) - time(a.publishedAt))
+    .slice(0, MAX_MIXED_EXTERNAL);
+
+  // Filtered views (by tag/month) stay ours-only; the unfiltered feed interleaves
+  // our posts and external articles, newest first.
+  const feed: FeedEntry[] = [
+    ...rest.map((post): FeedEntry => ({ kind: "post", date: time(post.publishedAt), post })),
+    ...(filtered
+      ? []
+      : mixableExternal.map(
+          (item): FeedEntry => ({
+            kind: "external",
+            date: time(item.publishedAt),
+            item,
+          }),
+        )),
+  ].sort((a, b) => b.date - a.date);
+
+  // A hero image failed to resolve for both us and every outlet — fall back to
+  // the old static lead card so the top of the page isn't empty.
+  const showFallbackLead = heroSlides.length === 0 && Boolean(lead);
+  const empty = heroSlides.length === 0 && !lead && feed.length === 0;
 
   return (
     <div>
@@ -84,18 +160,25 @@ function BlogIndex() {
               </div>
             )}
 
-            {posts.length === 0 ? (
+            {empty ? (
               <p className="text-muted-foreground">
                 No posts {filtered ? "match this filter" : "yet"} — check back soon.
               </p>
             ) : (
-              <div className="flex flex-col gap-6">
-                {lead && <PostCard post={lead} variant={filtered ? "compact" : "feature"} />}
-                {rest.length > 0 && (
+              <div className="flex flex-col gap-8">
+                {heroSlides.length > 0 && <HeroCarousel slides={heroSlides} />}
+                {showFallbackLead && lead && (
+                  <PostCard post={lead} variant={filtered ? "compact" : "feature"} />
+                )}
+                {feed.length > 0 && (
                   <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                    {rest.map((p) => (
-                      <PostCard key={p.slug} post={p} />
-                    ))}
+                    {feed.map((entry) =>
+                      entry.kind === "post" ? (
+                        <PostCard key={entry.post.slug} post={entry.post} />
+                      ) : (
+                        <ExternalCard key={entry.item.url} item={entry.item} />
+                      ),
+                    )}
                   </div>
                 )}
               </div>
@@ -104,8 +187,6 @@ function BlogIndex() {
 
           <BlogSidebar />
         </div>
-
-        <ExternalShelves />
       </div>
     </div>
   );
