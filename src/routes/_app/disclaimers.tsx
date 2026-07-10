@@ -294,7 +294,7 @@ function DisclaimersPage() {
           <p>
             So here is the quiet part, said out loud:{" "}
             <a
-              href="mailto:hire@parkfi.sh"
+              href="mailto:hello@parkfi.sh"
               className="font-medium text-foreground underline underline-offset-4"
             >
               Disney, you know where to find us.
