@@ -7,8 +7,12 @@
  *
  * Row resolution: (parks.slug, attractions.slug) join, filtered to active,
  * non-ghost attractions (`category IS NOT NULL`). Slugs are ThemeParks.wiki-name
- * derived (see `slugify` in src/server/parks/ingest.ts); an unresolved slug logs
- * a warning and is skipped, so a stale/renamed slug never blocks the rest.
+ * derived (see `slugify` in src/server/parks/ingest.ts), which turns every run of
+ * punctuation into a `-` — so "Hagrid's" becomes `hagrid-s`, not the `hagrids` a
+ * human curator writes. Matching is therefore punctuation-INSENSITIVE (see
+ * `slugKey`): the curated slug and the DB slug are compared with all
+ * non-alphanumerics stripped. An unresolved slug logs a warning and is skipped,
+ * so a stale/renamed slug never blocks the rest.
  *
  * Facts are non-copyrightable figures curated from RCDB pages by hand — do NOT
  * scrape RCDB programmatically.
@@ -98,25 +102,30 @@ function parseSeed(text: string): SeedRow[] {
   return rows;
 }
 
-/** (park slug, attraction slug) → internal attraction id, non-ghost + active. */
-async function resolveAttractionId(
-  parkSlug: string,
-  attractionSlug: string,
-): Promise<number | null> {
-  const [row] = await db
-    .select({ id: attractions.id })
+/**
+ * Punctuation-insensitive slug key: strips every non-alphanumeric so a curated
+ * slug ("hagrids-...") matches the DB's apostrophe-derived slug ("hagrid-s-...").
+ * slugify (src/server/parks/ingest.ts) turns "'" into "-", yielding "-s" segments
+ * a human curator never writes — this collapses that difference away.
+ */
+function slugKey(slug: string): string {
+  return slug.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * Preload a `${parkSlug}::${slugKey}` → attraction id index for every active,
+ * non-ghost attraction in one query, so seed rows resolve without a per-row round
+ * trip and tolerate punctuation differences in the curated slug.
+ */
+async function loadAttractionIndex(): Promise<Map<string, number>> {
+  const rows = await db
+    .select({ parkSlug: parks.slug, slug: attractions.slug, id: attractions.id })
     .from(attractions)
     .innerJoin(parks, eq(parks.id, attractions.parkId))
-    .where(
-      and(
-        eq(parks.slug, parkSlug),
-        eq(attractions.slug, attractionSlug),
-        eq(attractions.active, true),
-        isNotNull(attractions.category),
-      ),
-    )
-    .limit(1);
-  return row?.id ?? null;
+    .where(and(eq(attractions.active, true), isNotNull(attractions.category)));
+  const index = new Map<string, number>();
+  for (const r of rows) index.set(`${r.parkSlug}::${slugKey(r.slug)}`, r.id);
+  return index;
 }
 
 async function upsertRow(attractionId: number, row: SeedRow): Promise<void> {
@@ -158,11 +167,12 @@ async function main() {
     return;
   }
 
+  const index = await loadAttractionIndex();
   let upserted = 0;
   let skipped = 0;
   for (const row of rows) {
     try {
-      const attractionId = await resolveAttractionId(row.parkSlug, row.attractionSlug);
+      const attractionId = index.get(`${row.parkSlug}::${slugKey(row.attractionSlug)}`) ?? null;
       if (attractionId == null) {
         console.warn(`[coaster-stats] unresolved: ${row.parkSlug}/${row.attractionSlug} — skipped`);
         skipped++;
