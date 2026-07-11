@@ -17,3 +17,11 @@ dist-native
 ios/App/Pods
 android/.gradle
 android/app/build
+
+# Firebase / FCM secrets — never commit (see docs/plans/capacitor-native, A4 push)
+google-services.json
+android/app/google-services.json
+GoogleService-Info.plist
+ios/App/App/GoogleService-Info.plist
+*-fcm.json
+*.p8
