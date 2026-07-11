@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { HeadContent, Scripts, createRootRouteWithContext } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { TanStackDevtools } from "@tanstack/react-devtools";
@@ -20,6 +21,7 @@ import { PWARegister } from "#/components/pwa-register";
 import { RouteErrorFallback } from "#/components/route-error-fallback";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
 import { seo, websiteJsonLd } from "#/lib/seo.ts";
+import { markLaunched } from "#/lib/app-launch.ts";
 import { isNative } from "#/lib/platform.ts";
 import { loadToken } from "#/lib/native-token.ts";
 import { initNativeAuthDeepLinks } from "#/lib/native-oauth.ts";
@@ -95,6 +97,11 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 });
 
 function RootDocument({ children }: { children: React.ReactNode }) {
+  // Runs once after the initial route has resolved and rendered, so any
+  // launch-time redirect (see the "/" route) has already been decided. From here
+  // on, `hasLaunched()` is true and in-app navigations behave normally.
+  useEffect(markLaunched, []);
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
