@@ -609,7 +609,7 @@ export function StaysBoard() {
           fold into the Filter drawer alongside type + rate. */}
       <div
         className={MAP_FILTER_STACK}
-        style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1.25rem)" }}
+        style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1.4rem)" }}
       >
         {/* Sort — only once a search is live (a priced list to order). */}
         {search && (

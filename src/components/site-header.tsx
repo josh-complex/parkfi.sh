@@ -1,11 +1,13 @@
-import { useLocation } from "@tanstack/react-router";
+import { useCanGoBack, useLocation, useRouter } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { motion } from "motion/react";
-import { PanelLeftIcon } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { ArrowLeftIcon, PanelLeftIcon } from "lucide-react";
 
 import { MobileUserMenu } from "#/components/mobile-user-menu.tsx";
 import { OmniSearch } from "#/components/omni-search.tsx";
+import { buttonVariants } from "#/components/ui/button.tsx";
 import { useSidebar } from "#/components/ui/sidebar.tsx";
+import { cn } from "#/lib/utils.ts";
 import { useHideOnScrollDown } from "#/hooks/use-hide-on-scroll-down.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
@@ -54,6 +56,10 @@ export function SiteHeader(_props?: { title?: string; mobileTitle?: string }) {
   const scrolledAway = useHideOnScrollDown();
   const hidden = !isMap && scrolledAway;
 
+  // Show a back affordance whenever there's somewhere in history to return to.
+  const router = useRouter();
+  const canGoBack = useCanGoBack();
+
   if (!isMobile) return null;
 
   return (
@@ -67,13 +73,34 @@ export function SiteHeader(_props?: { title?: string; mobileTitle?: string }) {
       className="pointer-events-none sticky top-0 z-30 shrink-0 border-b border-transparent bg-transparent text-foreground"
       style={{ paddingTop: "var(--safe-top)" }}
     >
-      <div className="relative px-3 py-3">
+      <div className="relative px-4 py-3">
         <div className="relative flex w-full items-center gap-2">
           {/* An inset search pill (thicker top border like our inputs) sitting
               inline next to the account avatar. The search owns its own pill chrome
               now — while typing it springs out to full width and covers the avatar
               (see OmniSearch inline). */}
           <div className="pointer-events-auto flex w-full items-center gap-2">
+            <AnimatePresence initial={false}>
+              {canGoBack && (
+                <motion.button
+                  key="back"
+                  type="button"
+                  onClick={() => router.history.back()}
+                  aria-label="Go back"
+                  initial={{ opacity: 0, width: 0, marginRight: -8, scale: 0.8 }}
+                  animate={{ opacity: 1, width: 52, marginRight: 0, scale: 1 }}
+                  exit={{ opacity: 0, width: 0, marginRight: -8, scale: 0.8 }}
+                  transition={{ type: "spring", stiffness: 700, damping: 34, mass: 0.7 }}
+                  style={{ borderRadius: 9999 }}
+                  className={cn(
+                    buttonVariants({ variant: "outline", size: "icon" }),
+                    "size-13 shrink-0 text-foreground",
+                  )}
+                >
+                  <ArrowLeftIcon className="size-5" />
+                </motion.button>
+              )}
+            </AnimatePresence>
             <OmniSearch variant="inline" className="flex-1" />
             <MobileUserMenu showDot={hasAlerts} />
           </div>

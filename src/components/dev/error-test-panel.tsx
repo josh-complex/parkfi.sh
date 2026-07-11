@@ -312,7 +312,7 @@ export function ErrorTestPanel() {
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Error test tools"
-        className="pointer-events-auto fixed left-3 bottom-[calc(var(--bottom-nav-height,0px)+var(--safe-bottom)+1rem)] z-[80] inline-flex size-9 items-center justify-center rounded-full bg-black/60 text-white shadow-lg ring-1 ring-white/20 transition active:scale-95 md:bottom-4"
+        className="pointer-events-auto fixed left-4 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+1.4rem)] z-80 inline-flex size-9 items-center justify-center rounded-full bg-black/60 text-white shadow-lg ring-1 ring-white/20 transition active:scale-95 md:bottom-4"
       >
         <BugIcon className="size-4" />
       </button>
@@ -320,7 +320,7 @@ export function ErrorTestPanel() {
   }
 
   return (
-    <div className="pointer-events-auto fixed left-3 bottom-[calc(var(--bottom-nav-height,0px)+var(--safe-bottom)+1rem)] z-[80] w-64 overflow-hidden rounded-2xl bg-black/85 text-white shadow-xl ring-1 ring-white/20 backdrop-blur md:bottom-4">
+    <div className="pointer-events-auto fixed left-4 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+1.4rem)] z-80 w-64 overflow-hidden rounded-2xl bg-black/85 text-white shadow-xl ring-1 ring-white/20 backdrop-blur md:bottom-4">
       <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
         <BugIcon className="size-4 text-rose-400" />
         <span className="flex-1 text-xs font-semibold">Error test tools</span>

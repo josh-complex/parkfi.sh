@@ -186,7 +186,7 @@ export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug:
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 pt-2 pb-10 lg:px-6">
       {/* Breadcrumb back to the venue menu, anchored on this item. */}
-      <nav className="-mb-1 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+      <div className="-mb-1 hidden flex-wrap items-center gap-1.5 text-sm text-muted-foreground md:flex">
         <Link
           to="/dining/$facilityId"
           params={{ facilityId }}
@@ -204,7 +204,7 @@ export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug:
             </Link>
           </>
         )}
-      </nav>
+      </div>
 
       {/* Header — identity, chips, current price, and description all live in
           one section together. */}

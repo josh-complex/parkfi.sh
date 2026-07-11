@@ -174,7 +174,7 @@ export function MobileBottomNav() {
       {livingEnabled && mapActive ? <PlayButton /> : null}
       {/* One connected row; `items-end` aligns every segment's base so the bar is
           a single piece, with the taller Map key rising out of the middle. */}
-      <div className="pointer-events-auto mx-3 flex w-full max-w-md items-end">
+      <div className="pointer-events-auto mx-4 flex w-full max-w-md items-end">
         <Seg
           to="/"
           active={pathname === "/"}

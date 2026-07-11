@@ -76,7 +76,7 @@ export function TicketsMobileControls({
   return (
     <div
       className={MAP_FILTER_STACK}
-      style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1.25rem)" }}
+      style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1.4rem)" }}
     >
       {/* Single Filter pill matching the map's Filter button exactly. */}
       <Drawer>

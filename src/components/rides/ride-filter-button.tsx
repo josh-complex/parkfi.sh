@@ -32,7 +32,7 @@ export const MAP_FILTER_PILL =
 /** Vertical stack wrapper matching the map's bottom-left control cluster:
  *  left-anchored, above the mobile nav island, mobile-only. */
 export const MAP_FILTER_STACK =
-  "pointer-events-none fixed left-3 z-40 flex flex-col items-start gap-2 md:hidden";
+  "pointer-events-none fixed left-4 z-40 flex flex-col items-start gap-2 md:hidden";
 
 function Chip({
   active,

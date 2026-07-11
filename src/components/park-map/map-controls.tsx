@@ -39,6 +39,51 @@ import { MAP_TYPE_COLOR, type MapItemKind } from "./shared.tsx";
 const MAP_CTRL_3D =
   "btn-3d-outline border-3d shadow-3d pointer-events-auto flex size-10 items-center justify-center bg-background/95 text-foreground backdrop-blur transition-[transform,box-shadow,background-color,color] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)]";
 
+// Height the floating bottom clusters keep above the bottom-nav island on
+// mobile — the single source of truth for both the left and right stacks so
+// their positioning can't drift apart between devices (differing safe-area
+// insets, gesture bars, etc.). `md:` drops it since desktop has no bottom nav.
+const CLUSTER_BOTTOM =
+  "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+1.4rem)] md:bottom-3";
+// While navigating, the right column rises to clear the green nav ETA card.
+const CLUSTER_BOTTOM_LIFTED =
+  "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+6.25rem)] md:bottom-[5rem]";
+
+/**
+ * Shared positioning shell for the two floating bottom map-control clusters
+ * (bottom-left park-details/filter, bottom-right zoom/locate/credits). Both
+ * anchor to the exact same bottom offset, so they sit at matching heights above
+ * the bottom nav on every device — `side` only flips which edge they hug and how
+ * their children stack. `lifted` raises the column clear of the nav ETA card
+ * while navigating. Non-interactive itself; its children opt back into pointer
+ * events (`pointer-events-auto`).
+ */
+export function BottomMapCluster({
+  side,
+  lifted = false,
+  className,
+  children,
+}: {
+  side: "left" | "right";
+  lifted?: boolean;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      data-map-chrome="bottom"
+      className={cn(
+        "pointer-events-none absolute z-10 flex flex-col gap-2",
+        side === "left" ? "left-4 items-start" : "right-4 items-end",
+        lifted ? CLUSTER_BOTTOM_LIFTED : CLUSTER_BOTTOM,
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
 /** A small centered pill for Kingdom Hearts status copy (wrong park / no WebGL). Sits
  *  in the bottom-center slot the play HUD would otherwise occupy. */
 export function PlayHint({ children }: { children: React.ReactNode }) {
@@ -258,11 +303,11 @@ const MAP_TOGGLES: ReadonlyArray<MapToggle> = [
   },
   { kind: "category", label: "Shows", Icon: DramaIcon, keys: SHOW_CATEGORY_KEYS, color: "shows" },
   { kind: "layer", key: "shops", label: "Shops", Icon: ShoppingBagIcon, color: "shops" },
-  { kind: "layer", key: "dining", label: "Eats", Icon: UtensilsIcon, color: "eats" },
+  { kind: "layer", key: "dining", label: "Meals", Icon: UtensilsIcon, color: "eats" },
   {
     kind: "layer",
     key: "quickService",
-    label: "Carts",
+    label: "Bites",
     Icon: PopcornIcon,
     color: "quickService",
   },

@@ -465,14 +465,14 @@ export function CrossParkWaits() {
         <>
           <div
             className={MAP_FILTER_STACK}
-            style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1.25rem)" }}
+            style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1.4rem)" }}
           >
             <SortDrawer sort={sort} onSort={setSort} variant="pill" />
             <FilterDrawer variant="pill" />
           </div>
           <div
-            className="pointer-events-none fixed right-3 z-40 flex md:hidden"
-            style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1.25rem)" }}
+            className="pointer-events-none fixed right-4 z-40 flex md:hidden"
+            style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1.4rem)" }}
           >
             <ViewToggle view={view} onView={setViewPersist} variant="pill" />
           </div>

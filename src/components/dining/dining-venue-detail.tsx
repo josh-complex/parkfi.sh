@@ -18,7 +18,7 @@ import {
   type ScheduleEntry,
 } from "#/components/dining/dining-hours.ts";
 import { AvailabilityCalendar } from "#/components/dining/dining-restaurant-card.tsx";
-import { MenuBody, useMenuState } from "#/components/dining/menu-content.tsx";
+import { MenuBody, slugifyMenuItem, useMenuState } from "#/components/dining/menu-content.tsx";
 import { LocationMap } from "#/components/maps/location-map.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Card } from "#/components/ui/card.tsx";
@@ -300,13 +300,31 @@ export function DiningVenueDetail({
 
   const hasMenu = state.periods.length > 0;
 
+  // The header chip distinguishes a brand-new venue from an established one whose
+  // menu just changed. A new venue's items are all new too, so "Newly added"
+  // subsumes any item activity; only when the venue itself isn't new do we surface
+  // recent menu changes as a "Freshly updated" chip. Prefer a freshly-added item
+  // as the jump target so the chip lands the reader on something genuinely new.
+  const isNewVenue = !!venue && isWithinDays(venue.firstSeenAt, NEW_WINDOW_DAYS);
+  const freshChange = React.useMemo(() => {
+    if (isNewVenue) return null;
+    const added = state.recentChanges.find((c) => c.kind === "added");
+    return added ?? state.recentChanges[0] ?? null;
+  }, [isNewVenue, state.recentChanges]);
+
+  function jumpToFreshItem() {
+    if (!freshChange) return;
+    state.focusItem(slugifyMenuItem(freshChange.title));
+    menuSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 pt-2 pb-6 lg:px-6">
       {/* Tuck the breadcrumb tight under the header, matching the eats search /
           cuisine-chip rhythm. The header (py-3) + wrapper (pt-2) leave ~20px
           above it, so trim the section gap to leave the same below. */}
-      <div className="-mb-1 flex items-center justify-between gap-3">
-        <nav className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+      <div className="-mb-1 hidden items-center justify-between gap-3 md:flex">
+        <nav className="flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
           <Link
             to="/dining"
             search={{}}
@@ -366,11 +384,17 @@ export function DiningVenueDetail({
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{venue.name}</h1>
-              {isWithinDays(venue.firstSeenAt, NEW_WINDOW_DAYS) && (
+              {isNewVenue ? (
                 <Badge className="bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-400">
                   Newly added
                 </Badge>
-              )}
+              ) : freshChange ? (
+                <button type="button" onClick={jumpToFreshItem} className="cursor-pointer">
+                  <Badge className="bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-400">
+                    Freshly updated
+                  </Badge>
+                </button>
+              ) : null}
             </div>
             {(venue.parkResort || subtitleRest) && (
               <p className="text-muted-foreground flex flex-wrap items-center gap-x-1.5">

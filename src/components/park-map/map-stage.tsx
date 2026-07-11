@@ -20,10 +20,10 @@ import { useNavTestToolsEnabled } from "#/integrations/posthog/feature-flags.ts"
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { DEV_SPOTS } from "#/lib/dev-location.ts";
 import { lazyWithReload } from "#/lib/lazy-with-reload.tsx";
-import { cn } from "#/lib/utils.ts";
 import { distanceMeters, pointInPolygon } from "#/server/living/geofence.ts";
 
 import {
+  BottomMapCluster,
   LocateButton,
   MapAttribution,
   MapToggleChips,
@@ -581,15 +581,7 @@ export function MapStageProvider({
                 navigating), so the controls stay a real stack instead of three
                 separately-positioned elements. */}
             {attached && engine && (
-              <div
-                data-map-chrome="bottom"
-                className={cn(
-                  "pointer-events-none absolute right-3 z-10 flex flex-col items-end gap-2",
-                  navigating
-                    ? "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+5.5rem)] md:bottom-[5rem]"
-                    : "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+1.25rem)] md:bottom-3",
-                )}
-              >
+              <BottomMapCluster side="right" lifted={navigating}>
                 <ZoomControl
                   onZoomIn={() => mapRef.current?.zoomIn()}
                   onZoomOut={() => mapRef.current?.zoomOut()}
@@ -608,20 +600,17 @@ export function MapStageProvider({
                   }
                 />
                 <MapAttribution />
-              </div>
+              </BottomMapCluster>
             )}
             {/* Bottom-left cluster (roam, once a park is focused): the park-details
                 shortcut stacked directly on top of the ride filter button. Both are
                 hidden at the all-parks overview — there's no single park to open or
                 filter until you've zoomed into one. */}
             {attached && engine && roam && !playMode && roamFocusSlug && !navigating && (
-              <div
-                data-map-chrome="bottom"
-                className="pointer-events-none absolute left-3 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+1.25rem)] z-10 flex flex-col items-start gap-2 md:bottom-3"
-              >
+              <BottomMapCluster side="left">
                 <ParkDetailButton slug={roamFocusSlug} />
                 <RideFilterButton className="pointer-events-auto gap-1.5 px-4 py-2 text-sm [&>svg]:size-4" />
-              </div>
+              </BottomMapCluster>
             )}
             {/* Kingdom Hearts play overlay — GL renderer only. Live over a focused
                 Disney park; otherwise a hint points the player at one. */}

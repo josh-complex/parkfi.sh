@@ -742,6 +742,23 @@ export function useMenuState(facilityId: string, open: boolean, targetItemSlug?:
     scrollRef.current?.scrollTo({ top: 0, behavior: "instant" });
   }
 
+  // Imperatively focus an item by slug — selects the meal period it lives in and
+  // highlights it. Same mechanism as the deep-link effect, but caller-triggered
+  // (e.g. the header's "Freshly updated" chip). Returns whether the item was
+  // found so callers can decide how far to scroll. The MenuBody scroll effect
+  // brings it into view once its period renders.
+  function focusItem(slug: string): boolean {
+    const idx = periods.findIndex((p) =>
+      p.groups.some((g) => g.items.some((it) => slugifyMenuItem(it.title) === slug)),
+    );
+    if (idx === -1) return false;
+    setViewingChanges(false);
+    setActivePeriodIdx(idx);
+    setHighlightSlug(slug);
+    setTimeout(() => setHighlightSlug((s) => (s === slug ? null : s)), 2600);
+    return true;
+  }
+
   return {
     menuQ,
     periods,
@@ -752,6 +769,7 @@ export function useMenuState(facilityId: string, open: boolean, targetItemSlug?:
     pillsRef,
     switchPeriod,
     jumpToType,
+    focusItem,
     highlightSlug,
     changesBySlug,
     newSlugs,

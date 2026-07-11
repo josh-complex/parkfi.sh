@@ -426,7 +426,7 @@ export function ResortDetail({ slug }: { slug: string }) {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 pt-2 pb-6 lg:px-6">
-      <div className="flex items-center justify-between gap-3">
+      <div className="hidden items-center justify-between gap-3 md:flex">
         <nav className="text-sm text-muted-foreground">
           <Link to="/stays" className="inline-flex items-center gap-1.5 hover:underline">
             <ArrowLeftIcon className="size-3.5" />
@@ -444,12 +444,6 @@ export function ResortDetail({ slug }: { slug: string }) {
             className="size-full object-cover"
             loading="eager"
           />
-          <Badge
-            variant="secondary"
-            className="absolute top-3 left-3 bg-background/85 font-medium shadow-sm backdrop-blur-sm"
-          >
-            {TIER_LABEL[resort.tier]}
-          </Badge>
         </div>
       )}
 

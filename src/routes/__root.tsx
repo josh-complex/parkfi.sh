@@ -17,6 +17,7 @@ import type { TRPCOptionsProxy } from "@trpc/tanstack-react-query";
 import { TooltipProvider } from "#/components/ui/tooltip";
 import { Toaster } from "#/components/ui/sonner";
 import { FaviconSync } from "#/components/favicon-sync.tsx";
+import { NativeSystemBars } from "#/components/native-system-bars.tsx";
 import { PWARegister } from "#/components/pwa-register";
 import { RouteErrorFallback } from "#/components/route-error-fallback";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
@@ -63,7 +64,16 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
         { charSet: "utf-8" },
         {
           name: "viewport",
-          content: "width=device-width, initial-scale=1, viewport-fit=cover",
+          // `interactive-widget=resizes-visual` (the spec default, pinned here
+          // because it's load-bearing): the on-screen keyboard shrinks only the
+          // *visual* viewport, never the layout viewport. The map (`fixed
+          // inset-0`) and other full-height shells stay put, and keyboard-aware
+          // panels (see omni-search.tsx) size themselves off `visualViewport`.
+          // On Android this only holds once the native window stops resizing
+          // for the IME — see `windowSoftInputMode="adjustNothing"` in the
+          // AndroidManifest.
+          content:
+            "width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-visual",
         },
         { name: "theme-color", content: "#1c468e" },
         { name: "apple-mobile-web-app-capable", content: "yes" },
@@ -126,6 +136,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             disableTransitionOnChange
           >
             <FaviconSync />
+            <NativeSystemBars />
             <TooltipProvider>
               {children}
               <TanStackDevtools
