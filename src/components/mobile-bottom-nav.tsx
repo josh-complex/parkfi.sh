@@ -180,7 +180,7 @@ export function MobileBottomNav() {
           active={pathname === "/"}
           icon={<ActivityIcon />}
           label="Waits"
-          className="rounded-l-3xl"
+          className="rounded-l-full"
         />
         <Seg
           to="/tickets"
@@ -207,7 +207,7 @@ export function MobileBottomNav() {
           icon={<BedDoubleIcon />}
           label="Stays"
           offline={offline.has("stays")}
-          className="rounded-r-3xl"
+          className="rounded-r-full"
         />
       </div>
     </nav>
