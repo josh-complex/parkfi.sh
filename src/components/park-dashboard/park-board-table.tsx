@@ -47,6 +47,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "#/components/ui/select.tsx";
+import { MAP_FILTER_PILL, MAP_FILTER_STACK } from "#/components/rides/ride-filter-button.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import {
   Table,
@@ -808,74 +809,67 @@ function MobileControls({
   const filterActive = filter !== "ALL";
   return (
     <div
-      className="fixed left-1/2 z-40 -translate-x-1/2 md:hidden"
-      style={{ bottom: "calc(var(--safe-bottom) + 1rem)" }}
+      className={MAP_FILTER_STACK}
+      style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1.25rem)" }}
     >
-      <div className="flex items-center gap-1 rounded-full border bg-popover/95 p-1 shadow-xl supports-backdrop-filter:backdrop-blur">
-        {/* Sort */}
-        <Drawer>
-          <DrawerTrigger asChild>
-            <Button variant="ghost" className="min-h-10 rounded-full">
-              <ArrowUpDownIcon data-icon="inline-start" />
-              Sort
-            </Button>
-          </DrawerTrigger>
-          <DrawerContent>
-            <DrawerHeader>
-              <DrawerTitle>Sort rides</DrawerTitle>
-              <DrawerDescription>Choose how the ride board is ordered.</DrawerDescription>
-            </DrawerHeader>
-            <div className="flex flex-col gap-1 px-4 pb-4">
-              {(Object.keys(SORT_LABELS) as Array<SortKey>).map((key) => (
+      {/* Left-anchored stacked pills matching the map's Filter button exactly. */}
+      {/* Sort */}
+      <Drawer>
+        <DrawerTrigger className={MAP_FILTER_PILL}>
+          <ArrowUpDownIcon />
+          Sort
+        </DrawerTrigger>
+        <DrawerContent>
+          <DrawerHeader>
+            <DrawerTitle>Sort rides</DrawerTitle>
+            <DrawerDescription>Choose how the ride board is ordered.</DrawerDescription>
+          </DrawerHeader>
+          <div className="flex flex-col gap-1 px-4 pb-4">
+            {(Object.keys(SORT_LABELS) as Array<SortKey>).map((key) => (
+              <DrawerClose key={key} asChild>
+                <Button
+                  variant={sortKey === key ? "secondary" : "ghost"}
+                  className="justify-start"
+                  onClick={() => onSortKey(key)}
+                >
+                  {SORT_LABELS[key]}
+                </Button>
+              </DrawerClose>
+            ))}
+          </div>
+        </DrawerContent>
+      </Drawer>
+
+      {/* Filter */}
+      <Drawer>
+        <DrawerTrigger className={MAP_FILTER_PILL}>
+          <SlidersHorizontalIcon />
+          Filter
+          {filterActive ? <span className="size-1.5 rounded-full bg-primary" /> : null}
+        </DrawerTrigger>
+        <DrawerContent>
+          <DrawerHeader>
+            <DrawerTitle>Filter rides</DrawerTitle>
+            <DrawerDescription>Narrow the board by status.</DrawerDescription>
+          </DrawerHeader>
+          <div className="flex flex-col gap-4 px-4 pb-4">
+            <div className="flex flex-col gap-1">
+              <span className="text-muted-foreground text-xs font-medium uppercase">Status</span>
+              {(Object.keys(FILTER_LABELS) as Array<StatusFilter>).map((key) => (
                 <DrawerClose key={key} asChild>
                   <Button
-                    variant={sortKey === key ? "secondary" : "ghost"}
+                    variant={filter === key ? "secondary" : "ghost"}
                     className="justify-start"
-                    onClick={() => onSortKey(key)}
+                    onClick={() => onFilter(key)}
                   >
-                    {SORT_LABELS[key]}
+                    {FILTER_LABELS[key]}
                   </Button>
                 </DrawerClose>
               ))}
             </div>
-          </DrawerContent>
-        </Drawer>
-
-        <span className="h-5 w-px bg-border" />
-
-        {/* Filter */}
-        <Drawer>
-          <DrawerTrigger asChild>
-            <Button variant="ghost" className="min-h-10 rounded-full">
-              <SlidersHorizontalIcon data-icon="inline-start" />
-              Filter
-              {filterActive ? <span className="size-1.5 rounded-full bg-primary" /> : null}
-            </Button>
-          </DrawerTrigger>
-          <DrawerContent>
-            <DrawerHeader>
-              <DrawerTitle>Filter rides</DrawerTitle>
-              <DrawerDescription>Narrow the board by status.</DrawerDescription>
-            </DrawerHeader>
-            <div className="flex flex-col gap-4 px-4 pb-4">
-              <div className="flex flex-col gap-1">
-                <span className="text-muted-foreground text-xs font-medium uppercase">Status</span>
-                {(Object.keys(FILTER_LABELS) as Array<StatusFilter>).map((key) => (
-                  <DrawerClose key={key} asChild>
-                    <Button
-                      variant={filter === key ? "secondary" : "ghost"}
-                      className="justify-start"
-                      onClick={() => onFilter(key)}
-                    >
-                      {FILTER_LABELS[key]}
-                    </Button>
-                  </DrawerClose>
-                ))}
-              </div>
-            </div>
-          </DrawerContent>
-        </Drawer>
-      </div>
+          </div>
+        </DrawerContent>
+      </Drawer>
     </div>
   );
 }

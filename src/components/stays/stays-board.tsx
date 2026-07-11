@@ -10,7 +10,6 @@ import {
   CheckIcon,
   MinusIcon,
   PlusIcon,
-  SearchIcon,
   SlidersHorizontalIcon,
 } from "lucide-react";
 
@@ -21,6 +20,7 @@ import {
   SegContent,
   useCloseOnScroll,
 } from "#/components/core-search.tsx";
+import { MAP_FILTER_PILL, MAP_FILTER_STACK } from "#/components/rides/ride-filter-button.tsx";
 import { StayAlertButton, type StayAlertDims } from "#/components/stays/stay-alert-button.tsx";
 import { StaysAreaChips } from "#/components/stays/stays-area-chips.tsx";
 import {
@@ -386,9 +386,6 @@ export function StaysBoard() {
     setAreaFilter(null);
   }, [applyFilters]);
 
-  const mobileSearchLabel =
-    range?.from && range.to ? `${rangeLabel(range)} · ${guestLabel}` : "Search resorts";
-
   // Refs so the auto-submit effect can read current values without re-running.
   const searchRef = React.useRef(search);
   searchRef.current = search;
@@ -605,224 +602,192 @@ export function StaysBoard() {
         </div>
       </div>
 
-      {/* Mobile search + controls FAB — replaces the sticky pill on small screens */}
+      {/* Mobile FAB — left-anchored stacked pills matching the map's Filter
+          button exactly. Filter + Sort only (omni search covers search). Stays
+          needs dates to price resorts and the mobile date picker has nowhere else
+          to live (the desktop search bar is `hidden md:block`), so dates/guests
+          fold into the Filter drawer alongside type + rate. */}
       <div
-        className="fixed left-1/2 z-40 -translate-x-1/2 md:hidden"
-        style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1rem)" }}
+        className={MAP_FILTER_STACK}
+        style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1.25rem)" }}
       >
-        <div className="bg-popover/95 supports-backdrop-filter:backdrop-blur flex items-center gap-1 rounded-full border p-1 shadow-xl">
-          {/* Search / edit search */}
+        {/* Sort — only once a search is live (a priced list to order). */}
+        {search && (
           <Drawer>
-            <DrawerTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="rounded-full gap-1.5 px-3 text-xs font-medium"
-              >
-                <SearchIcon className="size-3.5" />
-                {mobileSearchLabel}
-              </Button>
+            <DrawerTrigger className={MAP_FILTER_PILL}>
+              <ArrowUpDownIcon />
+              Sort
             </DrawerTrigger>
             <DrawerContent>
-              <DrawerHeader className="border-b pb-4">
-                <DrawerTitle className="[text-shadow:0_1px_3px_hsl(var(--foreground)/0.12)]">
-                  Search resorts
-                </DrawerTitle>
-                <DrawerDescription>Choose your dates and guests.</DrawerDescription>
+              <DrawerHeader>
+                <DrawerTitle>Sort resorts</DrawerTitle>
+                <DrawerDescription>Choose how the list is ordered.</DrawerDescription>
               </DrawerHeader>
-              <div className="flex flex-col gap-5 overflow-y-auto px-4 pb-4 pt-6">
-                {/* Where */}
-                <div className="flex flex-col gap-2">
-                  <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
-                    Where
-                  </span>
-                  <div className="flex flex-wrap gap-2 pt-3">
-                    {STAY_OPERATORS.map((op) => (
-                      <Button
-                        key={op.key}
-                        size="sm"
-                        variant={op.available ? "default" : "outline"}
-                        className="rounded-full"
-                        disabled={!op.available}
-                        title={op.available ? undefined : "Coming soon"}
-                      >
-                        {op.label}
-                        {!op.available && (
-                          <span className="text-muted-foreground ml-1.5 text-xs">Coming soon</span>
-                        )}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-                {/* Who */}
-                <div className="flex flex-col gap-1 border-t pt-4">
-                  <span className="text-muted-foreground mb-1 text-xs font-medium uppercase tracking-wide">
-                    Who
-                  </span>
-                  <Stepper
-                    label="Adults"
-                    hint="Ages 10+"
-                    value={adults}
-                    min={1}
-                    max={10}
-                    onChange={setAdults}
-                  />
-                  <Stepper
-                    label="Kids"
-                    hint="Ages 3–9"
-                    value={children}
-                    min={0}
-                    max={10}
-                    onChange={setChildren}
-                  />
-                </div>
-                {/* When */}
-                <div className="flex flex-col gap-2 border-t pt-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
-                      When
-                    </span>
-                    {range?.from && (
-                      <Button variant="ghost" size="xs" onClick={() => setRange(undefined)}>
-                        Clear
-                      </Button>
-                    )}
-                  </div>
-                  <div className="flex justify-center">
-                    <Calendar
-                      mode="range"
-                      selected={range}
-                      onSelect={setRange}
-                      numberOfMonths={isMobile ? 1 : 2}
-                      classNames={{ months: "relative flex flex-nowrap gap-4" }}
-                      disabled={{ before: today }}
-                      startMonth={today}
-                      showOutsideDays
-                    />
-                  </div>
-                </div>
+              <div className="flex flex-col gap-1 px-4 pb-4">
+                {(Object.keys(STAY_SORT_LABELS) as Array<StaySortKey>).map((k) => (
+                  <DrawerClose key={k} asChild>
+                    <Button
+                      variant={sortKey === k ? "secondary" : "ghost"}
+                      className="w-full justify-start"
+                      onClick={() => setSortKey(k)}
+                    >
+                      {STAY_SORT_LABELS[k]}
+                    </Button>
+                  </DrawerClose>
+                ))}
               </div>
-              <DrawerFooter>
-                <DrawerClose asChild>
-                  <Button className="rounded-full">Done</Button>
-                </DrawerClose>
-              </DrawerFooter>
             </DrawerContent>
           </Drawer>
+        )}
 
-          {search && (
-            <>
-              <span className="bg-border h-5 w-px" />
-              {/* Sort */}
-              <Drawer>
-                <DrawerTrigger asChild>
-                  <Button variant="ghost" size="sm" className="rounded-full">
-                    <ArrowUpDownIcon data-icon="inline-start" />
-                    Sort
-                  </Button>
-                </DrawerTrigger>
-                <DrawerContent>
-                  <DrawerHeader>
-                    <DrawerTitle>Sort resorts</DrawerTitle>
-                    <DrawerDescription>Choose how the list is ordered.</DrawerDescription>
-                  </DrawerHeader>
-                  <div className="flex flex-col gap-1 px-4 pb-4">
-                    {(Object.keys(STAY_SORT_LABELS) as Array<StaySortKey>).map((k) => (
-                      <DrawerClose key={k} asChild>
-                        <Button
-                          variant={sortKey === k ? "secondary" : "ghost"}
-                          className="w-full justify-start"
-                          onClick={() => setSortKey(k)}
-                        >
-                          {STAY_SORT_LABELS[k]}
-                        </Button>
-                      </DrawerClose>
-                    ))}
-                  </div>
-                </DrawerContent>
-              </Drawer>
-
-              <span className="bg-border h-5 w-px" />
-
-              {/* Filter */}
-              <Drawer>
-                <DrawerTrigger asChild>
-                  <Button variant="ghost" size="sm" className="rounded-full">
-                    <SlidersHorizontalIcon data-icon="inline-start" />
-                    Filters
-                    {activeCount > 0 ? <span className="bg-primary size-1.5 rounded-full" /> : null}
-                  </Button>
-                </DrawerTrigger>
-                <DrawerContent>
-                  <DrawerHeader>
-                    <DrawerTitle>Filter resorts</DrawerTitle>
-                    <DrawerDescription>Narrow by resort type and rate.</DrawerDescription>
-                  </DrawerHeader>
-                  <div className="flex flex-col gap-5 overflow-y-auto px-4 pb-4">
-                    <div className="flex flex-col gap-2">
-                      <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
-                        Resort type
-                      </span>
-                      <div className="flex flex-wrap gap-2">
-                        {TIER_CHIPS.map((c) => (
-                          <Button
-                            key={c.key}
-                            type="button"
-                            size="sm"
-                            variant={tierFilter === c.key ? "default" : "outline"}
-                            className="rounded-full"
-                            onClick={() => setTierFilter(c.key)}
-                          >
-                            {c.label}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-4 border-t pt-5">
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-sm font-medium">Florida resident rates</span>
-                          <span className="text-muted-foreground text-xs">
-                            Show discounted nightly rates for Florida residents.
-                          </span>
-                        </div>
-                        <Switch
-                          checked={filters.floridaResident}
-                          onCheckedChange={(v) => applyFilters({ floridaResident: v })}
-                        />
-                      </div>
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-sm font-medium">Accessible rooms only</span>
-                          <span className="text-muted-foreground text-xs">
-                            Limit results to rooms with accessibility features.
-                          </span>
-                        </div>
-                        <Switch
-                          checked={filters.accessible}
-                          onCheckedChange={(v) => applyFilters({ accessible: v })}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  <DrawerFooter className="flex-row gap-2">
-                    <Button
-                      variant="outline"
-                      className={cn("flex-1", activeCount === 0 && "opacity-50")}
-                      disabled={activeCount === 0}
-                      onClick={onClear}
-                    >
-                      Clear filters
+        {/* Filter — dates/guests (required to price resorts) + type + rate */}
+        <Drawer>
+          <DrawerTrigger className={MAP_FILTER_PILL}>
+            <SlidersHorizontalIcon />
+            Filter
+            {activeCount > 0 ? <span className="bg-primary size-1.5 rounded-full" /> : null}
+          </DrawerTrigger>
+          <DrawerContent>
+            <DrawerHeader className="border-b pb-4">
+              <DrawerTitle>Filter resorts</DrawerTitle>
+              <DrawerDescription>
+                Set dates and guests, then narrow by type and rate.
+              </DrawerDescription>
+            </DrawerHeader>
+            <div className="flex flex-col gap-5 overflow-y-auto px-4 pb-4 pt-6">
+              {/* When */}
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                    When
+                  </span>
+                  {range?.from && (
+                    <Button variant="ghost" size="xs" onClick={() => setRange(undefined)}>
+                      Clear
                     </Button>
-                    <DrawerClose asChild>
-                      <Button className="flex-1">Done</Button>
-                    </DrawerClose>
-                  </DrawerFooter>
-                </DrawerContent>
-              </Drawer>
-            </>
-          )}
-        </div>
+                  )}
+                </div>
+                <div className="flex justify-center">
+                  <Calendar
+                    mode="range"
+                    selected={range}
+                    onSelect={setRange}
+                    numberOfMonths={isMobile ? 1 : 2}
+                    classNames={{ months: "relative flex flex-nowrap gap-4" }}
+                    disabled={{ before: today }}
+                    startMonth={today}
+                    showOutsideDays
+                  />
+                </div>
+              </div>
+              {/* Who */}
+              <div className="flex flex-col gap-1 border-t pt-4">
+                <span className="text-muted-foreground mb-1 text-xs font-medium uppercase tracking-wide">
+                  Who
+                </span>
+                <Stepper
+                  label="Adults"
+                  hint="Ages 10+"
+                  value={adults}
+                  min={1}
+                  max={10}
+                  onChange={setAdults}
+                />
+                <Stepper
+                  label="Kids"
+                  hint="Ages 3–9"
+                  value={children}
+                  min={0}
+                  max={10}
+                  onChange={setChildren}
+                />
+              </div>
+              {/* Where */}
+              <div className="flex flex-col gap-2 border-t pt-4">
+                <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                  Where
+                </span>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {STAY_OPERATORS.map((op) => (
+                    <Button
+                      key={op.key}
+                      size="sm"
+                      variant={op.available ? "default" : "outline"}
+                      className="rounded-full"
+                      disabled={!op.available}
+                      title={op.available ? undefined : "Coming soon"}
+                    >
+                      {op.label}
+                      {!op.available && (
+                        <span className="text-muted-foreground ml-1.5 text-xs">Coming soon</span>
+                      )}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              {/* Resort type */}
+              <div className="flex flex-col gap-2 border-t pt-4">
+                <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                  Resort type
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  {TIER_CHIPS.map((c) => (
+                    <Button
+                      key={c.key}
+                      type="button"
+                      size="sm"
+                      variant={tierFilter === c.key ? "default" : "outline"}
+                      className="rounded-full"
+                      onClick={() => setTierFilter(c.key)}
+                    >
+                      {c.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              {/* Rates */}
+              <div className="flex flex-col gap-4 border-t pt-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-sm font-medium">Florida resident rates</span>
+                    <span className="text-muted-foreground text-xs">
+                      Show discounted nightly rates for Florida residents.
+                    </span>
+                  </div>
+                  <Switch
+                    checked={filters.floridaResident}
+                    onCheckedChange={(v) => applyFilters({ floridaResident: v })}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-sm font-medium">Accessible rooms only</span>
+                    <span className="text-muted-foreground text-xs">
+                      Limit results to rooms with accessibility features.
+                    </span>
+                  </div>
+                  <Switch
+                    checked={filters.accessible}
+                    onCheckedChange={(v) => applyFilters({ accessible: v })}
+                  />
+                </div>
+              </div>
+            </div>
+            <DrawerFooter className="flex-row gap-2">
+              <Button
+                variant="outline"
+                className={cn("flex-1", activeCount === 0 && "opacity-50")}
+                disabled={activeCount === 0}
+                onClick={onClear}
+              >
+                Clear filters
+              </Button>
+              <DrawerClose asChild>
+                <Button className="flex-1">Done</Button>
+              </DrawerClose>
+            </DrawerFooter>
+          </DrawerContent>
+        </Drawer>
       </div>
 
       {/* Mobile quick area filters, tucked under the header's omnisearch. */}

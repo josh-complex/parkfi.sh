@@ -1,9 +1,12 @@
+import { useLocation } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { motion } from "motion/react";
 import { PanelLeftIcon } from "lucide-react";
 
 import { MobileUserMenu } from "#/components/mobile-user-menu.tsx";
 import { OmniSearch } from "#/components/omni-search.tsx";
 import { useSidebar } from "#/components/ui/sidebar.tsx";
+import { useHideOnScrollDown } from "#/hooks/use-hide-on-scroll-down.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
 
@@ -42,14 +45,26 @@ export function SiteHeader(_props?: { title?: string; mobileTitle?: string }) {
   });
   const hasAlerts = (alertsQ.data?.parks ?? []).reduce((n, p) => n + p.alerts.length, 0) > 0;
 
+  // Auto-hide the search bar on scroll-down / reveal on scroll-up (same pattern
+  // as the welcome masthead). The fullscreen map is exempt: it never scrolls and
+  // the search is the only way in, so it stays pinned there — and arriving at the
+  // map forces the bar back into view if you'd scrolled it away on another page.
+  const pathname = useLocation({ select: (l) => l.pathname });
+  const isMap = pathname === "/map";
+  const scrolledAway = useHideOnScrollDown();
+  const hidden = !isMap && scrolledAway;
+
   if (!isMobile) return null;
 
   return (
-    <header
+    <motion.header
       // Backgroundless so the map/page shows behind it (the search pill and account
       // button float). `pointer-events-none` lets taps fall through to the map, with
       // the interactive children re-enabling pointer events.
-      className="pointer-events-none sticky top-0 z-30 shrink-0 border-b border-transparent bg-transparent text-foreground transition-[height] ease-linear"
+      initial={false}
+      animate={{ y: hidden ? "-100%" : "0%" }}
+      transition={{ duration: 0.3, ease: "easeInOut" }}
+      className="pointer-events-none sticky top-0 z-30 shrink-0 border-b border-transparent bg-transparent text-foreground"
       style={{ paddingTop: "var(--safe-top)" }}
     >
       <div className="relative px-3 py-3">
@@ -64,6 +79,6 @@ export function SiteHeader(_props?: { title?: string; mobileTitle?: string }) {
           </div>
         </div>
       </div>
-    </header>
+    </motion.header>
   );
 }

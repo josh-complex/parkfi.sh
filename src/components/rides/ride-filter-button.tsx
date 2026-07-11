@@ -19,6 +19,21 @@ import {
   useRideFilter,
 } from "./ride-filter.tsx";
 
+/**
+ * The map's filter-pill look, shared verbatim by every mobile filter/sort FAB so
+ * they match the map's bottom-left `Filter` button exactly. It's the same
+ * embossed 3D pill the map renders — a `DrawerTrigger`/`button` gets this class,
+ * with an icon (auto-sized to `size-4`) + label as children. Each surface owns
+ * its own drawer content; only the trigger's design is shared.
+ */
+export const MAP_FILTER_PILL =
+  "btn-3d-outline border-3d shadow-3d pointer-events-auto inline-flex w-fit items-center gap-1.5 rounded-full bg-background px-4 py-2 text-sm font-medium transition active:scale-95 dark:border-[color-mix(in_oklch,var(--border),white_25%)] [&>svg]:size-4";
+
+/** Vertical stack wrapper matching the map's bottom-left control cluster:
+ *  left-anchored, above the mobile nav island, mobile-only. */
+export const MAP_FILTER_STACK =
+  "pointer-events-none fixed left-3 z-40 flex flex-col items-start gap-2 md:hidden";
+
 function Chip({
   active,
   onClick,

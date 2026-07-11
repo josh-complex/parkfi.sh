@@ -1,35 +1,12 @@
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { motion, useMotionValueEvent, useReducedMotion, useScroll } from "motion/react";
+import { motion, useScroll } from "motion/react";
 import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 
 import { OmniSearch } from "#/components/omni-search.tsx";
+import { useHideOnScrollDown } from "#/hooks/use-hide-on-scroll-down.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
-
-/**
- * Tracks vertical scroll *direction* to drive the auto-hiding nav menu: hidden
- * while scrolling down (past a small threshold so it doesn't flicker at the very
- * top), revealed the instant you scroll up — the pattern the Walt Disney Company
- * site uses. Disabled under reduced-motion. Returns false on the server/first
- * paint so the menu always renders open initially.
- */
-function useHideOnScrollDown(): boolean {
-  const { scrollY } = useScroll();
-  const reduce = useReducedMotion();
-  const [hidden, setHidden] = useState(false);
-
-  useMotionValueEvent(scrollY, "change", (current) => {
-    if (reduce) {
-      setHidden(false);
-      return;
-    }
-    const previous = scrollY.getPrevious() ?? 0;
-    setHidden(current > previous && current > 150);
-  });
-
-  return hidden;
-}
 
 /** Measures an element's pixel height, kept current across resizes/reflows. */
 function useMeasuredHeight<T extends HTMLElement>(

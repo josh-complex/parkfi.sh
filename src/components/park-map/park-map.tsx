@@ -528,7 +528,10 @@ export function ParkMap({
         style: basemapStyleUrl(dark),
         center: ORLANDO_CENTER,
         zoom: ORLANDO_ZOOM,
-        attributionControl: { compact: true },
+        // Native attribution off — our own toggleable credits chip (the info
+        // button in the map-stage control column) carries the MapTiler/OSM
+        // attribution instead, so nothing pokes out beneath the bottom nav.
+        attributionControl: false,
       });
     } catch (err) {
       // The WebGL probe passed but MapLibre still couldn't get a context — the

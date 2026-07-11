@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useStore } from "@tanstack/react-store";
-import { ArrowUpDownIcon, CheckIcon, SearchIcon, SlidersHorizontalIcon } from "lucide-react";
+import { ArrowUpDownIcon, CheckIcon, SlidersHorizontalIcon } from "lucide-react";
 
 import {
   CoreSearchButton,
@@ -12,12 +12,7 @@ import {
   useCloseOnScroll,
   type SegPos,
 } from "#/components/core-search.tsx";
-import {
-  AllSelect,
-  ExtendedFilters,
-  PillRow,
-  Section,
-} from "#/components/dining/dining-filters-modal.tsx";
+import { ExtendedFilters } from "#/components/dining/dining-filters-modal.tsx";
 import {
   clearExtraFilters,
   commitSearch,
@@ -34,6 +29,7 @@ import {
   type Operator,
   type SortKey,
 } from "#/components/dining/dining-filters.ts";
+import { MAP_FILTER_PILL, MAP_FILTER_STACK } from "#/components/rides/ride-filter-button.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import {
   Drawer,
@@ -284,183 +280,81 @@ export function DiningSearchBar({ options }: { options: FilterOptions }) {
 
 /** Mobile floating action button — owns search, sort, and filters drawers. */
 export function DiningMobileFAB({ options }: { options: FilterOptions }) {
-  const filters = useStore(diningStore, (s) => s.filters);
-  const partySize = useStore(diningStore, (s) => s.partySize);
   const sortKey = useStore(diningStore, (s) => s.sortKey);
   const searched = useStore(diningStore, (s) => s.searched);
   const extraCount = useStore(diningStore, (s) => countExtraFilters(s.filters));
 
-  // The Where/Cuisine/Service-level dropdowns are Base UI Selects portaled out of
-  // the React tree. Inside a vaul Drawer they must portal into the drawer's own
-  // node, not document.body — otherwise the popup sits outside the drawer's
-  // pointer scope and a tap only dismisses it instead of committing the choice.
-  const [searchNode, setSearchNode] = React.useState<HTMLElement | null>(null);
+  // The extended-filter Selects are Base UI Selects portaled out of the React
+  // tree. Inside a vaul Drawer they must portal into the drawer's own node, not
+  // document.body — otherwise the popup sits outside the drawer's pointer scope
+  // and a tap only dismisses it instead of committing the choice.
   const [filtersNode, setFiltersNode] = React.useState<HTMLElement | null>(null);
-
-  const selectOperator = React.useCallback(
-    (op: Operator) => {
-      const valid = options.parksByOperator[op];
-      patchFilters({
-        operator: op,
-        parkResort:
-          filters.parkResort !== "ALL" && !valid.includes(filters.parkResort)
-            ? "ALL"
-            : filters.parkResort,
-      });
-    },
-    [options.parksByOperator, filters.parkResort],
-  );
-
-  const activeSearchFacets = [
-    filters.operator !== "ALL" ? OPERATOR_LABELS[filters.operator] : null,
-    filters.parkResort !== "ALL" ? filters.parkResort : null,
-    filters.cuisine !== "ALL" ? filters.cuisine : null,
-  ].filter(Boolean);
-  const mobileSearchLabel = activeSearchFacets.length
-    ? activeSearchFacets.join(" · ")
-    : "Search restaurants";
 
   return (
     <div
-      className="fixed left-1/2 z-40 -translate-x-1/2 md:hidden"
-      style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1rem)" }}
+      className={MAP_FILTER_STACK}
+      style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1.25rem)" }}
     >
-      <div className="bg-popover/95 supports-backdrop-filter:backdrop-blur flex items-center gap-1 rounded-full border p-1 shadow-xl">
-        {/* Search / edit search */}
+      {/* Left-anchored stacked pills matching the map's Filter button exactly.
+          Sort only once there's a committed search (a list to order). */}
+      {searched && (
         <Drawer>
-          <DrawerTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="rounded-full gap-1.5 px-3 text-xs font-medium"
-            >
-              <SearchIcon className="size-3.5 shrink-0" />
-              <span className="max-w-[40vw] truncate">{mobileSearchLabel}</span>
-            </Button>
+          <DrawerTrigger className={MAP_FILTER_PILL}>
+            <ArrowUpDownIcon />
+            Sort
           </DrawerTrigger>
-          <DrawerContent ref={setSearchNode}>
-            <DrawerHeader className="border-b pb-4">
-              <DrawerTitle>Search restaurants</DrawerTitle>
-              <DrawerDescription>Choose a place, cuisine, and party size.</DrawerDescription>
+          <DrawerContent>
+            <DrawerHeader>
+              <DrawerTitle>Sort restaurants</DrawerTitle>
+              <DrawerDescription>Choose how the list is ordered.</DrawerDescription>
             </DrawerHeader>
-            <div className="flex flex-col gap-5 overflow-y-auto px-4 pb-4 pt-6">
-              <Section label="Parks">
-                <PillRow
-                  options={Object.keys(OPERATOR_LABELS) as Array<Operator>}
-                  value={filters.operator}
-                  onSelect={selectOperator}
-                  labelOf={(v) => OPERATOR_LABELS[v]}
-                />
-              </Section>
-              <Section label="Where">
-                <AllSelect
-                  value={filters.parkResort}
-                  onValueChange={(v) => patchFilters({ parkResort: v })}
-                  allLabel="All restaurants"
-                  options={options.parksByOperator[filters.operator]}
-                  ariaLabel="Park or resort"
-                  container={searchNode}
-                />
-              </Section>
-              <Section label="Cuisine">
-                <AllSelect
-                  value={filters.cuisine}
-                  onValueChange={(v) => patchFilters({ cuisine: v })}
-                  allLabel="All cuisines"
-                  options={options.cuisines}
-                  ariaLabel="Cuisine"
-                  container={searchNode}
-                />
-              </Section>
-              <Section label="Party size">
-                <PillRow
-                  options={PARTY_SIZE_OPTIONS}
-                  value={partySize}
-                  onSelect={setPartySize}
-                  labelOf={(v) => v}
-                />
-              </Section>
+            <div className="flex flex-col gap-1 px-4 pb-4">
+              {(Object.keys(SORT_LABELS) as Array<SortKey>).map((k) => (
+                <DrawerClose key={k} asChild>
+                  <Button
+                    variant={sortKey === k ? "secondary" : "ghost"}
+                    className="justify-start"
+                    onClick={() => setSortKey(k)}
+                  >
+                    {SORT_LABELS[k]}
+                  </Button>
+                </DrawerClose>
+              ))}
             </div>
-            <DrawerFooter>
-              <DrawerClose asChild>
-                <Button className="rounded-full" onClick={commitSearch}>
-                  {searched ? "Update search" : "Search"}
-                </Button>
-              </DrawerClose>
-            </DrawerFooter>
           </DrawerContent>
         </Drawer>
+      )}
 
-        {searched && (
-          <>
-            <span className="bg-border h-5 w-px" />
-
-            {/* Sort */}
-            <Drawer>
-              <DrawerTrigger asChild>
-                <Button variant="ghost" size="sm" className="rounded-full">
-                  <ArrowUpDownIcon data-icon="inline-start" />
-                  Sort
-                </Button>
-              </DrawerTrigger>
-              <DrawerContent>
-                <DrawerHeader>
-                  <DrawerTitle>Sort restaurants</DrawerTitle>
-                  <DrawerDescription>Choose how the list is ordered.</DrawerDescription>
-                </DrawerHeader>
-                <div className="flex flex-col gap-1 px-4 pb-4">
-                  {(Object.keys(SORT_LABELS) as Array<SortKey>).map((k) => (
-                    <DrawerClose key={k} asChild>
-                      <Button
-                        variant={sortKey === k ? "secondary" : "ghost"}
-                        className="justify-start"
-                        onClick={() => setSortKey(k)}
-                      >
-                        {SORT_LABELS[k]}
-                      </Button>
-                    </DrawerClose>
-                  ))}
-                </div>
-              </DrawerContent>
-            </Drawer>
-
-            <span className="bg-border h-5 w-px" />
-
-            {/* Filters */}
-            <Drawer>
-              <DrawerTrigger asChild>
-                <Button variant="ghost" size="sm" className="rounded-full">
-                  <SlidersHorizontalIcon data-icon="inline-start" />
-                  Filters
-                  {extraCount > 0 ? <span className="bg-primary size-1.5 rounded-full" /> : null}
-                </Button>
-              </DrawerTrigger>
-              <DrawerContent ref={setFiltersNode}>
-                <DrawerHeader className="border-b pb-4">
-                  <DrawerTitle>Filters</DrawerTitle>
-                  <DrawerDescription>Narrow by price, hours, features, and more.</DrawerDescription>
-                </DrawerHeader>
-                <div className="overflow-y-auto px-4">
-                  <ExtendedFilters options={options} container={filtersNode} />
-                </div>
-                <DrawerFooter className="flex-row gap-2">
-                  <Button
-                    variant="outline"
-                    className={cn("flex-1", extraCount === 0 && "opacity-50")}
-                    disabled={extraCount === 0}
-                    onClick={clearExtraFilters}
-                  >
-                    Clear all
-                  </Button>
-                  <DrawerClose asChild>
-                    <Button className="flex-1">Done</Button>
-                  </DrawerClose>
-                </DrawerFooter>
-              </DrawerContent>
-            </Drawer>
-          </>
-        )}
-      </div>
+      {/* Filter */}
+      <Drawer>
+        <DrawerTrigger className={MAP_FILTER_PILL}>
+          <SlidersHorizontalIcon />
+          Filter
+          {extraCount > 0 ? <span className="bg-primary size-1.5 rounded-full" /> : null}
+        </DrawerTrigger>
+        <DrawerContent ref={setFiltersNode}>
+          <DrawerHeader className="border-b pb-4">
+            <DrawerTitle>Filters</DrawerTitle>
+            <DrawerDescription>Narrow by price, hours, features, and more.</DrawerDescription>
+          </DrawerHeader>
+          <div className="overflow-y-auto px-4">
+            <ExtendedFilters options={options} container={filtersNode} />
+          </div>
+          <DrawerFooter className="flex-row gap-2">
+            <Button
+              variant="outline"
+              className={cn("flex-1", extraCount === 0 && "opacity-50")}
+              disabled={extraCount === 0}
+              onClick={clearExtraFilters}
+            >
+              Clear all
+            </Button>
+            <DrawerClose asChild>
+              <Button className="flex-1">Done</Button>
+            </DrawerClose>
+          </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
     </div>
   );
 }

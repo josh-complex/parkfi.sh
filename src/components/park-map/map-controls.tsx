@@ -49,70 +49,94 @@ export function PlayHint({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Vertical +/- zoom group, bottom-right, stacked directly above the locate
- *  button (clear of the bottom-nav island on mobile). Replaces each engine's
- *  native zoom control with one connected 3D control — a single embossed shelf
- *  split by a divider — driving zoom through the shared MapHandle. Individual
- *  buttons flash their background on press rather than sinking, so the group
- *  reads as one solid piece. */
+/** Vertical +/- zoom group, sitting at the top of the bottom-right control
+ *  column (see the stack in map-stage). Replaces each engine's native zoom
+ *  control with one connected 3D control — a single embossed shelf split by a
+ *  divider — driving zoom through the shared MapHandle. Individual buttons flash
+ *  their background on press rather than sinking, so the group reads as one solid
+ *  piece. */
 export function ZoomControl({
   onZoomIn,
   onZoomOut,
-  raised,
 }: {
   onZoomIn: () => void;
   onZoomOut: () => void;
-  /** Lift clear of the bottom nav ETA bar while navigating. */
-  raised?: boolean;
 }) {
   return (
-    <div
-      data-map-chrome="bottom"
-      className={cn(
-        "pointer-events-none absolute right-3 z-10",
-        raised
-          ? "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+8.5rem)] md:bottom-[8rem]"
-          : "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+4.25rem)] md:bottom-[3.75rem]",
-      )}
-    >
-      <div className="btn-3d-outline border-3d shadow-3d pointer-events-auto flex flex-col overflow-hidden rounded-2xl bg-background/95 backdrop-blur dark:border-[color-mix(in_oklch,var(--border),white_25%)]">
-        <button
-          type="button"
-          onClick={onZoomIn}
-          aria-label="Zoom in"
-          className="flex size-10 items-center justify-center text-foreground transition-colors active:bg-foreground/10"
-        >
-          <PlusIcon className="size-5" />
-        </button>
-        <div className="mx-2 h-px bg-border" />
-        <button
-          type="button"
-          onClick={onZoomOut}
-          aria-label="Zoom out"
-          className="flex size-10 items-center justify-center text-foreground transition-colors active:bg-foreground/10"
-        >
-          <MinusIcon className="size-5" />
-        </button>
-      </div>
+    <div className="btn-3d-outline border-3d shadow-3d pointer-events-auto flex flex-col overflow-hidden rounded-2xl bg-background/95 backdrop-blur dark:border-[color-mix(in_oklch,var(--border),white_25%)]">
+      <button
+        type="button"
+        onClick={onZoomIn}
+        aria-label="Zoom in"
+        className="flex size-10 items-center justify-center text-foreground transition-colors active:bg-foreground/10"
+      >
+        <PlusIcon className="size-5" />
+      </button>
+      <div className="mx-2 h-px bg-border" />
+      <button
+        type="button"
+        onClick={onZoomOut}
+        aria-label="Zoom out"
+        className="flex size-10 items-center justify-center text-foreground transition-colors active:bg-foreground/10"
+      >
+        <MinusIcon className="size-5" />
+      </button>
     </div>
   );
 }
 
 /**
- * Floating "locate me" control, overlaid on the map (it travels in the portal so
- * it follows the map between routes). Sits clear of the bottom-nav island on
- * mobile and bottom-right on desktop. Tapping it requests/refreshes the fix.
+ * Toggleable map-credits chip, sitting at the bottom of the bottom-right control
+ * column (below the locate button). We turn off each engine's native attribution
+ * control (which otherwise pokes out beneath the bottom-nav island) and carry the
+ * MapTiler/OSM credit here instead. Collapsed it's just a round info button;
+ * tapping reveals the attribution, which motions in to its left while the chip
+ * grows to fit (an animated `grid-cols` track drives the width).
  */
-export function LocateButton({
-  state,
-  onClick,
-  raised,
-}: {
-  state: GeoState;
-  onClick: () => void;
-  /** Lift clear of the bottom nav ETA bar while navigating. */
-  raised?: boolean;
-}) {
+export function MapAttribution() {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <div className="btn-3d-outline border-3d shadow-3d pointer-events-auto flex h-10 items-center overflow-hidden rounded-full bg-background/95 backdrop-blur dark:border-[color-mix(in_oklch,var(--border),white_25%)]">
+      {/* Attribution text — an animated `grid-cols` track (0fr↔1fr) so the chip
+          grows/shrinks smoothly and the text slides in rather than popping. */}
+      <div
+        className={cn(
+          "grid transition-[grid-template-columns,opacity] duration-300 ease-out motion-reduce:transition-none",
+          open ? "grid-cols-[1fr] opacity-100" : "grid-cols-[0fr] opacity-0",
+        )}
+      >
+        <div className="overflow-hidden">
+          <p className="whitespace-nowrap pl-3.5 pr-1 text-[0.7rem] leading-none text-muted-foreground [&_a]:underline [&_a]:decoration-dotted [&_a]:underline-offset-2">
+            ©{" "}
+            <a href="https://www.maptiler.com/copyright/" target="_blank" rel="noreferrer">
+              MapTiler
+            </a>{" "}
+            ©{" "}
+            <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
+              OpenStreetMap
+            </a>
+          </p>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-label={open ? "Hide map credits" : "Show map credits"}
+        aria-expanded={open}
+        className="flex size-10 shrink-0 items-center justify-center text-foreground transition-colors active:bg-foreground/10"
+      >
+        <InfoIcon className="size-5" />
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Floating "locate me" control, sitting in the middle of the bottom-right
+ * control column (see the stack in map-stage). Tapping it requests/refreshes the
+ * fix.
+ */
+export function LocateButton({ state, onClick }: { state: GeoState; onClick: () => void }) {
   const prompting = state.status === "prompting";
   const active = state.status === "granted";
   const off = state.status === "denied" || state.status === "unavailable";
@@ -131,10 +155,7 @@ export function LocateButton({
       }
       className={cn(
         MAP_CTRL_3D,
-        "absolute right-3 z-10 rounded-full",
-        raised
-          ? "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+5.5rem)] md:bottom-[5rem]"
-          : "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+1.25rem)] md:bottom-3",
+        "rounded-full",
         active && "text-blue-600",
         off && "text-muted-foreground",
       )}

@@ -4,7 +4,12 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowUpDownIcon, LayoutGridIcon, ListIcon, SlidersHorizontalIcon } from "lucide-react";
 
 import { RideCategoryChips } from "#/components/rides/ride-category-chips.tsx";
-import { RideFilterControls, RideFilterFooter } from "#/components/rides/ride-filter-button.tsx";
+import {
+  MAP_FILTER_PILL,
+  MAP_FILTER_STACK,
+  RideFilterControls,
+  RideFilterFooter,
+} from "#/components/rides/ride-filter-button.tsx";
 import {
   RIDE_CATEGORIES,
   rideFilterCount,
@@ -166,20 +171,27 @@ function SortDrawer({
 }: {
   sort: Sort;
   onSort: (s: Sort) => void;
-  variant: "ghost" | "outline";
+  variant: "ghost" | "outline" | "pill";
 }) {
   return (
     <Drawer>
-      <DrawerTrigger asChild>
-        <Button
-          variant={variant}
-          size="sm"
-          className={cn("min-h-10", variant === "ghost" && "rounded-full")}
-        >
-          <ArrowUpDownIcon data-icon="inline-start" />
+      {variant === "pill" ? (
+        <DrawerTrigger className={MAP_FILTER_PILL}>
+          <ArrowUpDownIcon />
           Sort
-        </Button>
-      </DrawerTrigger>
+        </DrawerTrigger>
+      ) : (
+        <DrawerTrigger asChild>
+          <Button
+            variant={variant}
+            size="sm"
+            className={cn("min-h-10", variant === "ghost" && "rounded-full")}
+          >
+            <ArrowUpDownIcon data-icon="inline-start" />
+            Sort
+          </Button>
+        </DrawerTrigger>
+      )}
       <DrawerContent>
         <DrawerHeader>
           <DrawerTitle>Sort rides</DrawerTitle>
@@ -204,26 +216,36 @@ function SortDrawer({
 }
 
 /** Filter chooser — reuses the shared ride-filter controls (same as the map). */
-function FilterDrawer({ variant }: { variant: "ghost" | "outline" }) {
+function FilterDrawer({ variant }: { variant: "ghost" | "outline" | "pill" }) {
   const { filter } = useRideFilter();
   const count = rideFilterCount(filter);
+  const badge =
+    count > 0 ? (
+      <span className="bg-primary text-primary-foreground ml-0.5 inline-flex min-w-[1.1rem] items-center justify-center rounded-full px-1 text-[11px] font-bold leading-[1.1rem]">
+        {count}
+      </span>
+    ) : null;
   return (
     <Drawer>
-      <DrawerTrigger asChild>
-        <Button
-          variant={variant}
-          size="sm"
-          className={cn("min-h-10", variant === "ghost" && "rounded-full")}
-        >
-          <SlidersHorizontalIcon data-icon="inline-start" />
+      {variant === "pill" ? (
+        <DrawerTrigger className={MAP_FILTER_PILL}>
+          <SlidersHorizontalIcon />
           Filter
-          {count > 0 && (
-            <span className="bg-primary text-primary-foreground ml-0.5 inline-flex min-w-[1.1rem] items-center justify-center rounded-full px-1 text-[11px] font-bold leading-[1.1rem]">
-              {count}
-            </span>
-          )}
-        </Button>
-      </DrawerTrigger>
+          {badge}
+        </DrawerTrigger>
+      ) : (
+        <DrawerTrigger asChild>
+          <Button
+            variant={variant}
+            size="sm"
+            className={cn("min-h-10", variant === "ghost" && "rounded-full")}
+          >
+            <SlidersHorizontalIcon data-icon="inline-start" />
+            Filter
+            {badge}
+          </Button>
+        </DrawerTrigger>
+      )}
       <DrawerContent>
         <DrawerHeader className="border-b pb-4">
           <DrawerTitle>Filter rides</DrawerTitle>
@@ -420,19 +442,16 @@ export function CrossParkWaits() {
         })}
       </div>
 
-      {/* Mobile controls — floating FAB, matching Eats/Stays. */}
+      {/* Mobile controls — left-anchored stacked pills, matching the map's
+          bottom-left Filter button exactly. Filter + Sort only (omni search
+          covers search; the grid/list toggle lives in the desktop toolbar). */}
       {!isLoading && shown > 0 && (
         <div
-          className="fixed left-1/2 z-40 -translate-x-1/2 md:hidden"
-          style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1rem)" }}
+          className={MAP_FILTER_STACK}
+          style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1.25rem)" }}
         >
-          <div className="flex items-center gap-1 rounded-full border bg-popover/95 p-1 shadow-xl supports-backdrop-filter:backdrop-blur">
-            <SortDrawer sort={sort} onSort={setSort} variant="ghost" />
-            <span className="h-5 w-px bg-border" />
-            <FilterDrawer variant="ghost" />
-            <span className="h-5 w-px bg-border" />
-            <ViewToggle view={view} onView={setViewPersist} variant="ghost" />
-          </div>
+          <SortDrawer sort={sort} onSort={setSort} variant="pill" />
+          <FilterDrawer variant="pill" />
         </div>
       )}
     </div>

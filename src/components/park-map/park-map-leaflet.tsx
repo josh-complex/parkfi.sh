@@ -322,7 +322,9 @@ export function ParkMapLeaflet({
       center: [ORLANDO_CENTER[1], ORLANDO_CENTER[0]],
       zoom: ORLANDO_ZOOM,
       zoomControl: false,
-      attributionControl: true,
+      // Native attribution off — the map-stage credits chip carries it instead
+      // (matches the GL renderer), so it never pokes out under the bottom nav.
+      attributionControl: false,
       // Solid wall at maxBounds (no elastic rubber-band). A popup's autoPan can
       // still slide within the padded bounds to reveal itself, but the view no
       // longer springs back toward the park when it reaches the edge.

@@ -20,10 +20,12 @@ import { useNavTestToolsEnabled } from "#/integrations/posthog/feature-flags.ts"
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { DEV_SPOTS } from "#/lib/dev-location.ts";
 import { lazyWithReload } from "#/lib/lazy-with-reload.tsx";
+import { cn } from "#/lib/utils.ts";
 import { distanceMeters, pointInPolygon } from "#/server/living/geofence.ts";
 
 import {
   LocateButton,
+  MapAttribution,
   MapToggleChips,
   ParkChipScroller,
   ParkDetailButton,
@@ -558,7 +560,9 @@ export function MapStageProvider({
                   focusSlug={roamFocusSlug}
                   onZoom={(slug) => mapRef.current?.flyToPark(slug)}
                 />
-                {roamFocusSlug && <MapToggleChips />}
+                {/* Layer toggle chips only for Disney — Universal parks don't
+                    have the ride/show/venue category data behind them yet. */}
+                {roamFocusSlug && isDisneyFocus && <MapToggleChips />}
               </div>
             )}
             {/* Nav QA tool: quick-destination picker for testing walking
@@ -571,28 +575,40 @@ export function MapStageProvider({
                 onEndNav={clearNavTrip}
               />
             )}
+            {/* Bottom-right control column: zoom group, locate, and the credits
+                chip stacked top-to-bottom. One bottom-anchored flex column owns
+                the positioning (and lifts clear of the nav ETA bar while
+                navigating), so the controls stay a real stack instead of three
+                separately-positioned elements. */}
             {attached && engine && (
-              <ZoomControl
-                onZoomIn={() => mapRef.current?.zoomIn()}
-                onZoomOut={() => mapRef.current?.zoomOut()}
-                raised={navigating}
-              />
-            )}
-            {attached && engine && (
-              <LocateButton
-                state={geo.state}
-                // While navigating, the locate button doubles as recenter — it
-                // re-engages the follow-cam (and heading-up) after a manual pan.
-                // Otherwise it's a toggle: on when off, off when already tracking.
-                onClick={
-                  started
-                    ? flyToUser
-                    : geo.state.status === "granted"
-                      ? geo.deactivate
-                      : activateLocate
-                }
-                raised={navigating}
-              />
+              <div
+                data-map-chrome="bottom"
+                className={cn(
+                  "pointer-events-none absolute right-3 z-10 flex flex-col items-end gap-2",
+                  navigating
+                    ? "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+5.5rem)] md:bottom-[5rem]"
+                    : "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+1.25rem)] md:bottom-3",
+                )}
+              >
+                <ZoomControl
+                  onZoomIn={() => mapRef.current?.zoomIn()}
+                  onZoomOut={() => mapRef.current?.zoomOut()}
+                />
+                <LocateButton
+                  state={geo.state}
+                  // While navigating, the locate button doubles as recenter — it
+                  // re-engages the follow-cam (and heading-up) after a manual pan.
+                  // Otherwise it's a toggle: on when off, off when already tracking.
+                  onClick={
+                    started
+                      ? flyToUser
+                      : geo.state.status === "granted"
+                        ? geo.deactivate
+                        : activateLocate
+                  }
+                />
+                <MapAttribution />
+              </div>
             )}
             {/* Bottom-left cluster (roam, once a park is focused): the park-details
                 shortcut stacked directly on top of the ride filter button. Both are
