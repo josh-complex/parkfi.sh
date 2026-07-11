@@ -98,6 +98,21 @@
   }
 }
 
+/* Capacitor native shell (iOS/Android): the WKWebView/WebView reports
+   `display-mode: browser`, so the standalone block above never fires — leaving
+   the full `env(safe-area-inset-bottom)` (~34px home indicator) under the nav
+   and lifting all bottom-anchored map chrome. Mirror the standalone treatment
+   here, keyed off the `.native` class the root shell adds when `isNative()`.
+   The nav's own `max(…, 1rem)` floor still keeps the keys off the very edge. */
+html.native {
+  --safe-bottom: 0px;
+  min-height: 100vh;
+}
+html.native body,
+html.native [data-slot="sidebar-wrapper"] {
+  min-height: 100vh;
+}
+
 .dark {
   --background: #0c1a35;
   --foreground: #dde6f5;

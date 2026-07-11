@@ -102,6 +102,15 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   // on, `hasLaunched()` is true and in-app navigations behave normally.
   useEffect(markLaunched, []);
 
+  // Flag the Capacitor native shell for CSS. The WKWebView/WebView reports
+  // `display-mode: browser`, so our `@media (display-mode: standalone)` safe-area
+  // compensation never fires natively; the `.native` hook (styles.css) mirrors it
+  // so native matches the installed PWA instead of floating above the home
+  // indicator. Client-only: `isNative()` is false on SSR/web.
+  useEffect(() => {
+    if (isNative()) document.documentElement.classList.add("native");
+  }, []);
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
