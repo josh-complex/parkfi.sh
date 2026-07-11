@@ -78,6 +78,13 @@ async function syncOrgRoleFromMicrosoft(acct: {
 }
 
 export const auth = betterAuth({
+  // Pin the canonical origin in prod so the trusted origin and OAuth callback
+  // URLs never depend on a Railway env var (BETTER_AUTH_URL / its fallbacks)
+  // resolving correctly — an explicit baseURL takes precedence over all of
+  // them. Dev falls back to BETTER_AUTH_URL (localhost). This is what makes the
+  // apex the one trusted web origin; without it, a stale/mis-scoped env var
+  // left the app trusting www and rejecting apex sign-in (INVALID_CALLBACK_URL).
+  baseURL: import.meta.env.DEV ? undefined : "https://parkfi.sh",
   user: {
     // Server-managed fields. `input: false` is load-bearing: it stops a user
     // from setting their own role/orgTenantId through the sign-up or update-user
