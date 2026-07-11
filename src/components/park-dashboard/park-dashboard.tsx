@@ -73,7 +73,7 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
   return (
     <div
       className="flex flex-col gap-4 py-4 md:gap-6 md:py-6"
-      style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1.5rem)" }}
+      style={{ paddingBottom: "calc(var(--safe-bottom) + 1.5rem)" }}
     >
       {/* The page identity already shows in the sticky bar on mobile, so this
           in-body header would just repeat it — desktop only. */}

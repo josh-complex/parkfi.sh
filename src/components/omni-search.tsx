@@ -18,7 +18,6 @@ import { slugifyMenuItem } from "#/components/dining/menu-content.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { buttonVariants } from "#/components/ui/button.tsx";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "#/components/ui/drawer.tsx";
-import { MorphingText } from "#/components/ui/morphing-text.tsx";
 import { useAchievementTrack } from "#/hooks/use-achievement-track.ts";
 import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { cn } from "#/lib/utils.ts";
@@ -185,12 +184,9 @@ type Item = {
  */
 export function OmniSearch({
   variant = "bar",
-  placeholderTexts,
   className,
 }: {
   variant?: "bar" | "icon" | "inline";
-  /** When set (inline variant), the placeholder morphs through these strings. */
-  placeholderTexts?: Array<string>;
   /** Extra classes for the trigger (inline variant). */
   className?: string;
 } = {}) {
@@ -431,8 +427,8 @@ export function OmniSearch({
         // The mobile header search: an inset pill sized to match the avatar
         // beside it. Carries the shared `layoutId` so opening springs it out to
         // the full-width search bar in the overlay (sweeping over the avatar);
-        // closing morphs it back and the placeholder resumes morphing. Fades out
-        // while the overlay is up so only the morph target shows.
+        // closing morphs it back. Fades out while the overlay is up so only the
+        // morph target shows.
         <motion.button
           layoutId={panelId}
           type="button"
@@ -461,21 +457,7 @@ export function OmniSearch({
           )}
         >
           <SearchIcon className="size-5 shrink-0" />
-          {placeholderTexts && placeholderTexts.length > 0 ? (
-            <span className="flex min-w-0 flex-1 items-center overflow-visible">
-              <MorphingText
-                texts={placeholderTexts}
-                smooth
-                fit
-                fitStart
-                morphDuration={0.7}
-                pauseDuration={2}
-                className="h-6 text-[15px] leading-6 font-normal"
-              />
-            </span>
-          ) : (
-            <span className="flex-1 truncate">Search parks, rides…</span>
-          )}
+          <span className="flex-1 truncate">Search for parks, rides, food…</span>
         </motion.button>
       ) : variant === "icon" ? (
         // Same 3D outline surface as the bar, collapsed to a circle. Carries the
@@ -562,8 +544,8 @@ export function OmniSearch({
                   className="fixed inset-x-0 top-0 z-50 flex flex-col"
                   style={{
                     ...inlineBox,
-                    paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)",
-                    paddingBottom: "calc(env(safe-area-inset-bottom) + 0.75rem)",
+                    paddingTop: "calc(var(--safe-top) + 0.75rem)",
+                    paddingBottom: "calc(var(--safe-bottom) + 0.75rem)",
                     paddingLeft: "0.75rem",
                     paddingRight: "0.75rem",
                   }}
@@ -586,7 +568,12 @@ export function OmniSearch({
                       }}
                       onKeyDown={onKeyDown}
                       placeholder="Search parks, rides, dining…"
-                      className="min-w-0 flex-1 bg-transparent text-left text-[15px] leading-6 text-foreground outline-none placeholder:text-muted-foreground"
+                      // 16px, not 15: iOS auto-zooms the page in when a focused
+                      // input is under 16px (the viewport meta has no
+                      // `maximum-scale`), and that zoom sticks — making the whole
+                      // app look "grown" after the search opens. 16px is the
+                      // threshold that stops it.
+                      className="min-w-0 flex-1 bg-transparent text-left text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground"
                     />
                     <button
                       type="button"
@@ -760,7 +747,10 @@ function SearchBody({
             placeholder="Search parks, attractions, dining, blog posts…"
             className={cn(
               "w-full bg-transparent text-foreground outline-none placeholder:text-muted-foreground",
-              compact ? "text-sm" : "text-base md:text-sm",
+              // `text-base` (16px), never smaller, on the mobile drawer input:
+              // iOS auto-zooms the page when a focused input is under 16px and the
+              // zoom sticks. Desktop (the non-compact palette) is safe at md:text-sm.
+              compact ? "text-base" : "text-base md:text-sm",
             )}
           />
         </div>

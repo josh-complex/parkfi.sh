@@ -29,7 +29,7 @@ export function WielderPanel({ parkSlug, onClose }: WielderPanelProps) {
   const companions = companionsQ.data ?? [];
 
   return (
-    <div className="bg-background animate-in fade-in slide-in-from-top-2 pointer-events-auto absolute right-3 top-[calc(env(safe-area-inset-top)+9rem)] z-20 max-h-[70%] w-[min(92%,340px)] overflow-y-auto rounded-lg border p-4 shadow-lg duration-200 md:top-14">
+    <div className="bg-background animate-in fade-in slide-in-from-top-2 pointer-events-auto absolute right-3 top-[calc(var(--safe-top)+9rem)] z-20 max-h-[70%] w-[min(92%,340px)] overflow-y-auto rounded-lg border p-4 shadow-lg duration-200 md:top-14">
       <div className="mb-3 flex items-center justify-between">
         <div>
           <div className="text-sm font-medium">Kingdom Hearts</div>

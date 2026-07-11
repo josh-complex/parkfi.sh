@@ -551,7 +551,7 @@ export function MapStageProvider({
             {attached && engine && roam && !navigating && (
               <div
                 data-map-chrome="top"
-                className="pointer-events-none absolute inset-x-3 top-[calc(env(safe-area-inset-top)+4.5rem)] z-10 flex flex-col items-start gap-1 md:top-3"
+                className="pointer-events-none absolute inset-x-3 top-[calc(var(--safe-top)+4.5rem)] z-10 flex flex-col items-start gap-1 md:top-3"
               >
                 <ParkChipScroller
                   parks={parksDisneyFirst}

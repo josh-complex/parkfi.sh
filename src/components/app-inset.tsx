@@ -57,7 +57,7 @@ export function AppInset({ children, className }: { children: ReactNode; classNa
           (the fullscreen map route opts out via absolute fill). */}
       <div
         className={cn(
-          "relative flex min-h-0 w-full flex-1 flex-col bg-background pb-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom))] md:rounded-2xl md:pb-0 md:shadow-sm",
+          "relative flex min-h-0 w-full flex-1 flex-col bg-background pb-[calc(var(--bottom-nav-height)+var(--safe-bottom))] md:rounded-2xl md:pb-0 md:shadow-sm",
           className,
         )}
       >

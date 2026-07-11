@@ -285,7 +285,7 @@ export function NavOverlay({
           steals room from the instruction. */}
       <div
         data-map-chrome="top"
-        className="pointer-events-auto absolute inset-x-3 top-[calc(env(safe-area-inset-top)+4.5rem)] z-10 mx-auto max-w-md overflow-hidden rounded-2xl bg-green-700 text-white shadow-lg ring-1 ring-white/15 md:top-3"
+        className="pointer-events-auto absolute inset-x-3 top-[calc(var(--safe-top)+4.5rem)] z-10 mx-auto max-w-md overflow-hidden rounded-2xl bg-green-700 text-white shadow-lg ring-1 ring-white/15 md:top-3"
       >
         {canExpand ? (
           <button

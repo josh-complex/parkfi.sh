@@ -809,7 +809,7 @@ function MobileControls({
   return (
     <div
       className="fixed left-1/2 z-40 -translate-x-1/2 md:hidden"
-      style={{ bottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
+      style={{ bottom: "calc(var(--safe-bottom) + 1rem)" }}
     >
       <div className="flex items-center gap-1 rounded-full border bg-popover/95 p-1 shadow-xl supports-backdrop-filter:backdrop-blur">
         {/* Sort */}

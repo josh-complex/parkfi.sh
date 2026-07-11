@@ -96,7 +96,7 @@ export function OverviewPanel() {
   return (
     <div
       className="flex flex-col gap-4 p-4 lg:gap-6 lg:p-6"
-      style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1.5rem)" }}
+      style={{ paddingBottom: "calc(var(--safe-bottom) + 1.5rem)" }}
     >
       <div className="flex flex-col gap-1">
         <h1 className="text-xl font-semibold tracking-tight text-foreground">

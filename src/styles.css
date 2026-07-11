@@ -53,13 +53,22 @@
      scrollbar app-wide via the inherited rule in the base layer below. */
   --scrollbar-thumb: oklch(0.78 0 0);
   --scrollbar-thumb-hover: oklch(0.62 0 0);
+  /* Device safe-area insets. Prefer Capacitor SystemBars' injected
+     `--safe-area-inset-*` (bundled with @capacitor/core; `insetsHandling: "css"`),
+     which reports the *correct* native insets on Android — where the CSS `env()`
+     values are 0/wrong on any WebView < 140 under mandatory edge-to-edge (SDK 35+).
+     Fall back to the web-standard `env()` on iOS + browsers (where it's reliable),
+     then 0. Use these `--safe-*` vars everywhere instead of bare `env()` so both
+     platforms conform. `viewport-fit=cover` (root meta) enables the insets. */
+  --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  --safe-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
   /* Bottom inset for the floating mobile nav and every bit of map chrome that
-     clears it. In a browser tab this is the device safe-area (home-indicator)
-     inset. In an installed standalone PWA there is no browser toolbar, so on the
-     full-bleed map that tall reservation just reads as dead space under the nav
-     — collapse it to 0 there (the standalone override below). The nav's own
+     clears it. In an installed standalone PWA there is no browser toolbar, so on
+     the full-bleed map that tall reservation reads as dead space under the nav —
+     collapse it to 0 there (the standalone override below). The nav's own
      `max(…, 1rem)` floor still keeps its keys off the very edge. */
-  --safe-bottom: env(safe-area-inset-bottom);
+  --safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
 }
 
 /* Installed PWA (home-screen, no Safari chrome): drop the safe-area padding the

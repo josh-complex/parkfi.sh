@@ -424,7 +424,7 @@ export function CrossParkWaits() {
       {!isLoading && shown > 0 && (
         <div
           className="fixed left-1/2 z-40 -translate-x-1/2 md:hidden"
-          style={{ bottom: "calc(env(safe-area-inset-bottom) + var(--bottom-nav-height) + 1rem)" }}
+          style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1rem)" }}
         >
           <div className="flex items-center gap-1 rounded-full border bg-popover/95 p-1 shadow-xl supports-backdrop-filter:backdrop-blur">
             <SortDrawer sort={sort} onSort={setSort} variant="ghost" />

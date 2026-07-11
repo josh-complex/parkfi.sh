@@ -57,7 +57,7 @@ export function PlayOverlay({
   // the hint→battle→drop swaps from jumping vertically. Each block fades+slides
   // in so state changes read as a smooth transition, not a pop.
   const bottomAnchor =
-    "bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+3rem)] md:bottom-4";
+    "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+3rem)] md:bottom-4";
   const enter = "animate-in fade-in slide-in-from-bottom-2 duration-200";
 
   return (
@@ -67,7 +67,7 @@ export function PlayOverlay({
         <button
           type="button"
           onClick={() => setShowWielder((v) => !v)}
-          className="animate-in fade-in slide-in-from-top-2 pointer-events-auto absolute right-3 top-[calc(env(safe-area-inset-top)+5.5rem)] z-10 flex items-center gap-1.5 rounded-full border bg-background/95 px-3 py-2 text-xs font-medium shadow-sm backdrop-blur duration-200 md:top-3"
+          className="animate-in fade-in slide-in-from-top-2 pointer-events-auto absolute right-3 top-[calc(var(--safe-top)+5.5rem)] z-10 flex items-center gap-1.5 rounded-full border bg-background/95 px-3 py-2 text-xs font-medium shadow-sm backdrop-blur duration-200 md:top-3"
         >
           <SwordsIcon className="size-4" />
           Party

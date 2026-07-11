@@ -89,11 +89,11 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }}
       // Clear the status bar / notch: in an installed standalone PWA the content
       // runs under the translucent status bar, so a top toast would otherwise
-      // land on the clock/battery. `env(safe-area-inset-top)` is 0 in a browser
+      // land on the clock/battery. `var(--safe-top)` is 0 in a browser
       // tab, so this only pushes down where there's a real inset. Both props are
       // needed — sonner uses `--mobile-offset-top` under 600px (i.e. on phones).
-      offset={{ top: "calc(env(safe-area-inset-top) + 24px)" }}
-      mobileOffset={{ top: "calc(env(safe-area-inset-top) + 16px)" }}
+      offset={{ top: "calc(var(--safe-top) + 24px)" }}
+      mobileOffset={{ top: "calc(var(--safe-top) + 16px)" }}
       {...props}
     />
   );
