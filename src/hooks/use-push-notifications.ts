@@ -2,12 +2,22 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
 import posthog from "posthog-js";
 
 import { useTRPC } from "#/integrations/trpc/react";
 import { authClient } from "#/lib/auth-client.ts";
 import { reportError } from "#/lib/report-error.ts";
+import { isNative } from "#/lib/platform.ts";
+import {
+  checkNativePermission,
+  getCachedFcmToken,
+  initNativePushTapHandler,
+  nativePushPlatform,
+  registerForFcmToken,
+  unregisterFcm,
+} from "#/lib/native-push-client.ts";
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
 
@@ -22,20 +32,55 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 /**
  * Shared push-notification state + subscribe/unsubscribe flow.
  *
- * Centralizes browser-support detection, the current permission, whether an
- * active push subscription exists, and the VAPID subscribe handshake so the
- * notification bell and the one-shot enable prompt stay in sync.
+ * Two backends behind one API:
+ *  - **Web**: the browser service worker + VAPID push handshake.
+ *  - **Native shell (Capacitor)**: `@capacitor/push-notifications` → an FCM
+ *    device token (iOS APNs routed through FCM). `supported` is true on native
+ *    regardless of `VAPID_PUBLIC_KEY` — the plugin, not the SW, does the work.
+ *
+ * Centralizes support detection, the current permission, whether an active
+ * subscription/registration exists, and the subscribe handshake so the
+ * notification bell and the one-shot enable prompt stay in sync on both.
  */
 export function usePushNotifications() {
   const trpc = useTRPC();
+  const router = useRouter();
   const { data: session } = authClient.useSession();
   const userId = session?.user?.id;
+  const native = isNative();
   const [supported, setSupported] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission>("default");
   const [subscribed, setSubscribed] = useState(false);
   const [existing, setExisting] = useState<PushSubscription | null>(null);
+  // Native: the FCM token once registered (parallels `existing` on web). Used to
+  // re-bind on login and to unsubscribe.
+  const [nativeToken, setNativeToken] = useState<string | null>(null);
 
   useEffect(() => {
+    if (native) {
+      setSupported(true);
+      void initNativePushTapHandler((path) => void router.navigate({ to: path }));
+      void checkNativePermission().then((p) => {
+        setPermission(p);
+        // Permission already granted from a prior session — silently re-register
+        // to recover the token (it can rotate) and mark subscribed. The bind
+        // effect below then re-associates it with the signed-in account.
+        if (p === "granted") {
+          void registerForFcmToken()
+            .then((token) => {
+              if (token) {
+                setNativeToken(token);
+                setSubscribed(true);
+              }
+            })
+            .catch(() => {
+              /* registration hiccup — user can retry via the bell */
+            });
+        }
+      });
+      return;
+    }
+
     const ok =
       "serviceWorker" in navigator &&
       "PushManager" in window &&
@@ -54,7 +99,7 @@ export function usePushNotifications() {
       .catch(() => {
         /* no active registration yet */
       });
-  }, []);
+  }, [native, router]);
 
   const subscribeM = useMutation(
     trpc.notifications.subscribe.mutationOptions({
@@ -80,24 +125,44 @@ export function usePushNotifications() {
     }),
   );
 
-  // Re-bind an already-registered browser subscription to the signed-in account.
+  // Re-bind an already-registered subscription/token to the signed-in account.
   // A subscription created before login is stored server-side under "anonymous",
-  // and the browser keeps that subscription across login — so without this the
-  // account never gets associated with the device and its ride-alert pushes are
-  // delivered to nobody. The server upserts by endpoint, so this is idempotent.
+  // and the device keeps it across login — so without this the account never gets
+  // associated with the device and its ride-alert pushes go to nobody. The server
+  // upserts by endpoint/token, so this is idempotent.
   const bindSub = useMutation(trpc.notifications.subscribe.mutationOptions()).mutate;
   useEffect(() => {
-    if (!userId || !existing) return;
+    if (!userId) return;
+    if (native) {
+      const token = nativeToken ?? getCachedFcmToken();
+      if (token) bindSub({ kind: "fcm", token, platform: nativePushPlatform() });
+      return;
+    }
+    if (!existing) return;
     const json = existing.toJSON();
     bindSub({
       endpoint: existing.endpoint,
       p256dh: json.keys?.p256dh ?? "",
       auth: json.keys?.auth ?? "",
     });
-  }, [userId, existing, bindSub]);
+  }, [userId, existing, nativeToken, native, bindSub]);
 
   const subscribe = useCallback(async (): Promise<boolean> => {
     if (!supported) return false;
+
+    if (native) {
+      const token = await registerForFcmToken();
+      if (!token) {
+        setPermission("denied");
+        toast.error("Notification permission denied");
+        posthog.capture("notification_permission_denied", { permission: "denied" });
+        return false;
+      }
+      setPermission("granted");
+      setNativeToken(token);
+      subscribeM.mutate({ kind: "fcm", token, platform: nativePushPlatform() });
+      return true;
+    }
 
     // Request permission FIRST, synchronously within the click handler. Safari
     // (iOS in particular) discards the permission prompt if anything is awaited
@@ -125,10 +190,20 @@ export function usePushNotifications() {
       auth: json.keys?.auth ?? "",
     });
     return true;
-  }, [supported, subscribeM]);
+  }, [supported, native, subscribeM]);
 
   const unsubscribe = useCallback(async (): Promise<void> => {
     if (!supported) return;
+
+    if (native) {
+      const token = nativeToken ?? getCachedFcmToken();
+      await unregisterFcm();
+      if (token) unsubscribeM.mutate({ kind: "fcm", token });
+      setSubscribed(false);
+      setNativeToken(null);
+      return;
+    }
+
     const reg = await navigator.serviceWorker.ready;
     const existingSub = await reg.pushManager.getSubscription();
     if (existingSub) {
@@ -137,7 +212,7 @@ export function usePushNotifications() {
     }
     setSubscribed(false);
     setExisting(null);
-  }, [supported, unsubscribeM]);
+  }, [supported, native, nativeToken, unsubscribeM]);
 
   return {
     supported,

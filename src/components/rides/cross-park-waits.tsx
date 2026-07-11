@@ -264,18 +264,34 @@ function ViewToggle({
 }: {
   view: View;
   onView: (v: View) => void;
-  variant: "ghost" | "outline";
+  variant: "ghost" | "outline" | "pill";
 }) {
   const next: View = view === "grid" ? "list" : "grid";
+  const label = view === "grid" ? "Switch to list view" : "Switch to shelf view";
+  const icon = view === "grid" ? <ListIcon /> : <LayoutGridIcon />;
+  // Mobile: a right-anchored 3D round button matching the map's controls (and the
+  // left Filter/Sort pills' shelf/glare), mirroring the left cluster on the right.
+  if (variant === "pill") {
+    return (
+      <button
+        type="button"
+        onClick={() => onView(next)}
+        aria-label={label}
+        className="btn-3d-outline border-3d shadow-3d pointer-events-auto flex size-11 items-center justify-center rounded-full bg-background text-foreground transition active:scale-95 dark:border-[color-mix(in_oklch,var(--border),white_25%)] [&>svg]:size-5"
+      >
+        {icon}
+      </button>
+    );
+  }
   return (
     <Button
       variant={variant}
       size="icon-sm"
       className={cn("min-h-10 min-w-10", variant === "ghost" && "rounded-full")}
       onClick={() => onView(next)}
-      aria-label={view === "grid" ? "Switch to list view" : "Switch to card view"}
+      aria-label={label}
     >
-      {view === "grid" ? <ListIcon /> : <LayoutGridIcon />}
+      {icon}
     </Button>
   );
 }
@@ -444,15 +460,23 @@ export function CrossParkWaits() {
 
       {/* Mobile controls — left-anchored stacked pills, matching the map's
           bottom-left Filter button exactly. Filter + Sort only (omni search
-          covers search; the grid/list toggle lives in the desktop toolbar). */}
+          covers search). The shelf/list view toggle mirrors them on the right. */}
       {!isLoading && shown > 0 && (
-        <div
-          className={MAP_FILTER_STACK}
-          style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1.25rem)" }}
-        >
-          <SortDrawer sort={sort} onSort={setSort} variant="pill" />
-          <FilterDrawer variant="pill" />
-        </div>
+        <>
+          <div
+            className={MAP_FILTER_STACK}
+            style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1.25rem)" }}
+          >
+            <SortDrawer sort={sort} onSort={setSort} variant="pill" />
+            <FilterDrawer variant="pill" />
+          </div>
+          <div
+            className="pointer-events-none fixed right-3 z-40 flex md:hidden"
+            style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1.25rem)" }}
+          >
+            <ViewToggle view={view} onView={setViewPersist} variant="pill" />
+          </div>
+        </>
       )}
     </div>
   );

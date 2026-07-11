@@ -6,19 +6,29 @@ import { alertOptout } from "#/db/schema.ts";
 import { addSub, removeSub } from "#/server/notifications/subscriptions.ts";
 import { getPushQueue } from "#/server/notifications/queue.ts";
 
-const pushSubSchema = z.object({
+// Legacy webpush shape has no `kind` (existing browser blobs predate the
+// field); native FCM subs are always explicitly kinded.
+const webpushSubSchema = z.object({
+  kind: z.literal("webpush").optional(),
   endpoint: z.string().url(),
   p256dh: z.string(),
   auth: z.string(),
 });
+const fcmSubSchema = z.object({
+  kind: z.literal("fcm"),
+  token: z.string(),
+  platform: z.enum(["ios", "android"]),
+});
+const subInputSchema = z.union([fcmSubSchema, webpushSubSchema]);
 
 export const notificationsRouter = createTRPCRouter({
-  subscribe: publicProcedure.input(pushSubSchema).mutation(async ({ input, ctx }) => {
+  subscribe: publicProcedure.input(subInputSchema).mutation(async ({ input, ctx }) => {
     const userId = ctx.userId ?? "anonymous";
     try {
       await addSub(userId, input);
+      const id = input.kind === "fcm" ? input.token.slice(0, 12) : input.endpoint.slice(0, 40);
       console.log(
-        `[notifications.subscribe] userId=${userId} endpoint=${input.endpoint.slice(0, 40)}…`,
+        `[notifications.subscribe] userId=${userId} kind=${input.kind ?? "webpush"} id=${id}…`,
       );
     } catch (err) {
       console.error("[notifications.subscribe]", err);
@@ -28,10 +38,15 @@ export const notificationsRouter = createTRPCRouter({
   }),
 
   unsubscribe: publicProcedure
-    .input(z.object({ endpoint: z.string().url() }))
+    .input(
+      z.union([
+        z.object({ kind: z.literal("fcm"), token: z.string() }),
+        z.object({ kind: z.literal("webpush").optional(), endpoint: z.string().url() }),
+      ]),
+    )
     .mutation(async ({ input, ctx }) => {
       const userId = ctx.userId ?? "anonymous";
-      await removeSub(userId, input.endpoint);
+      await removeSub(userId, "token" in input ? input.token : input.endpoint);
       return { ok: true };
     }),
 

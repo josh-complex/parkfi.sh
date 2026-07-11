@@ -42,11 +42,26 @@
 >     iOS Info.plist `CFBundleURLTypes` + Android `parkfi` intent-filter already wired.
 >     `vp check` 0 errors, 267 tests pass. **Not yet device-verified** (G1/G2 in DEPLOY.md).
 >
+> **A4 FCM push — code shipped (2026-07-11, `vp check` 0 errors, 63 notification
+> tests pass):** `firebase-admin` installed; `StoredSub` discriminated union in
+> subscriptions.ts (legacy no-`kind` blobs = webpush, zero migration); server
+> `src/server/notifications/native-push.ts` (FCM sender, APNs via FCM, lazy app
+> init on `FIREBASE_SERVICE_ACCOUNT_JSON`); worker fan-out in
+> services/notifications/main.ts switches on `kind` and treats
+> `registration-token-not-registered` like the web 410; tRPC
+> subscribe/unsubscribe take a discriminated union; client
+> `src/lib/native-push-client.ts` (dynamic-imported plugin: register→FCM token,
+> unregister, tap→router.navigate on path-relative `data.url`) + native branch in
+> `use-push-notifications.ts` (supported=true on native, silent re-register +
+> bind-on-login). iOS `aps-environment` entitlement + `remote-notification`
+> background mode wired. **Still needs to go live:** Firebase project artifacts
+> (`GoogleService-Info.plist` in Xcode, `android/app/google-services.json`), an
+> APNs auth key uploaded to Firebase, and `FIREBASE_SERVICE_ACCOUNT_JSON` set on
+> the Railway notifications service — then device-verify G3/G4.
+>
 > **Remaining — all need native toolchains / device + Swift/Kotlin, not
 > verifiable in this env:**
 >
-> - **A4** FCM push (`firebase-admin`, `StoredSub` union, native-push.ts,
->   use-push-notifications native path)
 > - **B2** `packages/ride-recorder/` custom Capacitor plugin (iOS CMMotion / Android
 >   SensorManager)
 > - **B6** tracker wiring (arm/disarm monitoring on `inPark`), ride-recap toast,

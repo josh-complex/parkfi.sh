@@ -14,7 +14,14 @@ const MAPTILER_STYLE_ID = "019f3593-8a6f-771b-96d5-db0fec38726e";
 const MAPTILER_FALLBACK_RASTER_STYLE_ID = "streets-v4";
 
 export function maptilerStyleUrl(): string {
-  return `https://api.maptiler.com/maps/${MAPTILER_STYLE_ID}/style.json?key=${MAPTILER_KEY}`;
+  // Cache-bust the style *document* once per day. MapTiler serves style.json
+  // with a `Last-Modified` header but no `Cache-Control`, so clients (esp. the
+  // Capacitor WebView) apply heuristic freshness and can serve a pre-publish
+  // style for a long time without revalidating. A day-bucketed param means a
+  // republished style shows up within 24h at most, while the tiles/sprites/
+  // glyphs referenced *inside* the style keep caching normally.
+  const day = Math.floor(Date.now() / 86_400_000);
+  return `https://api.maptiler.com/maps/${MAPTILER_STYLE_ID}/style.json?key=${MAPTILER_KEY}&_=${day}`;
 }
 
 /**

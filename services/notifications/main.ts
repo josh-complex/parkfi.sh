@@ -17,6 +17,7 @@ import { createServer } from "node:http";
 import { Worker } from "bullmq";
 
 import { sendPush } from "#/server/notifications/push.ts";
+import { sendNativePush } from "#/server/notifications/native-push.ts";
 import {
   DINING_ALERT_QUEUE,
   STAY_ALERT_QUEUE,
@@ -43,8 +44,11 @@ const worker = new Worker<PushJob>(
     const subs = await getSubsForUser(userId);
     await Promise.all(
       subs.map(async (sub) => {
-        const ok = await sendPush(sub, { title, body, url });
-        if (!ok) await removeStale(userId, sub.endpoint);
+        const ok =
+          sub.kind === "fcm"
+            ? await sendNativePush(sub, { title, body, url })
+            : await sendPush(sub, { title, body, url });
+        if (!ok) await removeStale(userId, sub);
       }),
     );
     if (subs.length === 0) {

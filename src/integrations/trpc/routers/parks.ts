@@ -1209,10 +1209,11 @@ export const parksRouter = {
         parkSlug: z.string(),
         queueType: z.number().int().min(1).max(6).default(1),
         // `wait` → avg standby/single-rider minutes; `price` → avg LL Single
-        // dollars; `availability` → whole-park Lightning Lane availability as a
-        // 0–100% line (AVAILABLE=100, LIMITED=50, SOLD_OUT/PAUSED=0), aggregated
-        // across LL Multi + Single, ignoring `queueType`.
-        metric: z.enum(["wait", "price", "availability"]).default("wait"),
+        // dollars; `count` → per ride a 1/0 "available this bucket" flag
+        // (AVAILABLE or LIMITED = 1), so the client sums them into a whole-park
+        // "N Lightning Lanes available" line. Spans LL Multi + Single, ignoring
+        // `queueType`.
+        metric: z.enum(["wait", "price", "count"]).default("wait"),
         hours: z
           .number()
           .int()
@@ -1233,22 +1234,23 @@ export const parksRouter = {
                 ? "6 hours"
                 : "1 day";
       const isPrice = input.metric === "price";
-      const isAvailability = input.metric === "availability";
-      // Availability spans both Lightning Lane products (Multi = RETURN_TIME,
-      // Single = PAID_RETURN_TIME); wait/price key off the single requested type.
-      const queueFilter = isAvailability
+      const isCount = input.metric === "count";
+      // The available-count spans both Lightning Lane products (Multi =
+      // RETURN_TIME, Single = PAID_RETURN_TIME); wait/price key off the single
+      // requested type.
+      const queueFilter = isCount
         ? sql`q.queue_type IN (${QueueType.RETURN_TIME}, ${QueueType.PAID_RETURN_TIME})`
         : sql`q.queue_type = ${input.queueType}`;
-      // Map the categorical availability state to a percentage; NOT_OFFERED / no
-      // state drop to NULL so avg() ignores them (an all-unoffered bucket → null
-      // point → the client bridges it as downtime).
-      const valueExpr = isAvailability
-        ? sql`avg(CASE q.state
-                    WHEN ${QueueState.AVAILABLE} THEN 100
-                    WHEN ${QueueState.LIMITED} THEN 50
-                    WHEN ${QueueState.SOLD_OUT} THEN 0
-                    WHEN ${QueueState.PAUSED} THEN 0
-                    ELSE NULL END)::int`
+      // Per (attraction, bucket): 1 if the ride's Lightning Lane was bookable
+      // (AVAILABLE or LIMITED) at any point in the bucket, else 0. NOT_OFFERED /
+      // no state drop to NULL so an all-unoffered bucket → null point (the client
+      // bridges it as downtime). Summing these across rides on the client yields
+      // the whole-park "N Lightning Lanes available" line.
+      const valueExpr = isCount
+        ? sql`max(CASE
+                    WHEN q.state IN (${QueueState.AVAILABLE}, ${QueueState.LIMITED}) THEN 1
+                    WHEN q.state IN (${QueueState.SOLD_OUT}, ${QueueState.PAUSED}) THEN 0
+                    ELSE NULL END)`
         : isPrice
           ? sql`(avg(q.price_cents) / 100.0)`
           : sql`avg(q.wait_min)::int`;

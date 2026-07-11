@@ -773,10 +773,20 @@ function MobileCardList({
                 />
               </div>
             </div>
-            <div className="flex items-center justify-between gap-2 text-xs">
-              <PaidLineCell item={item} operatorSlug={operatorSlug} />
-              <ReturnWindowCell item={item} operatorSlug={operatorSlug} timeZone={timezone} />
-            </div>
+            {/* Lightning Lane / Express — labelled so it's unmistakable on the
+                phone card, and only shown for rides that actually have a paid
+                line (Universal rides without a Virtual Line drop the row). */}
+            {paidLineInfo(item, operatorSlug).has ? (
+              <div className="flex items-center justify-between gap-2 border-t border-border/50 pt-2.5 text-xs">
+                <span className="text-muted-foreground font-medium">
+                  {paidLineProduct(operatorSlug)}
+                </span>
+                <div className="flex items-center gap-3">
+                  <PaidLineCell item={item} operatorSlug={operatorSlug} />
+                  <ReturnWindowCell item={item} operatorSlug={operatorSlug} timeZone={timezone} />
+                </div>
+              </div>
+            ) : null}
             {parkSlug && (
               <Link
                 to="/park/$slug/ride/$rideSlug"

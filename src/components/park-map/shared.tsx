@@ -29,6 +29,12 @@ import {
   XIcon,
 } from "lucide-react";
 
+import {
+  formatPriceCents,
+  paidLineInfo,
+  paidLineProduct,
+} from "#/components/park-dashboard/lightning-lane.ts";
+
 import type { BoardItem } from "#/components/park-dashboard/types.ts";
 import type { GeoPolygon } from "#/db/schema.ts";
 import type { Feature, FeatureCollection, MultiPolygon, Polygon } from "geojson";
@@ -351,7 +357,42 @@ export function directionsButtonHtml(lng: number | null, lat: number | null): st
   return `<button type="button" data-directions data-lng="${lng}" data-lat="${lat}" class="relative top-0 inline-flex shrink-0 items-center justify-center gap-1 rounded-full border-3d shadow-3d h-8 px-3.5 text-[12px] font-semibold whitespace-nowrap text-white outline-none select-none bg-blue-600 hover:bg-blue-500 [--btn-3d:var(--color-blue-800)] [--btn-glare:oklch(1_0_0_/_0.28)] transition-[box-shadow,top,background-color] duration-150 ease-out hover:-top-px hover:shadow-3d-hover active:top-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active">Directions</button>`;
 }
 
-export function attractionCardBodyHtml(a: BoardItem, waitLabel: string, rideHref: string): string {
+/**
+ * The paid-line row for the attraction card — Disney Lightning Lane (Multi /
+ * Single) or Universal's Express/Virtual Line. Renders the product label, the
+ * live state pill, any à-la-carte price, and the LL tier, mirroring the board's
+ * `PaidLineCell` so the map card and the board tell the same story. Empty string
+ * when the ride carries no paid line (a Universal ride with no Virtual Line, or
+ * an un-enriched row), so the card simply omits the row.
+ */
+function paidLineCardHtml(a: BoardItem, operatorSlug: string | null): string {
+  const ll = paidLineInfo(a, operatorSlug);
+  if (!ll.has) return "";
+  const price = formatPriceCents(ll.priceCents, a.lightningLane.currency);
+  // Sold out reads destructive; any other live state reads as the secondary
+  // chip; a capability-only line with no posted state reads as a plain "offered".
+  const pill = ll.state
+    ? `<span class="rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${
+        ll.soldOut ? "bg-destructive/15 text-destructive" : "bg-secondary text-secondary-foreground"
+      }">${escapeHtml(ll.state.toLowerCase().replace("_", " "))}</span>`
+    : `<span class="rounded-md border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">offered</span>`;
+  const priceHtml = price
+    ? `<span class="tabular-nums font-medium text-card-foreground">${escapeHtml(price)}</span>`
+    : "";
+  const kindHtml = ll.kind
+    ? `<span class="text-[10px] uppercase text-muted-foreground">${escapeHtml(ll.kind)}</span>`
+    : "";
+  return `<div class="mt-2 flex flex-wrap items-center gap-1.5 text-[12px]"><span class="font-medium text-muted-foreground">${escapeHtml(
+    paidLineProduct(operatorSlug),
+  )}</span>${pill}${priceHtml}${kindHtml}</div>`;
+}
+
+export function attractionCardBodyHtml(
+  a: BoardItem,
+  waitLabel: string,
+  rideHref: string,
+  operatorSlug: string | null,
+): string {
   const meta = a.meta;
   const tags =
     meta?.tags && meta.tags.length > 0
@@ -390,9 +431,10 @@ export function attractionCardBodyHtml(a: BoardItem, waitLabel: string, rideHref
           true,
         )}</span></div>`
       : `<div class="mt-0.5 text-[12px] text-muted-foreground">${escapeHtml(waitLabel)}</div>`;
+  const paidLine = paidLineCardHtml(a, operatorSlug);
   return `<div class="text-[15px] font-semibold leading-tight text-card-foreground">${escapeHtml(
     a.name,
-  )}</div>${waitLine}${tags}${detail}${actions}`;
+  )}</div>${waitLine}${paidLine}${tags}${detail}${actions}`;
 }
 
 // Expanded-card geometry (px). The disc grows in place into a CARD_W-wide photo

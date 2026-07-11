@@ -50,7 +50,7 @@ import {
   tickLabelProps,
 } from "./visx/kit.tsx";
 
-type Metric = "wait" | "price" | "availability";
+type Metric = "wait" | "price" | "count";
 
 function getQueueOptions(operatorSlug?: string | null) {
   const paidLabel = paidLineProduct(operatorSlug);
@@ -58,9 +58,10 @@ function getQueueOptions(operatorSlug?: string | null) {
     { value: "1", label: "Standby wait", mode: "wait" as Metric },
     isUniversal(operatorSlug)
       ? { value: "3", label: paidLabel, mode: "wait" as Metric }
-      : // Disney Lightning Lane reads as whole-park availability (% across LL
-        // Multi + Single), not the à-la-carte LL Single price.
-        { value: "4", label: paidLabel, mode: "availability" as Metric },
+      : // Disney Lightning Lane reads as the whole-park count of currently
+        // available Lightning Lanes (across LL Multi + Single) — the raw number
+        // behind availability, not the à-la-carte LL Single price.
+        { value: "4", label: paidLabel, mode: "count" as Metric },
   ];
 }
 
@@ -269,8 +270,9 @@ function WaitPlot({
   }, [rows, sel]);
 
   // Y domain spans the average + every enabled ride across the visible window.
+  // In count mode there are no per-ride series (enabledRides is empty), so this
+  // maxes over just the whole-park available-count line.
   const yMax = React.useMemo(() => {
-    if (mode === "availability") return 100;
     let m = 0;
     const keys = [AVG_KEY, ...enabledRides.map((r) => String(r.id))];
     for (const row of visibleRows) {
@@ -290,9 +292,9 @@ function WaitPlot({
     range: [0, innerW],
   });
   const y = scaleLinear({
-    domain: [0, mode === "availability" ? 100 : yMax * 1.1 || 1],
+    domain: [0, yMax * 1.1 || 1],
     range: [PLOT_H, 0],
-    nice: mode !== "availability",
+    nice: true,
   });
 
   // Contiguous runs of closed buckets in view → shaded bands behind the lines.
@@ -325,7 +327,11 @@ function WaitPlot({
   );
 
   const valueFormatter = (v: number) =>
-    mode === "price" ? `$${v.toFixed(2)}` : mode === "availability" ? `${v}%` : `${v} min`;
+    mode === "price"
+      ? `$${v.toFixed(2)}`
+      : mode === "count"
+        ? `${Math.round(v)} available`
+        : `${v} min`;
 
   // Brush context: a slim overview across the FULL range. It mirrors the main
   // plot — the park average plus whatever ride series are enabled — so the strip
@@ -336,7 +342,6 @@ function WaitPlot({
   });
   const brushKeys = [AVG_KEY, ...enabledRides.map((r) => String(r.id))];
   const brushYMax = React.useMemo(() => {
-    if (mode === "availability") return 100;
     let m = 0;
     for (const r of rows) {
       for (const k of brushKeys) {
@@ -348,7 +353,7 @@ function WaitPlot({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, mode, brushKeys.join(",")]);
   const brushY = scaleLinear({
-    domain: [0, mode === "availability" ? 100 : brushYMax || 1],
+    domain: [0, brushYMax || 1],
     range: [BRUSH_H, 0],
   });
   const brushPts = React.useCallback(
@@ -447,7 +452,8 @@ function WaitPlot({
               />
             );
           })}
-          {/* whole-park average always on top */}
+          {/* whole-park line always on top — dashed for an average, solid for the
+              count metric (it's a running total, not an average of the series) */}
           <LinePath
             data={linePts(AVG_KEY)}
             x={(d) => x(new Date(d.t))}
@@ -455,7 +461,7 @@ function WaitPlot({
             curve={curveMonotoneX}
             stroke={PRIMARY}
             strokeWidth={2.75}
-            strokeDasharray="5 4"
+            strokeDasharray={mode === "count" ? undefined : "5 4"}
           />
           {/* hover cursor + dots */}
           {hover && (
@@ -503,7 +509,7 @@ function WaitPlot({
             hideTicks
             hideAxisLine
             tickFormat={(v) =>
-              mode === "price" ? `$${v}` : mode === "availability" ? `${v}%` : `${v}`
+              mode === "price" ? `$${v}` : mode === "count" ? `${Math.round(Number(v))}` : `${v}`
             }
             tickLabelProps={() =>
               tickLabelProps({ textAnchor: "end", dx: "2.2em", dy: "0.3em" }, tick)
@@ -633,7 +639,7 @@ function WaitPlot({
                           className="size-2 shrink-0 rounded-[2px]"
                           style={{ backgroundColor: PRIMARY }}
                         />
-                        Park average
+                        {mode === "count" ? "Lightning Lanes" : "Park average"}
                       </span>
                       <span className="font-mono font-medium tabular-nums text-foreground">
                         {valueFormatter(avgVal)}
@@ -775,9 +781,13 @@ export function ParkWaitChart({
       }
       const avg =
         open && vals.length > 0
-          ? mode === "price"
-            ? Number((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2))
-            : Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
+          ? mode === "count"
+            ? // A total, not an average: sum the per-ride 1/0 "available" flags
+              // into the whole-park count of currently available Lightning Lanes.
+              vals.reduce((a, b) => a + b, 0)
+            : mode === "price"
+              ? Number((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2))
+              : Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
           : null;
       return { p, open, avg };
     });
@@ -847,11 +857,13 @@ export function ParkWaitChart({
   // mismatch (#418). `tz` comes from the same query payload on both sides.
   const tz = historyQ.data?.timezone || "America/New_York";
 
-  const metricNoun =
-    mode === "price" ? "price" : mode === "availability" ? "availability" : "standby wait";
-  const description = `Whole-park average ${metricNoun}`;
+  const metricNoun = mode === "price" ? "price" : "standby wait";
+  const description =
+    mode === "count" ? "Lightning Lanes available park-wide" : `Whole-park average ${metricNoun}`;
 
-  const enabledRides = rides.filter((r) => displayedIds.has(r.id));
+  // The count metric is a single whole-park total — there are no meaningful
+  // per-ride lines (each ride is just 1/0), so we don't draw or offer any.
+  const enabledRides = mode === "count" ? [] : rides.filter((r) => displayedIds.has(r.id));
   const hasData = chartData.length > 0 && rides.length > 0;
 
   return (
@@ -913,7 +925,7 @@ export function ParkWaitChart({
             description={
               <>
                 We&rsquo;re still gathering{" "}
-                {mode === "price" ? "pricing" : mode === "availability" ? "availability" : "wait"}{" "}
+                {mode === "price" ? "pricing" : mode === "count" ? "Lightning Lane" : "wait"}{" "}
                 history for this park. Check back soon.
               </>
             }
@@ -938,51 +950,54 @@ export function ParkWaitChart({
               }
             </ParentSizeWidth>
 
-            {/* Ride legend — always present below the chart, wrapping as chips
-                across the full card width at every size. */}
-            <div
-              className="flex h-[180px] flex-col overflow-hidden rounded-lg border bg-muted/20"
-              role="group"
-              aria-label="Toggle ride series"
-            >
-              {/* Header lives outside the scroll area so it's clipped by the
-                  parent's rounded border and never reveals on overscroll. */}
-              <div className="text-muted-foreground flex items-center justify-between gap-2 px-3 py-2 text-xs font-medium">
-                <span>Rides ({rides.length})</span>
-                <button
-                  type="button"
-                  onClick={toggleAll}
-                  aria-pressed={allEnabled}
-                  className="text-primary rounded px-1 py-0.5 font-medium transition-colors hover:underline"
-                >
-                  {allEnabled ? "Clear all" : "Select all"}
-                </button>
-              </div>
+            {/* Ride legend — wrapping chips below the chart at every size. Hidden
+                for the count metric, which is a single whole-park total with no
+                per-ride series to toggle. */}
+            {mode !== "count" && (
               <div
-                className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-x-none"
-                style={{
-                  maskImage:
-                    "linear-gradient(to bottom, transparent, #000 20px), linear-gradient(#000, #000)",
-                  maskSize: "calc(100% - 12px) 100%, 12px 100%",
-                  maskPosition: "left top, right top",
-                  maskRepeat: "no-repeat",
-                  WebkitMaskImage:
-                    "linear-gradient(to bottom, transparent, #000 20px), linear-gradient(#000, #000)",
-                  WebkitMaskSize: "calc(100% - 12px) 100%, 12px 100%",
-                  WebkitMaskPosition: "left top, right top",
-                  WebkitMaskRepeat: "no-repeat",
-                }}
+                className="flex h-[180px] flex-col overflow-hidden rounded-lg border bg-muted/20"
+                role="group"
+                aria-label="Toggle ride series"
               >
-                <RideLegend
-                  rides={rides}
-                  enabled={displayedIds}
-                  colorOf={colorOf}
-                  trendOf={(id) => trendOf.get(id) ?? "flat"}
-                  toggle={toggle}
-                  layout="wrap"
-                />
+                {/* Header lives outside the scroll area so it's clipped by the
+                  parent's rounded border and never reveals on overscroll. */}
+                <div className="text-muted-foreground flex items-center justify-between gap-2 px-3 py-2 text-xs font-medium">
+                  <span>Rides ({rides.length})</span>
+                  <button
+                    type="button"
+                    onClick={toggleAll}
+                    aria-pressed={allEnabled}
+                    className="text-primary rounded px-1 py-0.5 font-medium transition-colors hover:underline"
+                  >
+                    {allEnabled ? "Clear all" : "Select all"}
+                  </button>
+                </div>
+                <div
+                  className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-x-none"
+                  style={{
+                    maskImage:
+                      "linear-gradient(to bottom, transparent, #000 20px), linear-gradient(#000, #000)",
+                    maskSize: "calc(100% - 12px) 100%, 12px 100%",
+                    maskPosition: "left top, right top",
+                    maskRepeat: "no-repeat",
+                    WebkitMaskImage:
+                      "linear-gradient(to bottom, transparent, #000 20px), linear-gradient(#000, #000)",
+                    WebkitMaskSize: "calc(100% - 12px) 100%, 12px 100%",
+                    WebkitMaskPosition: "left top, right top",
+                    WebkitMaskRepeat: "no-repeat",
+                  }}
+                >
+                  <RideLegend
+                    rides={rides}
+                    enabled={displayedIds}
+                    colorOf={colorOf}
+                    trendOf={(id) => trendOf.get(id) ?? "flat"}
+                    toggle={toggle}
+                    layout="wrap"
+                  />
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
       </CardContent>

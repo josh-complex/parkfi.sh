@@ -991,6 +991,11 @@ export function ParkMap({
         });
       }
     } else {
+      // Every attraction pin on a park view belongs to the focused park, so its
+      // operator (Disney vs Universal) is fixed — resolve it once for the card's
+      // Lightning Lane / Express labelling.
+      const operatorSlug =
+        parksRef.current?.find((p) => p.slug === effectiveSlug)?.operatorSlug ?? null;
       for (const a of board ?? []) {
         if (a.latitude == null || a.longitude == null) continue;
         if (a.entityType !== "ATTRACTION") continue;
@@ -1046,7 +1051,7 @@ export function ParkMap({
             const { card, close } = openAttractionCard({
               detail,
               container: containerRef.current,
-              bodyHtml: attractionCardBodyHtml(a, waitLabel, rideHref),
+              bodyHtml: attractionCardBodyHtml(a, waitLabel, rideHref, operatorSlug),
               wasSelected,
               onClose: () => raise(false),
             });
