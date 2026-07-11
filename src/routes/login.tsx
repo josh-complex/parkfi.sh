@@ -1,6 +1,6 @@
 import * as React from "react";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { KeyRoundIcon, Loader2Icon, SparklesIcon } from "lucide-react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { ArrowLeftIcon, KeyRoundIcon, Loader2Icon, SparklesIcon } from "lucide-react";
 
 import { authClient } from "#/lib/auth-client.ts";
 import { reportError } from "#/lib/report-error.ts";
@@ -342,7 +342,14 @@ function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+    <div className="relative flex min-h-screen items-center justify-center bg-background p-4">
+      <Link
+        to="/"
+        className="absolute top-4 left-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeftIcon className="size-4" />
+        Back
+      </Link>
       <CastMemberBlockedDialog
         open={blockedMessage !== null}
         onOpenChange={(o) => {

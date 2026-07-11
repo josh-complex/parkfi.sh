@@ -144,6 +144,17 @@ export const auth = betterAuth({
     enabled: true,
   },
   account: {
+    // Native (Capacitor) OAuth runs in the system browser (Custom Tabs / Safari
+    // VC), a different cookie jar than the WebView that called signIn.social. The
+    // random `state` token is stored in the DB (storeStateStrategy defaults to
+    // "database" here) and is retrievable by the callback across that boundary —
+    // but better-auth ALSO binds a signed `state` cookie set on the sign-in fetch
+    // response, which the system browser never sees. That mismatch fails the
+    // callback with `state_security_mismatch`, surfacing as "We couldn't complete
+    // that sign-in" in the app. Skip the cookie check so verification relies on
+    // the single-use, 10-min DB state token alone (still CSRF-safe). Required for
+    // Google/Microsoft/Disney native sign-in; harmless on web.
+    skipStateCookieCheck: true,
     accountLinking: {
       enabled: true,
       // "microsoft-disney" is the tenant-locked generic-OAuth provider: Microsoft
