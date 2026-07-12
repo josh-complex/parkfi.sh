@@ -122,7 +122,14 @@ export function MapStageProvider({
   // everywhere else the map is route-driven via `activeSlug`.
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const roam = pathname === "/map";
-  const parksQ = useQuery(trpc.parks.list.queryOptions());
+  // The stage now lives on the app-wide shell (`_app`) so the singleton map
+  // survives hops to non-dashboard sections. To keep that from taxing routes
+  // that never show a map (e.g. `/privacy`), everything heavy self-defers until
+  // the first `<MapSlot>` claims the stage: the renderer isn't mounted and the
+  // parks query doesn't fetch until then. Once latched it stays true — the map
+  // persists for the rest of the session rather than tearing down between views.
+  const [hasAttached, setHasAttached] = React.useState(false);
+  const parksQ = useQuery({ ...trpc.parks.list.queryOptions(), enabled: hasAttached });
   // Park chips list Disney parks first (the app's primary operator), otherwise
   // preserving the query's resort/name order. `.sort` is stable, so this only
   // hoists Disney to the front.
@@ -401,14 +408,16 @@ export function MapStageProvider({
   const [engine, setEngine] = React.useState<"gl" | "leaflet" | null>(null);
   const engineDetectedRef = React.useRef(false);
   React.useEffect(() => {
-    if (engineDetectedRef.current) return;
+    // Detect lazily, only once the stage is actually claimed — so map-less routes
+    // don't probe WebGL (and can't skew the leaflet-fallback metric below).
+    if (!hasAttached || engineDetectedRef.current) return;
     engineDetectedRef.current = true;
     const gl = hasWebGl();
     setEngine(gl ? "gl" : "leaflet");
     // Expected on old/hardened devices, but worth trending — a rising share means
     // more users are stuck on the degraded raster renderer.
     if (!gl) posthog.capture("map_fallback_leaflet", { parkSlug: activeSlug });
-  }, [activeSlug]);
+  }, [hasAttached, activeSlug]);
   // Whether the singleton map is currently lent to a visible slot. While false
   // it's parked in the 0×0 off-screen home, where camera flies must not run —
   // Leaflet computes NaN coordinates fitting bounds into a zero-size container
@@ -429,6 +438,8 @@ export function MapStageProvider({
     (slot: HTMLElement) => {
       if (!host) return;
       slotRef.current = slot;
+      // First claim ever: latch the renderer + parks query on (see `hasAttached`).
+      setHasAttached(true);
       setAttached(true);
       const first = prevRectRef.current;
       prevRectRef.current = null;
@@ -488,7 +499,7 @@ export function MapStageProvider({
         createPortal(
           <>
             <React.Suspense fallback={null}>
-              {engine === "gl" && (
+              {hasAttached && engine === "gl" && (
                 <ParkMap
                   activeSlug={activeSlug}
                   selectedId={selected?.id ?? null}
@@ -522,7 +533,7 @@ export function MapStageProvider({
                   }}
                 />
               )}
-              {engine === "leaflet" && (
+              {hasAttached && engine === "leaflet" && (
                 <ParkMapLeaflet
                   activeSlug={activeSlug}
                   selectedId={selected?.id ?? null}

@@ -1,32 +1,19 @@
-import { Outlet, createFileRoute, useParams } from "@tanstack/react-router";
+import { Outlet, createFileRoute } from "@tanstack/react-router";
 
 import { AchievementTracker } from "#/components/achievements/achievement-tracker.tsx";
-import { SelectionProvider } from "#/components/park-dashboard/selection-context.tsx";
-import { MapStageProvider } from "#/components/park-map/map-stage.tsx";
-import { RideFilterProvider } from "#/components/rides/ride-filter.tsx";
 
 /**
- * Dashboard-only layer, nested inside the persistent `_app` shell. It adds just
- * the map-stage machinery the dashboard/map routes share — one `ParkMap` lives
- * in the stage and is lent to whichever route mounts a `<MapSlot>`, so moving
- * between the overview hero and a park card is a single smooth morph rather than
- * a redraw. The sidebar/header/nav shell is provided by `_app` one level up.
+ * Dashboard-only layer, nested inside the persistent `_app` shell. The map-stage
+ * machinery (and the selection/ride-filter providers it needs) now live on `_app`
+ * so the singleton `ParkMap` survives hops to non-dashboard sections — see the
+ * comment there. This layer's only remaining job is the parks prefetch loader
+ * (so the dashboard hydrates instantly) plus the achievement tracker.
  */
 function DashLayout() {
-  // strict:false so this resolves on both `/` and `/park/$slug`.
-  const params = useParams({ strict: false }) as { slug?: string };
-  const activeSlug = params.slug ?? null;
-
   return (
     <>
       <AchievementTracker />
-      <SelectionProvider>
-        <RideFilterProvider>
-          <MapStageProvider activeSlug={activeSlug}>
-            <Outlet />
-          </MapStageProvider>
-        </RideFilterProvider>
-      </SelectionProvider>
+      <Outlet />
     </>
   );
 }
