@@ -107,6 +107,17 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
         />
       </div>
 
+      {/* Mobile page title — the sticky search bar carries no page identity, so
+          the park name has to headline the page here. Desktop uses the header
+          above. */}
+      <div className="px-4 md:hidden">
+        {park ? (
+          <h1 className="text-2xl font-semibold tracking-tight">{park.name}</h1>
+        ) : (
+          <Skeleton className="h-8 w-48" />
+        )}
+      </div>
+
       <div className="order-1 flex flex-col gap-4 px-4 lg:px-6">
         <NotificationPrompt />
         {/* The at-a-glance stat bar leads the dashboard, above the map + chart. */}

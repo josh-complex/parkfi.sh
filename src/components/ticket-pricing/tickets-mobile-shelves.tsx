@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { DropletIcon, WindIcon } from "lucide-react";
+import { CloudRainIcon, DropletIcon, WindIcon } from "lucide-react";
 
 import {
   Carousel,
@@ -47,6 +47,7 @@ interface ShelfPark {
   highF: number | null;
   lowF: number | null;
   precipProb: number | null;
+  precipPeak: string | null;
   windMph: number | null;
   humidity: number | null;
   condition: string | null;
@@ -190,16 +191,16 @@ function ParkShelf({
             <StatCard label="Weather" sub={park.condition} fill={park.highF != null}>
               {park.highF != null ? (
                 <>
-                  <div className="flex w-full items-start justify-between">
+                  <div className="flex w-full items-start justify-between gap-1">
                     <WeatherIcon
                       condition={park.condition}
                       precipProb={park.precipProb}
-                      size={22}
+                      size={44}
                     />
                     {precip && (
-                      <span className="flex items-center gap-0.5 rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-sky-600 dark:text-sky-400">
-                        <DropletIcon className="size-2.5" />
-                        {precip}
+                      <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-sky-600 dark:text-sky-400">
+                        <CloudRainIcon className="size-2.5" />
+                        {park.precipPeak ? `${precip} at ${park.precipPeak}` : precip}
                       </span>
                     )}
                   </div>

@@ -199,6 +199,7 @@ export const ticketsRouter = {
             high_c: number | null;
             low_c: number | null;
             precip_prob: number | null;
+            precip_peak: string | null;
             wind_kph: number | null;
             humidity: number | null;
             condition: string | null;
@@ -206,6 +207,7 @@ export const ticketsRouter = {
             WITH park AS (SELECT id, timezone FROM parks WHERE slug = ${p.slug}),
             hourly AS (
               SELECT wo.temp_c, wo.precip_prob, wo.wind_kph, wo.humidity, wo.condition,
+                     (wo.observed_at AT TIME ZONE (SELECT timezone FROM park)) AS local_ts,
                      abs(extract(hour from wo.observed_at AT TIME ZONE (SELECT timezone FROM park)) - 13)
                        AS noon_dist
               FROM weather_obs wo
@@ -219,7 +221,10 @@ export const ticketsRouter = {
               max(precip_prob) AS precip_prob,
               max(wind_kph) AS wind_kph,
               round(avg(humidity)) AS humidity,
-              (SELECT condition FROM hourly ORDER BY noon_dist LIMIT 1) AS condition
+              (SELECT condition FROM hourly ORDER BY noon_dist LIMIT 1) AS condition,
+              (SELECT to_char(local_ts, 'FMHH12am') FROM hourly
+                 WHERE precip_prob IS NOT NULL
+                 ORDER BY precip_prob DESC, local_ts LIMIT 1) AS precip_peak
             FROM hourly
           `);
 
@@ -255,6 +260,7 @@ export const ticketsRouter = {
             highF: toF(w?.high_c) ?? day?.weather?.highF ?? null,
             lowF: toF(w?.low_c),
             precipProb: w?.precip_prob ?? day?.weather?.precipProb ?? null,
+            precipPeak: w?.precip_peak ?? null,
             windMph: w?.wind_kph != null ? Math.round(w.wind_kph * 0.621371) : null,
             humidity: w?.humidity != null ? Number(w.humidity) : null,
             condition: w?.condition ?? day?.weather?.condition ?? null,

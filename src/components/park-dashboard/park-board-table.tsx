@@ -571,7 +571,11 @@ export function ParkBoardTable({
     <Card className={cn("flex flex-col", className)}>
       <CardHeader>
         <CardTitle>Live Ride Board</CardTitle>
-        <CardDescription>
+        {/* Pin to col 1 / row 2. On mobile the desktop-only CardAction is
+            `display:none`, which frees the header grid's second column — without
+            this the description auto-places beside the title into that column and
+            crushes "Live Ride Board" down to one word per line. */}
+        <CardDescription className="col-start-1 row-start-2">
           {loading ? "Loading…" : `${data.length} attractions · select a ride to chart its history`}
         </CardDescription>
         {/* Desktop controls live in the header; mobile gets a FAB (below). */}

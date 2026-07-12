@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { HourglassIcon, TrendingDownIcon, TrendingUpIcon } from "lucide-react";
+import { TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { cn } from "#/lib/utils.ts";
@@ -91,12 +91,10 @@ export function ParkStatCards({
 
   // When the operating calendar says the park is shut, the board query collapses
   // every ride's status to "CLOSED" (see the `parks.board` resolver). The live
-  // tallies are then meaningless zeros, so swap each value for an hourglass and a
-  // "Park closed" caption instead.
+  // tallies are then meaningless zeros that tell the visitor nothing, so drop the
+  // whole stat bar rather than show a row of hourglasses.
   const closed = rides.length > 0 && rides.every((b) => b.status === "CLOSED");
-  const closedValue = (
-    <HourglassIcon className="size-5 text-blue-200/70" aria-label="Park closed" />
-  );
+  if (closed) return null;
 
   return (
     <div
@@ -108,31 +106,23 @@ export function ParkStatCards({
       <StatItem
         label="Rides Operating"
         value={
-          closed ? (
-            closedValue
-          ) : (
-            <>
-              {operating.length}
-              <span className="text-base font-normal text-blue-200/70"> / {rides.length}</span>
-            </>
-          )
+          <>
+            {operating.length}
+            <span className="text-base font-normal text-blue-200/70"> / {rides.length}</span>
+          </>
         }
         sub={
-          closed
-            ? "Park closed"
-            : issues.length === 0
-              ? `${operatingPct}% operational`
-              : `${issues.length} down or in refurb · ${operatingPct}%`
+          issues.length === 0
+            ? `${operatingPct}% operational`
+            : `${issues.length} down or in refurb · ${operatingPct}%`
         }
       />
 
       <StatItem
         label="Average Wait"
-        value={closed ? closedValue : waits.length > 0 ? `${avgWait} min` : "—"}
+        value={waits.length > 0 ? `${avgWait} min` : "—"}
         sub={
-          closed ? (
-            "Park closed"
-          ) : waits.length > 0 ? (
+          waits.length > 0 ? (
             avgWait >= 45 ? (
               <span className="inline-flex items-center gap-1">
                 Heavy crowds <TrendingUpIcon className="size-3" />
@@ -150,18 +140,14 @@ export function ParkStatCards({
 
       <StatItem
         label="Longest Wait"
-        value={
-          closed ? closedValue : longest?.standbyWait != null ? `${longest.standbyWait} min` : "—"
-        }
-        sub={closed ? "Park closed" : (longest?.name ?? "No waits posted")}
+        value={longest?.standbyWait != null ? `${longest.standbyWait} min` : "—"}
+        sub={longest?.name ?? "No waits posted"}
       />
 
       <StatItem
         label={llLabel}
         value={
-          closed ? (
-            closedValue
-          ) : llInfos.length > 0 ? (
+          llInfos.length > 0 ? (
             <>
               {llSoldOut}
               <span className="text-base font-normal text-blue-200/70">
@@ -174,13 +160,11 @@ export function ParkStatCards({
           )
         }
         sub={
-          closed
-            ? "Park closed"
-            : llInfos.length === 0
-              ? `No ${llLabel} at this park`
-              : llSoldOut === llInfos.length
-                ? "All return times gone"
-                : `${llInfos.length - llSoldOut} still available`
+          llInfos.length === 0
+            ? `No ${llLabel} at this park`
+            : llSoldOut === llInfos.length
+              ? "All return times gone"
+              : `${llInfos.length - llSoldOut} still available`
         }
       />
     </div>
