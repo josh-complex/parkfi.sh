@@ -16,6 +16,7 @@ import { RideFilterButton } from "#/components/rides/ride-filter-button.tsx";
 import { useRideFilter } from "#/components/rides/ride-filter.tsx";
 import { useDeviceHeading } from "#/hooks/use-device-heading.ts";
 import { useGeolocation } from "#/hooks/use-geolocation.ts";
+import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { useNavTestToolsEnabled } from "#/integrations/posthog/feature-flags.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { DEV_SPOTS } from "#/lib/dev-location.ts";
@@ -682,9 +683,64 @@ export function MapStageProvider({
  * Reserves layout space for the shared map in a route and claims the live map
  * on mount. Style it like any container — the map fills it.
  */
-export function MapSlot({ className }: { className?: string }) {
+// The full-bleed mobile map is a `fixed inset-0` layer, so its bottom edge
+// tracks the layout viewport. When the omni-search opens, Android reserves space
+// for the gesture/navigation bar (the WebView content area shrinks by ~the bar's
+// height); `inset-0`'s bottom rises, the map container shrinks, and its
+// `ResizeObserver` shrinks the canvas with it — the map visibly loses a strip.
+//
+// Pin the layer to the *largest* height we've seen at the current orientation
+// instead: top-anchored at a fixed pixel height that only ever grows, so a
+// transient inset/viewport shrink can't reduce it. A real orientation change
+// (width flips) resets the baseline so rotation still resizes normally.
+function useStableFullBleedHeight(enabled: boolean): number | undefined {
+  const [height, setHeight] = React.useState<number>();
+
+  React.useEffect(() => {
+    if (!enabled) {
+      setHeight(undefined);
+      return;
+    }
+    let max = window.innerHeight;
+    let width = window.innerWidth;
+    setHeight(max);
+    const update = () => {
+      if (window.innerWidth !== width) {
+        // Orientation / real layout change: rebaseline to the new viewport.
+        width = window.innerWidth;
+        max = window.innerHeight;
+        setHeight(max);
+      } else if (window.innerHeight > max) {
+        // Same orientation: only grow (e.g. the gesture bar releases its space),
+        // never shrink.
+        max = window.innerHeight;
+        setHeight(max);
+      }
+    };
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [enabled]);
+
+  return height;
+}
+
+/**
+ * Renders a slot the singleton map attaches into. `pinnedFullBleed` marks the
+ * fullscreen mobile map route: it holds the `fixed inset-0` layer at a stable
+ * height so the omni-search (or anything that briefly steals bottom inset) can't
+ * shrink it — see {@link useStableFullBleedHeight}.
+ */
+export function MapSlot({
+  className,
+  pinnedFullBleed = false,
+}: {
+  className?: string;
+  pinnedFullBleed?: boolean;
+}) {
   const { attach } = useMapStage();
   const ref = React.useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
+  const pinnedHeight = useStableFullBleedHeight(pinnedFullBleed && isMobile);
 
   // Layout effect (not passive) so the FLIP measures and starts before paint —
   // no flash of the map in its destination before it animates in.
@@ -693,5 +749,11 @@ export function MapSlot({ className }: { className?: string }) {
     return attach(ref.current);
   }, [attach]);
 
-  return <div ref={ref} className={className} />;
+  // Only override geometry on the mobile full-bleed layer; desktop keeps the
+  // className's `md:` sizing untouched. Anchoring top + height (bottom:auto)
+  // lets the map keep extending under the gesture bar at its intended size.
+  const style =
+    pinnedHeight == null ? undefined : { height: pinnedHeight, top: 0, bottom: "auto" as const };
+
+  return <div ref={ref} className={className} style={style} />;
 }
