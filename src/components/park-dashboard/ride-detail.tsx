@@ -8,6 +8,7 @@ import { ArrowLeftIcon, ExternalLinkIcon } from "lucide-react";
 import { getLastMapView } from "#/components/park-map/map-stage.tsx";
 import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
+import { Button } from "#/components/ui/button.tsx";
 import { Card, CardContent } from "#/components/ui/card.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
@@ -15,7 +16,6 @@ import { cn } from "#/lib/utils.ts";
 
 import { formatPriceCents, isUniversal, paidLineInfo, paidLineProduct } from "./lightning-lane.ts";
 import { RideAnalytics } from "./ride-analytics.tsx";
-import { Sparkline } from "./sparkline.tsx";
 
 const STATUS_BADGE: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   OPERATING: "secondary",
@@ -25,22 +25,16 @@ const STATUS_BADGE: Record<string, "default" | "secondary" | "destructive" | "ou
   UNKNOWN: "outline",
 };
 
-function Stat({ label, children }: { label: string; children: React.ReactNode }) {
+function StatCard({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div
-      className={cn(
-        // Mobile: label/value on one row, divider between stats.
-        "flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0",
-        "border-b border-border/60 last:border-b-0",
-        // sm+: stacked cells in the 4-col grid, no dividers/padding.
-        "sm:flex-col sm:items-start sm:gap-1 sm:border-b-0 sm:py-0",
-      )}
-    >
-      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-      </span>
-      <span className="text-right text-lg font-semibold tabular-nums sm:text-left">{children}</span>
-    </div>
+    <Card size="sm">
+      <CardContent className="flex flex-col gap-1">
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {label}
+        </span>
+        <span className="text-2xl font-bold tabular-nums">{children}</span>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -53,12 +47,6 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
   const trpc = useTRPC();
   const rideQ = useQuery(trpc.parks.attraction.queryOptions({ parkSlug, rideSlug }));
   const ride = rideQ.data;
-
-  const historyQ = useQuery({
-    ...trpc.parks.history.queryOptions({ attractionId: ride?.id ?? 0, queueType: 1, hours: 24 }),
-    enabled: !!ride?.id,
-  });
-  const trend = React.useMemo(() => (historyQ.data ?? []).map((b) => b.avgWait), [historyQ.data]);
 
   if (rideQ.isLoading) {
     return (
@@ -98,7 +86,7 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
   const backClass = "-m-2 inline-flex items-center gap-1.5 p-2 hover:underline";
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-6 lg:px-6">
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 pt-2 pb-6 lg:px-6">
       <div className="hidden items-center justify-between gap-3 md:flex">
         <nav className="text-sm text-muted-foreground">
           {back.to === "/map" ? (
@@ -163,70 +151,70 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
         </div>
       </header>
 
-      <Card>
-        <CardContent className="flex flex-col gap-6">
-          <div className="flex flex-col sm:grid sm:grid-cols-4 sm:gap-6">
-            <Stat label="Standby">
-              {ride.standbyWait == null ? (
-                <span className="text-muted-foreground">—</span>
-              ) : (
-                <>
-                  {ride.standbyWait}
-                  <span className="text-sm font-normal text-muted-foreground"> min</span>
-                </>
-              )}
-            </Stat>
-            <Stat label="Typical (24–48h)">
-              {ride.histStandbyWait == null ? (
-                <span className="text-muted-foreground">—</span>
-              ) : (
-                <>
-                  {ride.histStandbyWait}
-                  <span className="text-sm font-normal text-muted-foreground"> min</span>
-                </>
-              )}
-            </Stat>
-            <Stat label={paidLineProduct(operatorSlug)}>
-              {!ll.has ? (
-                <span className="text-muted-foreground">—</span>
-              ) : (
-                <span className="flex items-center gap-2 text-base">
-                  {ll.state ? (
-                    <Badge variant={ll.soldOut ? "destructive" : "secondary"}>
-                      {ll.state.toLowerCase().replace("_", " ")}
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline">offered</Badge>
-                  )}
-                  {llPrice && <span className="tabular-nums">{llPrice}</span>}
-                </span>
-              )}
-            </Stat>
-            <Stat label="24h trend">
-              <Sparkline
-                data={trend}
-                width={120}
-                height={32}
-                color={
-                  status === "DOWN" || status === "REFURBISHMENT"
-                    ? "var(--destructive)"
-                    : "var(--primary)"
-                }
-              />
-            </Stat>
-          </div>
-          {ll.has && isUniversal(operatorSlug) && (
-            <p className={cn("text-xs text-muted-foreground")}>
-              Universal’s per-ride signal is the free Virtual Line return time. Paid Express is a
-              separate park-wide pass — see the{" "}
-              <Link to="/tickets" className="underline">
-                Ticket Pricing
-              </Link>{" "}
-              page.
-            </p>
+      <div className="grid grid-cols-2 gap-3 sm:gap-4">
+        <StatCard label="Standby">
+          {ride.standbyWait == null ? (
+            <span className="text-muted-foreground">—</span>
+          ) : (
+            <>
+              {ride.standbyWait}
+              <span className="text-sm font-normal text-muted-foreground"> min</span>
+            </>
           )}
-        </CardContent>
-      </Card>
+        </StatCard>
+        <StatCard label="Typical (24–48h)">
+          {ride.histStandbyWait == null ? (
+            <span className="text-muted-foreground">—</span>
+          ) : (
+            <>
+              {ride.histStandbyWait}
+              <span className="text-sm font-normal text-muted-foreground"> min</span>
+            </>
+          )}
+        </StatCard>
+      </div>
+
+      {ll.has && (
+        <Card>
+          <CardContent className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {paidLineProduct(operatorSlug)}
+              </span>
+              <span className="flex items-center gap-2 text-base">
+                {ll.state ? (
+                  <Badge variant={ll.soldOut ? "destructive" : "secondary"}>
+                    {ll.state.toLowerCase().replace("_", " ")}
+                  </Badge>
+                ) : (
+                  <Badge variant="outline">offered</Badge>
+                )}
+                {llPrice && <span className="tabular-nums">{llPrice}</span>}
+              </span>
+            </div>
+            {ride.lightningLaneDeepLink && (
+              <Button
+                size="sm"
+                className="w-fit gap-1.5"
+                render={<a href={ride.lightningLaneDeepLink} target="_blank" rel="noreferrer" />}
+              >
+                Open in Disney App
+                <ExternalLinkIcon className="size-3.5" />
+              </Button>
+            )}
+            {isUniversal(operatorSlug) && (
+              <p className={cn("text-xs text-muted-foreground")}>
+                Universal’s per-ride signal is the free Virtual Line return time. Paid Express is a
+                separate park-wide pass — see the{" "}
+                <Link to="/tickets" className="underline">
+                  Ticket Pricing
+                </Link>{" "}
+                page.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <RideAnalytics attractionId={ride.id} timezone={ride.park.timezone} />
     </div>

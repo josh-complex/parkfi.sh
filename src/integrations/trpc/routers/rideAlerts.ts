@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { db } from "#/db/index.ts";
 import { rideAlert } from "#/db/schema.ts";
-import { wrapDeepLink } from "#/server/notifications/deepLinkRedirect.ts";
+import { buildLightningLaneDeepLink } from "#/server/notifications/lightningLaneDeepLink.ts";
 import { QueueState, QueueType } from "#/server/parks/codes.ts";
 import { config } from "#/server/parks/config.ts";
 import { protectedProcedure } from "../init.ts";
@@ -52,29 +52,6 @@ const latestLl = (attractionCol: string) => sql`
     ORDER BY q.observed_at DESC
     LIMIT 1
   ) ll ON true`;
-
-/**
- * My Disney Experience's `mdx://` deep-link scheme (route table recovered by
- * static decompile, see `docs/plans/jiminy/write-spike.md`). There is no
- * ride-scoped "open this Lightning Lane" route in that table — Multi/Single
- * *modify* links need a `planId`/`orderId` from the user's own MDE plan, which
- * parkfi has no delegated read of. The best honest link is "My Genie Day" for
- * today, which lands the user on the day's LL/Genie+ screen so they can grab
- * the ride themselves — a couple of taps, not zero-touch, same ceiling as the
- * dining deep link. Returned wrapped through `/deep-link` (see
- * `deepLinkRedirect.ts`) since a raw `mdx://` href gets silently stripped by
- * email HTML sanitizers — moot for the manager UI's own anchor tag, but this
- * keeps one code path instead of two.
- */
-function buildLightningLaneDeepLink(completionDeepLink: string): string {
-  const today = new Date().toISOString().slice(0, 10);
-  const qs = new URLSearchParams({
-    tab: "day",
-    displayDate: today,
-    completionDeepLink,
-  });
-  return wrapDeepLink(`mdx://magicaccess/mygenieday?${qs.toString()}`);
-}
 
 const modeSchema = z.union([z.literal(1), z.literal(2), z.literal(3)]);
 

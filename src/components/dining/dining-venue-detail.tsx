@@ -21,6 +21,7 @@ import { AvailabilityCalendar } from "#/components/dining/dining-restaurant-card
 import { MenuBody, slugifyMenuItem, useMenuState } from "#/components/dining/menu-content.tsx";
 import { LocationMap } from "#/components/maps/location-map.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
+import { Button } from "#/components/ui/button.tsx";
 import { Card } from "#/components/ui/card.tsx";
 import { DatePicker } from "#/components/ui/date-picker.tsx";
 import {
@@ -229,6 +230,16 @@ function ReservationsSection({
                 </span>
               )}
             </p>
+            {selected?.available && selected.deepLink && (
+              <Button
+                size="sm"
+                className="w-fit gap-1.5"
+                render={<a href={selected.deepLink} target="_blank" rel="noreferrer" />}
+              >
+                Book in Disney App
+                <ExternalLinkIcon className="size-3.5" />
+              </Button>
+            )}
             {fromSelected.length > 0 && (
               <AvailabilityCalendar days={fromSelected} windowDays={7} referenceDate={todayIso} />
             )}

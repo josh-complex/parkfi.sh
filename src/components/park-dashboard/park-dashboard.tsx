@@ -72,7 +72,7 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
 
   return (
     <div
-      className="flex flex-col gap-4 py-4 md:gap-6 md:py-6"
+      className="flex flex-col gap-4 pb-4 pt-2 md:gap-6 md:pb-6"
       style={{ paddingBottom: "calc(var(--safe-bottom) + 1.5rem)" }}
     >
       {/* The page identity already shows in the sticky bar on mobile, so this

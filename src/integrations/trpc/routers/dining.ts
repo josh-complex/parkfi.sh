@@ -3,6 +3,8 @@ import { z } from "zod";
 
 import { db } from "#/db/index.ts";
 import { suppressedFields } from "#/server/content/suppression.ts";
+import { buildDiningDeepLink } from "#/server/notifications/diningFormat.ts";
+import { config } from "#/server/parks/config.ts";
 import { publicProcedure } from "../init.ts";
 
 import type { TRPCRouterRecord } from "@trpc/server";
@@ -897,6 +899,7 @@ export const diningRouter = {
         observed_at: string;
         available: boolean;
         offer_count: string;
+        earliest_offer_time: string | null;
         meal_periods: string[] | null;
       }>(sql`
         WITH latest_ts AS (
@@ -913,6 +916,7 @@ export const diningRouter = {
                  lt.observed_at,
                  bool_or(d.meal_period <> '') AS available,
                  count(*) FILTER (WHERE d.meal_period <> '') AS offer_count,
+                 min(d.offer_time) FILTER (WHERE d.meal_period <> '') AS earliest_offer_time,
                  array_agg(DISTINCT d.meal_period) FILTER (WHERE d.meal_period <> '') AS meal_periods
           FROM dining_obs d
           JOIN latest_ts lt
@@ -924,7 +928,7 @@ export const diningRouter = {
         )
         SELECT r.facility_id, r.name,
                s.service_date, s.observed_at, s.available,
-               s.offer_count, s.meal_periods
+               s.offer_count, s.earliest_offer_time, s.meal_periods
         FROM restaurant_dim r
         JOIN snapshot s ON s.facility_id = r.facility_id
         WHERE r.priority = true AND r.active = true AND r.bookable = true
@@ -943,6 +947,9 @@ export const diningRouter = {
             offerCount: number;
             mealPeriods: string[];
             observedAt: string;
+            // MDE deep link pre-scoped to this venue/party/date, anchored on the
+            // day's earliest offer time — null on "none available" days.
+            deepLink: string | null;
           }>;
         }
       >();
@@ -955,12 +962,23 @@ export const diningRouter = {
             days: [],
           });
         }
+        const date = String(row.service_date).slice(0, 10);
         byFacility.get(row.facility_id)!.days.push({
-          date: String(row.service_date).slice(0, 10),
+          date,
           available: row.available,
           offerCount: Number(row.offer_count),
           mealPeriods: row.meal_periods ?? [],
           observedAt: row.observed_at,
+          deepLink:
+            row.available && row.earliest_offer_time
+              ? buildDiningDeepLink({
+                  facilityId: row.facility_id,
+                  partySize: input.partySize,
+                  serviceDate: date,
+                  offerTime: row.earliest_offer_time,
+                  completionDeepLink: `${config.appBaseUrl}/dining/${row.facility_id}`,
+                })
+              : null,
         });
       }
 

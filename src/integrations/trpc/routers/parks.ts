@@ -2,7 +2,9 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "#/db/index.ts";
+import { buildLightningLaneDeepLink } from "#/server/notifications/lightningLaneDeepLink.ts";
 import { QueueState, QueueType } from "#/server/parks/codes.ts";
+import { config } from "#/server/parks/config.ts";
 import { suppressedFields } from "#/server/content/suppression.ts";
 import { publicProcedure } from "../init.ts";
 
@@ -802,6 +804,15 @@ export const parksRouter = {
       const suppressed = await suppressedFields("attraction", String(r.id));
       if (suppressed.has("*")) return null;
       const hideImage = suppressed.has("image");
+      // "Open in Disney App" handoff: only meaningful for a Disney ride whose
+      // Lightning Lane is currently grabbable (AVAILABLE/LIMITED). Universal has
+      // no MDE, and the day-level My Genie Day link is misleading when LL is
+      // sold out / not offered. See lightningLaneDeepLink.ts for the ceiling.
+      const llGrabbable = r.ll_state === QueueState.AVAILABLE || r.ll_state === QueueState.LIMITED;
+      const lightningLaneDeepLink =
+        r.operator_slug !== "universal" && llGrabbable
+          ? buildLightningLaneDeepLink(`${config.appBaseUrl}/park/${r.park_slug}/ride/${r.slug}`)
+          : null;
       return {
         id: Number(r.id),
         name: r.name,
@@ -827,6 +838,7 @@ export const parksRouter = {
         },
         returnTimeState: code(QUEUE_STATE_CODE, r.return_state),
         returnTimeWindow: { start: r.return_start ?? null, end: r.return_end ?? null },
+        lightningLaneDeepLink,
         supportsQueueTypes: (r.support_types ?? []).map(Number),
         histStandbyWait: r.hist_standby_wait,
         latitude: r.latitude,
