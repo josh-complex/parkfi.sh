@@ -15,14 +15,7 @@ import { scaleLinear, scaleTime } from "@visx/scale";
 import { Bar, Circle, Line, LinePath } from "@visx/shape";
 import { MinusIcon, TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "#/components/ui/card.tsx";
+import { Card, CardContent, CardHeader } from "#/components/ui/card.tsx";
 import { ConstructionState } from "#/components/ui/anim-icons/construction.tsx";
 import { Empty, EmptyDescription, EmptyTitle } from "#/components/ui/empty.tsx";
 import {
@@ -33,7 +26,6 @@ import {
   SelectValue,
 } from "#/components/ui/select.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
-import { ToggleGroup, ToggleGroupItem } from "#/components/ui/toggle-group.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { cn } from "#/lib/utils.ts";
 
@@ -66,6 +58,11 @@ function getQueueOptions(operatorSlug?: string | null) {
 }
 
 const RANGE_HOURS: Record<string, number> = { "24h": 24, "7d": 168, "30d": 720 };
+const RANGE_OPTIONS = [
+  { value: "24h", label: "24h" },
+  { value: "7d", label: "7d" },
+  { value: "30d", label: "30d" },
+];
 
 // Reserved series key for the whole-park average line.
 const AVG_KEY = "__avg";
@@ -710,13 +707,20 @@ export function ParkWaitChart({
     enabled: !!parkSlug,
   });
 
+  const points = historyQ.data?.points ?? [];
+
   // Drop "<Ride> Single Rider" series — they're a separate upstream attraction
   // that duplicates the parent ride's line; the parent already carries it.
-  const rides = React.useMemo(
-    () => (historyQ.data?.rides ?? []).filter((r) => !isSingleRiderName(r.name)),
-    [historyQ.data],
-  );
-  const points = historyQ.data?.points ?? [];
+  const rides = React.useMemo(() => {
+    const base = (historyQ.data?.rides ?? []).filter((r) => !isSingleRiderName(r.name));
+    // In Lightning Lane (count) mode, only rides that actually offer a Lightning
+    // Lane ever report a numeric availability flag — everything else is all-null
+    // (LL not offered). Drop those so the legend lists LL-eligible rides only,
+    // not the park's whole attraction roster.
+    if (mode !== "count") return base;
+    const pts = historyQ.data?.points ?? [];
+    return base.filter((r) => pts.some((p) => typeof p[String(r.id)] === "number"));
+  }, [historyQ.data, mode]);
 
   // Stable color + ordering by ride id (busiest-first from the server).
   const orderIndex = React.useMemo(() => {
@@ -857,10 +861,6 @@ export function ParkWaitChart({
   // mismatch (#418). `tz` comes from the same query payload on both sides.
   const tz = historyQ.data?.timezone || "America/New_York";
 
-  const metricNoun = mode === "price" ? "price" : "standby wait";
-  const description =
-    mode === "count" ? "Lightning Lanes available park-wide" : `Whole-park average ${metricNoun}`;
-
   // The whole-park line always leads (count total, or the average for wait); the
   // legend below lets the viewer toggle individual ride series on for comparison,
   // in every metric including count (each ride's line then reads as its own
@@ -870,42 +870,43 @@ export function ParkWaitChart({
 
   return (
     <Card className={cn("@container/card flex flex-col", className)}>
-      <CardHeader>
-        <div className="min-w-0">
-          <CardTitle className="truncate">
-            {parkSlug ? "Park wait history" : "Wait History"}
-          </CardTitle>
-          <CardDescription className="truncate">{description}</CardDescription>
-        </div>
-        <CardAction className="flex flex-wrap items-center justify-end gap-2">
-          <Select
-            value={queueType}
-            onValueChange={(v) => v && setQueueType(v)}
-            items={Object.fromEntries(queueOptions.map((q) => [q.value, q.label]))}
-          >
-            <SelectTrigger size="sm" className="w-40" aria-label="Metric">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {queueOptions.map((q) => (
-                <SelectItem key={q.value} value={q.value}>
-                  {q.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <ToggleGroup
-            multiple={false}
-            value={range ? [range] : []}
-            onValueChange={(v) => setRange(v[0] ?? "24h")}
-            variant="outline"
-            className="flex *:data-[slot=toggle-group-item]:px-3!"
-          >
-            <ToggleGroupItem value="24h">24h</ToggleGroupItem>
-            <ToggleGroupItem value="7d">7d</ToggleGroupItem>
-            <ToggleGroupItem value="30d">30d</ToggleGroupItem>
-          </ToggleGroup>
-        </CardAction>
+      {/* A single compact toolbar row: metric select pinned left, time-range
+          select pinned right. Both selects (rather than a title + wrapping
+          controls) keep the chrome to one line so the plot + legend get the
+          vertical room back. */}
+      <CardHeader className="flex flex-row items-center justify-between gap-2">
+        <Select
+          value={queueType}
+          onValueChange={(v) => v && setQueueType(v)}
+          items={Object.fromEntries(queueOptions.map((q) => [q.value, q.label]))}
+        >
+          <SelectTrigger size="sm" className="w-40" aria-label="Metric">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {queueOptions.map((q) => (
+              <SelectItem key={q.value} value={q.value}>
+                {q.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={range}
+          onValueChange={(v) => v && setRange(v)}
+          items={Object.fromEntries(RANGE_OPTIONS.map((r) => [r.value, r.label]))}
+        >
+          <SelectTrigger size="sm" className="w-24" aria-label="Time range">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {RANGE_OPTIONS.map((r) => (
+              <SelectItem key={r.value} value={r.value}>
+                {r.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col px-2 pt-4 sm:px-6 sm:pt-6">
         {!parkSlug ? (
@@ -954,15 +955,16 @@ export function ParkWaitChart({
 
             {/* Ride legend — wrapping chips below the chart at every size (and on
                 mobile), so the viewer can filter which ride series are drawn in
-                every metric, count included. */}
+                every metric, count included. No container chrome of its own: it
+                lives directly inside the chart card, below the plot. */}
             <div
-              className="flex h-[180px] flex-col overflow-hidden rounded-lg border bg-muted/20"
+              className="flex h-[180px] flex-col overflow-hidden"
               role="group"
               aria-label="Toggle ride series"
             >
-              {/* Header lives outside the scroll area so it's clipped by the
-                  parent's rounded border and never reveals on overscroll. */}
-              <div className="text-muted-foreground flex items-center justify-between gap-2 px-3 py-2 text-xs font-medium">
+              {/* Header sits above the scroll area so the mask fade only affects
+                  the scrolling chips beneath it. */}
+              <div className="text-muted-foreground flex items-center justify-between gap-2 px-1.5 py-2 text-xs font-medium">
                 <span>Rides ({rides.length})</span>
                 <button
                   type="button"
