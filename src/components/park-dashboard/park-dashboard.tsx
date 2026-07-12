@@ -132,16 +132,15 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
         <ParkHours parkSlug={activeSlug ?? null} />
       </div>
 
-      {/* Map and wait chart share a row at equal width. On mobile they drop
-          below the ride board (order-3) so the page's core content — the board —
-          is reachable without scrolling past ~640px of map + chart; on lg they
-          return above it (order-2). The map cell is a shared-layout slot: the
-          live map morphs in from the overview hero. */}
+      {/* Map and wait chart share a row at equal width, and sit above the ride
+          board at every breakpoint (order-2) — the wait chart leads the page's
+          data story, so it shouldn't sit below the board on mobile. The map cell
+          is a shared-layout slot: the live map morphs in from the overview hero. */}
       {/* `[&>*]:min-w-0` makes the two tracks `minmax(0,1fr)` instead of
           `minmax(auto,1fr)`: without it the chart card's intrinsic min-content
           (chart container + the header toolbar) blows the column past 1fr
           and overflows the content card at lg+. */}
-      <div className="order-3 grid items-stretch gap-4 px-4 md:order-2 lg:grid-cols-2 lg:px-6 lg:[&>*]:min-w-0">
+      <div className="order-2 grid items-stretch gap-4 px-4 lg:grid-cols-2 lg:px-6 lg:[&>*]:min-w-0">
         {/* Card-like surface to match the chart container, but no drop shadow:
             the 3D shelf border carries the depth, a box-shadow under it would
             double up and read as a floating panel. */}
@@ -181,7 +180,7 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
         )}
       </div>
 
-      <div className="order-2 px-4 md:order-3 lg:px-6">
+      <div className="order-3 px-4 lg:px-6">
         <ParkBoardTable
           board={board}
           loading={boardQ.isLoading || !activeSlug}

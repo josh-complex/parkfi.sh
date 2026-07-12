@@ -9,6 +9,7 @@ import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Empty, EmptyDescription, EmptyTitle } from "#/components/ui/empty.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
+import { useIsNative } from "#/hooks/use-is-native.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
 
@@ -29,6 +30,7 @@ function statusLabel(available: boolean, nextDate: string | null): string {
 export function DiningAlertsManager() {
   const { data: session, isPending } = authClient.useSession();
   const trpc = useTRPC();
+  const native = useIsNative();
   const queryClient = useQueryClient();
 
   const alertsQ = useQuery({
@@ -119,7 +121,10 @@ export function DiningAlertsManager() {
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                {a.deepLink ? (
+                {/* `mdx://` resolves only in the MDE app; hide on web, where it
+                    dead-ends. The restaurant page's own reserve link is the web
+                    path. */}
+                {native && a.deepLink ? (
                   <Button size="sm" render={<a href={a.deepLink} />}>
                     Open in Disney App
                   </Button>

@@ -40,6 +40,20 @@ function lerp(a: number, b: number, t: number): number {
 const morphCleanup = new WeakMap<HTMLElement, () => void>();
 
 /**
+ * Settle the host back into normal flow: cancel any morph still animating and
+ * strip the inline geometry it left behind (`position: fixed`, left/top/size),
+ * so the host sits as a plain `size-full` child of whatever slot now owns it —
+ * and is clipped by that slot's rounded `overflow-hidden`. Without this, an
+ * interrupted morph can leave the host as a `fixed` overlay that escapes the
+ * slot's clip, so the square map canvas spills past the card's rounded corners.
+ * Safe to call right before a fresh `morph`, which re-applies what it needs.
+ */
+export function settleMorph(host: HTMLElement) {
+  morphCleanup.get(host)?.();
+  for (const p of INLINE_PROPS) host.style.removeProperty(p);
+}
+
+/**
  * Morph `host` from `first` toward `slot`'s box by animating its *real* geometry
  * — left/top/width/height — and calling MapLibre's own `resize()` on every frame
  * so the map re-lays-out to fill its container as the box changes. We transition

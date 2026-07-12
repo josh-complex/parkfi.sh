@@ -1095,6 +1095,7 @@ export const parksRouter = {
         avg_price: number | null;
         sold_out_samples: number;
         samples: number;
+        avail_state: number | null;
       }>(sql`
         SELECT time_bucket(${bucket}::interval, observed_at) AS bucket,
                avg(wait_min)::int    AS avg_wait,
@@ -1102,7 +1103,10 @@ export const parksRouter = {
                min(wait_min)         AS min_wait,
                avg(price_cents)::int AS avg_price,
                count(*) FILTER (WHERE state = 3) AS sold_out_samples,
-               count(*)              AS samples
+               count(*)              AS samples,
+               -- The bucket's representative paid-line state (most frequent),
+               -- powering the ride page's Lightning Lane availability timeline.
+               mode() WITHIN GROUP (ORDER BY state) AS avail_state
         FROM queue_obs
         WHERE attraction_id = ${input.attractionId}
           AND queue_type = ${input.queueType}
@@ -1118,6 +1122,7 @@ export const parksRouter = {
         avgPrice: r.avg_price,
         soldOutSamples: Number(r.sold_out_samples),
         samples: Number(r.samples),
+        availState: r.avail_state == null ? null : Number(r.avail_state),
       }));
     }),
 

@@ -11,10 +11,13 @@ import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Card, CardContent } from "#/components/ui/card.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
+import { useIsNative } from "#/hooks/use-is-native.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
+import { QueueType } from "#/server/parks/codes.ts";
 import { cn } from "#/lib/utils.ts";
 
 import { formatPriceCents, isUniversal, paidLineInfo, paidLineProduct } from "./lightning-lane.ts";
+import { LightningLaneAvailability } from "./ll-availability.tsx";
 import { RideAnalytics } from "./ride-analytics.tsx";
 
 const STATUS_BADGE: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -45,6 +48,7 @@ function StatCard({ label, children }: { label: string; children: React.ReactNod
  */
 export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug: string }) {
   const trpc = useTRPC();
+  const native = useIsNative();
   const rideQ = useQuery(trpc.parks.attraction.queryOptions({ parkSlug, rideSlug }));
   const ride = rideQ.data;
 
@@ -192,7 +196,10 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
                 {llPrice && <span className="tabular-nums">{llPrice}</span>}
               </span>
             </div>
-            {ride.lightningLaneDeepLink && (
+            {/* Lightning Lane lives only in the MDE app — no web page to fall
+                back to — so this is native-only; web users have the official-site
+                link in the header above. */}
+            {native && ride.lightningLaneDeepLink && (
               <Button
                 size="sm"
                 className="w-fit gap-1.5"
@@ -214,6 +221,18 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
             )}
           </CardContent>
         </Card>
+      )}
+
+      {/* Availability timeline — only for rides that actually offer the paid line.
+          Single LL is a PAID_RETURN_TIME queue; Multi LL and Universal's Virtual
+          Line are RETURN_TIME. */}
+      {ll.has && (
+        <LightningLaneAvailability
+          attractionId={ride.id}
+          queueType={ll.kind === "Single" ? QueueType.PAID_RETURN_TIME : QueueType.RETURN_TIME}
+          timeZone={ride.park.timezone}
+          product={paidLineProduct(operatorSlug)}
+        />
       )}
 
       <RideAnalytics attractionId={ride.id} timezone={ride.park.timezone} />

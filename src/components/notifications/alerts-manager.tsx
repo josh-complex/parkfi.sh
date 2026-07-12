@@ -9,6 +9,7 @@ import { RideAlertButton } from "#/components/notifications/ride-alert-button.ts
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
+import { useIsNative } from "#/hooks/use-is-native.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
 
@@ -34,6 +35,7 @@ function ruleLabel(a: AlertItem): string {
 
 function AlertRow({ alert }: { alert: AlertItem }) {
   const trpc = useTRPC();
+  const native = useIsNative();
   const queryClient = useQueryClient();
   const remove = useMutation(
     trpc.rideAlerts.remove.mutationOptions({
@@ -59,7 +61,9 @@ function AlertRow({ alert }: { alert: AlertItem }) {
           <p className="text-muted-foreground text-xs lowercase">{alert.status}</p>
         ) : null}
       </div>
-      {alert.deepLink ? (
+      {/* Lightning Lane's `mdx://` link only resolves in the MDE app; on web it
+          dead-ends, so the button is native-only. */}
+      {native && alert.deepLink ? (
         <Button size="sm" render={<a href={alert.deepLink} />}>
           Open in Disney App
         </Button>

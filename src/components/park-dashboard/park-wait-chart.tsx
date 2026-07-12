@@ -861,9 +861,11 @@ export function ParkWaitChart({
   const description =
     mode === "count" ? "Lightning Lanes available park-wide" : `Whole-park average ${metricNoun}`;
 
-  // The count metric is a single whole-park total — there are no meaningful
-  // per-ride lines (each ride is just 1/0), so we don't draw or offer any.
-  const enabledRides = mode === "count" ? [] : rides.filter((r) => displayedIds.has(r.id));
+  // The whole-park line always leads (count total, or the average for wait); the
+  // legend below lets the viewer toggle individual ride series on for comparison,
+  // in every metric including count (each ride's line then reads as its own
+  // availability over time).
+  const enabledRides = rides.filter((r) => displayedIds.has(r.id));
   const hasData = chartData.length > 0 && rides.length > 0;
 
   return (
@@ -950,54 +952,52 @@ export function ParkWaitChart({
               }
             </ParentSizeWidth>
 
-            {/* Ride legend — wrapping chips below the chart at every size. Hidden
-                for the count metric, which is a single whole-park total with no
-                per-ride series to toggle. */}
-            {mode !== "count" && (
-              <div
-                className="flex h-[180px] flex-col overflow-hidden rounded-lg border bg-muted/20"
-                role="group"
-                aria-label="Toggle ride series"
-              >
-                {/* Header lives outside the scroll area so it's clipped by the
+            {/* Ride legend — wrapping chips below the chart at every size (and on
+                mobile), so the viewer can filter which ride series are drawn in
+                every metric, count included. */}
+            <div
+              className="flex h-[180px] flex-col overflow-hidden rounded-lg border bg-muted/20"
+              role="group"
+              aria-label="Toggle ride series"
+            >
+              {/* Header lives outside the scroll area so it's clipped by the
                   parent's rounded border and never reveals on overscroll. */}
-                <div className="text-muted-foreground flex items-center justify-between gap-2 px-3 py-2 text-xs font-medium">
-                  <span>Rides ({rides.length})</span>
-                  <button
-                    type="button"
-                    onClick={toggleAll}
-                    aria-pressed={allEnabled}
-                    className="text-primary rounded px-1 py-0.5 font-medium transition-colors hover:underline"
-                  >
-                    {allEnabled ? "Clear all" : "Select all"}
-                  </button>
-                </div>
-                <div
-                  className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-x-none"
-                  style={{
-                    maskImage:
-                      "linear-gradient(to bottom, transparent, #000 20px), linear-gradient(#000, #000)",
-                    maskSize: "calc(100% - 12px) 100%, 12px 100%",
-                    maskPosition: "left top, right top",
-                    maskRepeat: "no-repeat",
-                    WebkitMaskImage:
-                      "linear-gradient(to bottom, transparent, #000 20px), linear-gradient(#000, #000)",
-                    WebkitMaskSize: "calc(100% - 12px) 100%, 12px 100%",
-                    WebkitMaskPosition: "left top, right top",
-                    WebkitMaskRepeat: "no-repeat",
-                  }}
+              <div className="text-muted-foreground flex items-center justify-between gap-2 px-3 py-2 text-xs font-medium">
+                <span>Rides ({rides.length})</span>
+                <button
+                  type="button"
+                  onClick={toggleAll}
+                  aria-pressed={allEnabled}
+                  className="text-primary rounded px-1 py-0.5 font-medium transition-colors hover:underline"
                 >
-                  <RideLegend
-                    rides={rides}
-                    enabled={displayedIds}
-                    colorOf={colorOf}
-                    trendOf={(id) => trendOf.get(id) ?? "flat"}
-                    toggle={toggle}
-                    layout="wrap"
-                  />
-                </div>
+                  {allEnabled ? "Clear all" : "Select all"}
+                </button>
               </div>
-            )}
+              <div
+                className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-x-none"
+                style={{
+                  maskImage:
+                    "linear-gradient(to bottom, transparent, #000 20px), linear-gradient(#000, #000)",
+                  maskSize: "calc(100% - 12px) 100%, 12px 100%",
+                  maskPosition: "left top, right top",
+                  maskRepeat: "no-repeat",
+                  WebkitMaskImage:
+                    "linear-gradient(to bottom, transparent, #000 20px), linear-gradient(#000, #000)",
+                  WebkitMaskSize: "calc(100% - 12px) 100%, 12px 100%",
+                  WebkitMaskPosition: "left top, right top",
+                  WebkitMaskRepeat: "no-repeat",
+                }}
+              >
+                <RideLegend
+                  rides={rides}
+                  enabled={displayedIds}
+                  colorOf={colorOf}
+                  trendOf={(id) => trendOf.get(id) ?? "flat"}
+                  toggle={toggle}
+                  layout="wrap"
+                />
+              </div>
+            </div>
           </div>
         )}
       </CardContent>

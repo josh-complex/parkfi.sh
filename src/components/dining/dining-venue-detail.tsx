@@ -32,6 +32,7 @@ import {
   SelectValue,
 } from "#/components/ui/select.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
+import { useIsNative } from "#/hooks/use-is-native.ts";
 import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
 import { resortSlugByName } from "#/components/stays/resort-detail.tsx";
@@ -133,6 +134,20 @@ const AVAIL_HORIZON = 60;
 const ISO = "yyyy-MM-dd";
 
 /**
+ * Disney's web reservation flow for a venue, keyed by the finder slug
+ * (`url_friendly_id`) — e.g. `…/dine-res/restaurant/morimoto-asia`. This is the
+ * web equivalent of the native `mdx://dining/reservation` deep link (it lands on
+ * the bookable page), so it's the web fallback — not the venue *detail* page.
+ * Falls back to the finder detail URL for the ~2 venues missing a slug.
+ */
+function diningReserveUrl(urlFriendlyId: string | null, detailUrl: string | null): string | null {
+  if (urlFriendlyId) {
+    return `https://disneyworld.disney.go.com/dine-res/restaurant/${urlFriendlyId}`;
+  }
+  return detailUrl;
+}
+
+/**
  * Inline reservation-availability search for venues we actively sweep. Date and
  * party size both drive the search: `dining.availability` returns a 60-day
  * horizon for the chosen party (so changing the date just re-slices, no refetch),
@@ -142,11 +157,15 @@ const ISO = "yyyy-MM-dd";
 function ReservationsSection({
   facilityId,
   restaurantName,
+  webUrl,
 }: {
   facilityId: string;
   restaurantName: string;
+  /** Disney's official venue page — the web fallback when MDE isn't installed. */
+  webUrl: string | null;
 }) {
   const trpc = useTRPC();
+  const native = useIsNative();
   const { data: session } = authClient.useSession();
   const [partySize, setPartySize] = React.useState(2);
 
@@ -230,16 +249,24 @@ function ReservationsSection({
                 </span>
               )}
             </p>
-            {selected?.available && selected.deepLink && (
-              <Button
-                size="sm"
-                className="w-fit gap-1.5"
-                render={<a href={selected.deepLink} target="_blank" rel="noreferrer" />}
-              >
-                Book in Disney App
-                <ExternalLinkIcon className="size-3.5" />
-              </Button>
-            )}
+            {selected?.available &&
+              // Native: the `mdx://` link opens MDE straight into the booking
+              // flow. Web: that scheme dead-ends in a browser, so fall back to
+              // Disney's reservable venue page.
+              (() => {
+                const href = native ? selected.deepLink : webUrl;
+                if (!href) return null;
+                return (
+                  <Button
+                    size="sm"
+                    className="w-fit gap-1.5"
+                    render={<a href={href} target="_blank" rel="noreferrer" />}
+                  >
+                    {native ? "Book in Disney App" : "Reserve on Disney.com"}
+                    <ExternalLinkIcon className="size-3.5" />
+                  </Button>
+                );
+              })()}
             {fromSelected.length > 0 && (
               <AvailabilityCalendar days={fromSelected} windowDays={7} referenceDate={todayIso} />
             )}
@@ -461,7 +488,11 @@ export function DiningVenueDetail({
 
       {/* Reservations — only for venues we actively sweep for availability. */}
       {venue?.availabilityEligible && (
-        <ReservationsSection facilityId={facilityId} restaurantName={venue.name} />
+        <ReservationsSection
+          facilityId={facilityId}
+          restaurantName={venue.name}
+          webUrl={diningReserveUrl(venue.urlFriendlyId, venue.detailUrl)}
+        />
       )}
 
       {/* Location map — Disney venues carry finder coordinates (UOR may not). */}

@@ -19,6 +19,7 @@ import { db } from "#/db/index.ts";
 import { diningNotification } from "#/db/schema.ts";
 import { config } from "#/server/parks/config.ts";
 import { getDiningAlertQueue, getPushQueue } from "#/server/notifications/queue.ts";
+import { wrapDeepLink } from "#/server/notifications/deepLinkRedirect.ts";
 import {
   buildDiningDeepLink,
   diningDateLabel,
@@ -108,15 +109,20 @@ export function buildDiningNotificationPayload(a: DiningAlertRow): DiningNotific
   const subject = matchedDate
     ? `${restaurantName} has a table for ${a.partySize} — ${formatServiceDate(matchedDate)}`
     : `${restaurantName} has a table for ${a.partySize}`;
+  // Wrap through /deep-link: this link ships in email HTML, whose sanitizers
+  // strip raw custom-scheme (`mdx://`) hrefs. The bounce 302s to the scheme,
+  // which mobile mail clients follow into the app.
   const deepLink =
     a.matchedFacilityId && a.matchedDate && a.matchedOfferTime
-      ? buildDiningDeepLink({
-          facilityId: a.matchedFacilityId,
-          partySize: a.partySize,
-          serviceDate: a.matchedDate,
-          offerTime: a.matchedOfferTime,
-          completionDeepLink: `${config.appBaseUrl}/dining/${a.matchedFacilityId}`,
-        })
+      ? wrapDeepLink(
+          buildDiningDeepLink({
+            facilityId: a.matchedFacilityId,
+            partySize: a.partySize,
+            serviceDate: a.matchedDate,
+            offerTime: a.matchedOfferTime,
+            completionDeepLink: `${config.appBaseUrl}/dining/${a.matchedFacilityId}`,
+          }),
+        )
       : null;
   return {
     facilityId: a.facilityId,

@@ -34,7 +34,7 @@ import {
   RIDE_CATEGORY_KEYS,
   ZoomControl,
 } from "./map-controls.tsx";
-import { morph } from "./map-morph.ts";
+import { morph, settleMorph } from "./map-morph.ts";
 import { NavOverlay } from "./nav-overlay.tsx";
 import {
   clearNavTrip,
@@ -446,6 +446,12 @@ export function MapStageProvider({
       prevRectRef.current = null;
 
       slot.appendChild(host);
+      // Strip any geometry a prior (possibly interrupted) morph left inline, so
+      // the host measures and settles as a clean `size-full` child of this slot
+      // and is clipped by the slot's rounded overflow — otherwise a leftover
+      // `position: fixed` keeps the map out of the clip and it spills past the
+      // card's corners. A fresh `morph` below re-applies what it needs.
+      settleMorph(host);
       const last = host.getBoundingClientRect();
       const resize = () => mapRef.current?.resize();
 
