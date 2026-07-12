@@ -18,6 +18,7 @@ import {
 } from "#/components/rides/ride-filter.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
+import { Skeleton } from "#/components/ui/skeleton.tsx";
 import {
   Carousel,
   CarouselArrows,
@@ -160,6 +161,55 @@ function RideRow({ ride }: { ride: Ride }) {
       </div>
       <WaitBadge ride={ride} />
     </Link>
+  );
+}
+
+/**
+ * Loading placeholder shown while `allRides` resolves. Mirrors the shelf layout
+ * (per-park header + a card track / list) so the page keeps its shape instead of
+ * collapsing to a single line of text. `view` matches the resting card vs. list.
+ */
+function WaitsSkeleton({ view }: { view: View }) {
+  return (
+    <>
+      {Array.from({ length: 3 }).map((_, g) => (
+        <section key={g} className="-mx-4 flex flex-col gap-3 lg:-mx-6">
+          <div className="flex flex-col gap-1.5 px-4 lg:px-6">
+            <Skeleton className="h-6 w-40 rounded-md" />
+            <Skeleton className="h-4 w-24 rounded-md" />
+          </div>
+          {view === "grid" ? (
+            <div className="flex gap-4 overflow-hidden px-4 lg:px-6">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="flex shrink-0 basis-[42%] flex-col gap-2 md:basis-1/3 lg:basis-1/4 xl:basis-1/5"
+                >
+                  <Skeleton className="aspect-[4/3] w-full rounded-2xl" />
+                  <Skeleton className="h-4 w-3/4 rounded-md" />
+                  <Skeleton className="h-3 w-1/2 rounded-md" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="px-4 lg:px-6">
+              <div className="mx-auto flex w-full max-w-3xl flex-col gap-1 rounded-2xl border bg-card/40 p-1">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-3 px-2.5 py-2">
+                    <Skeleton className="size-11 shrink-0 rounded-lg" />
+                    <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                      <Skeleton className="h-4 w-1/2 rounded-md" />
+                      <Skeleton className="h-3 w-1/3 rounded-md" />
+                    </div>
+                    <Skeleton className="h-6 w-12 shrink-0 rounded-lg" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      ))}
+    </>
   );
 }
 
@@ -396,9 +446,7 @@ export function CrossParkWaits() {
           <ViewToggle view={view} onView={setViewPersist} variant="outline" />
         </div>
 
-        {isLoading && (
-          <div className="py-16 text-center text-sm text-muted-foreground">Loading…</div>
-        )}
+        {isLoading && <WaitsSkeleton view={view} />}
 
         {!isLoading && shown === 0 && (
           <div className="py-16 text-center text-sm text-muted-foreground">

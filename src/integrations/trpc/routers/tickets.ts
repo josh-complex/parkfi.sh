@@ -2,10 +2,14 @@ import { sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "#/db/index.ts";
-import { UOR_PARKS, WDW_PARKS } from "#/lib/parks.ts";
+import { ALL_PARKS, UOR_PARKS, WDW_PARKS } from "#/lib/parks.ts";
+import { loadParkCalendar } from "#/server/forecast/parkCalendar.ts";
 import { publicProcedure } from "../init.ts";
 
 import type { TRPCRouterRecord } from "@trpc/server";
+
+/** Window the shelf's "upcoming cheapest" scans, matching the calendar's horizon. */
+const SHELF_DAYS = 150;
 
 // Each resort's date-priced "from price to skip/enter" product. WDW date-prices
 // admission (Lightning Lane isn't in this feed); Universal date-prices Express
@@ -119,5 +123,145 @@ export const ticketsRouter = {
           available: r.available ?? true,
         })),
       };
+    }),
+
+  /**
+   * One summary row per park for the mobile ticket shelves: today's price, the
+   * cheapest upcoming (sellable) day, and today's crowd + weather. Prices reuse
+   * the same per-park product filters as `priceCalendar`; crowd/weather come from
+   * `loadParkCalendar` (the same source the calendar overlay uses), scoped to
+   * today. Parks without a slug (e.g. water parks) are omitted.
+   */
+  parkShelf: publicProcedure
+    .input(
+      z.object({
+        parkHopper: z.boolean().default(false),
+        ageGroup: z.enum(["ADULT", "CHILD"]).default("ADULT"),
+      }),
+    )
+    .query(async ({ input }) => {
+      const today = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/New_York",
+      }).format(new Date());
+      const parks = ALL_PARKS.filter((p) => p.slug);
+
+      // Canonical park names (e.g. "Universal Studios Florida") so the shelf
+      // headers read exactly like the Waits/Eats/Stays pages.
+      const nameRes = await db.execute<{ slug: string; name: string }>(
+        sql`SELECT slug, name FROM parks`,
+      );
+      const nameBySlug = new Map(nameRes.rows.map((r) => [r.slug, r.name]));
+
+      const rows = await Promise.all(
+        parks.map(async (p) => {
+          const product =
+            p.resort === "UOR"
+              ? uorProduct(input.ageGroup, p.code)
+              : wdwProduct(input.parkHopper, input.ageGroup, p.code);
+
+          const priceP = db.execute<{
+            today_cents: number | null;
+            today_available: boolean | null;
+            cheapest_cents: number | null;
+            cheapest_date: Date | string | null;
+          }>(sql`
+            WITH latest AS (
+              SELECT DISTINCT ON (sp.sku, sp.service_date)
+                     sp.sku, sp.service_date, sp.price_cents, sp.available
+              FROM sku_price_obs sp
+              JOIN product_dim d ON d.sku = sp.sku
+              WHERE d.resort = ${p.resort}
+                AND ${product.filter}
+                AND sp.service_date >= current_date
+                AND sp.service_date < current_date + ${SHELF_DAYS}::int
+              ORDER BY sp.sku, sp.service_date, sp.observed_at DESC
+            ),
+            agg AS (
+              SELECT service_date,
+                     min(price_cents) AS price_cents,
+                     bool_or(available) AS available
+              FROM latest
+              WHERE price_cents IS NOT NULL
+              GROUP BY service_date
+            )
+            SELECT
+              (SELECT price_cents FROM agg WHERE service_date = current_date) AS today_cents,
+              (SELECT available FROM agg WHERE service_date = current_date) AS today_available,
+              (SELECT price_cents FROM agg WHERE available
+                 ORDER BY price_cents ASC, service_date ASC LIMIT 1) AS cheapest_cents,
+              (SELECT service_date FROM agg WHERE available
+                 ORDER BY price_cents ASC, service_date ASC LIMIT 1) AS cheapest_date
+          `);
+
+          // Richer today-weather than loadParkCalendar surfaces: daily high/low,
+          // precip chance, wind, and humidity for the shelf's weather card.
+          const weatherP = db.execute<{
+            high_c: number | null;
+            low_c: number | null;
+            precip_prob: number | null;
+            wind_kph: number | null;
+            humidity: number | null;
+            condition: string | null;
+          }>(sql`
+            WITH park AS (SELECT id, timezone FROM parks WHERE slug = ${p.slug}),
+            hourly AS (
+              SELECT wo.temp_c, wo.precip_prob, wo.wind_kph, wo.humidity, wo.condition,
+                     abs(extract(hour from wo.observed_at AT TIME ZONE (SELECT timezone FROM park)) - 13)
+                       AS noon_dist
+              FROM weather_obs wo
+              WHERE wo.park_id = (SELECT id FROM park)
+                AND wo.kind IN ('FORECAST', 'ACTUAL')
+                AND (wo.observed_at AT TIME ZONE (SELECT timezone FROM park))::date = ${today}::date
+            )
+            SELECT
+              max(temp_c) AS high_c,
+              min(temp_c) AS low_c,
+              max(precip_prob) AS precip_prob,
+              max(wind_kph) AS wind_kph,
+              round(avg(humidity)) AS humidity,
+              (SELECT condition FROM hourly ORDER BY noon_dist LIMIT 1) AS condition
+            FROM hourly
+          `);
+
+          const [priceRes, cal, weatherRes] = await Promise.all([
+            priceP,
+            loadParkCalendar(p.slug as string, today, today),
+            weatherP,
+          ]);
+          const price = priceRes.rows[0];
+          const day = cal.days.find((d) => d.date === today) ?? cal.days[0] ?? null;
+          const cheapestDate = price?.cheapest_date;
+          const w = weatherRes.rows[0];
+          const toF = (c: number | null | undefined) =>
+            c != null ? Math.round((c * 9) / 5 + 32) : null;
+
+          return {
+            resort: p.resort,
+            code: p.code,
+            slug: p.slug,
+            label: nameBySlug.get(p.slug as string) ?? p.label,
+            parkHopper: p.resort === "WDW" ? input.parkHopper : false,
+            todayCents: price?.today_cents != null ? Number(price.today_cents) : null,
+            todayAvailable: price?.today_available ?? false,
+            cheapestCents: price?.cheapest_cents != null ? Number(price.cheapest_cents) : null,
+            cheapestDate: cheapestDate
+              ? (cheapestDate instanceof Date
+                  ? cheapestDate.toISOString()
+                  : String(cheapestDate)
+                ).slice(0, 10)
+              : null,
+            crowdIndex: day?.crowdIndex ?? null,
+            crowdIsEstimate: day?.crowdIsEstimate ?? false,
+            highF: toF(w?.high_c) ?? day?.weather?.highF ?? null,
+            lowF: toF(w?.low_c),
+            precipProb: w?.precip_prob ?? day?.weather?.precipProb ?? null,
+            windMph: w?.wind_kph != null ? Math.round(w.wind_kph * 0.621371) : null,
+            humidity: w?.humidity != null ? Number(w.humidity) : null,
+            condition: w?.condition ?? day?.weather?.condition ?? null,
+          };
+        }),
+      );
+
+      return { date: today, parks: rows };
     }),
 } satisfies TRPCRouterRecord;
