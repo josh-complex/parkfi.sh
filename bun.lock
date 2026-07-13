@@ -99,6 +99,7 @@
         "react-email": "^6.6.0",
         "react-resizable-panels": "^4.11.2",
         "resend": "^6.12.4",
+        "ride-recorder": "file:packages/ride-recorder",
         "rss-parser": "^3.13.0",
         "satori": "^0.26.0",
         "shadcn": "^4.10.0",
@@ -3354,6 +3355,8 @@
     "rettime": ["rettime@0.11.11", "", {}, "sha512-ILJRqVWBCTlg9r42fFgwVZx1gnFAcQF8mRoMkbgQfIrjEDf9nbBFDFx00oloOa+Q869FUtaYDXZvEfnecQSCoQ=="],
 
     "reusify": ["reusify@1.1.0", "", {}, "sha512-g6QUff04oZpHs0eG5p83rFLhHeV00ug/Yf9nZM6fLeUrPguBTkTQOdpAWWspMh55TZfVQDPaN3NQJfbVRAxdIw=="],
+
+    "ride-recorder": ["ride-recorder@file:packages/ride-recorder", { "peerDependencies": { "@capacitor/core": "^8.0.0" } }],
 
     "rimraf": ["rimraf@6.1.3", "", { "dependencies": { "glob": "^13.0.3", "package-json-from-dist": "^1.0.1" }, "bin": { "rimraf": "dist/esm/bin.mjs" } }, "sha512-LKg+Cr2ZF61fkcaK1UdkH2yEBBKnYjTyWzTJT6KNPcSPaiT7HSdhtMXQuN5wkTX0Xu72KQ1l8S42rlmexS2hSA=="],
 

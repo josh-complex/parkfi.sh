@@ -128,9 +128,11 @@ export function normalizeParkName(name: string): string {
 }
 
 /**
- * Fetch every `tourism=theme_park` boundary in `bbox` ([s,w,n,e]) and return a
- * map of normalized name -> GeoJSON geometry. `out geom` gives ways their ring
- * coords and relations their member geometries in one round-trip.
+ * Fetch every park boundary in `bbox` ([s,w,n,e]) and return a map of normalized
+ * name -> GeoJSON geometry. Covers both `tourism=theme_park` (the theme parks)
+ * and `leisure=water_park` (Disney's water parks are tagged this way, not as
+ * theme parks). `out geom` gives ways their ring coords and relations their
+ * member geometries in one round-trip.
  */
 export async function fetchThemeParkBoundaries(
   bbox: [number, number, number, number],
@@ -141,6 +143,8 @@ export async function fetchThemeParkBoundaries(
 (
   way["tourism"="theme_park"](${s},${w},${n},${e});
   relation["tourism"="theme_park"](${s},${w},${n},${e});
+  way["leisure"="water_park"](${s},${w},${n},${e});
+  relation["leisure"="water_park"](${s},${w},${n},${e});
 );
 out geom;`;
   const res = await fetch(config.overpassBase, {

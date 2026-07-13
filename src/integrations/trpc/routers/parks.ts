@@ -731,6 +731,14 @@ export const parksRouter = {
         meta_land: string | null;
         meta_height_requirement: string | null;
         meta_tags: Array<string> | null;
+        coaster_track_length_m: number | null;
+        coaster_top_speed_kmh: number | null;
+        coaster_drop_height_m: number | null;
+        coaster_max_height_m: number | null;
+        coaster_inversions: number | null;
+        coaster_type: string | null;
+        coaster_manufacturer: string | null;
+        coaster_opened_year: number | null;
       }>(sql`
         WITH park AS (SELECT id FROM parks WHERE slug = ${input.parkSlug}),
         ride AS (
@@ -788,7 +796,15 @@ export const parksRouter = {
                m.detail_url AS meta_detail_url,
                m.land AS meta_land,
                m.height_requirement AS meta_height_requirement,
-               m.tags AS meta_tags
+               m.tags AS meta_tags,
+               cs.track_length_m AS coaster_track_length_m,
+               cs.top_speed_kmh AS coaster_top_speed_kmh,
+               cs.drop_height_m AS coaster_drop_height_m,
+               cs.max_height_m AS coaster_max_height_m,
+               cs.inversions AS coaster_inversions,
+               cs.coaster_type AS coaster_type,
+               cs.manufacturer AS coaster_manufacturer,
+               cs.opened_year AS coaster_opened_year
         FROM attractions a
         JOIN parks p ON p.id = a.park_id
         LEFT JOIN operators o ON o.id = p.operator_id
@@ -800,6 +816,7 @@ export const parksRouter = {
         LEFT JOIN caps ON true
         LEFT JOIN hist ON true
         LEFT JOIN attraction_meta m ON m.attraction_id = a.id
+        LEFT JOIN coaster_stats cs ON cs.attraction_id = a.id
         WHERE a.id = (SELECT id FROM ride)
       `);
       const r = result.rows[0];
@@ -863,6 +880,28 @@ export const parksRouter = {
                 land: r.meta_land,
                 heightRequirement: r.meta_height_requirement,
                 tags: r.meta_tags ?? [],
+              }
+            : null,
+        // Published coaster facts (from coaster_stats). Present only when the
+        // ride is a catalogued coaster; null otherwise. Public, indexable.
+        coasterStats:
+          r.coaster_track_length_m != null ||
+          r.coaster_top_speed_kmh != null ||
+          r.coaster_drop_height_m != null ||
+          r.coaster_max_height_m != null ||
+          r.coaster_inversions != null ||
+          r.coaster_type != null ||
+          r.coaster_manufacturer != null ||
+          r.coaster_opened_year != null
+            ? {
+                trackLengthM: r.coaster_track_length_m,
+                topSpeedKmh: r.coaster_top_speed_kmh,
+                dropHeightM: r.coaster_drop_height_m,
+                maxHeightM: r.coaster_max_height_m,
+                inversions: r.coaster_inversions,
+                coasterType: r.coaster_type,
+                manufacturer: r.coaster_manufacturer,
+                openedYear: r.coaster_opened_year,
               }
             : null,
       };

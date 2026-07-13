@@ -147,6 +147,7 @@
     "react-email": "^6.6.0",
     "react-resizable-panels": "^4.11.2",
     "resend": "^6.12.4",
+    "ride-recorder": "file:packages/ride-recorder",
     "rss-parser": "^3.13.0",
     "satori": "^0.26.0",
     "shadcn": "^4.10.0",

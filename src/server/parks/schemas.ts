@@ -176,14 +176,17 @@ export const DisneyParkDetailSchema = z.object({
     })
     .partial()
     .optional(),
-  // Park-level hero carousel (video + image slides). Used by the geo cron to
-  // capture a park photo; the deep `mediaEngine.data` path mirrors the live feed.
+  // Park-level hero. The four theme parks carry a `mediaEngine.data` slide
+  // carousel; the water parks instead carry a single responsive image under
+  // `media` (same CDN/resize segment). The geo cron reads slides first, then
+  // falls back to `media` so both shapes yield a park photo.
   heroData: z
     .object({
       mediaEngine: z
         .object({ data: z.array(DisneyHeroSlide).default([]) })
         .partial()
         .optional(),
+      media: DisneyHeroSlide.optional(),
     })
     .partial()
     .optional(),

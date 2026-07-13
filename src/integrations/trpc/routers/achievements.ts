@@ -9,6 +9,7 @@ import {
   userAchievement,
   userGeoState,
   userParkDay,
+  userRideEvent,
   userStat,
 } from "#/db/schema.ts";
 import { TRACK_EVENTS, levelForXp, xpForTierIds, type TrackEvent } from "#/lib/achievements.ts";
@@ -48,6 +49,39 @@ export const achievementsRouter = {
   submitRideTrace: protectedProcedure
     .input(rideTraceSchema)
     .mutation(({ ctx, input }) => ingestRideTrace(ctx.userId, input)),
+
+  /** Caller's personal sensor-ride bests for one attraction — powers the
+   *  "your rides" block on the ride detail page. Empty-safe (aggregate over no
+   *  rows returns a single zero/null row). */
+  myRideStats: protectedProcedure
+    .input(z.object({ attractionId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const [row] = await db
+        .select({
+          rideCount: sql<number>`count(*)`.mapWith(Number),
+          totalDrops:
+            sql<number>`coalesce(sum((${userRideEvent.metrics} ->> 'dropCount')::int), 0)`.mapWith(
+              Number,
+            ),
+          bestMaxG: sql<
+            number | null
+          >`max((${userRideEvent.metrics} ->> 'maxG')::double precision)`,
+          lastRiddenAt: sql<string | null>`max(${userRideEvent.riddenAt})`,
+        })
+        .from(userRideEvent)
+        .where(
+          and(
+            eq(userRideEvent.userId, ctx.userId),
+            eq(userRideEvent.attractionId, input.attractionId),
+          ),
+        );
+      return {
+        rideCount: row?.rideCount ?? 0,
+        totalDrops: row?.totalDrops ?? 0,
+        bestMaxG: row?.bestMaxG ?? null,
+        lastRiddenAt: row?.lastRiddenAt ?? null,
+      };
+    }),
 
   /** Full progress for the achievements page: stats + unlocked ids + xp/level.
    *  Persists any tiers the current stats already satisfy — so catalog

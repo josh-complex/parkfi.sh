@@ -13,6 +13,7 @@ import { Card, CardContent } from "#/components/ui/card.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useIsNative } from "#/hooks/use-is-native.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
+import { authClient } from "#/lib/auth-client.ts";
 import { QueueType } from "#/server/parks/codes.ts";
 import { cn } from "#/lib/utils.ts";
 
@@ -36,6 +37,109 @@ function StatCard({ label, children }: { label: string; children: React.ReactNod
           {label}
         </span>
         <span className="text-2xl font-bold tabular-nums">{children}</span>
+      </CardContent>
+    </Card>
+  );
+}
+
+type CoasterStats = {
+  trackLengthM: number | null;
+  topSpeedKmh: number | null;
+  dropHeightM: number | null;
+  maxHeightM: number | null;
+  inversions: number | null;
+  coasterType: string | null;
+  manufacturer: string | null;
+  openedYear: number | null;
+};
+
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      <span className="text-base font-semibold tabular-nums">{value}</span>
+    </div>
+  );
+}
+
+/**
+ * Published coaster facts (length/speed/drop/…) plus, for signed-in riders, the
+ * personal bests recorded by the native ride sensor. Facts are public + SSR'd;
+ * the "your rides" line loads client-side and only when the user has ridden it.
+ */
+function CoasterStatsCard({ stats, attractionId }: { stats: CoasterStats; attractionId: number }) {
+  const trpc = useTRPC();
+  const { data: session } = authClient.useSession();
+  const loggedIn = !!session?.user;
+  const mine = useQuery({
+    ...trpc.achievements.myRideStats.queryOptions({ attractionId }),
+    enabled: loggedIn,
+  });
+
+  const facts: Array<{ label: string; value: string }> = [];
+  if (stats.trackLengthM != null)
+    facts.push({ label: "Length", value: `${Math.round(stats.trackLengthM).toLocaleString()} m` });
+  if (stats.topSpeedKmh != null)
+    facts.push({ label: "Top speed", value: `${Math.round(stats.topSpeedKmh)} km/h` });
+  if (stats.dropHeightM != null)
+    facts.push({ label: "Drop", value: `${Math.round(stats.dropHeightM)} m` });
+  if (stats.maxHeightM != null)
+    facts.push({ label: "Height", value: `${Math.round(stats.maxHeightM)} m` });
+  if (stats.inversions != null)
+    facts.push({ label: "Inversions", value: String(stats.inversions) });
+  if (stats.coasterType)
+    facts.push({
+      label: "Type",
+      value: stats.coasterType.charAt(0).toUpperCase() + stats.coasterType.slice(1),
+    });
+  if (stats.manufacturer) facts.push({ label: "Maker", value: stats.manufacturer });
+  if (stats.openedYear != null) facts.push({ label: "Opened", value: String(stats.openedYear) });
+
+  const r = mine.data;
+  const ridden = r && r.rideCount > 0;
+
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-4">
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Coaster stats
+        </span>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+          {facts.map((f) => (
+            <Fact key={f.label} label={f.label} value={f.value} />
+          ))}
+        </div>
+        {loggedIn && ridden && (
+          <div className="flex flex-col gap-1 border-t pt-3">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Your rides
+            </span>
+            <p className="text-sm text-muted-foreground">
+              <span className="font-semibold text-foreground tabular-nums">{r.rideCount}</span>{" "}
+              {r.rideCount === 1 ? "ride" : "rides"}
+              {r.bestMaxG != null && (
+                <>
+                  {" · best "}
+                  <span className="font-semibold text-foreground tabular-nums">
+                    {r.bestMaxG.toFixed(1)} g
+                  </span>
+                </>
+              )}
+              {r.totalDrops > 0 && (
+                <>
+                  {" · "}
+                  <span className="font-semibold text-foreground tabular-nums">
+                    {r.totalDrops}
+                  </span>{" "}
+                  {r.totalDrops === 1 ? "drop" : "drops"}
+                </>
+              )}
+              {r.lastRiddenAt && <> · last {new Date(r.lastRiddenAt).toLocaleDateString()}</>}
+            </p>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -234,6 +338,8 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
           product={paidLineProduct(operatorSlug)}
         />
       )}
+
+      {ride.coasterStats && <CoasterStatsCard stats={ride.coasterStats} attractionId={ride.id} />}
 
       <RideAnalytics attractionId={ride.id} timezone={ride.park.timezone} />
     </div>

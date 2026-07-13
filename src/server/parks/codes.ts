@@ -247,32 +247,37 @@ export function disneyThumbUrl(url?: string | null): string | null {
   return url.replace(MW_IMAGE_RESIZE_RE, "/resize/mwImage/1/640/360/75/");
 }
 
+interface DisneyHeroImage {
+  type?: string;
+  poster?: string;
+  desktop?: string;
+  tablet?: string;
+  mobile?: string;
+  alt?: string;
+}
+
 /**
- * Pick a park-level hero photo from the Disney finder `heroData` slides. Prefers
- * the first video slide's `poster` still (the park's general marketing image),
- * then any image slide's URL. The chosen URL's `/resize/mwImage/1/{w}/{h}/75/`
- * segment is upsized to a crisp 16:9 hero. Returns null when no slide carries a
- * usable image. `alt` comes from the slide (image slides carry it), else null.
+ * Pick a park-level hero photo from the Disney finder `heroData`. Prefers the
+ * `mediaEngine.data` slide carousel (the four theme parks): first video slide's
+ * `poster` still, then any image slide. Falls back to the single `media` image
+ * (the water parks, which carry no carousel). The chosen URL's
+ * `/resize/mwImage/1/{w}/{h}/75/` segment is upsized to a crisp 16:9 hero.
+ * Returns null when nothing carries a usable image. `alt` comes from the slide/
+ * image when present, else null.
  */
 export function disneyParkHero(
-  slides?: Array<{
-    type?: string;
-    poster?: string;
-    desktop?: string;
-    tablet?: string;
-    mobile?: string;
-    alt?: string;
-  }> | null,
+  slides?: Array<DisneyHeroImage> | null,
+  fallback?: DisneyHeroImage | null,
 ): { url: string; alt: string | null } | null {
-  const urlOf = (s: {
-    poster?: string;
-    desktop?: string;
-    tablet?: string;
-    mobile?: string;
-  }): string | null => s.poster ?? s.desktop ?? s.tablet ?? s.mobile ?? null;
+  const urlOf = (s: DisneyHeroImage): string | null =>
+    s.poster ?? s.desktop ?? s.tablet ?? s.mobile ?? null;
   const list = slides ?? [];
-  // Video posters first (the destination still), then any image slide.
-  const chosen = list.find((s) => s.type === "video" && urlOf(s)) ?? list.find((s) => urlOf(s));
+  // Video posters first (the destination still), then any image slide, then the
+  // single `media` fallback (water parks).
+  const chosen =
+    list.find((s) => s.type === "video" && urlOf(s)) ??
+    list.find((s) => urlOf(s)) ??
+    (fallback && urlOf(fallback) ? fallback : null);
   if (!chosen) return null;
   const url = urlOf(chosen);
   if (!url) return null;

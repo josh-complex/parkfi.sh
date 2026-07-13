@@ -14,6 +14,7 @@ import {
 } from "#/components/rides/ride-filter.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { distanceMeters, pointInPolygon } from "#/server/living/geofence.ts";
+import type { GeoPolygon } from "#/db/schema.ts";
 import { reportError } from "#/lib/report-error.ts";
 
 import { MarkerCluster, type DeclutterItem } from "./declutter.ts";
@@ -219,6 +220,33 @@ const EMPTY_DEV_DESTINATIONS: ReadonlyArray<{
 const DECLUTTER_SETTLE_MS = 150;
 
 type ParkBounds = { latMin: number; latMax: number; lngMin: number; lngMax: number };
+
+/**
+ * The park a point falls in, for roam focus. Prefers a boundary-polygon hit;
+ * for a park still WITHOUT a polygon (e.g. the small water parks until the geo
+ * cron outlines them) falls back to its bounding box. Without this fallback a
+ * null boundary makes `pointInPolygon` always false, so the focus watcher sets
+ * then immediately clears focus on `moveend` — the "rides flicker in, then snap
+ * back to badges" bug when zooming into a water park. Scoped to `!boundary`
+ * parks so it never overrides a real polygon on the theme parks.
+ */
+function parkAtPoint<T extends { boundary?: GeoPolygon | null; bounds?: ParkBounds | null }>(
+  point: [number, number],
+  parks: ReadonlyArray<T>,
+): T | undefined {
+  const hit = parks.find((p) => pointInPolygon(point, p.boundary ?? null));
+  if (hit) return hit;
+  const [lng, lat] = point;
+  return parks.find(
+    (p) =>
+      !p.boundary &&
+      p.bounds != null &&
+      lat >= p.bounds.latMin &&
+      lat <= p.bounds.latMax &&
+      lng >= p.bounds.lngMin &&
+      lng <= p.bounds.lngMax,
+  );
+}
 
 /** Generous box around the park used to cap how far the user can zoom/pan out. */
 function zoomOutBounds(b: ParkBounds): maplibregl.LngLatBoundsLike {
@@ -1236,9 +1264,7 @@ export function ParkMap({
       // Remember the roam camera so returning to `/map` restores this exact view.
       saveRoamCamera({ center: [c.lng, c.lat], zoom: z });
       if (z >= ROAM_RIDE_ZOOM) {
-        const park = (parksRef.current ?? []).find((p) =>
-          pointInPolygon([c.lng, c.lat], p.boundary ?? null),
-        );
+        const park = parkAtPoint([c.lng, c.lat], parksRef.current ?? []);
         if (park) {
           if (park.slug !== focusSlugRef.current) setFocusSlug(park.slug);
         } else if (focusSlugRef.current != null) {
@@ -1259,9 +1285,7 @@ export function ParkMap({
   const autoFocusedRef = React.useRef(false);
   React.useEffect(() => {
     if (!roam || autoFocusedRef.current || !ready || !userLocation) return;
-    const park = (parksRef.current ?? []).find((p) =>
-      pointInPolygon(userLocation.coords, p.boundary ?? null),
-    );
+    const park = parkAtPoint(userLocation.coords, parksRef.current ?? []);
     if (park) {
       autoFocusedRef.current = true;
       setFocusSlug(park.slug);

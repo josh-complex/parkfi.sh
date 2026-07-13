@@ -372,12 +372,15 @@ const OSM_PARK_NAMES: Record<string, Array<string>> = {
   "universal-studios-florida": ["Universal Studios Florida"],
   "islands-of-adventure": ["Universal Islands of Adventure", "Islands of Adventure"],
   "epic-universe": ["Universal Epic Universe", "Epic Universe"],
+  // Water parks (leisure=water_park); OSM omits the "Water Park" suffix our DB carries.
+  "typhoon-lagoon": ["Disney's Typhoon Lagoon"],
+  "blizzard-beach": ["Disney's Blizzard Beach"],
 };
 
 /**
  * Step 0: outline each active park from OpenStreetMap. One Overpass query returns
- * every `tourism=theme_park` boundary around Orlando; we match each park to its
- * own polygon by name and store it on `parks.boundary`. Independent of the
+ * every theme-park + water-park boundary around Orlando; we match each park to
+ * its own polygon by name and store it on `parks.boundary`. Independent of the
  * per-park feed steps (no ThemeParks UUID needed), so it runs once up front.
  */
 async function ingestBoundaries(): Promise<void> {
@@ -494,7 +497,10 @@ async function enrichDisneyPark(
   const loc = detail.mapData?.location;
 
   // Park-level hero photo from the finder's hero carousel (previously discarded).
-  await updateParkImage(park.id, disneyParkHero(detail.heroData?.mediaEngine?.data));
+  await updateParkImage(
+    park.id,
+    disneyParkHero(detail.heroData?.mediaEngine?.data, detail.heroData?.media),
+  );
 
   const overrides: Array<{ id: number; category: MapCategory }> = [];
   const metaRows: Array<typeof attractionMeta.$inferInsert> = [];

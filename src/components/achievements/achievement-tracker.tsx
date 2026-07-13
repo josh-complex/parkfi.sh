@@ -4,11 +4,19 @@ import * as React from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { showRideRecapToast } from "#/components/achievements/ride-recap-toast.tsx";
 import { showUnlockToasts } from "#/components/achievements/unlock-toasts.tsx";
 import { useGeolocation } from "#/hooks/use-geolocation.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
+import { isNative } from "#/lib/platform.ts";
+import {
+  addRideDetectedListener,
+  armRideMonitoring,
+  disarmRideMonitoring,
+} from "#/lib/ride-recorder-client.ts";
 
+import type { PluginListenerHandle } from "@capacitor/core";
 import type { LevelInfo } from "#/lib/achievements.ts";
 
 const PING_INTERVAL_MS = 30_000;
@@ -80,6 +88,14 @@ export function AchievementTracker() {
       if (!coords) return;
       pingRef.current.mutate(coords, {
         onSuccess: (r) => {
+          // Arm/disarm the native ride recorder on park entry/exit (no-op on
+          // web). Only sensor-monitor while actually in a park — that's what
+          // bounds battery. Edge-triggered off the ping's inPark flag.
+          if (r.inPark !== inParkRef.current) {
+            inParkRef.current = r.inPark;
+            if (r.inPark) void armRideMonitoring();
+            else void disarmRideMonitoring();
+          }
           if (r.newlyUnlocked.length > 0 && r.xp != null && r.level != null) {
             celebrate(
               r.newlyUnlocked.map((u) => u.id),
@@ -93,6 +109,44 @@ export function AchievementTracker() {
     const id = setInterval(tick, PING_INTERVAL_MS);
     return () => clearInterval(id);
   }, [loggedIn, state.status, celebrate]);
+
+  // --- Native ride detection -------------------------------------------------
+  // On device only: a sensor-detected coaster ride → submit its trace → recap
+  // toast + any newly-unlocked sensor achievements through the same funnel.
+  const inParkRef = React.useRef(false);
+  const submit = useMutation(
+    trpc.achievements.submitRideTrace.mutationOptions({ meta: { errorToast: false } }),
+  );
+  const submitRef = React.useRef(submit);
+  submitRef.current = submit;
+
+  React.useEffect(() => {
+    if (!loggedIn || !isNative()) return;
+    let handle: PluginListenerHandle | null = null;
+    let cancelled = false;
+    void addRideDetectedListener((trace) => {
+      submitRef.current.mutate(trace, {
+        onSuccess: (r) => {
+          showRideRecapToast(trace.metrics);
+          if (r.newlyUnlocked.length > 0) {
+            celebrate(
+              r.newlyUnlocked.map((u) => u.id),
+              r.xp,
+              r.level,
+            );
+          }
+        },
+      });
+    }).then((h) => {
+      if (cancelled) void h?.remove();
+      else handle = h;
+    });
+    return () => {
+      cancelled = true;
+      void handle?.remove();
+      void disarmRideMonitoring();
+    };
+  }, [loggedIn, celebrate]);
 
   // --- Pending replay --------------------------------------------------------
   // Anything still un-acked (app closed mid-toast, etc.) — replayed once.

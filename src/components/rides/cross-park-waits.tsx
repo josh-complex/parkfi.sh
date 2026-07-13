@@ -36,6 +36,7 @@ import {
 } from "#/components/ui/drawer.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { cn } from "#/lib/utils.ts";
+import { formatParkName } from "#/lib/parks.ts";
 
 type Ride = {
   id: number;
@@ -471,7 +472,9 @@ export function CrossParkWaits() {
               <section className="flex flex-col gap-3">
                 <div className="flex items-end justify-between gap-4 px-4 lg:px-6">
                   <div className="flex min-w-0 flex-col gap-0.5">
-                    <h3 className="truncate text-lg font-semibold tracking-tight">{g.parkName}</h3>
+                    <h3 className="truncate text-lg font-semibold tracking-tight">
+                      {formatParkName(g.parkName)}
+                    </h3>
                     <p className="truncate text-sm text-muted-foreground">{subtitle}</p>
                   </div>
                   <CarouselArrows className="hidden shrink-0 md:flex" />

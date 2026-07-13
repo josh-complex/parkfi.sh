@@ -48,13 +48,14 @@ export const RESORT_DEFAULT_SLUG: Record<string, string> = {
 };
 
 /**
- * Display name for a theme park, trimmed of the redundant "Theme Park" / "Park"
- * suffix the source feeds tack on (e.g. "Disney's Animal Kingdom Theme Park" or
- * "Magic Kingdom Park"), which otherwise reads as a redundant repeat next to the
- * park identity. "Water Park" is a meaningful compound, so it's left intact.
+ * Display name for a park, trimmed of the redundant "Theme Park" / "Water Park"
+ * / "Park" suffix the source feeds tack on (e.g. "Disney's Animal Kingdom Theme
+ * Park", "Disney's Blizzard Beach Water Park", "Magic Kingdom Park"), which
+ * otherwise reads as a redundant repeat next to the park identity.
  */
 export function formatParkName(name: string): string {
-  const trimmed = name.replace(/\s+Theme Park$/i, "");
-  if (/water park$/i.test(trimmed)) return trimmed;
-  return trimmed.replace(/\s+Park$/i, "");
+  return name
+    .replace(/\s+(?:Theme|Water)\s+Park$/i, "")
+    .replace(/\s+Park$/i, "")
+    .trim();
 }

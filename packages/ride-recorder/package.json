@@ -1,0 +1,42 @@
+{
+  "name": "ride-recorder",
+  "version": "0.1.0",
+  "private": true,
+  "description": "On-device coaster ride detection (IMU + barometer) for the ParkFi Capacitor shell.",
+  "keywords": [
+    "capacitor",
+    "native",
+    "plugin"
+  ],
+  "files": [
+    "dist/",
+    "ios/Sources/",
+    "ios/Package.swift",
+    "android/src/",
+    "android/build.gradle",
+    "Package.swift",
+    "RideRecorderPlugin.podspec"
+  ],
+  "type": "module",
+  "main": "dist/plugin.cjs.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/plugin.cjs.js"
+    }
+  },
+  "peerDependencies": {
+    "@capacitor/core": "^8.0.0"
+  },
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    },
+    "android": {
+      "src": "android"
+    }
+  }
+}
