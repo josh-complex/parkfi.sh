@@ -7,6 +7,7 @@ import {
   disneyDiningEntityType,
   disneyDiningPriceRange,
   normalizeUniversalName,
+  parseDisneyWaterParkTickets,
   universalDetailUrl,
   universalDiningBookable,
   universalDiningExperience,
@@ -159,5 +160,57 @@ describe("Disney finder dining catalog mappers", () => {
     );
     expect(disneyDiningPriceRange("Mexican", ["$$"])).toBe("$$");
     expect(disneyDiningPriceRange("Mexican", null)).toBeNull();
+  });
+});
+
+// The water-park ticket page is a static HTML page (no productInstanceId feed):
+// two flat-priced tiers plus the summer blockout ranges, all scraped from markup.
+describe("parseDisneyWaterParkTickets — the scraped flat-price tiers", () => {
+  // Trimmed to the price blocks + blockout copy from the real page structure.
+  const html = `
+    <label id="waterParks-waterpark-label" class="waterParks-water-park waterParksRadioLabel">
+      <input id="waterParks-waterpark" value="water-park" name="waterParks" />
+    </label>
+    <div id="waterParks-water-park" class="waterParksLabel">
+      <div class="waterParksPriceBlock">
+        <div class="adultPrice singlePrice"><span class="waterParkPrice">$74.00</span></div>
+        <div class="childPrice singlePrice"><span class="waterParkPrice">$68.00</span></div>
+      </div>
+    </div>
+    <div id="waterParks-water-park-blockout" class="waterParksLabel">
+      <div class="waterParksPriceBlock">
+        <div class="adultPrice singlePrice"><span class="waterParkPrice">$64.00</span></div>
+        <div class="childPrice singlePrice"><span class="waterParkPrice">$58.00</span></div>
+      </div>
+    </div>
+    <p>This ticket is not valid for admission from May 23 to September 26, 2026 and
+       May 23 to September 26, 2027.</p>`;
+
+  it("extracts adult + child cents for both tiers", () => {
+    const t = parseDisneyWaterParkTickets(html);
+    expect(t.regular).toEqual({ adultCents: 7400, childCents: 6800 });
+    expect(t.blockout).toEqual({ adultCents: 6400, childCents: 5800 });
+  });
+
+  it("parses + dedupes the blockout ranges into ISO dates", () => {
+    const t = parseDisneyWaterParkTickets(html);
+    expect(t.blockoutRanges).toEqual([
+      { start: "2026-05-23", end: "2026-09-26" },
+      { start: "2027-05-23", end: "2027-09-26" },
+    ]);
+  });
+
+  it("does not confuse the regular tier's prices with the blockout tier's", () => {
+    // The regular block id is a prefix of the blockout id — the exact-id anchor
+    // plus the bounded slice must keep them apart.
+    const t = parseDisneyWaterParkTickets(html);
+    expect(t.regular?.adultCents).toBe(7400);
+  });
+
+  it("degrades to nulls / empty on unrecognized markup", () => {
+    const t = parseDisneyWaterParkTickets("<div>no prices here</div>");
+    expect(t.regular).toBeNull();
+    expect(t.blockout).toBeNull();
+    expect(t.blockoutRanges).toEqual([]);
   });
 });

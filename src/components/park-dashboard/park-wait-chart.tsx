@@ -786,8 +786,10 @@ export function ParkWaitChart({
       const avg =
         open && vals.length > 0
           ? mode === "count"
-            ? // A total, not an average: sum the per-ride 1/0 "available" flags
-              // into the whole-park count of currently available Lightning Lanes.
+            ? // Each ride's value is the fraction of the bucket its Lightning
+              // Lane was bookable (server-side avg), so summing across rides
+              // yields the whole-park *average* number of Lightning Lanes
+              // available — not the peak count.
               vals.reduce((a, b) => a + b, 0)
             : mode === "price"
               ? Number((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2))

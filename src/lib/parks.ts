@@ -1,11 +1,24 @@
-export const WDW_PARKS: Array<{ code: string; label: string; slug: string | null }> = [
+export interface ParkListEntry {
+  code: string;
+  label: string;
+  slug: string | null;
+  /** Water parks price flat single-day tickets, not the demand-priced admission. */
+  water?: boolean;
+}
+
+export const WDW_PARKS: Array<ParkListEntry> = [
   { code: "MK", label: "Magic Kingdom", slug: "magic-kingdom" },
   { code: "EP", label: "EPCOT", slug: "epcot" },
   { code: "HS", label: "Hollywood Studios", slug: "hollywood-studios" },
   { code: "AK", label: "Animal Kingdom", slug: "animal-kingdom" },
+  { code: "TL", label: "Typhoon Lagoon", slug: "typhoon-lagoon", water: true },
+  { code: "BB", label: "Blizzard Beach", slug: "blizzard-beach", water: true },
 ];
 
-export const UOR_PARKS: Array<{ code: string; label: string; slug: string | null }> = [
+/** Codes of the flat-priced Disney water parks (matches `product_dim.park_scope`). */
+export const WDW_WATER_PARK_CODES = new Set(WDW_PARKS.filter((p) => p.water).map((p) => p.code));
+
+export const UOR_PARKS: Array<ParkListEntry> = [
   { code: "USF", label: "Studios", slug: "universal-studios-florida" },
   { code: "UIOA", label: "Islands of Adventure", slug: "islands-of-adventure" },
   { code: "EPIC", label: "Epic Universe", slug: "epic-universe" },
@@ -19,6 +32,7 @@ export interface ParkEntry {
   label: string;
   slug: string | null;
   resort: Resort;
+  water?: boolean;
 }
 
 /** Every park across both resorts, resort-tagged — for the combined park picker. */
@@ -32,3 +46,15 @@ export const RESORT_DEFAULT_SLUG: Record<string, string> = {
   WDW: "magic-kingdom",
   UOR: "universal-studios-florida",
 };
+
+/**
+ * Display name for a theme park, trimmed of the redundant "Theme Park" / "Park"
+ * suffix the source feeds tack on (e.g. "Disney's Animal Kingdom Theme Park" or
+ * "Magic Kingdom Park"), which otherwise reads as a redundant repeat next to the
+ * park identity. "Water Park" is a meaningful compound, so it's left intact.
+ */
+export function formatParkName(name: string): string {
+  const trimmed = name.replace(/\s+Theme Park$/i, "");
+  if (/water park$/i.test(trimmed)) return trimmed;
+  return trimmed.replace(/\s+Park$/i, "");
+}

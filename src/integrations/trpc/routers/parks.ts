@@ -58,11 +58,13 @@ export const parksRouter = {
       lng_max: number | null;
       map_zoom: number | null;
       boundary: GeoPolygon | null;
+      image_url: string | null;
+      image_alt: string | null;
     }>(sql`
       SELECT p.id, p.slug, p.name, p.timezone,
              o.slug AS operator_slug, o.name AS operator_name, r.name AS resort_name,
              p.latitude, p.longitude, p.lat_min, p.lat_max, p.lng_min, p.lng_max, p.map_zoom,
-             p.boundary
+             p.boundary, p.image_url, p.image_alt
       FROM parks p
       LEFT JOIN operators o ON o.id = p.operator_id
       LEFT JOIN resorts r ON r.id = p.resort_id
@@ -85,6 +87,8 @@ export const parksRouter = {
           : null,
       mapZoom: p.map_zoom,
       boundary: p.boundary,
+      imageUrl: p.image_url,
+      imageAlt: p.image_alt,
     }));
   }),
 
@@ -1226,10 +1230,10 @@ export const parksRouter = {
         parkSlug: z.string(),
         queueType: z.number().int().min(1).max(6).default(1),
         // `wait` → avg standby/single-rider minutes; `price` → avg LL Single
-        // dollars; `count` → per ride a 1/0 "available this bucket" flag
-        // (AVAILABLE or LIMITED = 1), so the client sums them into a whole-park
-        // "N Lightning Lanes available" line. Spans LL Multi + Single, ignoring
-        // `queueType`.
+        // dollars; `count` → per ride the fraction of the bucket its Lightning
+        // Lane was bookable (AVAILABLE or LIMITED), so the client sums them into
+        // a whole-park "average Lightning Lanes available" line. Spans LL Multi +
+        // Single, ignoring `queueType`.
         metric: z.enum(["wait", "price", "count"]).default("wait"),
         hours: z
           .number()
@@ -1258,15 +1262,18 @@ export const parksRouter = {
       const queueFilter = isCount
         ? sql`q.queue_type IN (${QueueType.RETURN_TIME}, ${QueueType.PAID_RETURN_TIME})`
         : sql`q.queue_type = ${input.queueType}`;
-      // Per (attraction, bucket): 1 if the ride's Lightning Lane was bookable
-      // (AVAILABLE or LIMITED) at any point in the bucket, else 0. NOT_OFFERED /
-      // no state drop to NULL so an all-unoffered bucket → null point (the client
-      // bridges it as downtime). Summing these across rides on the client yields
-      // the whole-park "N Lightning Lanes available" line.
+      // Per (attraction, bucket): the *fraction* of the bucket the ride's
+      // Lightning Lane was bookable — avg (not max/peak) of a per-sample 1
+      // (AVAILABLE or LIMITED) / 0 (SOLD_OUT or PAUSED) flag. NOT_OFFERED / no
+      // state drop to NULL so they're excluded from the average, and a ride that
+      // is all-unoffered yields a null point (the client bridges it as downtime,
+      // and drops it from the legend). Summing these fractions across rides on
+      // the client yields the whole-park "average Lightning Lanes available"
+      // line — a true time-average rather than the peak count.
       const valueExpr = isCount
-        ? sql`max(CASE
-                    WHEN q.state IN (${QueueState.AVAILABLE}, ${QueueState.LIMITED}) THEN 1
-                    WHEN q.state IN (${QueueState.SOLD_OUT}, ${QueueState.PAUSED}) THEN 0
+        ? sql`avg(CASE
+                    WHEN q.state IN (${QueueState.AVAILABLE}, ${QueueState.LIMITED}) THEN 1.0
+                    WHEN q.state IN (${QueueState.SOLD_OUT}, ${QueueState.PAUSED}) THEN 0.0
                     ELSE NULL END)`
         : isPrice
           ? sql`(avg(q.price_cents) / 100.0)`

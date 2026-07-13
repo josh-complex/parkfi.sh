@@ -36,17 +36,23 @@ import {
 import {
   availabilityToQueueState,
   disneyDecodeSku,
+  parseDisneyWaterParkTickets,
   QueueState,
   Source,
   themeparksScheduleProduct,
   universalDecodeSku,
+  WDW_WATER_PARK_BLOCKOUT_FAMILY,
+  WDW_WATER_PARK_FAMILY,
   type DisneySkuDims,
+  type WaterParkTierPrice,
 } from "#/server/parks/codes.ts";
+import { WDW_WATER_PARK_CODES } from "#/lib/parks.ts";
 import {
   fetchAvailabilityCalendar,
   fetchClientToken,
   fetchProductListing,
   fetchTicketPricing,
+  fetchWaterParkTicketsPage,
 } from "#/server/parks/sources/disney.ts";
 import { browserlessConfigured } from "#/server/parks/sources/browserless.ts";
 import { fetchSchedule } from "#/server/parks/sources/themeparks.ts";
@@ -459,6 +465,97 @@ async function captureDisneyPricing(observedAt: Date): Promise<number> {
   return inserted;
 }
 
+// --- D3: Disney water-park pricing (flat, scraped from the tickets page) ---
+
+/**
+ * Water-park admission isn't in the demand-priced ticket feed — it's two flat
+ * prices hardcoded on the /tickets/water-parks/ marketing page. We model each
+ * tier as a `product_dim.family` valid at "whichever water park is open"
+ * (park_scope covers both), then stamp a flat per-date row across the pricing
+ * window so the calendar/shelf render a normal price series. The blockout tier
+ * records NO rows inside its blocked ranges, so the calendar's min-per-date
+ * naturally falls back to the full price on those dates.
+ */
+async function captureDisneyWaterParks(observedAt: Date): Promise<number> {
+  const html = await fetchWaterParkTicketsPage(AbortSignal.timeout(config.fetchTimeoutMs));
+  const parsed = parseDisneyWaterParkTickets(html);
+  if (!parsed.regular && !parsed.blockout) {
+    console.warn("[D3] water-park page had no parseable prices — skipping");
+    return 0;
+  }
+
+  const parkScope = [...WDW_WATER_PARK_CODES];
+  const dims = new Map<string, typeof productDim.$inferInsert>();
+  const rows: Array<typeof skuPriceObs.$inferInsert> = [];
+
+  const isBlocked = (iso: string): boolean =>
+    parsed.blockoutRanges.some((r) => iso >= r.start && iso <= r.end);
+
+  const addTier = (
+    family: string,
+    displayName: string,
+    price: WaterParkTierPrice | null,
+    blockedByDate: boolean,
+  ): void => {
+    if (!price) return;
+    for (const [ageGroup, cents] of [
+      ["ADULT", price.adultCents],
+      ["CHILD", price.childCents],
+    ] as const) {
+      const sku = `wdw-${family}-1d-${ageGroup.toLowerCase()}`;
+      dims.set(sku, {
+        sku,
+        resort: "WDW",
+        family,
+        durationDays: 1,
+        parkScope,
+        parkToPark: false,
+        ageGroup,
+        residency: "STD",
+        passTier: null,
+        variablePriced: false,
+        listPriceCents: cents,
+        name: `${displayName} (${ageGroup === "ADULT" ? "Ages 10+" : "Ages 3-9"})`,
+        updatedAt: observedAt,
+      });
+      // Flat per-date rows across the window; the blockout tier skips its
+      // blocked ranges so those dates fall back to the full-price tier.
+      for (let i = 0; i <= DISNEY_PRICE_WINDOW_DAYS; i++) {
+        const d = new Date(observedAt);
+        d.setDate(d.getDate() + i);
+        const iso = isoDate(d);
+        if (blockedByDate && isBlocked(iso)) continue;
+        rows.push({
+          observedAt,
+          sku,
+          serviceDate: iso,
+          priceCents: cents,
+          currency: "USD",
+          available: true,
+          availableUnits: null,
+          totalCapacity: null,
+          source: Source.DISNEY_DIRECT,
+        });
+      }
+    }
+  };
+
+  addTier(WDW_WATER_PARK_FAMILY, "1-Day Water Park Ticket", parsed.regular, false);
+  addTier(
+    WDW_WATER_PARK_BLOCKOUT_FAMILY,
+    "1-Day Water Park Ticket with Blockout Dates",
+    parsed.blockout,
+    true,
+  );
+
+  await upsertProductDims([...dims.values()]);
+  const inserted = await insertSkuPrices(rows);
+  console.log(
+    `[D3] Disney water parks: ${dims.size} SKUs, ${inserted}/${rows.length} price obs inserted`,
+  );
+  return inserted;
+}
+
 // --- U1/U2: Universal Express + admission pricing -------------------------
 
 async function captureUniversalPricing(todayIso: string, observedAt: Date): Promise<number> {
@@ -665,6 +762,10 @@ async function main() {
     );
     await runStep("D2 Disney ticket pricing", () => captureDisneyPricing(observedAt));
   }
+
+  // D3 is SKU-keyed (park_scope, not park FKs), so it runs independent of the
+  // disney_direct park mappings above.
+  await runStep("D3 Disney water-park pricing", () => captureDisneyWaterParks(observedAt));
 
   // Universal is SKU-keyed (product_dim + sku_price_obs), not park-mapped.
   if (!browserlessConfigured()) {

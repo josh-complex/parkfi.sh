@@ -351,11 +351,13 @@ export function MapStageProvider({
     if (typeof document === "undefined") return null;
     const el = document.createElement("div");
     // `relative` so the overlay controls (locate / filter / directions) anchor to
-    // the map area itself, whatever slot it's currently lent to. Rounded to match
-    // the desktop content card (app-inset.tsx) so the square-cornered maplibre
-    // canvas doesn't poke past its rounded corners; mobile's fullscreen slot has
-    // no rounding to match, so this is a no-op there.
-    el.className = "relative size-full overflow-hidden md:rounded-2xl";
+    // the map area itself, whatever slot it's currently lent to. `rounded-[inherit]`
+    // (+ its own `overflow-hidden`) clips the square-cornered maplibre canvas to
+    // whatever radius the *current* slot carries — the embedded park card's
+    // `rounded-4xl` (on mobile too, where it has no `md:` breakpoint) or the desktop
+    // roam card's `rounded-2xl` — while the fullscreen mobile roam slot (no radius)
+    // leaves it square. A single static radius couldn't satisfy all three.
+    el.className = "relative size-full overflow-hidden rounded-[inherit]";
     return el;
   });
   const parkRef = React.useRef<HTMLDivElement>(null);
@@ -599,24 +601,30 @@ export function MapStageProvider({
                 navigating), so the controls stay a real stack instead of three
                 separately-positioned elements. */}
             {attached && engine && (
-              <BottomMapCluster side="right" lifted={navigating}>
+              <BottomMapCluster side="right" fullBleed={roam} lifted={navigating}>
                 <ZoomControl
                   onZoomIn={() => mapRef.current?.zoomIn()}
                   onZoomOut={() => mapRef.current?.zoomOut()}
                 />
-                <LocateButton
-                  state={geo.state}
-                  // While navigating, the locate button doubles as recenter — it
-                  // re-engages the follow-cam (and heading-up) after a manual pan.
-                  // Otherwise it's a toggle: on when off, off when already tracking.
-                  onClick={
-                    started
-                      ? flyToUser
-                      : geo.state.status === "granted"
-                        ? geo.deactivate
-                        : activateLocate
-                  }
-                />
+                {/* Locate is the free-roam map's control (find yourself in the
+                    park). Embedded maps — a park page's overview card — aren't a
+                    "you are here" surface, so it's hidden there; the exception is
+                    an active nav trip, where the same button doubles as recenter. */}
+                {(roam || started) && (
+                  <LocateButton
+                    state={geo.state}
+                    // While navigating, the locate button doubles as recenter — it
+                    // re-engages the follow-cam (and heading-up) after a manual pan.
+                    // Otherwise it's a toggle: on when off, off when already tracking.
+                    onClick={
+                      started
+                        ? flyToUser
+                        : geo.state.status === "granted"
+                          ? geo.deactivate
+                          : activateLocate
+                    }
+                  />
+                )}
                 <MapAttribution />
               </BottomMapCluster>
             )}

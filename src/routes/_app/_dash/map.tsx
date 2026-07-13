@@ -29,7 +29,7 @@ function MapPage() {
     <>
       <MapSlot
         pinnedFullBleed
-        className="roam-map fixed inset-0 z-0 md:static md:z-auto md:h-[calc(100svh-var(--toolbar-height)-0.5rem)]"
+        className="roam-map fixed inset-0 z-0 md:static md:z-auto md:h-[calc(100svh-var(--toolbar-height)-0.5rem)] md:rounded-2xl"
       />
     </>
   );

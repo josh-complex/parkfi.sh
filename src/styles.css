@@ -372,7 +372,10 @@ html.native [data-slot="sidebar-wrapper"] {
   --btn-glare-hover: var(--btn-glare);
   box-shadow:
     0 3px 0 0 var(--btn-3d),
-    inset 0 1px 0 0 var(--btn-glare);
+    inset 0 1px 0 0 var(--btn-glare),
+    /* Soft ambient shadow, separate from the hard 3D shelf edge above — lifts
+       the whole piece off whatever's scrolling underneath it. */
+      0 4px 10px -2px oklch(0 0 0 / 0.12);
 }
 
 @utility shadow-3d-hover {

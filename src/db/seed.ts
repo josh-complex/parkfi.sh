@@ -206,6 +206,24 @@ async function main() {
       disneyId: "80007998",
       products: DISNEY_PRODUCTS,
     },
+    // Water parks: live status + ride list only. No Lightning Lane / Virtual
+    // Queue and no date-based theme-park ticket product, so `products` is empty —
+    // which also keeps them out of the ticket-pricing surfaces (those iterate the
+    // static `WDW_PARKS` list in `src/lib/parks.ts`, where water parks are absent).
+    {
+      name: "Disney's Typhoon Lagoon Water Park",
+      slug: "typhoon-lagoon",
+      themeparksUuid: "b070cbc5-feaa-4b87-a8c1-f94cca037a18",
+      disneyId: "80007981",
+      products: [],
+    },
+    {
+      name: "Disney's Blizzard Beach Water Park",
+      slug: "blizzard-beach",
+      themeparksUuid: "ead53ea5-22e5-4095-9a83-8c29300d7c63",
+      disneyId: "80007834",
+      products: [],
+    },
   ];
   for (const p of wdwParks) await upsertPark(disney, wdw, p);
 

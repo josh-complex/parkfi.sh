@@ -627,6 +627,103 @@ export function disneyDecodeSku(productInstanceId: string): DisneySkuDims {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Disney water-park tickets (scraped from the static /tickets/water-parks/ page).
+// Unlike the demand-priced theme-park feed, water-park admission is a flat list
+// price hardcoded in the page markup — two tiers (a full-price ticket valid any
+// day, and a cheaper one blocked out during summer). We model each tier as a
+// `product_dim.family`, valid at "whichever water park is open" (park_scope
+// covers both). See `services/cron-tickets/main.ts` (step D3).
+// ---------------------------------------------------------------------------
+
+/** `product_dim.family` values for the two water-park ticket tiers. */
+export const WDW_WATER_PARK_FAMILY = "water-park" as const;
+export const WDW_WATER_PARK_BLOCKOUT_FAMILY = "water-park-blockout" as const;
+export const WDW_WATER_PARK_FAMILIES = [
+  WDW_WATER_PARK_FAMILY,
+  WDW_WATER_PARK_BLOCKOUT_FAMILY,
+] as const;
+
+const MONTHS: Record<string, number> = {
+  january: 1,
+  february: 2,
+  march: 3,
+  april: 4,
+  may: 5,
+  june: 6,
+  july: 7,
+  august: 8,
+  september: 9,
+  october: 10,
+  november: 11,
+  december: 12,
+};
+
+/** "$74.00" / "$1,234.50" -> integer cents, or null when unparseable. */
+function dollarsToCents(text: string): number | null {
+  const n = Number(text.replace(/[^0-9.]/g, ""));
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
+}
+
+export interface WaterParkTierPrice {
+  adultCents: number;
+  childCents: number;
+}
+export interface WaterParkTickets {
+  /** Full-price 1-Day Water Park Ticket (valid any operating day). */
+  regular: WaterParkTierPrice | null;
+  /** Cheaper 1-Day ticket, not valid during the blockout ranges below. */
+  blockout: WaterParkTierPrice | null;
+  /** Inclusive [start, end] ISO date ranges the blockout ticket is NOT valid. */
+  blockoutRanges: Array<{ start: string; end: string }>;
+}
+
+/** Adult + child price for one `waterParks-*` price block, keyed by its DOM id. */
+function parseWaterParkTier(html: string, blockId: string): WaterParkTierPrice | null {
+  const anchor = html.indexOf(`id="${blockId}"`);
+  if (anchor === -1) return null;
+  // The two blocks are adjacent in the page; a bounded slice keeps the
+  // non-greedy price match anchored to THIS block, not the next tier's.
+  const block = html.slice(anchor, anchor + 900);
+  const priceOf = (which: "adultPrice" | "childPrice"): number | null => {
+    const m = block.match(
+      new RegExp(`class="${which} singlePrice">[\\s\\S]*?class="waterParkPrice">([^<]+)<`),
+    );
+    return m ? dollarsToCents(m[1]) : null;
+  };
+  const adultCents = priceOf("adultPrice");
+  const childCents = priceOf("childPrice");
+  if (adultCents == null || childCents == null) return null;
+  return { adultCents, childCents };
+}
+
+/**
+ * Parse the two ticket tiers + the blockout date ranges out of the water-parks
+ * ticket page HTML. Each field degrades to null/empty rather than throwing, so a
+ * markup change on one tier doesn't sink the whole capture.
+ */
+export function parseDisneyWaterParkTickets(html: string): WaterParkTickets {
+  const regular = parseWaterParkTier(html, "waterParks-water-park");
+  const blockout = parseWaterParkTier(html, "waterParks-water-park-blockout");
+
+  // "May 23 to September 26, 2026 and May 23 to September 26, 2027" (the ranges
+  // are repeated across the markup — dedupe on the ISO pair).
+  const ranges = new Map<string, { start: string; end: string }>();
+  const re = /([A-Za-z]+)\s+(\d{1,2})\s+to\s+([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})/g;
+  for (const m of html.matchAll(re)) {
+    const sMonth = MONTHS[m[1].toLowerCase()];
+    const eMonth = MONTHS[m[3].toLowerCase()];
+    if (!sMonth || !eMonth) continue;
+    const year = m[5];
+    const pad = (n: string | number) => String(n).padStart(2, "0");
+    const start = `${year}-${pad(sMonth)}-${pad(m[2])}`;
+    const end = `${year}-${pad(eMonth)}-${pad(m[4])}`;
+    ranges.set(`${start}:${end}`, { start, end });
+  }
+
+  return { regular, blockout, blockoutRanges: [...ranges.values()] };
+}
+
 export function universalDecodeSku(partNumber: string): UniversalSkuDims {
   const tokens = partNumber.split(/[-_]/);
   const has = (t: string) => tokens.includes(t);

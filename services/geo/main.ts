@@ -61,12 +61,15 @@ import type { UniversalPlace, UniversalPlaces } from "#/server/parks/schemas.ts"
 
 const KIND_ATTRACTION = "attraction";
 const KIND_PARK = "park";
-// The four WDW parks whose slugs equal the Disney `urlFriendlyId` finder slug.
+// The WDW parks (four theme parks + two water parks) whose slugs equal the
+// Disney `urlFriendlyId` finder slug, so the explorer enrichment resolves.
 const DISNEY_FINDER_SLUGS = new Set([
   "magic-kingdom",
   "epcot",
   "animal-kingdom",
   "hollywood-studios",
+  "typhoon-lagoon",
+  "blizzard-beach",
 ]);
 
 interface ParkRow {

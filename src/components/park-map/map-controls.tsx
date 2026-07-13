@@ -22,6 +22,7 @@ import {
 import { type MapLayers, useRideFilter } from "#/components/rides/ride-filter.tsx";
 import type { GeoState } from "#/hooks/use-geolocation.ts";
 import { cn } from "#/lib/utils.ts";
+import { formatParkName } from "#/lib/parks.ts";
 
 import { MAP_TYPE_COLOR, type MapItemKind } from "./shared.tsx";
 
@@ -57,14 +58,21 @@ const CLUSTER_BOTTOM_LIFTED =
  * their children stack. `lifted` raises the column clear of the nav ETA card
  * while navigating. Non-interactive itself; its children opt back into pointer
  * events (`pointer-events-auto`).
+ *
+ * `fullBleed` is the free-roam `/map`, where the map extends under the bottom-nav
+ * island and the controls must clear it. On an *embedded* map (a park page's card,
+ * which ends well above the nav) that offset would float the controls up into the
+ * middle of the card, so there they anchor to the card's own bottom edge instead.
  */
 export function BottomMapCluster({
   side,
+  fullBleed = true,
   lifted = false,
   className,
   children,
 }: {
   side: "left" | "right";
+  fullBleed?: boolean;
   lifted?: boolean;
   className?: string;
   children: React.ReactNode;
@@ -75,7 +83,7 @@ export function BottomMapCluster({
       className={cn(
         "pointer-events-none absolute z-10 flex flex-col gap-2",
         side === "left" ? "left-4 items-start" : "right-4 items-end",
-        lifted ? CLUSTER_BOTTOM_LIFTED : CLUSTER_BOTTOM,
+        fullBleed ? (lifted ? CLUSTER_BOTTOM_LIFTED : CLUSTER_BOTTOM) : "bottom-3",
         className,
       )}
     >
@@ -263,7 +271,7 @@ export function ParkChipScroller({
           onClick={() => onZoom(p.slug)}
           className="btn-3d-outline border-3d shadow-3d flex shrink-0 select-none items-center whitespace-nowrap rounded-full bg-background/95 px-4 py-2 text-sm font-medium text-foreground backdrop-blur transition-[transform,box-shadow] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)]"
         >
-          {p.name}
+          {formatParkName(p.name)}
         </button>
       ))}
     </div>

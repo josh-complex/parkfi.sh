@@ -17,8 +17,10 @@ import {
   ArrowUpDownIcon,
   ChevronRightIcon,
   ChevronsUpDownIcon,
+  GemIcon,
   InfoIcon,
   SlidersHorizontalIcon,
+  ZapIcon,
 } from "lucide-react";
 
 import {
@@ -30,7 +32,6 @@ import { authClient } from "#/lib/auth-client.ts";
 import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
-import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "#/components/ui/card.tsx";
 import {
   Drawer,
   DrawerClose,
@@ -567,42 +568,71 @@ export function ParkBoardTable({
 
   const sortedRows = table.getRowModel().rows;
 
+  // Changing sort/filter reshuffles the list, so snap back to the section start
+  // (heading) rather than leaving the user stranded mid-list looking at a
+  // reordered set with no anchor.
+  const wrapperRef = React.useRef<HTMLDivElement>(null);
+  const scrollToBoardStart = React.useCallback(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+    // rAF so a closing mobile drawer doesn't cancel the smooth scroll.
+    requestAnimationFrame(() => el.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }, []);
+  const handleFilter = React.useCallback(
+    (f: StatusFilter) => {
+      setFilter(f);
+      scrollToBoardStart();
+    },
+    [scrollToBoardStart],
+  );
+  const handleSortKey = React.useCallback(
+    (k: SortKey) => {
+      setSorting(SORT_STATE[k]);
+      scrollToBoardStart();
+    },
+    [scrollToBoardStart],
+  );
+
   return (
-    <Card className={cn("flex flex-col", className)}>
-      <CardHeader>
-        <CardTitle>Live Ride Board</CardTitle>
-        {/* Pin to col 1 / row 2. On mobile the desktop-only CardAction is
-            `display:none`, which frees the header grid's second column — without
-            this the description auto-places beside the title into that column and
-            crushes "Live Ride Board" down to one word per line. */}
-        <CardDescription className="col-start-1 row-start-2">
-          {loading ? "Loading…" : `${data.length} attractions · select a ride to chart its history`}
-        </CardDescription>
-        {/* Desktop controls live in the header; mobile gets a FAB (below). */}
-        <CardAction className="hidden md:block">
-          <div className="flex items-center gap-2">
-            <Select
-              value={filter}
-              onValueChange={(v) => v && setFilter(v as StatusFilter)}
-              items={FILTER_LABELS}
-            >
-              <SelectTrigger size="sm" className="w-36" aria-label="Filter by status">
-                <SelectValue placeholder="All statuses" />
-              </SelectTrigger>
-              <SelectContent>
-                {(Object.keys(FILTER_LABELS) as Array<StatusFilter>).map((key) => (
-                  <SelectItem key={key} value={key}>
-                    {FILTER_LABELS[key]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardAction>
-      </CardHeader>
+    <div
+      ref={wrapperRef}
+      className={cn("flex flex-col gap-4", className)}
+      style={{ scrollMarginTop: "calc(var(--safe-top) + 4rem)" }}
+    >
+      {/* Section heading — matches the drawer/section headings elsewhere in the
+          dash (title + muted subtext), no card chrome. */}
+      <div className="flex items-end justify-between gap-4">
+        <div className="flex flex-col gap-0.5">
+          <h3 className="text-lg font-semibold tracking-tight">Live Ride Board</h3>
+          <p className="text-muted-foreground text-sm">
+            {loading
+              ? "Loading…"
+              : `${data.length} attractions · select a ride to chart its history`}
+          </p>
+        </div>
+        {/* Desktop controls live beside the heading; mobile gets a FAB (below). */}
+        <div className="hidden md:block">
+          <Select
+            value={filter}
+            onValueChange={(v) => v && handleFilter(v as StatusFilter)}
+            items={FILTER_LABELS}
+          >
+            <SelectTrigger size="sm" className="w-36" aria-label="Filter by status">
+              <SelectValue placeholder="All statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(FILTER_LABELS) as Array<StatusFilter>).map((key) => (
+                <SelectItem key={key} value={key}>
+                  {FILTER_LABELS[key]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
 
       {loading ? (
-        <div className="flex flex-col gap-2 px-4 pb-4 sm:px-6">
+        <div className="flex flex-col gap-2">
           {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton key={i} className="h-16 w-full" />
           ))}
@@ -615,7 +645,6 @@ export function ParkBoardTable({
         <MobileCardList
           rows={sortedRows.map((r) => r.original)}
           selectedId={selectedId}
-          onSelect={onSelect}
           parkSlug={parkSlug}
           operatorSlug={operatorSlug}
           timezone={timezone}
@@ -625,7 +654,7 @@ export function ParkBoardTable({
           singleRiderIds={singleRiderIds}
         />
       ) : (
-        <div className="min-h-0 flex-1 overflow-x-auto px-2 pb-2 sm:px-6 sm:pb-4">
+        <div className="min-h-0 flex-1 overflow-x-auto">
           <Table>
             <TableHeader>
               {table.getHeaderGroups().map((hg) => (
@@ -698,19 +727,18 @@ export function ParkBoardTable({
       {isMobile && !loading && (
         <MobileControls
           sortKey={sortingToKey(sorting)}
-          onSortKey={(k) => setSorting(SORT_STATE[k])}
+          onSortKey={handleSortKey}
           filter={filter}
-          onFilter={setFilter}
+          onFilter={handleFilter}
         />
       )}
-    </Card>
+    </div>
   );
 }
 
 function MobileCardList({
   rows,
   selectedId,
-  onSelect,
   parkSlug,
   operatorSlug,
   timezone,
@@ -721,7 +749,6 @@ function MobileCardList({
 }: {
   rows: Array<BoardItem>;
   selectedId: number | null;
-  onSelect: (item: BoardItem) => void;
   parkSlug: string | null;
   operatorSlug: string | null | undefined;
   timezone: string | null | undefined;
@@ -731,78 +758,171 @@ function MobileCardList({
   singleRiderIds: Set<number>;
 }) {
   return (
-    <div className="flex flex-col gap-2.5 px-3 pb-24">
+    <div className="flex flex-col gap-2.5">
       {rows.map((item) => {
+        const meta = item.meta;
         const down = item.status === "DOWN" || item.status === "REFURBISHMENT";
-        return (
-          <div
-            key={item.id}
-            role="button"
-            tabIndex={0}
-            onClick={() => onSelect(item)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onSelect(item);
-              }
-            }}
-            className={cn(
-              "flex cursor-pointer flex-col gap-2.5 rounded-2xl border bg-card p-3 text-left transition-colors",
-              item.id === selectedId ? "border-primary bg-muted/50" : "hover:bg-muted/40",
-            )}
-          >
-            <div className="flex items-start gap-3">
-              <div className="min-w-0 flex-1">
-                <AttractionCell item={item} singleRider={singleRiderIds.has(item.id)} />
-              </div>
-              <div className="flex shrink-0 flex-col items-end gap-1">
-                <StandbyValue item={item} className="text-lg font-semibold" />
-                <StatusBadge status={item.status} />
-              </div>
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <Sparkline
-                data={sparkByRide.get(item.id)?.values ?? []}
-                closed={sparkByRide.get(item.id)?.closed}
-                width={120}
-                height={26}
-                color={down ? "var(--destructive)" : "var(--primary)"}
-              />
-              <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                <RideAlertButton
-                  attractionId={item.id}
-                  attractionName={item.name}
-                  alert={alertByAttraction.get(item.id)}
-                  loggedIn={loggedIn}
+        // "Open with a live wait" gets the wait time; everything else (closed,
+        // down, or open-but-no-standby like a virtual-line-only ride) shows the
+        // status badge — so a row never falls back to a bare em-dash.
+        const openWithWait = item.status === "OPERATING" && item.standbyWait != null;
+        const series = sparkByRide.get(item.id);
+        const hasTrend = (series?.values ?? []).filter((v) => v != null).length >= 2;
+        const subtitle = [meta?.tags?.join(" · "), meta?.heightRequirement]
+          .filter(Boolean)
+          .join(" · ");
+        // Whole card is the link to the ride detail page — interactive children
+        // (the alert bell) stop the click so they don't trigger navigation.
+        const body = (
+          <>
+            <div className="flex items-stretch gap-3">
+              {/* Media rail — bleeds to the card's top & left edges (the card
+                  clips it to its rounded corner) and stretches the full height
+                  of the name + trend rows beside it. */}
+              {meta?.imageThumbUrl ? (
+                <img
+                  src={meta.imageThumbUrl}
+                  alt=""
+                  loading="lazy"
+                  className="w-24 shrink-0 self-stretch object-cover"
                 />
-              </div>
-            </div>
-            {/* Lightning Lane / Express — labelled so it's unmistakable on the
-                phone card, and shown for every ride (rides with no paid line read
-                "—", matching the desktop column) so the row never silently drops. */}
-            <div className="flex items-center justify-between gap-2 border-t border-border/50 pt-2.5 text-xs">
-              <span className="text-muted-foreground font-medium">
-                {paidLineProduct(operatorSlug)}
-              </span>
-              <div className="flex items-center gap-3">
-                <PaidLineCell item={item} operatorSlug={operatorSlug} />
-                <ReturnWindowCell item={item} operatorSlug={operatorSlug} timeZone={timezone} />
-              </div>
-            </div>
-            {parkSlug && (
-              <Link
-                to="/park/$slug/ride/$rideSlug"
-                params={{ slug: parkSlug, rideSlug: item.slug }}
-                onClick={(e) => e.stopPropagation()}
-                className="inline-flex items-center gap-1 self-start text-xs font-medium text-primary"
+              ) : null}
+              <div
+                className={cn(
+                  "flex min-w-0 flex-1 flex-col justify-center gap-2 py-3 pr-3",
+                  meta?.imageThumbUrl ? null : "pl-3",
+                )}
               >
-                View details
-                <ChevronRightIcon className="size-3.5" />
-              </Link>
-            )}
+                {/* Name / subtext with the alert bell pinned to the row end. */}
+                <div className="flex items-start gap-3">
+                  <div className="min-w-0 flex-1">
+                    <span className="line-clamp-2 font-medium leading-snug">{item.name}</span>
+                    {subtitle || singleRiderIds.has(item.id) ? (
+                      <span className="text-muted-foreground mt-0.5 flex min-w-0 items-center gap-1.5 text-xs font-normal">
+                        {subtitle ? <span className="line-clamp-1">{subtitle}</span> : null}
+                        {singleRiderIds.has(item.id) ? <SingleRiderBadge /> : null}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div
+                    className="-mr-1 flex shrink-0 items-center"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                  >
+                    <RideAlertButton
+                      attractionId={item.id}
+                      attractionName={item.name}
+                      alert={alertByAttraction.get(item.id)}
+                      loggedIn={loggedIn}
+                    />
+                  </div>
+                </div>
+                {/* Trend + live status: sparkline on the left, current wait or
+                    the status badge on the right. */}
+                <div className="flex items-center justify-between gap-3">
+                  {hasTrend ? (
+                    <Sparkline
+                      data={series?.values ?? []}
+                      closed={series?.closed}
+                      width={110}
+                      height={26}
+                      color={down ? "var(--destructive)" : "var(--primary)"}
+                    />
+                  ) : (
+                    <span className="text-muted-foreground text-xs">No recent trend</span>
+                  )}
+                  {openWithWait ? (
+                    <StandbyValue item={item} className="text-lg font-semibold" />
+                  ) : (
+                    <StatusBadge status={item.status} />
+                  )}
+                </div>
+              </div>
+            </div>
+            {/* Lightning Lane / Express — a tinted footer strip, shown only when
+                the ride actually has a paid line. Product + tier read as a label
+                on the left; the live availability (and return window, when
+                posted) sit as chips on the right. */}
+            <PaidLineFooter item={item} operatorSlug={operatorSlug} timeZone={timezone} />
+          </>
+        );
+
+        const className = cn(
+          "flex flex-col overflow-hidden rounded-2xl border bg-card text-left transition-colors",
+          item.id === selectedId ? "border-primary bg-muted/50" : "hover:bg-muted/40",
+        );
+
+        return parkSlug ? (
+          <Link
+            key={item.id}
+            to="/park/$slug/ride/$rideSlug"
+            params={{ slug: parkSlug, rideSlug: item.slug }}
+            className={cn("cursor-pointer", className)}
+          >
+            {body}
+          </Link>
+        ) : (
+          <div key={item.id} className={className}>
+            {body}
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * Mobile card footer for the paid-line info — a tinted strip with the product +
+ * tier as a label and the live availability / return window as chips. Rides with
+ * no paid line get an explicit "none offered" note so the row reads complete.
+ */
+function PaidLineFooter({
+  item,
+  operatorSlug,
+  timeZone,
+}: {
+  item: BoardItem;
+  operatorSlug: string | null | undefined;
+  timeZone: string | null | undefined;
+}) {
+  const ll = paidLineInfo(item, operatorSlug);
+  if (!ll.has) {
+    return (
+      <div className="border-border/50 bg-muted/30 text-muted-foreground/70 flex items-center gap-1.5 border-t px-3 py-2.5 text-xs">
+        <ZapIcon className="text-muted-foreground/40 size-3.5" />
+        No {paidLineProduct(operatorSlug)} offered
+      </div>
+    );
+  }
+  const price = formatPriceCents(ll.priceCents, item.lightningLane.currency);
+  const window = formatReturnWindow(ll.returnStart, ll.returnEnd, timeZone);
+  // Single (Individual Lightning Lane) is the à-la-carte premium tier — flag it
+  // with a gold gem so it reads apart from the bundled Multi pass.
+  const premium = ll.kind === "Single";
+  return (
+    <div className="border-border/50 bg-muted/30 flex items-center justify-between gap-2 border-t px-3 py-2.5 text-xs">
+      <span className="text-muted-foreground flex items-center gap-1.5 font-medium">
+        <ZapIcon className="text-primary size-3.5" />
+        {paidLineProduct(operatorSlug)}
+        {ll.kind ? (
+          <>
+            <span className="text-muted-foreground/40 mx-0.5">·</span>
+            <span className="text-muted-foreground/70">{ll.kind}</span>
+            {premium ? (
+              <GemIcon className="size-3.5 fill-amber-400 text-amber-500" aria-label="Premium" />
+            ) : null}
+          </>
+        ) : null}
+      </span>
+      <div className="flex items-center gap-2.5">
+        {/* The row's mere presence means the line is offered, so no affirmative
+            chip — only surface the exception (sold out). */}
+        {ll.soldOut ? <Badge variant="destructive">sold out</Badge> : null}
+        {price ? <span className="tabular-nums">{price}</span> : null}
+        {window ? <span className="text-muted-foreground tabular-nums">{window}</span> : null}
+      </div>
     </div>
   );
 }

@@ -117,3 +117,19 @@ export async function fetchTicketPricing(
   if (!res.ok) throw new UpstreamError(`GET ${url} -> ${res.status}`, res.status);
   return DisneyPricingSchema.parse(await res.json());
 }
+
+/**
+ * D3: the water-park ticket page. Unlike the demand-priced theme-park feed, this
+ * is a plain HTML marketing page with the two flat ticket prices hardcoded in the
+ * markup — returned raw here and parsed by `parseDisneyWaterParkTickets`. Public,
+ * no auth; a normal User-Agent is enough. See research/gated-feeds-report.md.
+ */
+export async function fetchWaterParkTicketsPage(signal: AbortSignal): Promise<string> {
+  const url = `${config.disneyTicketBase}/tickets/water-parks/`;
+  const res = await fetch(url, {
+    signal,
+    headers: { "user-agent": config.userAgent, accept: "text/html" },
+  });
+  if (!res.ok) throw new UpstreamError(`GET ${url} -> ${res.status}`, res.status);
+  return res.text();
+}

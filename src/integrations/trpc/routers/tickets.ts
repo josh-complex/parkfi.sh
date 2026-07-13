@@ -2,7 +2,8 @@ import { sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "#/db/index.ts";
-import { ALL_PARKS, UOR_PARKS, WDW_PARKS } from "#/lib/parks.ts";
+import { ALL_PARKS, UOR_PARKS, WDW_PARKS, WDW_WATER_PARK_CODES } from "#/lib/parks.ts";
+import { WDW_WATER_PARK_FAMILIES } from "#/server/parks/codes.ts";
 import { loadParkCalendar } from "#/server/forecast/parkCalendar.ts";
 import { publicProcedure } from "../init.ts";
 
@@ -23,11 +24,24 @@ function parkLabel(
   return parks.find((p) => p.code === code)?.label ?? code;
 }
 
+/** SQL array literal of the water-park families, for IN/exclusion clauses. */
+const WATER_PARK_FAMILY_ARRAY = sql`ARRAY[${sql.join(
+  WDW_WATER_PARK_FAMILIES.map((f) => sql`${f}`),
+  sql`, `,
+)}]::text[]`;
+
+function isWdwWaterPark(park: string | null): boolean {
+  return park != null && WDW_WATER_PARK_CODES.has(park);
+}
+
 function wdwProduct(
   parkHopper: boolean,
   ageGroup: "ADULT" | "CHILD",
   park: string | null,
 ): { label: string; filter: SQL } {
+  // Water parks price flat single-day tickets, not the demand-priced admission.
+  if (isWdwWaterPark(park)) return wdwWaterParkProduct(ageGroup, park);
+
   const ageStr = ageGroup === "CHILD" ? "Child" : "Adult";
   const parts = [
     parkHopper ? "Park Hopper" : "1-Day",
@@ -36,9 +50,30 @@ function wdwProduct(
     "Ticket",
   ];
   const parkCond = park ? sql` AND d.park_scope && ARRAY[${park}]::text[]` : sql``;
+  // Exclude water-park SKUs so they never undercut the admission price — they'd
+  // otherwise match the "All parks" (park = null) 1-day filter and drag it down.
   return {
     label: parts.filter(Boolean).join(" "),
-    filter: sql`d.duration_days = 1 AND d.age_group = ${ageGroup} AND d.residency = 'STD' AND d.park_to_park = ${parkHopper}${parkCond}`,
+    filter: sql`d.duration_days = 1 AND d.age_group = ${ageGroup} AND d.residency = 'STD' AND d.park_to_park = ${parkHopper} AND NOT (d.family = ANY(${WATER_PARK_FAMILY_ARRAY}))${parkCond}`,
+  };
+}
+
+/**
+ * Flat-priced water-park ticket filter (both tiers: the full-price ticket and the
+ * cheaper summer-blockout one). The calendar's min-per-date then shows the cheaper
+ * tier on open days and the full price on blockout days (the blockout SKU records
+ * no rows in its blocked ranges). Park Hopper / residency don't apply to water
+ * parks, so this ignores them.
+ */
+function wdwWaterParkProduct(
+  ageGroup: "ADULT" | "CHILD",
+  park: string | null,
+): { label: string; filter: SQL } {
+  const ageStr = ageGroup === "CHILD" ? "Child" : "Adult";
+  const parkCond = park ? sql` AND d.park_scope && ARRAY[${park}]::text[]` : sql``;
+  return {
+    label: `1-Day ${ageStr} Water Park Ticket`,
+    filter: sql`d.family = ANY(${WATER_PARK_FAMILY_ARRAY}) AND d.age_group = ${ageGroup}${parkCond}`,
   };
 }
 
