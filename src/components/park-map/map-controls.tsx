@@ -37,8 +37,14 @@ import { MAP_TYPE_COLOR, type MapItemKind } from "./shared.tsx";
 // press "sinks" via translate-y (not the `top` trick the flow buttons use, which
 // would fight the overlay's absolute `top`/`bottom` anchor). Slightly translucent
 // with a blur so it floats cleanly over the map.
+// No explicit size here — like ZoomControl's and MapAttribution's outer shells,
+// this is left to shrink-to-fit around its 40px content so the border draws
+// *outside* that content (an auto-width box's border adds to its footprint
+// regardless of box-sizing). A fixed size-10 here would instead draw the
+// border inward, landing 2px narrower than the other two bottom-right
+// controls despite all three wrapping the same 40px content.
 const MAP_CTRL_3D =
-  "btn-3d-outline border-3d shadow-3d pointer-events-auto flex size-10 items-center justify-center bg-background/95 text-foreground backdrop-blur transition-[transform,box-shadow,background-color,color] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)]";
+  "btn-3d-outline border-3d shadow-3d pointer-events-auto flex items-center justify-center bg-background/95 text-foreground backdrop-blur transition-[transform,box-shadow,background-color,color] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)]";
 
 // Height the floating bottom clusters keep above the bottom-nav island on
 // mobile — the single source of truth for both the left and right stacks so
@@ -213,11 +219,13 @@ export function LocateButton({ state, onClick }: { state: GeoState; onClick: () 
         off && "text-muted-foreground",
       )}
     >
-      {prompting ? (
-        <LoaderCircleIcon className="size-5 animate-spin" />
-      ) : (
-        <LocateFixedIcon className="size-5" />
-      )}
+      <span className="flex size-10 items-center justify-center">
+        {prompting ? (
+          <LoaderCircleIcon className="size-5 animate-spin" />
+        ) : (
+          <LocateFixedIcon className="size-5" />
+        )}
+      </span>
     </button>
   );
 }
