@@ -131,8 +131,8 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <PostHogProvider>
           <ThemeProvider
             attribute="class"
-            defaultTheme="light"
-            enableSystem={false}
+            defaultTheme="system"
+            enableSystem
             disableTransitionOnChange
           >
             <FaviconSync />

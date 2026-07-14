@@ -50,6 +50,7 @@ import {
   SelectValue,
 } from "#/components/ui/select.tsx";
 import { MAP_FILTER_PILL, MAP_FILTER_STACK } from "#/components/rides/ride-filter-button.tsx";
+import { SortRows, type SortDir, type SortOption } from "#/components/ui/sort-menu.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import {
   Table,
@@ -260,29 +261,38 @@ function PaidLineCell({
   );
 }
 
-type SortKey = "standby-desc" | "standby-asc" | "name" | "status";
+// The board's sort state lives as TanStack's `SortingState` (one column id +
+// direction); these map it to/from the shared drawer's (key, dir) model so the
+// mobile drawer and the desktop column-header toggles stay in lock-step.
+type BoardSortKey = "standby" | "attraction" | "status";
 
-const SORT_LABELS: Record<SortKey, string> = {
-  "standby-desc": "Longest wait first",
-  "standby-asc": "Shortest wait first",
-  name: "Name (A–Z)",
-  status: "Status",
-};
+const BOARD_SORTS: ReadonlyArray<SortOption<BoardSortKey>> = [
+  {
+    key: "standby",
+    label: "Wait",
+    directional: true,
+    defaultDir: "desc",
+    ascHint: "shortest first",
+    descHint: "longest first",
+  },
+  {
+    key: "attraction",
+    label: "Name",
+    directional: true,
+    defaultDir: "asc",
+    ascHint: "A–Z",
+    descHint: "Z–A",
+  },
+  { key: "status", label: "Status", directional: true, defaultDir: "asc" },
+];
 
-const SORT_STATE: Record<SortKey, SortingState> = {
-  "standby-desc": [{ id: "standby", desc: true }],
-  "standby-asc": [{ id: "standby", desc: false }],
-  name: [{ id: "attraction", desc: false }],
-  status: [{ id: "status", desc: false }],
-};
+const DEFAULT_SORTING: SortingState = [{ id: "standby", desc: true }];
 
-function sortingToKey(sorting: SortingState): SortKey {
+function sortingToOption(sorting: SortingState): { key: BoardSortKey; dir: SortDir } {
   const s = sorting[0];
-  if (!s) return "standby-desc";
-  if (s.id === "standby") return s.desc ? "standby-desc" : "standby-asc";
-  if (s.id === "attraction") return "name";
-  if (s.id === "status") return "status";
-  return "standby-desc";
+  if (!s) return { key: "standby", dir: "desc" };
+  const key: BoardSortKey = s.id === "attraction" || s.id === "status" ? s.id : "standby";
+  return { key, dir: s.desc ? "desc" : "asc" };
 }
 
 function SortHeader({
@@ -332,7 +342,7 @@ export function ParkBoardTable({
   className?: string;
 }) {
   const [filter, setFilter] = React.useState<StatusFilter>("ALL");
-  const [sorting, setSorting] = React.useState<SortingState>(SORT_STATE["standby-desc"]);
+  const [sorting, setSorting] = React.useState<SortingState>(DEFAULT_SORTING);
   const isMobile = useIsMobile();
   // The sparkline history query is NOT awaited in the route loader, so under
   // SSR streaming the HTML shell flushes with empty sparklines while the fetch
@@ -586,9 +596,9 @@ export function ParkBoardTable({
     },
     [scrollToBoardStart],
   );
-  const handleSortKey = React.useCallback(
-    (k: SortKey) => {
-      setSorting(SORT_STATE[k]);
+  const handleSort = React.useCallback(
+    (key: BoardSortKey, dir: SortDir) => {
+      setSorting([{ id: key, desc: dir === "desc" }]);
       scrollToBoardStart();
     },
     [scrollToBoardStart],
@@ -727,8 +737,8 @@ export function ParkBoardTable({
       {/* Mobile-only sort/filter FAB, center-bottom, above the safe area. */}
       {isMobile && !loading && (
         <MobileControls
-          sortKey={sortingToKey(sorting)}
-          onSortKey={handleSortKey}
+          sort={sortingToOption(sorting)}
+          onSort={handleSort}
           filter={filter}
           onFilter={handleFilter}
         />
@@ -929,13 +939,13 @@ function PaidLineFooter({
 }
 
 function MobileControls({
-  sortKey,
-  onSortKey,
+  sort,
+  onSort,
   filter,
   onFilter,
 }: {
-  sortKey: SortKey;
-  onSortKey: (k: SortKey) => void;
+  sort: { key: BoardSortKey; dir: SortDir };
+  onSort: (key: BoardSortKey, dir: SortDir) => void;
   filter: StatusFilter;
   onFilter: (f: StatusFilter) => void;
 }) {
@@ -955,21 +965,16 @@ function MobileControls({
         <DrawerContent>
           <DrawerHeader>
             <DrawerTitle>Sort rides</DrawerTitle>
-            <DrawerDescription>Choose how the ride board is ordered.</DrawerDescription>
+            <DrawerDescription>
+              Choose how the ride board is ordered. Tap again to flip the direction.
+            </DrawerDescription>
           </DrawerHeader>
-          <div className="flex flex-col gap-1 px-4 pb-4">
-            {(Object.keys(SORT_LABELS) as Array<SortKey>).map((key) => (
-              <DrawerClose key={key} asChild>
-                <Button
-                  variant={sortKey === key ? "secondary" : "ghost"}
-                  className="justify-start"
-                  onClick={() => onSortKey(key)}
-                >
-                  {SORT_LABELS[key]}
-                </Button>
-              </DrawerClose>
-            ))}
-          </div>
+          <SortRows
+            options={BOARD_SORTS}
+            activeKey={sort.key}
+            activeDir={sort.dir}
+            onChange={onSort}
+          />
         </DrawerContent>
       </Drawer>
 

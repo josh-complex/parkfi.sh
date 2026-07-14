@@ -27,6 +27,7 @@ import {
   EMPTY_FILTERS,
   STAY_OPERATORS,
   STAY_SORT_LABELS,
+  STAY_SORT_OPTIONS,
   TIER_LABEL,
   TIER_META,
   activeFilterCount,
@@ -36,6 +37,7 @@ import {
   type StayFilters,
   type StaySortKey,
 } from "#/components/stays/stays-filters.ts";
+import { SortDirToggle, SortRows, flipDir, type SortDir } from "#/components/ui/sort-menu.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Calendar } from "#/components/ui/calendar.tsx";
@@ -311,6 +313,11 @@ export function StaysBoard() {
   const [tierFilter, setTierFilter] = React.useState<ResortTier | "ALL">("ALL");
   const [areaFilter, setAreaFilter] = React.useState<string | null>(null);
   const [sortKey, setSortKey] = React.useState<StaySortKey>("recommended");
+  const [sortDir, setSortDir] = React.useState<SortDir>("asc");
+  const setSort = React.useCallback((key: StaySortKey, dir: SortDir) => {
+    setSortKey(key);
+    setSortDir(dir);
+  }, []);
 
   // Close any open search segment when the page scrolls under the sticky bar.
   const closeSegments = React.useCallback(() => {
@@ -417,6 +424,7 @@ export function StaysBoard() {
   const filteredOffers = sortOffers(
     tierScoped.filter((o) => o.available),
     sortKey,
+    sortDir,
   );
   const availableCount = offers.filter((o) => o.available).length;
 
@@ -622,21 +630,16 @@ export function StaysBoard() {
             <DrawerContent>
               <DrawerHeader>
                 <DrawerTitle>Sort resorts</DrawerTitle>
-                <DrawerDescription>Choose how the list is ordered.</DrawerDescription>
+                <DrawerDescription>
+                  Choose how the list is ordered. Tap again to flip the direction.
+                </DrawerDescription>
               </DrawerHeader>
-              <div className="flex flex-col gap-1 px-4 pb-4">
-                {(Object.keys(STAY_SORT_LABELS) as Array<StaySortKey>).map((k) => (
-                  <DrawerClose key={k} asChild>
-                    <Button
-                      variant={sortKey === k ? "secondary" : "ghost"}
-                      className="w-full justify-start"
-                      onClick={() => setSortKey(k)}
-                    >
-                      {STAY_SORT_LABELS[k]}
-                    </Button>
-                  </DrawerClose>
-                ))}
-              </div>
+              <SortRows
+                options={STAY_SORT_OPTIONS}
+                activeKey={sortKey}
+                activeDir={sortDir}
+                onChange={setSort}
+              />
             </DrawerContent>
           </Drawer>
         )}
@@ -808,7 +811,8 @@ export function StaysBoard() {
             filters={filters}
             onApplyFilters={applyFilters}
             sortKey={sortKey}
-            onSortKey={setSortKey}
+            sortDir={sortDir}
+            onSort={setSort}
             onRetry={() => void availabilityQ.refetch()}
             onEditDates={() => setDatesOpen(true)}
             alertDims={{
@@ -996,7 +1000,8 @@ function ResultsView({
   filters,
   onApplyFilters,
   sortKey,
-  onSortKey,
+  sortDir,
+  onSort,
   onRetry,
   onEditDates,
   alertDims,
@@ -1023,7 +1028,8 @@ function ResultsView({
   filters: StayFilters;
   onApplyFilters: (patch: Partial<StayFilters>) => void;
   sortKey: StaySortKey;
-  onSortKey: (k: StaySortKey) => void;
+  sortDir: SortDir;
+  onSort: (key: StaySortKey, dir: SortDir) => void;
   onRetry: () => void;
   onEditDates: () => void;
   alertDims: StayAlertDims;
@@ -1081,10 +1087,10 @@ function ResultsView({
           </span>
           <Select
             value={sortKey}
-            onValueChange={(v) => v && onSortKey(v as StaySortKey)}
+            onValueChange={(v) => v && onSort(v as StaySortKey, sortDir)}
             items={STAY_SORT_LABELS}
           >
-            <SelectTrigger size="sm" className="w-44 shrink-0" aria-label="Sort resorts">
+            <SelectTrigger size="sm" className="w-40 shrink-0" aria-label="Sort resorts">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1095,6 +1101,11 @@ function ResultsView({
               ))}
             </SelectContent>
           </Select>
+          <SortDirToggle
+            dir={sortDir}
+            disabled={sortKey === "recommended"}
+            onToggle={() => onSort(sortKey, flipDir(sortDir))}
+          />
         </div>
       </div>
 

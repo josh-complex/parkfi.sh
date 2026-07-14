@@ -1,3 +1,4 @@
+import type { SortDir, SortOption } from "#/components/ui/sort-menu.tsx";
 import type { ResortTier } from "#/server/stays/resort-catalog.generated.ts";
 
 /** Display metadata per Disney resort tier, in the order browse sections render. */
@@ -122,14 +123,36 @@ export function activeFilterCount(f: StayFilters): number {
   return (f.floridaResident ? 1 : 0) + (f.accessible ? 1 : 0);
 }
 
-export type StaySortKey = "recommended" | "price-asc" | "price-desc" | "name";
+export type StaySortKey = "recommended" | "price" | "name";
 
+/** Direction-neutral labels; the arrow / direction toggle conveys asc vs. desc. */
 export const STAY_SORT_LABELS: Record<StaySortKey, string> = {
   recommended: "Recommended",
-  "price-asc": "Price (low to high)",
-  "price-desc": "Price (high to low)",
-  name: "Name (A–Z)",
+  price: "Price",
+  name: "Name",
 };
+
+/** Drawer rows for the shared sort menu. "Recommended" keeps the server order,
+ *  so it has no direction. */
+export const STAY_SORT_OPTIONS: ReadonlyArray<SortOption<StaySortKey>> = [
+  { key: "recommended", label: "Recommended" },
+  {
+    key: "price",
+    label: "Price",
+    directional: true,
+    defaultDir: "asc",
+    ascHint: "low to high",
+    descHint: "high to low",
+  },
+  {
+    key: "name",
+    label: "Name",
+    directional: true,
+    defaultDir: "asc",
+    ascHint: "A–Z",
+    descHint: "Z–A",
+  },
+];
 
 /** A sortable resort offer (structural subset of the availability result). */
 interface SortableOffer {
@@ -142,30 +165,28 @@ interface SortableOffer {
  * Sort offers for the results grid. Unavailable resorts always sink to the
  * bottom; `recommended` keeps the server order (cheapest-available first).
  */
-export function sortOffers<T extends SortableOffer>(offers: Array<T>, key: StaySortKey): Array<T> {
+export function sortOffers<T extends SortableOffer>(
+  offers: Array<T>,
+  key: StaySortKey,
+  dir: SortDir = "asc",
+): Array<T> {
   if (key === "recommended") return offers;
   const arr = [...offers];
   const byName = (a: T, b: T) => a.name.localeCompare(b.name);
+  // Unavailable resorts always sink to the bottom, regardless of direction.
   const availFirst = (a: T, b: T) => (a.available === b.available ? 0 : a.available ? -1 : 1);
   switch (key) {
-    case "price-asc":
-      arr.sort(
-        (a, b) =>
-          availFirst(a, b) ||
-          (a.pricePerNight ?? Infinity) - (b.pricePerNight ?? Infinity) ||
-          byName(a, b),
-      );
-      break;
-    case "price-desc":
-      arr.sort(
-        (a, b) =>
-          availFirst(a, b) ||
-          (b.pricePerNight ?? -Infinity) - (a.pricePerNight ?? -Infinity) ||
-          byName(a, b),
-      );
+    case "price":
+      // Missing prices sink to the bottom in both directions (Infinity when asc,
+      // -Infinity when desc keeps them last after the sign flip).
+      arr.sort((a, b) => {
+        const pa = a.pricePerNight ?? (dir === "asc" ? Infinity : -Infinity);
+        const pb = b.pricePerNight ?? (dir === "asc" ? Infinity : -Infinity);
+        return availFirst(a, b) || (dir === "asc" ? pa - pb : pb - pa) || byName(a, b);
+      });
       break;
     case "name":
-      arr.sort(byName);
+      arr.sort((a, b) => (dir === "asc" ? byName(a, b) : byName(b, a)));
       break;
   }
   return arr;

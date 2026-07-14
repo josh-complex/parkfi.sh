@@ -67,12 +67,12 @@ function BrowseView({ isLoading }: { isLoading: boolean }) {
   }
   return (
     <div className="flex flex-col gap-4">
-      <DiningRecentlyUpdated variant="restaurants" />
-      {/* Character Dining sits above the cart/quick-service activity shelf, with
-          Snacks & Sweet Treats and a dedicated Mobile Ordering shelf right below
-          it (in that order); the remaining curated picks follow. */}
+      {/* The two recently-updated shelves (restaurants + quick service) sit
+          together at the top so the activity feed reads as one unit. Character
+          Dining, Snacks & Sweet Treats, and Mobile Ordering follow (in that
+          order); the remaining curated picks come last. */}
+      <DiningRecentlyUpdated />
       <DiningPicks include={["character"]} />
-      <DiningRecentlyUpdated variant="carts" />
       <DiningPicks include={["sweet-treats"]} />
       <DiningPicks include={["mobile-order"]} />
       <DiningPicks exclude={["character", "sweet-treats", "mobile-order"]} />
@@ -89,6 +89,7 @@ export function DiningBoard() {
   const filters = useStore(diningStore, (s) => s.filters);
   const partySize = useStore(diningStore, (s) => s.partySize);
   const sortKey = useStore(diningStore, (s) => s.sortKey);
+  const sortDir = useStore(diningStore, (s) => s.sortDir);
   const page = useStore(diningStore, (s) => s.page);
 
   // Restore the remembered party size on mount, and reset store state when the
@@ -126,12 +127,13 @@ export function DiningBoard() {
       filters: s.filters,
       searched: s.searched,
       sortKey: s.sortKey,
+      sortDir: s.sortDir,
       page: s.page,
     });
     if (diningSearchKey(next) !== searchKey) {
       void navigate({ to: "/dining", search: next, replace: true });
     }
-  }, [filters, searched, sortKey, page, searchKey, navigate]);
+  }, [filters, searched, sortKey, sortDir, page, searchKey, navigate]);
 
   // The pill rides a hero wash at rest, then flips to a translucent bar once it
   // sticks over the scrolling content. A flow sentinel marks the hand-off.
@@ -186,8 +188,8 @@ export function DiningBoard() {
       hoursMap,
       nowMin,
     );
-    return sortRestaurants(filtered, availabilityMap, sortKey, referenceDate);
-  }, [restaurants, availabilityMap, filters, sortKey, referenceDate, hoursMap, nowMin]);
+    return sortRestaurants(filtered, availabilityMap, sortKey, sortDir, referenceDate);
+  }, [restaurants, availabilityMap, filters, sortKey, sortDir, referenceDate, hoursMap, nowMin]);
 
   const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);

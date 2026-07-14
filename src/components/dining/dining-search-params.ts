@@ -18,12 +18,14 @@ import {
   type SortKey,
 } from "#/components/dining/dining-filters.ts";
 import type { HoursFilter } from "#/components/dining/dining-hours.ts";
+import type { SortDir } from "#/components/ui/sort-menu.tsx";
 
 /** The slice of board state that round-trips through the URL. */
 export interface DiningSearchState {
   filters: ClientFilters;
   searched: boolean;
   sortKey: SortKey;
+  sortDir: SortDir;
   page: number;
 }
 
@@ -39,6 +41,8 @@ export interface DiningSearch {
   features?: FeatureKey[];
   hours?: Exclude<HoursFilter, "ALL">;
   sort?: Exclude<SortKey, "park">;
+  /** Sort direction; omitted when the default ascending. */
+  dir?: SortDir;
   page?: number;
   /** Set once the user commits a search — distinguishes "browse home" from a
    *  committed search that happens to have no active narrowing. */
@@ -72,6 +76,7 @@ export function validateDiningSearch(search: Record<string, unknown>): DiningSea
     search.sort === "name" || search.sort === "availability" || search.sort === "price"
       ? search.sort
       : undefined;
+  const dir = search.dir === "desc" ? "desc" : undefined;
 
   let page: number | undefined;
   if (typeof search.page === "number" && Number.isInteger(search.page) && search.page > 0) {
@@ -95,6 +100,7 @@ export function validateDiningSearch(search: Record<string, unknown>): DiningSea
     features: features?.length ? features : undefined,
     hours,
     sort,
+    dir,
     page,
     s: truthy ? true : undefined,
   };
@@ -116,6 +122,7 @@ export function stateToSearch(state: DiningSearchState): DiningSearch {
   if (f.features.length) out.features = f.features;
   if (f.hours !== "ALL") out.hours = f.hours;
   if (state.sortKey !== "park") out.sort = state.sortKey;
+  if (state.sortDir !== "asc") out.dir = state.sortDir;
   if (state.page > 0) out.page = state.page;
   return out;
 }
@@ -138,6 +145,7 @@ export function searchToState(search: DiningSearch): DiningSearchState {
     filters,
     searched: !!search.s,
     sortKey: search.sort ?? "park",
+    sortDir: search.dir ?? "asc",
     page: search.page ?? 0,
   };
 }
@@ -171,6 +179,7 @@ export function diningSearchKey(s: DiningSearch): string {
     s.features ?? [],
     s.hours ?? "",
     s.sort ?? "",
+    s.dir ?? "",
     s.page ?? 0,
     !!s.s,
   ]);

@@ -25,7 +25,7 @@ import { cn } from "#/lib/utils.ts";
  * (notably the fullscreen `/map`) without consuming layout.
  */
 const SEG_BASE =
-  "relative top-0 -ml-px flex flex-1 flex-col items-center justify-center gap-1 border-3d btn-3d-outline shadow-3d bg-background dark:bg-muted/95 px-2 py-2.5 text-sm font-medium transition-[top,box-shadow,background-color,color] duration-150 ease-out first:ml-0 active:top-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)] [&>svg]:size-5";
+  "relative top-0 -ml-px flex flex-1 flex-col items-center justify-center gap-1 border-3d btn-3d-outline shadow-3d bg-background dark:bg-background px-2 py-2.5 text-sm font-medium transition-[top,box-shadow,background-color,color] duration-150 ease-out first:ml-0 active:top-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)] [&>svg]:size-5";
 const SEG_ACTIVE =
   "z-10 top-[3px] bg-primary dark:bg-primary text-primary-foreground [--btn-3d:color-mix(in_oklch,var(--primary),black_32%)] [--btn-glare:var(--btn-3d)] shadow-3d-active hover:top-[3px] hover:shadow-3d-active";
 const SEG_IDLE = "text-foreground";

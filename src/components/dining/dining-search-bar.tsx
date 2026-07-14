@@ -19,16 +19,16 @@ import {
   diningStore,
   patchFilters,
   setPartySize,
-  setSortKey,
+  setSort,
 } from "#/components/dining/dining-store.ts";
 import {
   countExtraFilters,
   OPERATOR_LABELS,
-  SORT_LABELS,
+  SORT_OPTIONS,
   type FilterOptions,
   type Operator,
-  type SortKey,
 } from "#/components/dining/dining-filters.ts";
+import { SortRows } from "#/components/ui/sort-menu.tsx";
 import { MAP_FILTER_PILL, MAP_FILTER_STACK } from "#/components/rides/ride-filter-button.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import {
@@ -281,6 +281,7 @@ export function DiningSearchBar({ options }: { options: FilterOptions }) {
 /** Mobile floating action button — owns search, sort, and filters drawers. */
 export function DiningMobileFAB({ options }: { options: FilterOptions }) {
   const sortKey = useStore(diningStore, (s) => s.sortKey);
+  const sortDir = useStore(diningStore, (s) => s.sortDir);
   const searched = useStore(diningStore, (s) => s.searched);
   const extraCount = useStore(diningStore, (s) => countExtraFilters(s.filters));
 
@@ -306,21 +307,16 @@ export function DiningMobileFAB({ options }: { options: FilterOptions }) {
           <DrawerContent>
             <DrawerHeader>
               <DrawerTitle>Sort restaurants</DrawerTitle>
-              <DrawerDescription>Choose how the list is ordered.</DrawerDescription>
+              <DrawerDescription>
+                Choose how the list is ordered. Tap again to flip the direction.
+              </DrawerDescription>
             </DrawerHeader>
-            <div className="flex flex-col gap-1 px-4 pb-4">
-              {(Object.keys(SORT_LABELS) as Array<SortKey>).map((k) => (
-                <DrawerClose key={k} asChild>
-                  <Button
-                    variant={sortKey === k ? "secondary" : "ghost"}
-                    className="justify-start"
-                    onClick={() => setSortKey(k)}
-                  >
-                    {SORT_LABELS[k]}
-                  </Button>
-                </DrawerClose>
-              ))}
-            </div>
+            <SortRows
+              options={SORT_OPTIONS}
+              activeKey={sortKey}
+              activeDir={sortDir}
+              onChange={setSort}
+            />
           </DrawerContent>
         </Drawer>
       )}

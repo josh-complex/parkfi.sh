@@ -9,7 +9,7 @@ import {
   clearExtraFilters,
   diningStore,
   setPage,
-  setSortKey,
+  setSort,
 } from "#/components/dining/dining-store.ts";
 import {
   countExtraFilters,
@@ -19,6 +19,7 @@ import {
   type Restaurant,
   type SortKey,
 } from "#/components/dining/dining-filters.ts";
+import { SortDirToggle, flipDir } from "#/components/ui/sort-menu.tsx";
 import { type HoursMap } from "#/components/dining/dining-hours.ts";
 import { Button } from "#/components/ui/button.tsx";
 import { Empty, EmptyDescription, EmptyTitle } from "#/components/ui/empty.tsx";
@@ -86,13 +87,14 @@ export function ResultsView({
   defaultPartySize: number;
 }) {
   const sortKey = useStore(diningStore, (s) => s.sortKey);
+  const sortDir = useStore(diningStore, (s) => s.sortDir);
   const filters = useStore(diningStore, (s) => s.filters);
   const page = useStore(diningStore, (s) => s.page);
   const extraCount = useStore(diningStore, (s) => countExtraFilters(s.filters));
 
   // The committed search that got us here, carried onto each restaurant link so
   // the detail-page breadcrumb can show the trail and return to this exact list.
-  const linkSearch = stateToSearch({ filters, searched: true, sortKey, page });
+  const linkSearch = stateToSearch({ filters, searched: true, sortKey, sortDir, page });
 
   const countLabel = isLoading
     ? "Searching restaurants…"
@@ -113,10 +115,10 @@ export function ResultsView({
         </span>
         <Select
           value={sortKey}
-          onValueChange={(v) => v && setSortKey(v as SortKey)}
+          onValueChange={(v) => v && setSort(v as SortKey, sortDir)}
           items={SORT_LABELS}
         >
-          <SelectTrigger size="sm" className="w-48 shrink-0" aria-label="Sort by">
+          <SelectTrigger size="sm" className="w-40 shrink-0" aria-label="Sort by">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -127,6 +129,7 @@ export function ResultsView({
             ))}
           </SelectContent>
         </Select>
+        <SortDirToggle dir={sortDir} onToggle={() => setSort(sortKey, flipDir(sortDir))} />
       </div>
 
       {/* Mobile summary — the FAB owns sort/filter editing here. */}

@@ -11,6 +11,7 @@ import {
   type HoursFilter,
   type HoursMap,
 } from "#/components/dining/dining-hours.ts";
+import type { SortDir, SortOption } from "#/components/ui/sort-menu.tsx";
 
 // Operator/source ids (mirror of `Source` in src/server/parks/codes.ts; kept
 // local so this client module never reaches across the server boundary).
@@ -105,12 +106,50 @@ export type AvailabilityMap = Map<string, AvailabilityEntry>;
 
 export type SortKey = "park" | "name" | "availability" | "price";
 
+/** Direction-neutral criterion labels — the arrow (or the direction toggle on
+ *  desktop) conveys asc/desc. */
 export const SORT_LABELS: Record<SortKey, string> = {
   park: "Park / Resort",
-  availability: "Soonest availability",
-  name: "Name (A–Z)",
-  price: "Price (low to high)",
+  availability: "Availability",
+  name: "Name",
+  price: "Price",
 };
+
+/** Drawer rows for the shared sort menu — each criterion is directional. */
+export const SORT_OPTIONS: ReadonlyArray<SortOption<SortKey>> = [
+  {
+    key: "park",
+    label: "Park / Resort",
+    directional: true,
+    defaultDir: "asc",
+    ascHint: "A–Z",
+    descHint: "Z–A",
+  },
+  {
+    key: "availability",
+    label: "Availability",
+    directional: true,
+    defaultDir: "asc",
+    ascHint: "soonest first",
+    descHint: "latest first",
+  },
+  {
+    key: "name",
+    label: "Name",
+    directional: true,
+    defaultDir: "asc",
+    ascHint: "A–Z",
+    descHint: "Z–A",
+  },
+  {
+    key: "price",
+    label: "Price",
+    directional: true,
+    defaultDir: "asc",
+    ascHint: "low to high",
+    descHint: "high to low",
+  },
+];
 
 export type Operator = "ALL" | "disney" | "universal";
 
@@ -411,19 +450,23 @@ export function sortRestaurants(
   list: Array<Restaurant>,
   availability: AvailabilityMap,
   sortKey: SortKey,
+  sortDir: SortDir,
   referenceDate: string,
 ): Array<Restaurant> {
   const byName = (a: Restaurant, b: Restaurant) => a.name.localeCompare(b.name);
   const arr = [...list];
+  // Flip the primary comparator for descending; the name tiebreak stays A–Z so
+  // equal-key rows read consistently regardless of direction.
+  const mul = sortDir === "desc" ? -1 : 1;
   switch (sortKey) {
     case "name":
-      arr.sort(byName);
+      arr.sort((a, b) => mul * byName(a, b));
       break;
     case "price":
       arr.sort((a, b) => {
         const ra = priceTier(a.priceRange)?.length ?? 99;
         const rb = priceTier(b.priceRange)?.length ?? 99;
-        return ra - rb || byName(a, b);
+        return mul * (ra - rb) || byName(a, b);
       });
       break;
     case "availability":
@@ -431,11 +474,13 @@ export function sortRestaurants(
         const cmp = nextAvailableDate(a, availability, referenceDate).localeCompare(
           nextAvailableDate(b, availability, referenceDate),
         );
-        return cmp || byName(a, b);
+        return mul * cmp || byName(a, b);
       });
       break;
     default:
-      arr.sort((a, b) => (a.parkResort ?? "~").localeCompare(b.parkResort ?? "~") || byName(a, b));
+      arr.sort(
+        (a, b) => mul * (a.parkResort ?? "~").localeCompare(b.parkResort ?? "~") || byName(a, b),
+      );
   }
   return arr;
 }

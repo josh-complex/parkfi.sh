@@ -5,11 +5,13 @@ import {
   type ClientFilters,
   type SortKey,
 } from "#/components/dining/dining-filters.ts";
+import type { SortDir } from "#/components/ui/sort-menu.tsx";
 
 interface DiningState {
   filters: ClientFilters;
   partySize: string;
   sortKey: SortKey;
+  sortDir: SortDir;
   page: number;
   searched: boolean;
   stuck: boolean;
@@ -36,6 +38,7 @@ export const diningStore = new Store<DiningState>({
   // remembered value is hydrated post-mount via `hydratePartySize`.
   partySize: DEFAULT_PARTY_SIZE,
   sortKey: "park",
+  sortDir: "asc",
   page: 0,
   searched: false,
   stuck: false,
@@ -62,6 +65,7 @@ export function applySearch(state: {
   filters: ClientFilters;
   searched: boolean;
   sortKey: SortKey;
+  sortDir: SortDir;
   page: number;
 }) {
   diningStore.setState((s) => ({
@@ -69,6 +73,7 @@ export function applySearch(state: {
     filters: state.filters,
     searched: state.searched,
     sortKey: state.sortKey,
+    sortDir: state.sortDir,
     page: state.page,
   }));
 }
@@ -94,8 +99,8 @@ export function setPage(p: number) {
   diningStore.setState((s) => ({ ...s, page: p }));
 }
 
-export function setSortKey(k: SortKey) {
-  diningStore.setState((s) => ({ ...s, sortKey: k, page: 0 }));
+export function setSort(key: SortKey, dir: SortDir) {
+  diningStore.setState((s) => ({ ...s, sortKey: key, sortDir: dir, page: 0 }));
 }
 
 export function setPartySize(v: string) {
@@ -119,6 +124,7 @@ export function resetDiningStore() {
     // Kept in localStorage; re-hydrated on the next mount via hydratePartySize.
     partySize: DEFAULT_PARTY_SIZE,
     sortKey: "park",
+    sortDir: "asc",
     page: 0,
     searched: false,
     stuck: false,

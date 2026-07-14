@@ -91,12 +91,6 @@ function RecentlyUpdatedSkeleton() {
 }
 
 function UpdatedCard({ v }: { v: UpdatedVenue }) {
-  // Compact activity breakdown for the card, most-notable first.
-  const segments = [
-    v.addedCount > 0 && `${v.addedCount} new`,
-    v.removedCount > 0 && `${v.removedCount} removed`,
-    v.priceCount > 0 && `${v.priceCount} price`,
-  ].filter(Boolean) as Array<string>;
   return (
     <Link
       to="/dining/$facilityId"
@@ -123,11 +117,6 @@ function UpdatedCard({ v }: { v: UpdatedVenue }) {
           <span className="line-clamp-1 text-sm font-medium group-hover:underline">{v.name}</span>
           {v.parkResort && (
             <span className="text-muted-foreground line-clamp-1 text-xs">{v.parkResort}</span>
-          )}
-          {segments.length > 0 && (
-            <span className="text-foreground/70 line-clamp-1 text-xs font-medium">
-              {segments.join(" · ")}
-            </span>
           )}
           <span className="text-muted-foreground/70 text-xs">
             Updated {formatDistanceToNowStrict(new Date(v.lastChangedAt))} ago
@@ -170,44 +159,28 @@ function UpdatedShelf({
   );
 }
 
-/**
- * @param variant Render only one of the two shelves — "restaurants" (bookable)
- *   or "carts" (non-bookable) — so the browse flow can slot other shelves
- *   between them. Omit to render both stacked. The shared query is deduped, so
- *   two variant instances still fetch once; only the "restaurants"/default
- *   instance shows a skeleton while loading.
- */
-export function DiningRecentlyUpdated({ variant }: { variant?: "restaurants" | "carts" } = {}) {
+export function DiningRecentlyUpdated() {
   const trpc = useTRPC();
   const updatedQ = useQuery(trpc.dining.recentlyUpdated.queryOptions({ sinceDays: 30, limit: 24 }));
   const venues = (updatedQ.data ?? []) as Array<UpdatedVenue>;
-  if (updatedQ.isLoading) return variant === "carts" ? null : <RecentlyUpdatedSkeleton />;
+  if (updatedQ.isLoading) return <RecentlyUpdatedSkeleton />;
   if (!venues.length) return null;
 
   const restaurants = venues.filter((v) => v.bookable);
   const carts = venues.filter((v) => !v.bookable);
 
-  const restaurantsShelf = (
-    <UpdatedShelf
-      title="Recently updated menus"
-      subtitle="Fresh updates at restaurants in the last 30 days"
-      venues={restaurants}
-    />
-  );
-  const cartsShelf = (
-    <UpdatedShelf
-      title="Quick service & carts — recent changes"
-      subtitle="What's new at snack carts, kiosks & quick-service spots"
-      venues={carts}
-    />
-  );
-
-  if (variant === "restaurants") return restaurantsShelf;
-  if (variant === "carts") return cartsShelf;
   return (
     <div className="flex flex-col gap-4">
-      {restaurantsShelf}
-      {cartsShelf}
+      <UpdatedShelf
+        title="Recently updated restaurants"
+        subtitle="Fresh updates at restaurants in the last 30 days"
+        venues={restaurants}
+      />
+      <UpdatedShelf
+        title="Recently updated quick service"
+        subtitle="What's new at snack carts, kiosks & quick-service spots"
+        venues={carts}
+      />
     </div>
   );
 }

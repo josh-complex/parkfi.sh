@@ -27,13 +27,13 @@ import {
 } from "#/components/ui/carousel.tsx";
 import {
   Drawer,
-  DrawerClose,
   DrawerContent,
   DrawerDescription,
   DrawerHeader,
   DrawerTitle,
   DrawerTrigger,
 } from "#/components/ui/drawer.tsx";
+import { SortRows, type SortDir, type SortOption } from "#/components/ui/sort-menu.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { Image } from "#/components/ui/image.tsx";
 import { cn } from "#/lib/utils.ts";
@@ -58,9 +58,23 @@ type Ride = {
 type Sort = "wait" | "name";
 type View = "grid" | "list";
 
-const SORTS: ReadonlyArray<{ key: Sort; label: string }> = [
-  { key: "wait", label: "Longest wait first" },
-  { key: "name", label: "Name (A–Z)" },
+const SORTS: ReadonlyArray<SortOption<Sort>> = [
+  {
+    key: "wait",
+    label: "Wait",
+    directional: true,
+    defaultDir: "desc",
+    ascHint: "shortest first",
+    descHint: "longest first",
+  },
+  {
+    key: "name",
+    label: "Name",
+    directional: true,
+    defaultDir: "asc",
+    ascHint: "A–Z",
+    descHint: "Z–A",
+  },
 ];
 
 const VIEW_STORAGE_KEY = "waits-view";
@@ -218,12 +232,14 @@ function WaitsSkeleton({ view }: { view: View }) {
 
 /** Sort chooser — shared bottom drawer, styled to its surface via `variant`. */
 function SortDrawer({
-  sort,
+  sortKey,
+  sortDir,
   onSort,
   variant,
 }: {
-  sort: Sort;
-  onSort: (s: Sort) => void;
+  sortKey: Sort;
+  sortDir: SortDir;
+  onSort: (key: Sort, dir: SortDir) => void;
   variant: "ghost" | "outline" | "pill";
 }) {
   return (
@@ -248,21 +264,11 @@ function SortDrawer({
       <DrawerContent>
         <DrawerHeader>
           <DrawerTitle>Sort rides</DrawerTitle>
-          <DrawerDescription>Choose how each park&rsquo;s rides are ordered.</DrawerDescription>
+          <DrawerDescription>
+            Choose how each park&rsquo;s rides are ordered. Tap again to flip the direction.
+          </DrawerDescription>
         </DrawerHeader>
-        <div className="flex flex-col gap-1 px-4 pb-4">
-          {SORTS.map((s) => (
-            <DrawerClose key={s.key} asChild>
-              <Button
-                variant={sort === s.key ? "secondary" : "ghost"}
-                className="justify-start"
-                onClick={() => onSort(s.key)}
-              >
-                {s.label}
-              </Button>
-            </DrawerClose>
-          ))}
-        </div>
+        <SortRows options={SORTS} activeKey={sortKey} activeDir={sortDir} onChange={onSort} />
       </DrawerContent>
     </Drawer>
   );
@@ -360,7 +366,12 @@ export function CrossParkWaits() {
   const trpc = useTRPC();
   const { data: rides, isLoading } = useQuery(trpc.parks.allRides.queryOptions());
   const { filter } = useRideFilter();
-  const [sort, setSort] = React.useState<Sort>("wait");
+  const [sortKey, setSortKey] = React.useState<Sort>("wait");
+  const [sortDir, setSortDir] = React.useState<SortDir>("desc");
+  const setSort = React.useCallback((key: Sort, dir: SortDir) => {
+    setSortKey(key);
+    setSortDir(dir);
+  }, []);
   const [view, setView] = React.useState<View>("grid");
 
   // Read the remembered view after mount (SSR renders the default so server and
@@ -386,22 +397,37 @@ export function CrossParkWaits() {
   // Freeze the display order so cards don't jump as live waits tick: rank ride
   // ids once (by the active sort) and reuse that rank across data refetches —
   // numbers update in place, positions hold. Re-ranks only when the sort changes.
-  const orderRef = React.useRef<{ sort: Sort; map: Map<number, number> } | null>(null);
+  const orderRef = React.useRef<{
+    sortKey: Sort;
+    sortDir: SortDir;
+    map: Map<number, number>;
+  } | null>(null);
   const orderMap = React.useMemo(() => {
     const list = rides ?? [];
-    if (list.length > 0 && (!orderRef.current || orderRef.current.sort !== sort)) {
+    const stale =
+      !orderRef.current ||
+      orderRef.current.sortKey !== sortKey ||
+      orderRef.current.sortDir !== sortDir;
+    if (list.length > 0 && stale) {
+      const byName = (a: Ride, b: Ride) => a.name.localeCompare(b.name);
       const cmp =
-        sort === "wait"
-          ? (a: Ride, b: Ride) =>
-              (b.standbyWait ?? -1) - (a.standbyWait ?? -1) || a.name.localeCompare(b.name)
-          : (a: Ride, b: Ride) => a.name.localeCompare(b.name);
+        sortKey === "wait"
+          ? sortDir === "desc"
+            ? // Longest first; missing waits sink to the bottom.
+              (a: Ride, b: Ride) => (b.standbyWait ?? -1) - (a.standbyWait ?? -1) || byName(a, b)
+            : // Shortest first; missing waits still sink to the bottom.
+              (a: Ride, b: Ride) =>
+                (a.standbyWait ?? Infinity) - (b.standbyWait ?? Infinity) || byName(a, b)
+          : sortDir === "asc"
+            ? byName
+            : (a: Ride, b: Ride) => b.name.localeCompare(a.name);
       const sorted = [...list].sort(cmp);
       const map = new Map<number, number>();
       sorted.forEach((r, i) => map.set(r.id, i));
-      orderRef.current = { sort, map };
+      orderRef.current = { sortKey, sortDir, map };
     }
     return orderRef.current?.map ?? new Map<number, number>();
-  }, [rides, sort]);
+  }, [rides, sortKey, sortDir]);
 
   const groups = React.useMemo(() => {
     const filtered = (rides ?? []).filter((r) => rideMatchesFilter(r, filter));
@@ -444,7 +470,7 @@ export function CrossParkWaits() {
       <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-4 p-4 pb-28 lg:px-6">
         {/* Desktop controls — mirrors the Eats/Stays top bar; mobile uses the FAB. */}
         <div className="hidden items-center justify-end gap-2 md:flex">
-          <SortDrawer sort={sort} onSort={setSort} variant="outline" />
+          <SortDrawer sortKey={sortKey} sortDir={sortDir} onSort={setSort} variant="outline" />
           <FilterDrawer variant="outline" />
           <ViewToggle view={view} onView={setViewPersist} variant="outline" />
         </div>
@@ -520,7 +546,7 @@ export function CrossParkWaits() {
             className={MAP_FILTER_STACK}
             style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1.4rem)" }}
           >
-            <SortDrawer sort={sort} onSort={setSort} variant="pill" />
+            <SortDrawer sortKey={sortKey} sortDir={sortDir} onSort={setSort} variant="pill" />
             <FilterDrawer variant="pill" />
           </div>
           <div

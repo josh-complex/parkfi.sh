@@ -43,7 +43,7 @@ const SURFACE =
 // bar, so the two morph into one another with no chrome delta. Matches the look
 // the SiteHeader wrapper used to carry (thicker top border, like our inputs).
 const INLINE_PILL =
-  "border border-t-[3px] border-[color-mix(in_oklch,var(--border),black_12%)] bg-background/95 dark:bg-muted/95 backdrop-blur dark:border-[color-mix(in_oklch,var(--border),white_25%)]";
+  "border border-t-[3px] border-[color-mix(in_oklch,var(--border),black_12%)] bg-background/95 dark:bg-background backdrop-blur dark:border-[color-mix(in_oklch,var(--border),white_25%)]";
 
 const GROUP_ORDER = ["Parks", "Attractions", "Dining", "Menu", "Resorts", "Blog"] as const;
 type Group = (typeof GROUP_ORDER)[number];

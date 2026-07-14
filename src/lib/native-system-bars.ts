@@ -11,11 +11,11 @@ import { isNative, nativePlatform } from "#/lib/platform.ts";
  */
 
 /**
- * Colour the top status-bar icons/text to suit the app's *own* theme rather
- * than the device's dark-mode setting (the app forces its theme via next-themes,
- * `enableSystem={false}`). On a light app surface we want dark icons; only when
- * the user turns on dark mode do they flip light — otherwise the default light
- * icons are invisible on our mostly-white surfaces.
+ * Colour the top status-bar icons/text to suit the app's *resolved* theme
+ * (next-themes `resolvedTheme`, which follows the device setting when the theme
+ * is "system"). On a light app surface we want dark icons; only on a dark
+ * surface do they flip light — otherwise the default light icons are invisible
+ * on our mostly-white surfaces.
  */
 export async function syncStatusBarStyle(theme: "light" | "dark"): Promise<void> {
   if (!isNative()) return;
