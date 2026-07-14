@@ -180,6 +180,15 @@ function formatPrice(price: number | null, currency: string | null): string | nu
   }
 }
 
+/**
+ * Whether an item's price is charged per guest (family-style tables, prix-fixe,
+ * bottomless offerings). The displayed price for these scales with the party
+ * size, so surfaces can multiply the unit price by the number of guests.
+ */
+export function isPerPerson(priceType: string | null | undefined): boolean {
+  return priceType === "Per Person";
+}
+
 // ── Item components ────────────────────────────────────────────────────────────
 
 function ItemBadge({ children }: { children: React.ReactNode }) {
@@ -234,6 +243,7 @@ function MenuItem({
   change,
   isNew,
   facilityId,
+  guestCount = 1,
 }: {
   item: MenuItemData;
   allergyFriendly: boolean;
@@ -244,8 +254,15 @@ function MenuItem({
   isNew?: boolean;
   /** When set, the title links to the item's detail/price-history page. */
   facilityId?: string;
+  /** Party size — per-guest prices are multiplied by this. */
+  guestCount?: number;
 }) {
-  const price = formatPrice(item.price, item.currency);
+  // Per-person items (family-style, prix-fixe) scale with the party size; the
+  // main price shows the party total and a note carries the per-guest basis.
+  const perPerson = isPerPerson(item.priceType);
+  const guests = perPerson ? Math.max(1, guestCount) : 1;
+  const price = formatPrice(item.price == null ? null : item.price * guests, item.currency);
+  const unitPrice = perPerson ? formatPrice(item.price, item.currency) : null;
   const slug = slugifyMenuItem(item.title);
   return (
     <div
@@ -290,6 +307,11 @@ function MenuItem({
       {(price || change) && (
         <div className="flex shrink-0 flex-col items-end gap-0.5">
           {price && <span className="text-sm tabular-nums text-muted-foreground">{price}</span>}
+          {perPerson && (
+            <span className="text-[10px] leading-none tabular-nums text-muted-foreground/60">
+              {guests > 1 ? `${unitPrice} × ${guests}` : "per person"}
+            </span>
+          )}
           {change && <PriceChangeIndicator change={change} />}
         </div>
       )}
@@ -366,6 +388,7 @@ export function MenuBody({
   recentChanges,
   viewingChanges,
   onShowChanges,
+  guestCount,
 }: {
   periods: Array<{ mealPeriod: string; groups: RawGroup[] }>;
   activePeriodIdx: number;
@@ -388,6 +411,8 @@ export function MenuBody({
   /** When true, the "Updates" tab is active instead of a meal period. */
   viewingChanges?: boolean;
   onShowChanges?: () => void;
+  /** Party size — per-guest menu prices scale with it. Defaults to 1. */
+  guestCount?: number;
 }) {
   const hasMultiplePeriods = periods.length > 1;
   const hasTypeSections = typeSections.length > 1;
@@ -453,6 +478,7 @@ export function MenuBody({
                   change={changesBySlug?.get(slug)}
                   isNew={newSlugs?.has(slug)}
                   facilityId={facilityId}
+                  guestCount={guestCount}
                 />
               );
             })}

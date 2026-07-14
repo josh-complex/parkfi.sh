@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { cn } from "#/lib/utils.ts";
 
@@ -42,6 +42,12 @@ export function Image({
   const [fadedSrc, setFadedSrc] = useState<string | null>(null);
   const [instantSrc, setInstantSrc] = useState<string | null>(null);
   const [erroredSrc, setErroredSrc] = useState<string | null>(null);
+  // `armed` — enables the transition after the first paint. Instant images skip
+  // the transition on their initial (resting) render so they don't animate into
+  // place; arming it a frame later lets a later change — notably a caller's
+  // `group-hover:scale-*` zoom — still transition instead of snapping.
+  const [armed, setArmed] = useState(false);
+  useEffect(() => setArmed(true), []);
 
   // A cached image can finish decoding before React attaches its `onLoad`
   // handler — notably right after SSR hydration. Reconcile against the DOM
@@ -75,10 +81,14 @@ export function Image({
         onError?.(e);
       }}
       className={cn(
-        // No transition on the instant path, so a cached image just appears.
+        // No transition on the instant path's first paint, so a cached image
+        // just appears; re-armed a frame later so hover zoom still transitions.
+        // `scale` (not `transform`) is the property Tailwind v4 animates for
+        // `scale-*` utilities — including a caller's `group-hover:scale-*` — so
+        // it must be in the list or the zoom snaps instead of transitioning.
         !noFade &&
-          !instant &&
-          "transition-[opacity,filter,transform] duration-500 ease-out motion-reduce:transition-none",
+          (!instant || armed) &&
+          "transition-[opacity,filter,scale] duration-500 ease-out motion-reduce:transition-none",
         !noFade && (loaded ? "scale-100 opacity-100 blur-0" : "scale-105 opacity-0 blur-md"),
         className,
       )}

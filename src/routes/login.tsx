@@ -75,6 +75,15 @@ function isCastMemberBlock(error: string, description: string | null): boolean {
   );
 }
 
+// Classify a better-auth submit failure by HTTP status. 4xx is user/client
+// error (invalid credentials, weak/breached password, captcha, rate-limit) —
+// report it as an `expected` PostHog event so Error Tracking stays clean under
+// credential fuzzing. 5xx or an absent status is genuine breakage; keep it a
+// captured exception (`degraded`) so it still surfaces.
+function authErrorSeverity(status: number | undefined): "expected" | "degraded" {
+  return status !== undefined && status >= 400 && status < 500 ? "expected" : "degraded";
+}
+
 function OrDivider() {
   return (
     <div className="relative flex items-center gap-3">
@@ -311,9 +320,14 @@ function LoginPage() {
           setError(message);
           reportError(new Error(message), {
             source: "auth",
-            severity: "critical",
+            // A 4xx is user/client error (bad input, weak/breached password,
+            // captcha, rate-limit) — an `expected` event, not a captured
+            // exception, so credential fuzzing can't flood Error Tracking. Only
+            // 5xx/unknown (genuine breakage) stays loud. Inline error shows
+            // either way; `toast: false` keeps it quiet since it's already onscreen.
+            severity: authErrorSeverity(result.error.status),
             toast: false,
-            context: { flow: "signup", code: result.error.code },
+            context: { flow: "signup", code: result.error.code, status: result.error.status },
           });
           return;
         }
@@ -324,9 +338,11 @@ function LoginPage() {
           setError(message);
           reportError(new Error(message), {
             source: "auth",
-            severity: "critical",
+            // See signup above: 4xx (invalid credentials, etc.) is `expected`;
+            // 5xx/unknown stays `degraded` so real failures still surface.
+            severity: authErrorSeverity(result.error.status),
             toast: false,
-            context: { flow: "password", code: result.error.code },
+            context: { flow: "password", code: result.error.code, status: result.error.status },
           });
           return;
         }

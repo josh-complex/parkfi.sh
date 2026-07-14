@@ -94,7 +94,10 @@ export function SiteHeader(_props?: { title?: string; mobileTitle?: string }) {
                   style={{ borderRadius: 9999 }}
                   className={cn(
                     buttonVariants({ variant: "outline", size: "icon" }),
-                    "size-13 shrink-0 text-foreground",
+                    // The outline variant is `dark:bg-transparent`, which lets the
+                    // map show through the floating back button in dark mode. Force
+                    // a solid fill to match the account button beside it.
+                    "size-13 shrink-0 bg-background text-foreground dark:bg-background",
                   )}
                 >
                   <ArrowLeftIcon className="size-5" />

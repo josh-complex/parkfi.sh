@@ -299,7 +299,7 @@ function SidebarInset({ className, ...props }: React.ComponentProps<"main">) {
         // `min-w-0`: as a flex child its default `min-width:auto` would let wide
         // content (the park map / chart toolbar) push the main column past the
         // available width and overflow the viewport. Allow it to shrink instead.
-        "relative flex w-full min-w-0 flex-1 flex-col bg-background md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-2xl md:peer-data-[variant=inset]:shadow-sm md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-2",
+        "relative flex w-full min-w-0 flex-1 flex-col bg-background md:peer-data-[variant=inset]:m-3 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-2xl md:peer-data-[variant=inset]:shadow-sm md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-3",
         className,
       )}
       {...props}

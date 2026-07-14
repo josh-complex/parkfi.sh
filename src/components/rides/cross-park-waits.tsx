@@ -51,6 +51,7 @@ type Ride = {
   land: string | null;
   heightRequirement: string | null;
   imageThumbUrl: string | null;
+  imageCardUrl: string | null;
   imageAlt: string | null;
 };
 
@@ -116,9 +117,9 @@ function RideCard({ ride }: { ride: Ride }) {
     >
       <div className="group flex flex-col gap-2 outline-none">
         <div className="bg-muted relative aspect-[4/3] w-full overflow-hidden rounded-2xl">
-          {ride.imageThumbUrl ? (
+          {ride.imageCardUrl ? (
             <Image
-              src={ride.imageThumbUrl}
+              src={ride.imageCardUrl}
               alt={ride.imageAlt ?? ride.name}
               loading="lazy"
               className="size-full object-cover group-hover:scale-105"
@@ -185,7 +186,7 @@ function WaitsSkeleton({ view }: { view: View }) {
               {Array.from({ length: 5 }).map((_, i) => (
                 <div
                   key={i}
-                  className="flex shrink-0 basis-[42%] flex-col gap-2 md:basis-1/3 lg:basis-1/4 xl:basis-1/5"
+                  className="flex shrink-0 basis-[42%] flex-col gap-2 md:basis-1/3 lg:basis-1/4 xl:basis-1/5 2xl:basis-1/6"
                 >
                   <Skeleton className="aspect-[4/3] w-full rounded-2xl" />
                   <Skeleton className="h-4 w-3/4 rounded-md" />
@@ -440,7 +441,7 @@ export function CrossParkWaits() {
 
       {/* Padded content container — mirrors the Eats/Stays browse wrapper; the
           shelves bleed back to the edges with their own -mx. */}
-      <div className="flex flex-col gap-4 p-4 pb-28 lg:px-6">
+      <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-4 p-4 pb-28 lg:px-6">
         {/* Desktop controls — mirrors the Eats/Stays top bar; mobile uses the FAB. */}
         <div className="hidden items-center justify-end gap-2 md:flex">
           <SortDrawer sort={sort} onSort={setSort} variant="outline" />
@@ -489,7 +490,7 @@ export function CrossParkWaits() {
                     {g.rides.map((r) => (
                       <CarouselItem
                         key={r.id}
-                        className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5"
+                        className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5 2xl:basis-1/6"
                       >
                         <RideCard ride={r} />
                       </CarouselItem>

@@ -97,7 +97,7 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
 
   return (
     <div
-      className="flex flex-col gap-4 pb-4 pt-2 md:gap-6 md:pb-6"
+      className="flex flex-col gap-4 pb-4 pt-2 md:gap-4 lg:gap-6 md:pb-6 md:pt-4 lg:pt-6"
       style={{ paddingBottom: "calc(var(--safe-bottom) + 1.5rem)" }}
     >
       {heroUrl ? (

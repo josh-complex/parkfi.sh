@@ -55,7 +55,7 @@ function BrowseView({ isLoading }: { isLoading: boolean }) {
         {Array.from({ length: 3 }).map((_, g) => (
           <div key={g} className="flex flex-col gap-4">
             <Skeleton className="h-6 w-56" />
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-5">
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6">
               {Array.from({ length: 5 }).map((_, i) => (
                 <Skeleton key={i} className="aspect-[4/3] rounded-2xl" />
               ))}
@@ -230,7 +230,7 @@ export function DiningBoard() {
       {/* Mobile quick cuisine filters, tucked under the header's omnisearch. */}
       <DiningCuisineChips options={options} />
 
-      <div className="flex flex-col gap-8 p-4 pb-24 lg:px-6">
+      <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-8 p-4 pb-24 lg:px-6">
         {searched ? (
           <ResultsView
             isLoading={isLoading}

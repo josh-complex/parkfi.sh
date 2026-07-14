@@ -794,7 +794,7 @@ export function StaysBoard() {
       {/* Mobile quick area filters, tucked under the header's omnisearch. */}
       <StaysAreaChips areas={AREAS} value={areaFilter} onChange={setAreaFilter} />
 
-      <div className="flex flex-col gap-8 p-4 pb-24 lg:px-6">
+      <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-8 p-4 pb-24 lg:px-6">
         {search ? (
           <ResultsView
             isLoading={availabilityQ.isLoading}
@@ -856,7 +856,7 @@ function BrowseView({
         {Array.from({ length: 3 }).map((_, g) => (
           <div key={g} className="flex flex-col gap-4">
             <Skeleton className="h-6 w-56" />
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-5">
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6">
               {Array.from({ length: 5 }).map((_, i) => (
                 <div key={i} className="flex flex-col gap-2">
                   <Skeleton className="aspect-[4/3] rounded-2xl" />
@@ -900,7 +900,7 @@ function BrowseView({
               {resorts.map((r) => (
                 <CarouselItem
                   key={r.id}
-                  className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5"
+                  className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5 2xl:basis-1/6"
                 >
                   <ResortCard
                     name={r.name}
@@ -1109,7 +1109,7 @@ function ResultsView({
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
           {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="flex flex-col gap-2">
               <Skeleton className="aspect-[4/3] rounded-2xl" />
@@ -1135,7 +1135,7 @@ function ResultsView({
           onPrimary={onEditDates}
         />
       ) : (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-6 md:grid-cols-3 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-6 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
           {offers.map((o) => (
             <ResortCard
               key={o.id}

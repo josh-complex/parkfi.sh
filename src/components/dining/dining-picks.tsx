@@ -174,7 +174,7 @@ export function DiningPicks({
         {Array.from({ length: 3 }).map((_, g) => (
           <div key={g} className="flex flex-col gap-4">
             <Skeleton className="h-6 w-56" />
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-5">
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6">
               {Array.from({ length: 5 }).map((_, i) => (
                 <Skeleton key={i} className="aspect-[4/3] rounded-2xl" />
               ))}
@@ -218,7 +218,7 @@ export function DiningPicks({
               {shelf.venues.map((v) => (
                 <CarouselItem
                   key={v.facilityId}
-                  className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5"
+                  className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5 2xl:basis-1/6"
                 >
                   <PickCard
                     venue={v}

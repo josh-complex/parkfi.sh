@@ -18,7 +18,12 @@ import {
   type ScheduleEntry,
 } from "#/components/dining/dining-hours.ts";
 import { AvailabilityCalendar } from "#/components/dining/dining-restaurant-card.tsx";
-import { MenuBody, slugifyMenuItem, useMenuState } from "#/components/dining/menu-content.tsx";
+import {
+  isPerPerson,
+  MenuBody,
+  slugifyMenuItem,
+  useMenuState,
+} from "#/components/dining/menu-content.tsx";
 import { LocationMap } from "#/components/maps/location-map.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
@@ -339,6 +344,17 @@ export function DiningVenueDetail({
 
   const hasMenu = state.periods.length > 0;
 
+  // Some venues price dishes per guest (family-style, prix-fixe). When any are
+  // present, offer a party-size control so the menu can show party totals.
+  const [guestCount, setGuestCount] = React.useState(2);
+  const hasPerPersonItems = React.useMemo(
+    () =>
+      state.periods.some((p) =>
+        p.groups.some((g) => g.items.some((it) => isPerPerson(it.priceType))),
+      ),
+    [state.periods],
+  );
+
   // The header chip distinguishes a brand-new venue from an established one whose
   // menu just changed. A new venue's items are all new too, so "Newly added"
   // subsumes any item activity; only when the venue itself isn't new do we surface
@@ -516,9 +532,28 @@ export function DiningVenueDetail({
       {/* Menu */}
       {venue && (
         <section id="menu" ref={menuSectionRef} className="flex scroll-mt-16 flex-col gap-3">
-          <div className="flex items-baseline justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
             <h2 className="text-lg font-semibold tracking-tight">Menu</h2>
-            <p className="text-xs text-muted-foreground">Prices excl. tax &amp; gratuity</p>
+            <div className="flex items-center gap-3">
+              {hasPerPersonItems && (
+                <Select
+                  value={String(guestCount)}
+                  onValueChange={(v) => v && setGuestCount(Number(v))}
+                >
+                  <SelectTrigger size="sm" className="w-28 shrink-0" aria-label="Guests">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PARTY_SIZES.map((n) => (
+                      <SelectItem key={n} value={String(n)}>
+                        {n} {n === 1 ? "guest" : "guests"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <p className="text-xs text-muted-foreground">Prices excl. tax &amp; gratuity</p>
+            </div>
           </div>
           {state.menuQ.isLoading || hasMenu ? (
             <div className="flex h-[60vh] min-h-0 flex-col overflow-hidden rounded-2xl border bg-card sm:h-[70vh] sm:min-h-[420px]">
@@ -540,6 +575,7 @@ export function DiningVenueDetail({
                 recentChanges={state.recentChanges}
                 viewingChanges={state.viewingChanges}
                 onShowChanges={state.showChanges}
+                guestCount={guestCount}
               />
             </div>
           ) : (

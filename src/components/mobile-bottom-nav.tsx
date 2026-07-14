@@ -19,11 +19,10 @@ import { cn } from "#/lib/utils.ts";
 
 /**
  * Mobile-only primary navigation. Reuses the core-search 3D segmented look: five
- * edge-to-edge connected segments forming one continuous bar, with the center Map
- * key taller and on a deeper 3D shelf so it rises out of the row. Bottoms align
- * (`items-end`) so the bar reads as one piece. Hidden on desktop (`md:hidden`),
- * where the sidebar takes over. `fixed`, so it floats over the page (notably the
- * fullscreen `/map`) without consuming layout.
+ * edge-to-edge connected segments forming one continuous bar of uniform height.
+ * Bottoms align (`items-end`) so the bar reads as one piece. Hidden on desktop
+ * (`md:hidden`), where the sidebar takes over. `fixed`, so it floats over the page
+ * (notably the fullscreen `/map`) without consuming layout.
  */
 const SEG_BASE =
   "relative top-0 -ml-px flex flex-1 flex-col items-center justify-center gap-1 border-3d btn-3d-outline shadow-3d bg-background dark:bg-muted/95 px-2 py-2.5 text-sm font-medium transition-[top,box-shadow,background-color,color] duration-150 ease-out first:ml-0 active:top-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)] [&>svg]:size-5";
@@ -65,7 +64,6 @@ function Seg({
   label,
   offline,
   className,
-  contentClassName,
 }: {
   to: string;
   active: boolean;
@@ -73,7 +71,6 @@ function Seg({
   label: string;
   offline?: boolean;
   className?: string;
-  contentClassName?: string;
 }) {
   return (
     <Link
@@ -82,11 +79,7 @@ function Seg({
       data-maintenance={offline ? "" : undefined}
       className={cn(SEG_BASE, active ? SEG_ACTIVE : SEG_IDLE, className)}
     >
-      {/* Tickets/Eats extend under the Map key via negative margin on the outer
-          link; that widens their box on the Map-facing side, so the icon+label
-          are re-centered here to counter it and stay visually aligned under the
-          segment's visible (non-overlapped) width. */}
-      <span className={cn("flex flex-col items-center gap-1", contentClassName)}>
+      <span className="flex flex-col items-center gap-1">
         {icon}
         <span>{label}</span>
       </span>
@@ -95,29 +88,25 @@ function Seg({
   );
 }
 
-/** The center Map "key": connected to its neighbors but taller (rises above the
- *  row) and on a deeper 3D shelf, filled primary. Always leads to the free-roam
- *  `/map` hub (which restores the camera the user last left), so from a park or
- *  ride detail page it takes you back out to the map rather than staying put. */
+/** The center Map "key": a flat segment matching its neighbors' height, filled
+ *  primary only when selected. Always leads to the free-roam `/map` hub (which
+ *  restores the camera the user last left), so from a park or ride detail page it
+ *  takes you back out to the map rather than staying put. */
 function MapButton({ active }: { active: boolean }) {
   return (
     <Link
       to="/map"
       aria-label="Map"
       aria-current={active ? "page" : undefined}
-      className={cn(
-        // Same 3px shelf as the side segments (bottoms line up via items-end); its
-        // "bigger" feel is the extra height (rises above the row) + larger icon, not
-        // a deeper shadow. White/outline like the others when idle; only the
-        // selected state fills primary and depresses (sinks 3px onto a flat shelf).
-        "relative top-0 z-20 -ml-px flex flex-1 flex-col items-center justify-center gap-1 rounded-t-2xl border-3d shadow-3d px-2 py-3 text-sm font-medium transition-[top,box-shadow,background-color,color] duration-150 ease-out active:top-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)] [&>svg]:size-7",
-        active
-          ? "top-[3px] btn-3d-primary bg-primary text-primary-foreground [--btn-glare:var(--btn-3d)] shadow-3d-active"
-          : "btn-3d-outline bg-background dark:bg-muted/95 text-foreground",
-      )}
+      className={cn(SEG_BASE, "z-20", active ? SEG_ACTIVE : SEG_IDLE)}
     >
-      <MapIcon />
-      <span>Map</span>
+      {/* Wrapped like `Seg` so the icon isn't a direct child of the link — that
+          keeps SEG_BASE's `[&>svg]:size-5` from shrinking it, so Map's icon (and
+          thus its height) matches the other segments' default-sized icons. */}
+      <span className="flex flex-col items-center gap-1">
+        <MapIcon />
+        <span>Map</span>
+      </span>
     </Link>
   );
 }
@@ -172,8 +161,8 @@ export function MobileBottomNav() {
       style={{ paddingBottom: "max(var(--safe-bottom), 1rem)" }}
     >
       {livingEnabled && mapActive ? <PlayButton /> : null}
-      {/* One connected row; `items-end` aligns every segment's base so the bar is
-          a single piece, with the taller Map key rising out of the middle. */}
+      {/* One connected row of equal-height segments; `items-end` aligns every
+          segment's base so the bar reads as a single piece. */}
       <div className="pointer-events-auto mx-4 flex w-full max-w-md items-end">
         <Seg
           to="/"
@@ -188,8 +177,6 @@ export function MobileBottomNav() {
           icon={<TicketIcon />}
           label="Tickets"
           offline={offline.has("tickets")}
-          className="-mr-2"
-          contentClassName="-translate-x-1"
         />
         <MapButton active={mapActive} />
         <Seg
@@ -198,8 +185,6 @@ export function MobileBottomNav() {
           icon={<UtensilsIcon />}
           label="Eats"
           offline={offline.has("dining")}
-          className="-ml-2"
-          contentClassName="translate-x-1"
         />
         <Seg
           to="/stays"

@@ -7,6 +7,7 @@ import {
   disneyDiningEntityType,
   disneyDiningPriceRange,
   normalizeUniversalName,
+  parseDisneyFacets,
   parseDisneyWaterParkTickets,
   universalDetailUrl,
   universalDiningBookable,
@@ -160,6 +161,26 @@ describe("Disney finder dining catalog mappers", () => {
     );
     expect(disneyDiningPriceRange("Mexican", ["$$"])).toBe("$$");
     expect(disneyDiningPriceRange("Mexican", null)).toBeNull();
+  });
+});
+
+describe("parseDisneyFacets — marker facet extraction", () => {
+  it("strips the non-breaking space Disney puts between the value and its unit", () => {
+    // Disney's label carries a U+00A0 between `112` and `cm`.
+    const { heightRequirement } = parseDisneyFacets([
+      ['44" (112 cm) or taller'],
+      ["Magic Kingdom Park", "Tomorrowland"],
+    ]);
+    expect(heightRequirement).toBe('44" (112cm) or taller');
+  });
+
+  it("keeps the height label out of tags and reads the land", () => {
+    const { land, tags } = parseDisneyFacets([
+      ["Thrill Rides", '44" (112 cm) or taller'],
+      ["Magic Kingdom Park", "Tomorrowland"],
+    ]);
+    expect(land).toBe("Tomorrowland");
+    expect(tags).toEqual(["Thrill Rides"]);
   });
 });
 

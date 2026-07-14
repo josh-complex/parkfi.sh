@@ -247,6 +247,20 @@ export function disneyThumbUrl(url?: string | null): string | null {
   return url.replace(MW_IMAGE_RESIZE_RE, "/resize/mwImage/1/640/360/75/");
 }
 
+/**
+ * Rewrite a Disney finder URL's resize segment to a card-sized 16:9 asset. The
+ * ride shelves render each attraction in a ~300px-wide box; the stored
+ * `image_thumb_url` is only ~90px (blurry when upscaled) and the full hero is
+ * 800x450 (more bytes than the card needs), so 600px wide covers a 2x display
+ * without over-fetching. Returns null when the URL lacks the resize segment
+ * (e.g. Universal CDN assets — degrade to the caller's fallback).
+ */
+export function disneyCardUrl(url?: string | null): string | null {
+  if (!url) return null;
+  if (!MW_IMAGE_RESIZE_RE.test(url)) return null;
+  return url.replace(MW_IMAGE_RESIZE_RE, "/resize/mwImage/1/600/338/75/");
+}
+
 interface DisneyHeroImage {
   type?: string;
   poster?: string;
@@ -305,18 +319,22 @@ export function parseDisneyFacets(facets?: Array<Array<string>> | null): DisneyF
 
   const heightRe = /\d+\s*"|taller|any height|height/i;
   const all = groups.flat();
-  const heightRequirement = all.find((label) => heightRe.test(label)) ?? null;
+  const rawHeight = all.find((label) => heightRe.test(label)) ?? null;
+  // Disney's labels carry a non-breaking space between the number and its
+  // unit (e.g. `112 cm`); normalize so we render `112cm` with no gap.
+  const heightRequirement = rawHeight ? rawHeight.replace(/(\d)\s*(cm|mm|m|")/gi, "$1$2") : null;
 
   // The last group is the location group ([park, land]); its last element is the land.
   const lastGroup = groups[groups.length - 1];
   const land = lastGroup[lastGroup.length - 1] ?? null;
 
   // Tags come from every group EXCEPT the trailing location group, with the
-  // height label removed (it's surfaced separately).
+  // height label removed (it's surfaced separately). Compare against the raw
+  // label since that's what still lives in the groups.
   const tags = groups
     .slice(0, -1)
     .flat()
-    .filter((label) => label !== heightRequirement);
+    .filter((label) => label !== rawHeight);
 
   return { land, heightRequirement, tags };
 }

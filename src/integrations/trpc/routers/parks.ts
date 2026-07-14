@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { db } from "#/db/index.ts";
 import { buildLightningLaneDeepLink } from "#/server/notifications/lightningLaneDeepLink.ts";
-import { QueueState, QueueType } from "#/server/parks/codes.ts";
+import { disneyCardUrl, QueueState, QueueType } from "#/server/parks/codes.ts";
 import { config } from "#/server/parks/config.ts";
 import { suppressedFields } from "#/server/content/suppression.ts";
 import { publicProcedure } from "../init.ts";
@@ -602,6 +602,11 @@ export const parksRouter = {
         land: r.meta_land,
         heightRequirement: r.meta_height_requirement,
         imageThumbUrl: r.meta_image_thumb_url,
+        // Card-sized (600px) variant for the ride shelves; falls back to the
+        // hero, then the raw thumb, for non-Disney assets that lack the resize
+        // segment.
+        imageCardUrl:
+          disneyCardUrl(r.meta_image_thumb_url) ?? r.meta_image_hero_url ?? r.meta_image_thumb_url,
         imageHeroUrl: r.meta_image_hero_url,
         imageAlt: r.meta_image_alt,
       };
