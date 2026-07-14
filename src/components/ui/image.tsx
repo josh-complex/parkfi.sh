@@ -4,8 +4,19 @@ import { ImageIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useCfImagesEnabled } from "#/integrations/posthog/feature-flags.ts";
-import { cfImageSrcSet, cfImageUrl } from "#/lib/image.ts";
+import { observeForPreload, preloadImage } from "#/lib/image-preload.ts";
+import { resolveImageUrls } from "#/lib/image.ts";
 import { cn } from "#/lib/utils.ts";
+
+/**
+ * Whether `<Image>` should route through Cloudflare: the `cf-images` flag, minus
+ * the dev guard (the `/cdn-cgi/image/` path 404s on localhost, so `vp dev`
+ * always uses origin URLs regardless of the user-targeted flag). Exported so
+ * intent-preload callers resolve the *same* URL the rendered `<Image>` will.
+ */
+export function useCfImages(): boolean {
+  return useCfImagesEnabled() && !import.meta.env.DEV;
+}
 
 /**
  * The default placeholder shown when an image is missing or 404s: a muted box
@@ -67,16 +78,13 @@ export function Image({
   widths,
   sizes,
   quality,
+  loading,
   className,
   onLoad,
   onError,
   ...props
 }: ImageProps) {
-  // Cloudflare's `/cdn-cgi/image/` transforms only exist behind CF's edge, so on
-  // localhost the path 404s. Gate on the dev flag so `vp dev` always serves
-  // origin URLs regardless of the (user-targeted) `cf-images` flag, which would
-  // otherwise follow your account into local dev and break every image.
-  const cfImages = useCfImagesEnabled() && !import.meta.env.DEV;
+  const cfImages = useCfImages();
   const ref = useRef<HTMLImageElement>(null);
   // `faded` — revealed via the load event, so it animates in.
   // `instant` — already complete on mount (cached / warm from SSR), so it's
@@ -105,26 +113,41 @@ export function Image({
     }
   }, [src]);
 
+  const instant = instantSrc === src;
+  const loaded = instant || fadedSrc === src;
+
+  // Resolve the URLs the <img> will request. Computed above the early return so
+  // the preload effect below reuses the exact same ones (a warm only helps if it
+  // matches what the <img> fetches). `resolveImageUrls` no-ops on local/`data:`
+  // sources and when CF is off.
+  const { src: resolvedSrc, srcSet: resolvedSrcSet } = src
+    ? resolveImageUrls(src, { cf: cfImages, sizes, quality, widths })
+    : { src, srcSet: undefined };
+
+  // Scroll-preload: warm a lazy tile ~600px before it enters view, at low
+  // priority, so it's cached (no pop-in) by the time it's revealed. Deliberately
+  // non-blocking — a post-paint effect on an already-rendered element, gated to
+  // `loading="lazy"` (eager heroes fetch immediately and need no warming) and to
+  // images not already shown, so it never competes with paint-needed work.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !resolvedSrc || loaded || loading !== "lazy") return;
+    return observeForPreload(el, () =>
+      preloadImage(resolvedSrc, { srcSet: resolvedSrcSet, sizes }),
+    );
+  }, [resolvedSrc, resolvedSrcSet, sizes, loaded, loading]);
+
   if (!src || erroredSrc === src) {
     // `undefined` (prop omitted) → default placeholder; an explicit `null` (or
     // any node) is respected as-is, so callers can still opt out of a box.
     return fallback === undefined ? <ImageFallback className={className} /> : <>{fallback}</>;
   }
 
-  const instant = instantSrc === src;
-  const loaded = instant || fadedSrc === src;
-
-  // Route remote images through Cloudflare when enabled: a width-descriptor
-  // `srcSet` (+ a mid-size `src` fallback) when the caller declared `sizes`, or
-  // an at-source-size re-encode (AVIF/WebP, our cache) otherwise. `cfImageUrl`
-  // no-ops on local/`data:` sources, so both paths are safe to apply blindly.
-  const resolvedSrc = cfImages ? cfImageUrl(src, { quality, width: sizes ? 640 : undefined }) : src;
-  const resolvedSrcSet = cfImages && sizes ? cfImageSrcSet(src, widths, { quality }) : undefined;
-
   return (
     <img
       ref={ref}
-      src={resolvedSrc}
+      src={resolvedSrc ?? undefined}
+      loading={loading}
       srcSet={resolvedSrcSet}
       sizes={sizes}
       alt={alt}

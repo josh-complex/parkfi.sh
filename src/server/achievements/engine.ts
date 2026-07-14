@@ -7,7 +7,7 @@
  * (`src/lib/achievements.ts`) against the user's aggregated stats. Deliberately
  * independent of the Living Layer — no imports from `src/server/living/**`.
  */
-import { and, count, desc, eq, gt, isNotNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNotNull, sql } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
 import {
@@ -19,6 +19,7 @@ import {
   userAttraction,
   userGeoState,
   userParkDay,
+  userRideEvent,
   userStat,
   weatherObs,
   type GeoPolygon,
@@ -599,7 +600,7 @@ export async function bumpEventStat(userId: string, event: TrackEvent, by = 1) {
 }
 
 // ---------------------------------------------------------------------------
-// QA/dev only — see ACHIEVEMENTS_DEV gate in the tRPC router. These bypass
+// QA/dev only — adminProcedure-gated in the tRPC router (owner-only). These bypass
 // real stat thresholds entirely so the unlock toast/haptic/level-up funnel can
 // be exercised on demand instead of waiting on real park activity.
 // ---------------------------------------------------------------------------
@@ -639,5 +640,36 @@ export async function devResetMine(userId: string): Promise<void> {
   await db.delete(userParkDay).where(eq(userParkDay.userId, userId));
   await db.delete(userStat).where(eq(userStat.userId, userId));
   await db.delete(userGeoState).where(eq(userGeoState.userId, userId));
+  await db.delete(userRideEvent).where(eq(userRideEvent.userId, userId));
+  await db.delete(userAttraction).where(eq(userAttraction.userId, userId));
   await db.delete(userAchievement).where(eq(userAchievement.userId, userId));
+}
+
+/**
+ * Stored `user_stat` keys written by the sensor ride path (`submitRideTrace`).
+ * `track_distance_m` is intentionally absent — it's computed live in
+ * `computeStats` from `user_attraction × coaster_stats`, never persisted, so
+ * clearing `user_ride_event`/`user_attraction` already zeroes it.
+ */
+const SENSOR_STAT_KEYS = [
+  "coaster_drops",
+  "airtime_seconds",
+  "max_g_best",
+  "inversions_ridden",
+  "vertical_m",
+] as const;
+
+/**
+ * QA/dev only: wipe just the sensor-tracked ride data (per-ride events, the
+ * dwell/sensor ride-count rows, and the sensor stat counters) so the native
+ * coaster-detection loop can be re-tested from zero — without losing the
+ * caller's GPS-accumulated park progress (park-days, distance, queues, streaks).
+ * Achievement unlocks are left in place; re-earning them re-fires normally.
+ */
+export async function devResetRides(userId: string): Promise<void> {
+  await db.delete(userRideEvent).where(eq(userRideEvent.userId, userId));
+  await db.delete(userAttraction).where(eq(userAttraction.userId, userId));
+  await db
+    .delete(userStat)
+    .where(and(eq(userStat.userId, userId), inArray(userStat.stat, [...SENSOR_STAT_KEYS])));
 }

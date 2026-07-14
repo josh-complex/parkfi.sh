@@ -12,7 +12,10 @@ enum RideConst {
     static let startSustainS = 3.0
     static let endVarThreshold = 0.3
     static let endSustainS = 20.0
-    static let maxDurationS = 360.0
+    // 15 s under the server's Zod cap (360) — the finish check fires one sample
+    // past this, so an exact 360 here could compute durationS > 360 and get the
+    // whole ride rejected server-side.
+    static let maxDurationS = 345.0
     static let minDurationS = 20.0
     static let ringBufferS = 10.0
 
@@ -95,7 +98,10 @@ enum RideMetricsComputer {
             "gyroAvailable": gyroAvailable,
             "confidence": round2(confidence),
         ]
-        metrics["estTopSpeedKmh"] = estTopSpeed.map { round1($0) } as Any
+        // Explicit NSNull, never Optional.none-as-Any: the bridge's JSON
+        // serialization drops non-JSON values, and the server schema expects
+        // null (it tolerates a missing key too, but don't rely on it).
+        metrics["estTopSpeedKmh"] = estTopSpeed.map { round1($0) as Any } ?? NSNull()
 
         return RideResult(metrics: metrics, samples: downsample(samples))
     }
@@ -307,7 +313,8 @@ enum RideMetricsComputer {
                 out.append([
                     "t": Int((sample.t - first.t) * 1000),
                     "aMag": round2(sample.sfMs2),
-                    "altRel": sample.altRel.map { round2($0) } as Any,
+                    // NSNull, not Optional-as-Any — see estTopSpeedKmh note.
+                    "altRel": sample.altRel.map { round2($0) as Any } ?? NSNull(),
                 ])
                 nextT += 0.25
             }

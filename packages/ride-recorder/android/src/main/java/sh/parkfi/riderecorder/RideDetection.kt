@@ -20,7 +20,10 @@ object RideConst {
     const val START_SUSTAIN_S = 3.0
     const val END_VAR_THRESHOLD = 0.3
     const val END_SUSTAIN_S = 20.0
-    const val MAX_DURATION_S = 360.0
+    // 15 s under the server's Zod cap (360) — the finish check fires one sample
+    // past this, so an exact 360 here could compute durationS > 360 and get the
+    // whole ride rejected server-side.
+    const val MAX_DURATION_S = 345.0
     const val MIN_DURATION_S = 20.0
     const val RING_BUFFER_S = 10.0
 

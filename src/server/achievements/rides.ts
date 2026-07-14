@@ -59,7 +59,16 @@ export const rideMetricsSchema = z
     inversions: z.number().int().min(0).max(15),
     verticalM: z.number().min(0).max(600),
     maxDropM: z.number().min(0).max(200),
-    estTopSpeedKmh: z.number().min(0).max(300).nullable(),
+    // nullish, not nullable: the native bridge drops null-valued keys entirely
+    // (Android JSONObject.put(k, null) removes k; iOS serializes Optional.none
+    // unreliably), so a no-barometer device sends this key MISSING, not null.
+    // Normalize to null so the stored jsonb matches RideMetrics.
+    estTopSpeedKmh: z
+      .number()
+      .min(0)
+      .max(300)
+      .nullish()
+      .transform((v) => v ?? null),
     baroAvailable: z.boolean(),
     gyroAvailable: z.boolean(),
     confidence: z.number().min(0).max(1),
@@ -81,7 +90,12 @@ export const rideTraceSchema = z.object({
       z.object({
         t: z.number(),
         aMag: z.number(),
-        altRel: z.number().nullable(),
+        // Same bridge caveat as estTopSpeedKmh: no-baro samples arrive without
+        // the key, not with null.
+        altRel: z
+          .number()
+          .nullish()
+          .transform((v) => v ?? null),
       }),
     )
     .max(600)
@@ -305,10 +319,13 @@ export async function ingestRideTrace(
 
   // 6. Bump the sensor-derived stat counters (always — these are per-ride
   // metrics, independent of the ride-count credit guard above).
+  // Accumulate floats raw (user_stat.value is double precision) — per-ride
+  // rounding floor-biases small values (a 0.4 s airtime ride credited 0 against
+  // a 10 s first tier). Rounding happens at display time (formatStatValue).
   await addStat(userId, "coaster_drops", metrics.dropCount);
-  await addStat(userId, "airtime_seconds", Math.round(metrics.airtimeS));
+  await addStat(userId, "airtime_seconds", metrics.airtimeS);
   await addStat(userId, "inversions_ridden", metrics.inversions);
-  await addStat(userId, "vertical_m", Math.round(metrics.verticalM));
+  await addStat(userId, "vertical_m", metrics.verticalM);
   await raiseStat(userId, "max_g_best", metrics.maxG);
 
   // 7. Re-evaluate — same shape the ping/track toast funnel consumes.

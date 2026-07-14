@@ -60,8 +60,8 @@ export function ErrorTestPanel() {
     mutationFn: () => Promise.reject(new Error("Test mutation failure")),
   });
 
-  // Achievements QA — bypasses real stat thresholds server-side (gated by
-  // ACHIEVEMENTS_DEV, on by default outside production; see achievements.ts).
+  // Achievements QA — bypasses real stat thresholds server-side (adminProcedure,
+  // owner-only; see achievements.ts router).
   const ackUnlock = useMutation(
     trpc.achievements.ackUnlocks.mutationOptions({ meta: { errorToast: false } }),
   );
@@ -89,6 +89,12 @@ export function ErrorTestPanel() {
         toast.success("Achievements reset");
       },
       onError: (err) => toast.error(err.message || "Could not reset"),
+    }),
+  );
+  const devResetRides = useMutation(
+    trpc.achievements.devResetRides.mutationOptions({
+      onSuccess: () => toast.success("Ride/sensor data cleared"),
+      onError: (err) => toast.error(err.message || "Could not clear ride data"),
     }),
   );
 
@@ -236,6 +242,11 @@ export function ErrorTestPanel() {
           label: "Reset my level",
           run: () => resetCelebratedLevel(),
           confirm: "Level reset — next unlock re-celebrates your current level",
+        },
+        {
+          label: "Clear ride/sensor data",
+          run: () => devResetRides.mutate(),
+          danger: true,
         },
         {
           label: "Reset my achievements",

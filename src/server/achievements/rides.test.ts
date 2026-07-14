@@ -82,6 +82,26 @@ describe("rideTraceSchema — plausibility bounds", () => {
     ).toBe(true);
   });
 
+  it("accepts a MISSING estTopSpeedKmh key and normalizes it to null", () => {
+    // The native bridge drops null-valued keys (Android JSONObject.put(k, null)
+    // removes k), so no-baro devices send the key absent — must not reject.
+    const m = metrics({ baroAvailable: false });
+    delete (m as Record<string, unknown>).estTopSpeedKmh;
+    const parsed = rideTraceSchema.safeParse({ metrics: m });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.metrics.estTopSpeedKmh).toBeNull();
+  });
+
+  it("accepts samples with a MISSING altRel key and normalizes to null", () => {
+    const samples = [
+      { t: 0, aMag: 9.8 },
+      { t: 250, aMag: 11.2 },
+    ];
+    const parsed = rideTraceSchema.safeParse({ metrics: metrics(), samples });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.samples?.[0]?.altRel).toBeNull();
+  });
+
   it("rejects more than 600 trace samples", () => {
     const samples = Array.from({ length: 601 }, (_, i) => ({ t: i, aMag: 9.8, altRel: null }));
     expect(rideTraceSchema.safeParse({ metrics: metrics(), samples }).success).toBe(false);

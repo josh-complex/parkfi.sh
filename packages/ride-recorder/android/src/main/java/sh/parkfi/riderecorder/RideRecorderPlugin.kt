@@ -60,12 +60,15 @@ class RideRecorderPlugin : Plugin() {
     }
 
     private fun resultToJs(result: RideResult): JSObject {
+        // JSONObject.put(k, null) REMOVES the key; emit explicit JSON nulls so
+        // no-baro metrics (estTopSpeedKmh, altRel) arrive as null, not missing.
+        // (The server schema also tolerates missing keys — belt and suspenders.)
         val metrics = JSObject()
-        for ((k, v) in result.metrics) metrics.put(k, v)
+        for ((k, v) in result.metrics) metrics.put(k, v ?: org.json.JSONObject.NULL)
         val samples = JSArray()
         for (s in result.samples) {
             val obj = JSObject()
-            for ((k, v) in s) obj.put(k, v)
+            for ((k, v) in s) obj.put(k, v ?: org.json.JSONObject.NULL)
             samples.put(obj)
         }
         return JSObject().put("metrics", metrics).put("samples", samples)

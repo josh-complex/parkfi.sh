@@ -17,6 +17,7 @@ import {
   bumpEventStat,
   computeStats,
   devResetMine,
+  devResetRides,
   devUnlockNext,
   evaluateAndUnlock,
   ingestPing,
@@ -144,6 +145,16 @@ export const achievementsRouter = {
   /** QA/dev only: wipe the caller's own achievement state to replay from zero. */
   devReset: adminProcedure.mutation(async ({ ctx }) => {
     await devResetMine(ctx.userId);
+    return { ok: true };
+  }),
+
+  /**
+   * QA/dev only: wipe just the sensor-tracked ride data (ride events, ride-count
+   * rows, sensor stat counters) so native coaster detection can be re-tested
+   * without losing GPS park progress. Unlocks stay; re-earning re-fires.
+   */
+  devResetRides: adminProcedure.mutation(async ({ ctx }) => {
+    await devResetRides(ctx.userId);
     return { ok: true };
   }),
 

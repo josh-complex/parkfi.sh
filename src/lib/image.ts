@@ -40,6 +40,24 @@ export const DEFAULT_IMAGE_WIDTHS = [320, 480, 640, 960, 1280, 1600] as const;
 export const DEFAULT_IMAGE_QUALITY = 64;
 
 /**
+ * Width (CSS px) requested for an `<Image>` that declares no `sizes` — i.e. a
+ * list/grid tile, which renders ~120–280px. Without this the CF `src` would
+ * re-encode at the *source* resolution (a ~600px+ card asset), far larger than
+ * a tile needs; capping here right-sizes every tile with no per-call-site work.
+ * Comfortably covers a ~220px tile on a 2× display; bump it if tiles look soft.
+ */
+export const DEFAULT_TILE_WIDTH = 448;
+
+/**
+ * Transform a full-bleed detail-page hero applies to its (Disney) source:
+ * upsize to {@link disneyResizeUrl} `resizeWidth`, then render at `sizes`/
+ * `quality`. Shared so an intent-preload can reproduce the *exact* URL the hero
+ * `<Image>` will fetch — a warm is only a cache hit if it matches. Heroes with a
+ * non-100vw layout (e.g. the shop hero) don't use this.
+ */
+export const HERO_IMAGE = { resizeWidth: 1600, sizes: "100vw", quality: 90 } as const;
+
+/**
  * The Disney CDN's own resize segment (`/resize/mwImage/1/{w}/{h}/75/`). Mirrors
  * the server-side rewriters in parks/codes.ts; duplicated here because that
  * module is server-only and must not be pulled into the client bundle.
@@ -105,4 +123,22 @@ export function cfImageSrcSet(
 ): string | undefined {
   if (!isTransformable(url)) return undefined;
   return widths.map((w) => `${cfImageUrl(url, { ...opts, width: w })} ${w}w`).join(", ");
+}
+
+/**
+ * Resolve the `src`/`srcSet` an `<Image>` will actually request, so the same
+ * logic can drive both rendering and a matching preload (a warm only helps if
+ * its URL is identical to what the `<img>` fetches). With `cf` off, passes the
+ * source through untouched. With `cf` on: a width-descriptor `srcSet` when
+ * `sizes` is set, else a tile-width-capped `src` (see {@link DEFAULT_TILE_WIDTH}).
+ */
+export function resolveImageUrls(
+  src: string,
+  opts: { cf: boolean; sizes?: string; quality?: number; widths?: readonly number[] },
+): { src: string; srcSet: string | undefined } {
+  if (!opts.cf) return { src, srcSet: undefined };
+  return {
+    src: cfImageUrl(src, { quality: opts.quality, width: opts.sizes ? 640 : DEFAULT_TILE_WIDTH }),
+    srcSet: opts.sizes ? cfImageSrcSet(src, opts.widths, { quality: opts.quality }) : undefined,
+  };
 }

@@ -4,12 +4,12 @@
 > (editor-side spine shipped; `ios/`+`android/` not yet generated) to a build
 > running on real devices and up on TestFlight + Google Play internal testing.
 >
-> **Honesty about scope:** the native tail (A3 OAuth, A4 push, B2 sensor plugin,
-> B6 wiring) is **not implemented yet**. You can stand up the shell, ship a
-> TestFlight/Play build, and fully test bearer auth + geolocation + achievements
-> **today**. OAuth, push, and coaster-sensor tests are marked ⛔ GATED and can't
-> pass until that code lands. Do the shell deploy first — it de-risks signing,
-> provisioning, and store setup while the native features are still being built.
+> **Scope status (updated 2026-07-14):** the native tail (A3 OAuth, A4 push, B2
+> sensor plugin, B6 wiring) **is implemented** — see PLAN.md's status block — but
+> **not device-verified**. The G1–G8 gates below are the remaining work: they need
+> real hardware, Firebase/APNs artifacts live, and (G6–G8) a park visit. See also
+> [FOLLOWUP.md](./FOLLOWUP.md) for audit findings that should land before the
+> G6–G8 field runs (notably the W1 ride-signature gate).
 >
 > Toolchain reminder: `node` isn't on PATH — run CLIs via `bun` (`bun cap …`).
 > Never commit; the repo owner handles git.
