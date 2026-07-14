@@ -18,7 +18,10 @@
 export interface CfImageOpts {
   /** Target width in CSS px. Omit to re-encode at the source's own size. */
   width?: number;
-  /** 1–100. Lower = smaller bytes. Defaults to 80, a good photo sweet spot. */
+  /**
+   * 1–100. Lower = smaller bytes. Defaults to {@link DEFAULT_IMAGE_QUALITY}
+   * (tuned for list tiles); detail heroes pass a higher value for crispness.
+   */
   quality?: number;
   /** `auto` negotiates AVIF/WebP per the browser's Accept header. */
   format?: "auto" | "webp" | "avif";
@@ -28,6 +31,34 @@ export interface CfImageOpts {
 
 /** The default width ladder for `srcSet`, spanning tiny tiles to full-bleed heroes. */
 export const DEFAULT_IMAGE_WIDTHS = [320, 480, 640, 960, 1280, 1600] as const;
+
+/**
+ * Default AVIF/WebP quality. Tuned down for the common case (list/grid tiles,
+ * where the extra bytes of q80+ aren't visible at tile size). Detail heroes
+ * override this upward via `<Image quality>` since they're viewed large.
+ */
+export const DEFAULT_IMAGE_QUALITY = 72;
+
+/**
+ * The Disney CDN's own resize segment (`/resize/mwImage/1/{w}/{h}/75/`). Mirrors
+ * the server-side rewriters in parks/codes.ts; duplicated here because that
+ * module is server-only and must not be pulled into the client bundle.
+ */
+const DISNEY_RESIZE_RE = /\/resize\/mwImage\/1\/\d+\/\d+\/75\//;
+
+/**
+ * Rewrite a Disney CDN image URL to a `width`×(9/16) render. Disney re-renders
+ * from the original master on every resize, so asking for a larger size yields
+ * genuine detail — not an upscale — which lets detail-page heroes request more
+ * than the ~800px the catalog stored without touching the shared list-card URL.
+ * No-ops on non-Disney sources (Universal assets, `data:` URIs, etc.), returning
+ * the input unchanged so it's safe to apply blindly at a hero call site.
+ */
+export function disneyResizeUrl<T extends string | null | undefined>(url: T, width: number): T {
+  if (!url || !DISNEY_RESIZE_RE.test(url)) return url;
+  const height = Math.round((width * 9) / 16);
+  return url.replace(DISNEY_RESIZE_RE, `/resize/mwImage/1/${width}/${height}/75/`) as T;
+}
 
 /** True when `url` is a remote http(s) source we can hand to the edge. Skips
  *  local/static assets (`/img/…`, already optimized), `data:` URIs, and
@@ -39,7 +70,7 @@ function isTransformable(url: string): boolean {
 function optionString(opts: CfImageOpts): string {
   return [
     opts.width ? `width=${opts.width}` : null,
-    `quality=${opts.quality ?? 80}`,
+    `quality=${opts.quality ?? DEFAULT_IMAGE_QUALITY}`,
     `format=${opts.format ?? "auto"}`,
     opts.width ? `fit=${opts.fit ?? "cover"}` : null,
     "onerror=redirect",

@@ -4,6 +4,7 @@ import { ArrowLeftIcon, ExternalLinkIcon, MapPinIcon, ShoppingBagIcon } from "lu
 
 import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
 import { Image } from "#/components/ui/image.tsx";
+import { disneyResizeUrl } from "#/lib/image.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { seo } from "#/lib/seo.ts";
 
@@ -76,12 +77,13 @@ function ShopPage() {
             carries no media (many carts/kiosks and smaller shops don't). */}
         {shop?.imageUrl ? (
           <Image
-            src={shop.imageUrl}
+            src={disneyResizeUrl(shop.imageUrl, 1600)}
             alt={name}
             className="aspect-[16/9] w-full object-cover"
             loading="eager"
             fetchPriority="high"
             sizes="(min-width: 768px) 42rem, 100vw"
+            quality={90}
           />
         ) : (
           <div className="from-muted to-muted/40 flex aspect-[16/9] w-full items-center justify-center bg-gradient-to-br">

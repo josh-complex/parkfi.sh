@@ -10,6 +10,7 @@ import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Image } from "#/components/ui/image.tsx";
+import { disneyResizeUrl } from "#/lib/image.ts";
 import { Card, CardContent } from "#/components/ui/card.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useIsNative } from "#/hooks/use-is-native.ts";
@@ -221,12 +222,13 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
         {heroImage && (
           <div className="relative h-56 w-full overflow-hidden rounded-2xl bg-muted sm:h-72">
             <Image
-              src={heroImage}
+              src={disneyResizeUrl(heroImage, 1600)}
               alt={ride.meta?.imageAlt ?? ride.name}
               className="size-full object-cover"
               loading="eager"
               fetchPriority="high"
               sizes="100vw"
+              quality={90}
             />
           </div>
         )}

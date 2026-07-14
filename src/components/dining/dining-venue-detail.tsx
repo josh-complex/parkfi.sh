@@ -28,6 +28,7 @@ import { LocationMap } from "#/components/maps/location-map.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Image } from "#/components/ui/image.tsx";
+import { disneyResizeUrl } from "#/lib/image.ts";
 import { Card } from "#/components/ui/card.tsx";
 import { DatePicker } from "#/components/ui/date-picker.tsx";
 import {
@@ -429,12 +430,13 @@ export function DiningVenueDetail({
           {venue.imageUrl && (
             <div className="relative h-40 w-full overflow-hidden rounded-2xl bg-muted sm:h-56 lg:h-64">
               <Image
-                src={venue.imageUrl}
+                src={disneyResizeUrl(venue.imageUrl, 1600)}
                 alt={venue.name}
                 className="size-full object-cover"
                 loading="eager"
                 fetchPriority="high"
                 sizes="100vw"
+                quality={90}
               />
             </div>
           )}

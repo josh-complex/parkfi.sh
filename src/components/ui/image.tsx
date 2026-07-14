@@ -39,6 +39,12 @@ type ImageProps = Omit<React.ComponentProps<"img">, "src"> & {
    * ladder (see {@link cfImageSrcSet}).
    */
   widths?: readonly number[];
+  /**
+   * CF AVIF/WebP quality (1–100). Defaults to {@link DEFAULT_IMAGE_QUALITY},
+   * which suits list tiles; pass a higher value (~88–90) on detail-page heroes
+   * that are viewed large. Only applies when the `cf-images` flag is on.
+   */
+  quality?: number;
 };
 
 /**
@@ -60,6 +66,7 @@ export function Image({
   noFade,
   widths,
   sizes,
+  quality,
   className,
   onLoad,
   onError,
@@ -111,8 +118,8 @@ export function Image({
   // `srcSet` (+ a mid-size `src` fallback) when the caller declared `sizes`, or
   // an at-source-size re-encode (AVIF/WebP, our cache) otherwise. `cfImageUrl`
   // no-ops on local/`data:` sources, so both paths are safe to apply blindly.
-  const resolvedSrc = cfImages ? cfImageUrl(src, sizes ? { width: 640 } : {}) : src;
-  const resolvedSrcSet = cfImages && sizes ? cfImageSrcSet(src, widths) : undefined;
+  const resolvedSrc = cfImages ? cfImageUrl(src, { quality, width: sizes ? 640 : undefined }) : src;
+  const resolvedSrcSet = cfImages && sizes ? cfImageSrcSet(src, widths, { quality }) : undefined;
 
   return (
     <img
