@@ -32,6 +32,7 @@ import { authClient } from "#/lib/auth-client.ts";
 import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
+import { Image } from "#/components/ui/image.tsx";
 import {
   Drawer,
   DrawerClose,
@@ -193,7 +194,7 @@ function AttractionCell({ item, singleRider }: { item: BoardItem; singleRider?: 
   return (
     <div className="flex min-w-0 items-center gap-3">
       {meta?.imageThumbUrl ? (
-        <img
+        <Image
           src={meta.imageThumbUrl}
           alt=""
           loading="lazy"
@@ -780,7 +781,7 @@ function MobileCardList({
                   clips it to its rounded corner) and stretches the full height
                   of the name + trend rows beside it. */}
               {meta?.imageThumbUrl ? (
-                <img
+                <Image
                   src={meta.imageThumbUrl}
                   alt=""
                   loading="lazy"

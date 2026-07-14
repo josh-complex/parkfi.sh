@@ -15,6 +15,7 @@ import { StayAlertButton } from "#/components/stays/stay-alert-button.tsx";
 import { reasonLabel, TIER_LABEL, TIER_META } from "#/components/stays/stays-filters.ts";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button, buttonVariants } from "#/components/ui/button.tsx";
+import { Image } from "#/components/ui/image.tsx";
 import { Calendar } from "#/components/ui/calendar.tsx";
 import { Label } from "#/components/ui/label.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "#/components/ui/popover.tsx";
@@ -438,7 +439,7 @@ export function ResortDetail({ slug }: { slug: string }) {
 
       {resort.image && (
         <div className="relative h-56 w-full overflow-hidden rounded-2xl bg-muted sm:h-80">
-          <img
+          <Image
             src={resort.image}
             alt={resort.name}
             className="size-full object-cover"

@@ -796,6 +796,46 @@ const DETAIL_CLASS =
  *  `px` sizes the disc with an explicit square box (not a Tailwind size class)
  *  so it's guaranteed round — a non-square box would render the round-clipped
  *  photo as a wide oval. */
+/** Initial (pre-load) inline style for a disc photo: hidden, blurred and a
+ *  touch zoomed-in so `wireFaceFadeIn` can settle it into place on decode
+ *  instead of the photo hard-popping onto the map. Mirrors the <Image> React
+ *  component's treatment for these HTML-string markers. */
+const FACE_FADE_STYLE =
+  "opacity:0;filter:blur(6px);transform:scale(1.06);" +
+  "transition:opacity .5s ease-out,filter .5s ease-out,transform .5s ease-out";
+
+/** Reveal a disc photo (see `FACE_FADE_STYLE`) once it decodes. No-op for the
+ *  icon fallback, which carries no `<img>`. Safe to call right after the marker
+ *  HTML is set: cached images resolve instantly, in-flight ones fade on `load`,
+ *  and broken ones still reveal on `error` rather than staying invisible. */
+export function wireFaceFadeIn(root: HTMLElement): void {
+  const img = root.querySelector<HTMLImageElement>("img[data-face-fill]");
+  if (!img) return;
+  const settle = () => {
+    img.style.opacity = "1";
+    img.style.filter = "none";
+    img.style.transform = "none";
+  };
+  if (img.complete && img.naturalWidth > 0) {
+    // Already cached — drop straight to the resting state with no animation.
+    settle();
+    img.style.transition = "";
+    return;
+  }
+  const reveal = () => {
+    settle();
+    // Clear the transition once settled so a later card-morph transform (the
+    // disc flying into the expanded header) isn't eased by this rule.
+    const clear = () => {
+      img.style.transition = "";
+      img.removeEventListener("transitionend", clear);
+    };
+    img.addEventListener("transitionend", clear);
+  };
+  img.addEventListener("load", reveal, { once: true });
+  img.addEventListener("error", reveal, { once: true });
+}
+
 function discMarkup(opts: {
   url: string | null;
   /** A higher-res variant of `url`, lazily swapped in when the disc expands into
@@ -817,7 +857,7 @@ function discMarkup(opts: {
   const face = opts.url
     ? `<img data-face-fill${hires} src="${escapeHtml(opts.url)}" alt="${escapeHtml(
         opts.alt,
-      )}" loading="lazy" class="size-full rounded-full object-cover shadow-md ring-[3px]" style="${ring}" />`
+      )}" loading="lazy" class="size-full rounded-full object-cover shadow-md ring-[3px]" style="${ring};${FACE_FADE_STYLE}" />`
     : `<span data-face-fill class="flex size-full items-center justify-center rounded-full text-white shadow-md ring-[3px]" style="background:${opts.bg};${ring}">${opts.fallbackSvg}</span>`;
   return `<span class="relative block shrink-0" style="width:${opts.px}px;height:${opts.px}px">${face}${opts.badge ?? ""}</span>`;
 }
@@ -955,6 +995,7 @@ export function buildParkBadgeEl(p: {
   const detail = document.createElement("div");
   detail.className = DETAIL_CLASS;
   detail.innerHTML = `${disc}${labelMarkup(p.name, subtitle)}`;
+  wireFaceFadeIn(detail);
   el.append(detail);
   return { el, detail };
 }
@@ -1086,6 +1127,7 @@ export function buildPoiEl(poi: PoiItem): { el: HTMLButtonElement; detail: HTMLD
     px,
   });
   detail.innerHTML = `${disc}${labelMarkup(poi.name, escapeHtml(poi.land ?? ""))}`;
+  wireFaceFadeIn(detail);
   el.append(detail);
   return { el, detail };
 }
@@ -1180,6 +1222,7 @@ export function buildAttractionEl(
     badge: waitBadge,
   });
   detail.innerHTML = `${disc}${labelMarkup(a.name, escapeHtml(waitLabelFor(a)))}`;
+  wireFaceFadeIn(detail);
   applySelected(detail, selected);
 
   el.append(detail);

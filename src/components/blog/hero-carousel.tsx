@@ -5,6 +5,7 @@ import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
+import { Image } from "#/components/ui/image.tsx";
 
 /** Our own latest published post, rendered as an internal-link hero slide. */
 export interface HeroPostSlide {
@@ -56,7 +57,7 @@ function SlideBody({ slide }: { slide: HeroSlideData }) {
   const img = slide.kind === "post" ? slide.heroImageUrl : slide.imageUrl;
   return (
     <>
-      <img
+      <Image
         src={img}
         alt=""
         className="absolute inset-0 size-full object-cover"

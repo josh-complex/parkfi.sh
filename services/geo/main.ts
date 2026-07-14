@@ -375,6 +375,7 @@ const OSM_PARK_NAMES: Record<string, Array<string>> = {
   // Water parks (leisure=water_park); OSM omits the "Water Park" suffix our DB carries.
   "typhoon-lagoon": ["Disney's Typhoon Lagoon"],
   "blizzard-beach": ["Disney's Blizzard Beach"],
+  "volcano-bay": ["Universal Volcano Bay", "Volcano Bay"],
 };
 
 /**
@@ -574,11 +575,16 @@ async function enrichDisneyPark(
 // --- Universal places enrichment (step 4, UOR only) -----------------------
 
 // Our park slug -> the places feed's `venue_id` (the authoritative park key;
-// place_id prefixes are unreliable). Volcano Bay isn't a seeded park.
+// place_id prefixes are unreliable). The tokens are park abbreviations, not the
+// slug (Epic Universe is `uor.eu`), so Volcano Bay's `uor.vb` is the expected
+// token but unverified against the live feed — if wrong, enrichUniversalPark
+// just logs "no Universal venue mapping" and skips (harmless); confirm on the
+// next geo run and correct here if needed.
 const UNIVERSAL_VENUE_BY_SLUG: Record<string, string> = {
   "universal-studios-florida": "uor.usf",
   "islands-of-adventure": "uor.ioa",
   "epic-universe": "uor.eu",
+  "volcano-bay": "uor.vb",
 };
 
 interface ParkAttraction {

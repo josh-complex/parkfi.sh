@@ -22,6 +22,7 @@ import { MenuBody, slugifyMenuItem, useMenuState } from "#/components/dining/men
 import { LocationMap } from "#/components/maps/location-map.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
+import { Image } from "#/components/ui/image.tsx";
 import { Card } from "#/components/ui/card.tsx";
 import { DatePicker } from "#/components/ui/date-picker.tsx";
 import {
@@ -411,7 +412,7 @@ export function DiningVenueDetail({
         <header className="flex flex-col gap-4">
           {venue.imageUrl && (
             <div className="relative h-40 w-full overflow-hidden rounded-2xl bg-muted sm:h-56 lg:h-64">
-              <img
+              <Image
                 src={venue.imageUrl}
                 alt={venue.name}
                 className="size-full object-cover"

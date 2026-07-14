@@ -7,6 +7,7 @@ import { ReceiptTextIcon } from "lucide-react";
 
 import { menuItemAnchorId } from "#/components/dining/menu-content.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
+import { Image } from "#/components/ui/image.tsx";
 import {
   Carousel,
   CarouselArrows,
@@ -106,11 +107,11 @@ function UpdatedCard({ v }: { v: UpdatedVenue }) {
       <div className="group flex flex-col gap-2 outline-none">
         <div className="bg-muted relative aspect-[4/3] w-full overflow-hidden rounded-2xl">
           {v.imageUrl ? (
-            <img
+            <Image
               src={v.imageUrl}
               alt={v.name}
               loading="lazy"
-              className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
+              className="size-full object-cover group-hover:scale-105"
             />
           ) : null}
           <Badge className="absolute top-2 left-2 gap-1 bg-black/60 text-white text-xs font-normal border-0 shadow-none backdrop-blur-sm">

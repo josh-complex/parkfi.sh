@@ -46,6 +46,7 @@ import {
   CarouselItem,
 } from "#/components/ui/carousel.tsx";
 import { Empty, EmptyDescription, EmptyTitle } from "#/components/ui/empty.tsx";
+import { Image } from "#/components/ui/image.tsx";
 import { Label } from "#/components/ui/label.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "#/components/ui/popover.tsx";
 import {
@@ -139,11 +140,11 @@ function ResortCard({
     <>
       <div className="bg-muted relative aspect-[4/3] w-full overflow-hidden rounded-2xl">
         {image ? (
-          <img
+          <Image
             src={disneyThumbUrl(image) ?? image}
             alt={name}
             loading="lazy"
-            className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
+            className="size-full object-cover group-hover:scale-105"
           />
         ) : null}
         <Badge

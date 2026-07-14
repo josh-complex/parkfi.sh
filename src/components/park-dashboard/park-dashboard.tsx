@@ -12,6 +12,7 @@ import { ChartErrorBoundary } from "#/components/chart-error-boundary.tsx";
 import { lazyWithReload } from "#/lib/lazy-with-reload.tsx";
 import { useHydrated } from "#/lib/use-hydrated.ts";
 
+import { Image } from "#/components/ui/image.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { formatParkName } from "#/lib/parks.ts";
 
@@ -107,12 +108,11 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
           {/* Floating hero (no card chrome) — matches the image treatment on the
               resort/venue pages, keeping the text overlay. */}
           <div className="relative isolate overflow-hidden rounded-2xl shadow-sm">
-            <img
+            <Image
               src={heroUrl}
               alt={park?.imageAlt ?? parkName ?? ""}
               className="h-40 w-full object-cover md:h-56"
               loading="eager"
-              decoding="async"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent" />
             <div className="absolute inset-x-0 bottom-0 flex flex-wrap items-end justify-between gap-3 p-4 lg:p-6">

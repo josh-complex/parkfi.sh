@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowLeftIcon, ExternalLinkIcon, MapPinIcon, ShoppingBagIcon } from "lucide-react";
 
 import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
+import { Image } from "#/components/ui/image.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { seo } from "#/lib/seo.ts";
 
@@ -74,7 +75,7 @@ function ShopPage() {
         {/* Hero — the shop's photo, or a themed placeholder when the finder feed
             carries no media (many carts/kiosks and smaller shops don't). */}
         {shop?.imageUrl ? (
-          <img
+          <Image
             src={shop.imageUrl}
             alt={name}
             className="aspect-[16/9] w-full object-cover"

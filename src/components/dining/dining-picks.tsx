@@ -17,6 +17,7 @@ import {
 import { diningStore } from "#/components/dining/dining-store.ts";
 import { cn } from "#/lib/utils.ts";
 import { Badge } from "#/components/ui/badge.tsx";
+import { Image } from "#/components/ui/image.tsx";
 import {
   Carousel,
   CarouselArrows,
@@ -64,11 +65,11 @@ export function PickCard({
     <div className="group flex flex-col gap-2 outline-none">
       <div className="bg-muted relative aspect-[4/3] w-full overflow-hidden rounded-2xl">
         {venue.imageUrl ? (
-          <img
+          <Image
             src={venue.imageUrl}
             alt={venue.name}
             loading="lazy"
-            className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
+            className="size-full object-cover group-hover:scale-105"
           />
         ) : null}
         {tier && (

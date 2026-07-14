@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { ShapesIcon } from "lucide-react";
 
 import { formatCents } from "#/components/pins/format.ts";
+import { Image } from "#/components/ui/image.tsx";
 import { cn } from "#/lib/utils.ts";
 
 /** Catalog card shape — the subset every list endpoint returns. */
@@ -19,8 +20,8 @@ export interface PinCardData {
 }
 
 /**
- * A muted placeholder used wherever a pin image is missing. Plain `<img>` with
- * lazy loading is used elsewhere in the app (omni-search), so we follow suit.
+ * Pin thumbnail that fades in over a muted box and degrades to a placeholder
+ * icon when the image is missing or fails to load.
  */
 export function PinImage({
   src,
@@ -31,16 +32,22 @@ export function PinImage({
   alt: string;
   className?: string;
 }) {
-  if (!src) {
-    return (
-      <div
-        className={cn("flex items-center justify-center bg-muted text-muted-foreground", className)}
-      >
-        <ShapesIcon className="size-1/3 opacity-40" />
-      </div>
-    );
-  }
-  return <img src={src} alt={alt} loading="lazy" className={cn("object-contain", className)} />;
+  const fallback = (
+    <div
+      className={cn("flex items-center justify-center bg-muted text-muted-foreground", className)}
+    >
+      <ShapesIcon className="size-1/3 opacity-40" />
+    </div>
+  );
+  return (
+    <Image
+      src={src}
+      alt={alt}
+      loading="lazy"
+      fallback={fallback}
+      className={cn("bg-muted object-contain", className)}
+    />
+  );
 }
 
 /** Grid card for the catalog, linking through to the pin detail page. */

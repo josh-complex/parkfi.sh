@@ -22,6 +22,10 @@ export const UOR_PARKS: Array<ParkListEntry> = [
   { code: "USF", label: "Studios", slug: "universal-studios-florida" },
   { code: "UIOA", label: "Islands of Adventure", slug: "islands-of-adventure" },
   { code: "EPIC", label: "Epic Universe", slug: "epic-universe" },
+  // Volcano Bay is a DB-seeded park (waits/map/park page come from `parks.list`),
+  // but stays slug-less here so it's excluded from the ticket-pricing surfaces
+  // that iterate this list — Volcano Bay pricing (TapuTapu, no Express) is a
+  // separate design. Give it a slug here once that pricing is wired.
   { code: "UVB", label: "Volcano Bay", slug: null },
 ];
 

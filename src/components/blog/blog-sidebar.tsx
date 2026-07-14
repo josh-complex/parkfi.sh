@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { Badge } from "#/components/ui/badge.tsx";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card.tsx";
+import { Image } from "#/components/ui/image.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
 function monthLabel(month: string): string {
@@ -69,7 +70,7 @@ export function BlogSidebar({ currentSlug }: { currentSlug?: string }) {
                   className="group flex gap-3 text-sm"
                 >
                   {p.heroImageUrl && (
-                    <img
+                    <Image
                       src={p.heroImageUrl}
                       alt=""
                       className="size-14 shrink-0 rounded-xl border object-cover"

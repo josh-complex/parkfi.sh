@@ -171,6 +171,12 @@ const UNIVERSAL_PRODUCTS = [
   { productId: Product.UNIVERSAL_VIRTUAL_LINE, displayName: "Virtual Line" },
   { productId: Product.UNIVERSAL_TICKET, displayName: "Theme Park Ticket" },
 ];
+// Volcano Bay (water park) has no Express Pass — its line-skip is the TapuTapu
+// Virtual Line — so it omits the Express product the dry parks carry.
+const VOLCANO_BAY_PRODUCTS = [
+  { productId: Product.UNIVERSAL_VIRTUAL_LINE, displayName: "Virtual Line" },
+  { productId: Product.UNIVERSAL_TICKET, displayName: "Water Park Ticket" },
+];
 
 async function main() {
   await seedReference();
@@ -247,6 +253,13 @@ async function main() {
       slug: "epic-universe",
       themeparksUuid: "12dbb85b-265f-44e6-bccf-f1faa17211fc",
       products: UNIVERSAL_PRODUCTS,
+    },
+    // Water park: live status + ride list (TapuTapu Virtual Line), no Express.
+    {
+      name: "Universal Volcano Bay",
+      slug: "volcano-bay",
+      themeparksUuid: "fe78a026-b91b-470c-b906-9d2266b692da",
+      products: VOLCANO_BAY_PRODUCTS,
     },
   ];
   for (const p of uorParks) await upsertPark(universal, uor, p);

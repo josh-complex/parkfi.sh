@@ -21,6 +21,7 @@ import {
   type ScheduleEntry,
 } from "#/components/dining/dining-hours.ts";
 import { Badge } from "#/components/ui/badge.tsx";
+import { Image } from "#/components/ui/image.tsx";
 import { cn } from "#/lib/utils.ts";
 
 export function AvailabilityCalendar({
@@ -142,14 +143,12 @@ export function RestaurantCard({
         search={linkSearch}
         className="bg-muted relative block w-[7.5rem] shrink-0 self-stretch overflow-hidden rounded-2xl outline-none sm:w-[9.5rem]"
       >
-        {restaurant.imageUrl ? (
-          <img
-            src={restaurant.imageUrl}
-            alt={restaurant.name}
-            loading="lazy"
-            className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
-          />
-        ) : null}
+        <Image
+          src={restaurant.imageUrl}
+          alt={restaurant.name}
+          loading="lazy"
+          className="size-full object-cover group-hover:scale-105"
+        />
         {restaurant.priceRange && (
           <Badge
             variant="secondary"

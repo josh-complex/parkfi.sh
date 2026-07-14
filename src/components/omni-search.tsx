@@ -18,6 +18,7 @@ import { slugifyMenuItem } from "#/components/dining/menu-content.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { buttonVariants } from "#/components/ui/button.tsx";
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "#/components/ui/drawer.tsx";
+import { Image } from "#/components/ui/image.tsx";
 import { useAchievementTrack } from "#/hooks/use-achievement-track.ts";
 import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { cn } from "#/lib/utils.ts";
@@ -844,7 +845,7 @@ function ResultRow({
         )}
       >
         {item.image ? (
-          <img src={item.image} alt="" className="size-full object-cover" loading="lazy" />
+          <Image src={item.image} alt="" className="size-full object-cover" loading="lazy" />
         ) : (
           GROUP_ICON[item.group]
         )}

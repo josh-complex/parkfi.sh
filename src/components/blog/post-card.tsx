@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 
 import { Badge } from "#/components/ui/badge.tsx";
+import { Image } from "#/components/ui/image.tsx";
 import { cn } from "#/lib/utils.ts";
 
 export interface PostCardData {
@@ -47,10 +48,10 @@ export function PostCard({
           className,
         )}
       >
-        <img
+        <Image
           src={post.heroImageUrl}
           alt=""
-          className="absolute inset-0 size-full object-cover transition-transform duration-500 group-hover/post:scale-[1.04]"
+          className="absolute inset-0 size-full object-cover group-hover/post:scale-[1.04]"
           loading="lazy"
           referrerPolicy="no-referrer"
         />
@@ -85,10 +86,10 @@ export function PostCard({
     >
       {post.heroImageUrl && (
         <div className="aspect-[16/9] overflow-hidden bg-muted">
-          <img
+          <Image
             src={post.heroImageUrl}
             alt=""
-            className="size-full object-cover transition-transform duration-300 group-hover/post:scale-[1.03]"
+            className="size-full object-cover group-hover/post:scale-[1.03]"
             loading="lazy"
             referrerPolicy="no-referrer"
           />

@@ -35,6 +35,7 @@ import {
   DrawerTrigger,
 } from "#/components/ui/drawer.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
+import { Image } from "#/components/ui/image.tsx";
 import { cn } from "#/lib/utils.ts";
 import { formatParkName } from "#/lib/parks.ts";
 
@@ -116,11 +117,11 @@ function RideCard({ ride }: { ride: Ride }) {
       <div className="group flex flex-col gap-2 outline-none">
         <div className="bg-muted relative aspect-[4/3] w-full overflow-hidden rounded-2xl">
           {ride.imageThumbUrl ? (
-            <img
+            <Image
               src={ride.imageThumbUrl}
               alt={ride.imageAlt ?? ride.name}
               loading="lazy"
-              className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
+              className="size-full object-cover group-hover:scale-105"
             />
           ) : null}
           <WaitBadge ride={ride} className="absolute left-2 top-2" />
@@ -147,7 +148,7 @@ function RideRow({ ride }: { ride: Ride }) {
       className="flex items-center gap-3 rounded-xl px-2.5 py-2 transition-colors hover:bg-muted/60"
     >
       {ride.imageThumbUrl ? (
-        <img
+        <Image
           src={ride.imageThumbUrl}
           alt={ride.imageAlt ?? ride.name}
           loading="lazy"

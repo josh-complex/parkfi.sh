@@ -10,6 +10,7 @@ import { MenuItemPriceChart } from "#/components/dining/menu-item-price-chart.ts
 import { menuItemAnchorId } from "#/components/dining/menu-content.tsx";
 import { ChartErrorBoundary } from "#/components/chart-error-boundary.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
+import { Image } from "#/components/ui/image.tsx";
 import {
   Card,
   CardContent,
@@ -84,11 +85,11 @@ function ElsewhereCard({
       <div className="group flex flex-col gap-2 outline-none">
         <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-muted">
           {imageUrl ? (
-            <img
+            <Image
               src={imageUrl}
               alt={name}
               loading="lazy"
-              className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
+              className="size-full object-cover group-hover:scale-105"
             />
           ) : null}
           <Badge className="absolute bottom-2 right-2 border-0 bg-black/60 text-xs font-normal text-white shadow-none backdrop-blur-sm">

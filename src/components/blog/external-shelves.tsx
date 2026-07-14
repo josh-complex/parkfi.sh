@@ -1,3 +1,5 @@
+import { Image } from "#/components/ui/image.tsx";
+
 /** An external RSS item surfaced from the park-news cron's `news_item` table. */
 export interface ExternalItem {
   source: string;
@@ -28,10 +30,10 @@ export function ExternalCard({ item }: { item: ExternalItem }) {
     >
       {item.imageUrl && (
         <div className="aspect-[16/9] overflow-hidden bg-muted">
-          <img
+          <Image
             src={item.imageUrl}
             alt=""
-            className="size-full object-cover transition-transform duration-300 group-hover/post:scale-[1.03]"
+            className="size-full object-cover group-hover/post:scale-[1.03]"
             loading="lazy"
             referrerPolicy="no-referrer"
           />
