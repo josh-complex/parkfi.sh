@@ -37,7 +37,7 @@ export const DEFAULT_IMAGE_WIDTHS = [320, 480, 640, 960, 1280, 1600] as const;
  * where the extra bytes of q80+ aren't visible at tile size). Detail heroes
  * override this upward via `<Image quality>` since they're viewed large.
  */
-export const DEFAULT_IMAGE_QUALITY = 72;
+export const DEFAULT_IMAGE_QUALITY = 64;
 
 /**
  * The Disney CDN's own resize segment (`/resize/mwImage/1/{w}/{h}/75/`). Mirrors
@@ -79,11 +79,21 @@ function optionString(opts: CfImageOpts): string {
     .join(",");
 }
 
+/**
+ * The origin the `/cdn-cgi/image/` path must resolve against. Empty on the web
+ * build so the URL stays relative to whatever host is serving us (all behind
+ * Cloudflare). In the native shell the WebView is served from `capacitor://` /
+ * `https://localhost`, so a relative path would 404 there — `VITE_API_BASE`
+ * (baked to `https://parkfi.sh` for native builds, see vite.config.ts) makes it
+ * absolute, exactly as the tRPC and auth clients do for the same reason.
+ */
+const CF_ORIGIN = import.meta.env.VITE_API_BASE ?? "";
+
 /** Rewrite a remote image URL to its Cloudflare-transformed form. Returns the
  *  input unchanged when it isn't a transformable remote source. */
 export function cfImageUrl(url: string, opts: CfImageOpts = {}): string {
   if (!isTransformable(url)) return url;
-  return `/cdn-cgi/image/${optionString(opts)}/${url}`;
+  return `${CF_ORIGIN}/cdn-cgi/image/${optionString(opts)}/${url}`;
 }
 
 /** Build a width-descriptor `srcSet` for `url`. Returns undefined when the URL
