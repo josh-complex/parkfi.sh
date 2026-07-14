@@ -27,6 +27,7 @@ import { Route as AppPinsRouteImport } from './routes/_app/pins'
 import { Route as AppDisclaimersRouteImport } from './routes/_app/disclaimers'
 import { Route as AppDiningRouteImport } from './routes/_app/dining'
 import { Route as AppDeleteAccountRouteImport } from './routes/_app/delete-account'
+import { Route as AppContactRouteImport } from './routes/_app/contact'
 import { Route as AppDashRouteImport } from './routes/_app/_dash'
 import { Route as AppDashIndexRouteImport } from './routes/_app/_dash/index'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
@@ -150,6 +151,11 @@ const AppDiningRoute = AppDiningRouteImport.update({
 const AppDeleteAccountRoute = AppDeleteAccountRouteImport.update({
   id: '/delete-account',
   path: '/delete-account',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppContactRoute = AppContactRouteImport.update({
+  id: '/contact',
+  path: '/contact',
   getParentRoute: () => AppRoute,
 } as any)
 const AppDashRoute = AppDashRouteImport.update({
@@ -342,6 +348,7 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/unsubscribe': typeof UnsubscribeRoute
   '/welcome': typeof WelcomeRoute
+  '/contact': typeof AppContactRoute
   '/delete-account': typeof AppDeleteAccountRoute
   '/dining': typeof AppDiningRoute
   '/disclaimers': typeof AppDisclaimersRoute
@@ -395,6 +402,7 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/unsubscribe': typeof UnsubscribeRoute
   '/welcome': typeof WelcomeRoute
+  '/contact': typeof AppContactRoute
   '/delete-account': typeof AppDeleteAccountRoute
   '/dining': typeof AppDiningRoute
   '/disclaimers': typeof AppDisclaimersRoute
@@ -448,6 +456,7 @@ export interface FileRoutesById {
   '/unsubscribe': typeof UnsubscribeRoute
   '/welcome': typeof WelcomeRoute
   '/_app/_dash': typeof AppDashRouteWithChildren
+  '/_app/contact': typeof AppContactRoute
   '/_app/delete-account': typeof AppDeleteAccountRoute
   '/_app/dining': typeof AppDiningRoute
   '/_app/disclaimers': typeof AppDisclaimersRoute
@@ -504,6 +513,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/unsubscribe'
     | '/welcome'
+    | '/contact'
     | '/delete-account'
     | '/dining'
     | '/disclaimers'
@@ -557,6 +567,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/unsubscribe'
     | '/welcome'
+    | '/contact'
     | '/delete-account'
     | '/dining'
     | '/disclaimers'
@@ -609,6 +620,7 @@ export interface FileRouteTypes {
     | '/unsubscribe'
     | '/welcome'
     | '/_app/_dash'
+    | '/_app/contact'
     | '/_app/delete-account'
     | '/_app/dining'
     | '/_app/disclaimers'
@@ -802,6 +814,13 @@ declare module '@tanstack/react-router' {
       path: '/delete-account'
       fullPath: '/delete-account'
       preLoaderRoute: typeof AppDeleteAccountRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/contact': {
+      id: '/_app/contact'
+      path: '/contact'
+      fullPath: '/contact'
+      preLoaderRoute: typeof AppContactRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/_dash': {
@@ -1121,6 +1140,7 @@ const AppDashRouteWithChildren =
 
 interface AppRouteChildren {
   AppDashRoute: typeof AppDashRouteWithChildren
+  AppContactRoute: typeof AppContactRoute
   AppDeleteAccountRoute: typeof AppDeleteAccountRoute
   AppDiningRoute: typeof AppDiningRoute
   AppDisclaimersRoute: typeof AppDisclaimersRoute
@@ -1141,6 +1161,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppDashRoute: AppDashRouteWithChildren,
+  AppContactRoute: AppContactRoute,
   AppDeleteAccountRoute: AppDeleteAccountRoute,
   AppDiningRoute: AppDiningRoute,
   AppDisclaimersRoute: AppDisclaimersRoute,
