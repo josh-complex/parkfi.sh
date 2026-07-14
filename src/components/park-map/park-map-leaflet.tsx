@@ -86,6 +86,10 @@ function makeTileLayer(dark: boolean): L.TileLayer {
     maxNativeZoom: 20,
     maxZoom: 21,
     attribution: MAPTILER_ATTRIBUTION,
+    // A single world — don't repeat tiles past ±180°. Our photo markers only
+    // live on the one real world, so a wrapped basemap copy would show duplicate
+    // Floridas with no overlays; noWrap keeps the basemap and markers aligned.
+    noWrap: true,
   });
 }
 

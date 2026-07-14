@@ -14,6 +14,8 @@
  * whether it is on or off.
  */
 import { usePostHog } from "@posthog/react";
+import { useStore } from "@tanstack/react-store";
+import { Store } from "@tanstack/store";
 import { useEffect, useState } from "react";
 
 export const FeatureFlag = {
@@ -32,6 +34,14 @@ export const FeatureFlag = {
    * setting it off is the kill-switch that hides them (see {@link usePinsEnabled}).
    */
   PINS: "pins",
+  /**
+   * Route remote images through Cloudflare's on-the-fly resize/format endpoint
+   * (`/cdn-cgi/image/…`, see src/lib/image.ts). Gated because it requires
+   * "Transformations" to be enabled on the Cloudflare zone — until it is, the
+   * `/cdn-cgi/image/` path 404s, so keep this flag off. Consumed via the store
+   * below, not a per-image hook (see {@link useCfImagesEnabled}).
+   */
+  CF_IMAGES: "cf-images",
 } as const;
 
 export type FeatureFlagKey = (typeof FeatureFlag)[keyof typeof FeatureFlag];
@@ -103,4 +113,40 @@ export function usePinsEnabled(): boolean {
   }, [posthog]);
 
   return enabled;
+}
+
+/**
+ * The `cf-images` flag, as a module-level store rather than a per-component
+ * hook. `<Image>` renders in hundreds of places, so a PostHog subscription per
+ * instance would be wasteful; instead {@link CfImagesFlagSync} holds the single
+ * subscription and mirrors the flag here, and every `<Image>` reads it cheaply
+ * via {@link useCfImagesEnabled}. Starts `false` so the SSR render and first
+ * client render agree (no hydration mismatch) and images stay on their origin
+ * CDN until the flag resolves on. Reading the store needs no provider ancestor,
+ * so isolated renders (Storybook) simply get `false`.
+ */
+export const cfImagesStore = new Store(false);
+
+/**
+ * Mounts once (under `PostHogProvider`) and mirrors the `cf-images` flag into
+ * {@link cfImagesStore}. Renders nothing. Same effect-evaluated, client-only
+ * pattern as the flag hooks above, so it never touches PostHog during SSR.
+ */
+export function CfImagesFlagSync(): null {
+  const posthog = usePostHog();
+
+  useEffect(() => {
+    if (!posthog || typeof posthog.isFeatureEnabled !== "function") return;
+    const update = () =>
+      cfImagesStore.setState(() => posthog.isFeatureEnabled(FeatureFlag.CF_IMAGES) ?? false);
+    update();
+    return posthog.onFeatureFlags?.(update);
+  }, [posthog]);
+
+  return null;
+}
+
+/** Reactive read of the `cf-images` flag for `<Image>`. See {@link cfImagesStore}. */
+export function useCfImagesEnabled(): boolean {
+  return useStore(cfImagesStore);
 }

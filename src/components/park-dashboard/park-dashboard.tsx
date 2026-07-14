@@ -114,6 +114,8 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
               alt={park?.imageAlt ?? parkName ?? ""}
               className="h-40 w-full object-cover md:h-56"
               loading="eager"
+              fetchPriority="high"
+              sizes="100vw"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent" />
             <div className="absolute inset-x-0 bottom-0 flex flex-wrap items-end justify-between gap-3 p-4 lg:p-6">

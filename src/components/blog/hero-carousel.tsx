@@ -63,6 +63,7 @@ function SlideBody({ slide }: { slide: HeroSlideData }) {
         className="absolute inset-0 size-full object-cover"
         loading="eager"
         referrerPolicy="no-referrer"
+        sizes="100vw"
       />
       <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/45 to-black/5" />
       <div className="relative max-w-2xl p-6 sm:p-8">

@@ -225,6 +225,8 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
               alt={ride.meta?.imageAlt ?? ride.name}
               className="size-full object-cover"
               loading="eager"
+              fetchPriority="high"
+              sizes="100vw"
             />
           </div>
         )}

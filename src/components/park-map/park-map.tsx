@@ -557,6 +557,11 @@ export function ParkMap({
         style: basemapStyleUrl(dark),
         center: ORLANDO_CENTER,
         zoom: ORLANDO_ZOOM,
+        // A single world — no repeated copies past ±180°. Our photo markers are
+        // DOM elements projected onto the one real world, so a wrapped basemap
+        // copy would show duplicate Floridas with no overlays on them. Killing
+        // the copies keeps the basemap and the markers on the same globe.
+        renderWorldCopies: false,
         // Native attribution off — our own toggleable credits chip (the info
         // button in the map-stage control column) carries the MapTiler/OSM
         // attribution instead, so nothing pokes out beneath the bottom nav.

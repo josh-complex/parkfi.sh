@@ -433,6 +433,8 @@ export function DiningVenueDetail({
                 alt={venue.name}
                 className="size-full object-cover"
                 loading="eager"
+                fetchPriority="high"
+                sizes="100vw"
               />
             </div>
           )}

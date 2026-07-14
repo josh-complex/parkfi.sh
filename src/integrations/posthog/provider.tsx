@@ -5,6 +5,8 @@ import { useRouter } from "@tanstack/react-router";
 
 import { authClient } from "#/lib/auth-client.ts";
 
+import { CfImagesFlagSync } from "./feature-flags.ts";
+
 if (typeof window !== "undefined" && import.meta.env.VITE_POSTHOG_KEY) {
   posthog.init(import.meta.env.VITE_POSTHOG_KEY, {
     api_host: import.meta.env.VITE_POSTHOG_HOST || "https://us.i.posthog.com",
@@ -109,6 +111,7 @@ export default function PostHogProvider({ children }: PostHogProviderProps) {
     <BasePostHogProvider client={posthog}>
       <PostHogIdentify />
       <PostHogPageview />
+      <CfImagesFlagSync />
       {children}
     </BasePostHogProvider>
   );

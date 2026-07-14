@@ -1,15 +1,44 @@
 "use client";
 
+import { ImageIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
+import { useCfImagesEnabled } from "#/integrations/posthog/feature-flags.ts";
+import { cfImageSrcSet, cfImageUrl } from "#/lib/image.ts";
 import { cn } from "#/lib/utils.ts";
+
+/**
+ * The default placeholder shown when an image is missing or 404s: a muted box
+ * with a dimmed icon, sized by the same `className` the `<img>` would get so it
+ * occupies the exact same footprint (a hero, a 44px tile, a full-bleed fill).
+ * `object-*`/`group-hover:scale-*` utilities are harmless no-ops on the box.
+ */
+function ImageFallback({ className }: { className?: string }) {
+  return (
+    <div
+      aria-hidden
+      className={cn("flex items-center justify-center bg-muted text-muted-foreground", className)}
+    >
+      <ImageIcon className="size-1/3 max-h-10 max-w-10 opacity-40" />
+    </div>
+  );
+}
 
 type ImageProps = Omit<React.ComponentProps<"img">, "src"> & {
   src: string | null | undefined;
-  /** Rendered in place of the image when `src` is missing or fails to load. */
+  /**
+   * Rendered in place of the image when `src` is missing or fails to load.
+   * Omit for a default placeholder box; pass `null` to render nothing at all.
+   */
   fallback?: React.ReactNode;
   /** Skip the blur/fade-in (e.g. tiny avatars where the transition is just noise). */
   noFade?: boolean;
+  /**
+   * Override the `srcSet` width ladder. Only used when `sizes` is set and the
+   * `cf-images` flag is on for a remote source; defaults to a tiny-tile-to-hero
+   * ladder (see {@link cfImageSrcSet}).
+   */
+  widths?: readonly number[];
 };
 
 /**
@@ -29,11 +58,18 @@ export function Image({
   alt = "",
   fallback,
   noFade,
+  widths,
+  sizes,
   className,
   onLoad,
   onError,
   ...props
 }: ImageProps) {
+  // Cloudflare's `/cdn-cgi/image/` transforms only exist behind CF's edge, so on
+  // localhost the path 404s. Gate on the dev flag so `vp dev` always serves
+  // origin URLs regardless of the (user-targeted) `cf-images` flag, which would
+  // otherwise follow your account into local dev and break every image.
+  const cfImages = useCfImagesEnabled() && !import.meta.env.DEV;
   const ref = useRef<HTMLImageElement>(null);
   // `faded` — revealed via the load event, so it animates in.
   // `instant` — already complete on mount (cached / warm from SSR), so it's
@@ -62,14 +98,28 @@ export function Image({
     }
   }, [src]);
 
-  if (!src || erroredSrc === src) return <>{fallback ?? null}</>;
+  if (!src || erroredSrc === src) {
+    // `undefined` (prop omitted) → default placeholder; an explicit `null` (or
+    // any node) is respected as-is, so callers can still opt out of a box.
+    return fallback === undefined ? <ImageFallback className={className} /> : <>{fallback}</>;
+  }
 
   const instant = instantSrc === src;
   const loaded = instant || fadedSrc === src;
+
+  // Route remote images through Cloudflare when enabled: a width-descriptor
+  // `srcSet` (+ a mid-size `src` fallback) when the caller declared `sizes`, or
+  // an at-source-size re-encode (AVIF/WebP, our cache) otherwise. `cfImageUrl`
+  // no-ops on local/`data:` sources, so both paths are safe to apply blindly.
+  const resolvedSrc = cfImages ? cfImageUrl(src, sizes ? { width: 640 } : {}) : src;
+  const resolvedSrcSet = cfImages && sizes ? cfImageSrcSet(src, widths) : undefined;
+
   return (
     <img
       ref={ref}
-      src={src}
+      src={resolvedSrc}
+      srcSet={resolvedSrcSet}
+      sizes={sizes}
       alt={alt}
       decoding="async"
       onLoad={(e) => {

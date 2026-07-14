@@ -54,6 +54,7 @@ export function PostCard({
           className="absolute inset-0 size-full object-cover group-hover/post:scale-[1.04]"
           loading="lazy"
           referrerPolicy="no-referrer"
+          sizes="(min-width: 640px) 42rem, 100vw"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/45 to-black/5" />
         <div className="relative max-w-2xl p-6 sm:p-8">
