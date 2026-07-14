@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CloudRainIcon, DropletIcon, WindIcon } from "lucide-react";
+import { CloudRainIcon, DropletIcon, TicketIcon, WindIcon } from "lucide-react";
 
 import {
   Carousel,
@@ -28,6 +28,10 @@ import {
   type Resort,
 } from "#/components/ticket-pricing/shared.tsx";
 import { TicketsResortChips } from "#/components/ticket-pricing/tickets-resort-chips.tsx";
+import { ConnectionLost } from "#/components/connection-lost.tsx";
+import { queryUnavailable } from "#/hooks/use-online-status.ts";
+import { buyTicketsHref, ticketPurchaseDeepLink, ticketStoreLabel } from "#/lib/disney-links.ts";
+import { useIsNative } from "#/hooks/use-is-native.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { cn } from "#/lib/utils.ts";
 
@@ -76,6 +80,7 @@ function StatCard({
   thumbClassName,
   fill = false,
   onClick,
+  href,
   children,
 }: {
   label: string;
@@ -84,15 +89,18 @@ function StatCard({
   /** Fill layout: content lays itself out edge-to-edge instead of centering. */
   fill?: boolean;
   onClick?: () => void;
+  /** External link target — renders the card as an `<a>` opening in a new tab. */
+  href?: string;
   children: React.ReactNode;
 }) {
+  const interactive = onClick != null || href != null;
   const inner = (
     <div className="group flex flex-col gap-2 outline-none">
       <div
         className={cn(
           "bg-muted relative flex aspect-[4/3] w-full overflow-hidden rounded-2xl",
           fill ? "flex-col justify-between p-2.5" : "items-center justify-center",
-          onClick && "transition-transform group-hover:scale-[1.02]",
+          interactive && "transition-transform group-hover:scale-[1.02]",
           thumbClassName,
         )}
       >
@@ -100,7 +108,7 @@ function StatCard({
       </div>
       <div className="flex flex-col gap-0.5 px-0.5">
         <span
-          className={cn("line-clamp-1 text-sm font-medium", onClick && "group-hover:underline")}
+          className={cn("line-clamp-1 text-sm font-medium", interactive && "group-hover:underline")}
         >
           {label}
         </span>
@@ -108,6 +116,13 @@ function StatCard({
       </div>
     </div>
   );
+  if (href) {
+    return (
+      <a href={href} target="_blank" rel="noreferrer" className="block w-full text-left">
+        {inner}
+      </a>
+    );
+  }
   if (onClick) {
     return (
       <button type="button" onClick={onClick} className="block w-full text-left">
@@ -123,10 +138,12 @@ function ParkShelf({
   park,
   onOpenCalendar,
   todayIso,
+  native,
 }: {
   park: ShelfPark;
   onOpenCalendar: (focusDate: string | undefined) => void;
   todayIso: string;
+  native: boolean;
 }) {
   const crowd = park.crowdIndex != null ? crowdConfig(park.crowdIndex) : null;
   const precip = formatPrecip(park.precipProb);
@@ -183,6 +200,25 @@ function ParkShelf({
               ) : (
                 <span className="text-2xl font-bold text-muted-foreground/30">—</span>
               )}
+            </StatCard>
+          </CarouselItem>
+
+          {/* Buy tickets — on the native MDE shell (Disney) this deep links to
+              the app's `mdx://tickets/buy` purchase flow; on web (and Universal)
+              it's the https ticket store, which hands off to the app via App
+              Links. */}
+          <CarouselItem className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5">
+            <StatCard
+              label="Buy tickets"
+              sub={
+                native && ticketPurchaseDeepLink(park.resort) != null
+                  ? "in the Disney app"
+                  : `on ${ticketStoreLabel(park.resort)}`
+              }
+              thumbClassName="bg-primary/10 text-primary"
+              href={buyTicketsHref(park.resort, native)}
+            >
+              <TicketIcon className="size-9" strokeWidth={1.75} />
             </StatCard>
           </CarouselItem>
 
@@ -294,6 +330,7 @@ export function TicketsMobileShelves({
   className?: string;
 }) {
   const trpc = useTRPC();
+  const native = useIsNative();
   const q = useQuery({
     ...trpc.tickets.parkShelf.queryOptions({ parkHopper, ageGroup }),
     enabled,
@@ -320,6 +357,8 @@ export function TicketsMobileShelves({
             <LoadingShelf />
             <LoadingShelf />
           </>
+        ) : queryUnavailable(q) ? (
+          <ConnectionLost onRetry={() => void q.refetch()} />
         ) : parks.length === 0 ? (
           <div className="py-16 text-center text-sm text-muted-foreground">
             No ticket pricing captured yet.
@@ -330,6 +369,7 @@ export function TicketsMobileShelves({
               key={`${park.resort}-${park.code}`}
               park={park}
               todayIso={todayIso}
+              native={native}
               onOpenCalendar={(focusDate) => setCal({ park, focusDate })}
             />
           ))

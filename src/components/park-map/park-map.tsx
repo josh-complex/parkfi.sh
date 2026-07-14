@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import maplibregl from "maplibre-gl";
 import { useTheme } from "next-themes";
 
-import { maptilerStyleUrl } from "#/components/maps/maptiler-style.ts";
+import { maptilerDarkStyleUrl, maptilerStyleUrl } from "#/components/maps/maptiler-style.ts";
 import {
   anyMapLayerActive,
   rideMatchesFilter,
@@ -57,10 +57,11 @@ import type { FeatureCollection, Point } from "geojson";
  * Vector basemap, per the app theme. We use a custom MapTiler GL style —
  * vector, not raster, so its labels live in addressable `symbol` layers we can
  * selectively strip (see `stripLabels`) instead of being baked into tile pixels.
- * The style itself doesn't yet vary by theme (see `maptilerStyleUrl`).
+ * Light uses our custom Cloud style; dark falls back to MapTiler's first-party
+ * `streets-v4-dark` until we build a dark variant of the custom style.
  */
-function basemapStyleUrl(_dark: boolean): string {
-  return maptilerStyleUrl();
+function basemapStyleUrl(dark: boolean): string {
+  return dark ? maptilerDarkStyleUrl() : maptilerStyleUrl();
 }
 
 /**

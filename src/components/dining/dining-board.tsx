@@ -10,6 +10,7 @@ import { ResultsView } from "#/components/dining/dining-results-view.tsx";
 import { DiningCuisineChips } from "#/components/dining/dining-cuisine-chips.tsx";
 import { DiningRecentlyUpdated } from "#/components/dining/dining-recently-updated.tsx";
 import { DiningPicks } from "#/components/dining/dining-picks.tsx";
+import { ConnectionLost } from "#/components/connection-lost.tsx";
 import {
   diningSearchKey,
   searchToState,
@@ -36,6 +37,7 @@ import {
 } from "#/components/dining/dining-hours.ts";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useIsMobile } from "#/hooks/use-mobile.ts";
+import { queryUnavailable } from "#/hooks/use-online-status.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
 
@@ -48,7 +50,18 @@ function today(): string {
 }
 
 /** Pre-search browse: the menu-change feed + curated picks shelves only. */
-function BrowseView({ isLoading }: { isLoading: boolean }) {
+function BrowseView({
+  isLoading,
+  unavailable,
+  onRetry,
+}: {
+  isLoading: boolean;
+  unavailable: boolean;
+  onRetry: () => void;
+}) {
+  if (unavailable) {
+    return <ConnectionLost onRetry={onRetry} />;
+  }
   if (isLoading) {
     return (
       <div className="flex flex-col gap-4">
@@ -236,7 +249,7 @@ export function DiningBoard() {
         {searched ? (
           <ResultsView
             isLoading={isLoading}
-            isError={availabilityQ.isError}
+            isError={queryUnavailable(availabilityQ)}
             restaurants={pageItems}
             availabilityMap={availabilityMap}
             hoursMap={hoursMap}
@@ -251,7 +264,11 @@ export function DiningBoard() {
             defaultPartySize={Number(partySize)}
           />
         ) : (
-          <BrowseView isLoading={restaurantsQ.isLoading} />
+          <BrowseView
+            isLoading={restaurantsQ.isLoading}
+            unavailable={queryUnavailable(restaurantsQ)}
+            onRetry={() => void restaurantsQ.refetch()}
+          />
         )}
       </div>
     </div>

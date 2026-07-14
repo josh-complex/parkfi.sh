@@ -87,16 +87,12 @@ export function reportError(error: unknown, opts: ReportErrorOptions): void {
 
   if (opts.severity !== "critical" || opts.toast === false) return;
 
-  // Offline collapse: a dead connection fails every in-flight request at once;
-  // replace the per-error toasts with a single "you're offline" so we don't
-  // build a toast tower.
-  if (offline) {
-    toast.error("You're offline", {
-      id: "offline",
-      description: "Check your connection and try again.",
-    });
-    return;
-  }
+  // Offline: the persistent `OfflineBanner` (driven by react-query's
+  // onlineManager) already tells the user their connection is down, and the
+  // browse tabs show their own inline offline state — so a dead connection that
+  // fails every in-flight request at once must NOT also throw a toast (or a
+  // whole tower of them). We still captured above for telemetry; just stop here.
+  if (offline) return;
 
   // Heading + optional lighter subtext. With no custom heading we show the
   // generic two-liner; a custom heading only gets a subtext if one is provided.

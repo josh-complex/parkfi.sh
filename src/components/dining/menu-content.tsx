@@ -433,6 +433,63 @@ export function MenuBody({
     activeChangeKind ?? (priceChanges.length ? "price" : additions.length ? "added" : "removed");
   const activeChangeList = changeKindTabs.find((t) => t.key === activeKind)?.items ?? [];
 
+  // ── Scroll spy ────────────────────────────────────────────────────────────
+  // Highlight the quick-jump pill for whichever type section the reader is
+  // currently looking at. We score each section by how much of it is visible in
+  // the scroll viewport and pick the winner — that stays stable in the desktop
+  // two-column masonry (where headings in both columns cross the top together
+  // and a "topmost heading" rule flickers) as well as the mobile single column.
+  const [activeType, setActiveType] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller || viewingChanges || typeSections.length <= 1) {
+      setActiveType(null);
+      return;
+    }
+    let frame = 0;
+    const compute = () => {
+      frame = 0;
+      const view = scroller.getBoundingClientRect();
+      let bestKey: string | null = null;
+      let bestVisible = -1;
+      for (const s of typeSections) {
+        const el = sectionRefs.current.get(s.typeKey);
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        const visible = Math.min(r.bottom, view.bottom) - Math.max(r.top, view.top);
+        // Prefer the section covering the most viewport height; on a tie keep the
+        // earlier one (document order) so the pill doesn't jitter between columns.
+        if (visible > bestVisible + 1) {
+          bestVisible = visible;
+          bestKey = s.typeKey;
+        }
+      }
+      setActiveType(bestKey ?? typeSections[0]?.typeKey ?? null);
+    };
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(compute);
+    };
+    compute();
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      scroller.removeEventListener("scroll", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [scrollRef, sectionRefs, typeSections, viewingChanges, menuIsLoading]);
+
+  // Keep the active pill centered in the horizontally-scrolling chip strip.
+  React.useEffect(() => {
+    if (!activeType) return;
+    const strip = pillsRef.current;
+    const pill = strip?.querySelector<HTMLElement>(`[data-pill="${activeType}"]`);
+    if (!strip || !pill) return;
+    strip.scrollTo({
+      left: pill.offsetLeft - strip.clientWidth / 2 + pill.clientWidth / 2,
+      behavior: "smooth",
+    });
+  }, [activeType, pillsRef]);
+
   // Scroll the deep-linked item into view once it (and its period) are rendered.
   React.useEffect(() => {
     if (!highlightSlug) return;
@@ -559,8 +616,14 @@ export function MenuBody({
                 <button
                   key={s.typeKey}
                   type="button"
+                  data-pill={s.typeKey}
                   onClick={() => onJumpToType(s.typeKey)}
-                  className="shrink-0 snap-start rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
+                  className={cn(
+                    "shrink-0 snap-start rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                    activeType === s.typeKey
+                      ? "border-foreground bg-foreground text-background"
+                      : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
+                  )}
                 >
                   {s.label}
                 </button>

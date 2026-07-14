@@ -19,6 +19,7 @@ import { formatParkName } from "#/lib/parks.ts";
 import { ParkBoardTable } from "./park-board-table.tsx";
 import { ParkHours } from "./park-hours.tsx";
 import { ParkStatCards } from "./park-stat-cards.tsx";
+import { ParkTicketsCta } from "./park-tickets-cta.tsx";
 import { useSelection } from "./selection-context.tsx";
 
 // visx + d3 are heavy and the chart isn't crawler content (the same numbers
@@ -179,6 +180,9 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
         {/* Operating hours for today + the days ahead, sourced from the park's
             schedule feed (same data that gates the open/closed state). */}
         <ParkHours parkSlug={activeSlug ?? null} />
+        {/* Deep links out to the operator's ticket store (+ the MDE app on
+            native). Only render once we know the operator, to pick the resort. */}
+        {operatorSlug && <ParkTicketsCta operatorSlug={operatorSlug} />}
       </div>
 
       {/* Map and wait chart share a row at equal width, and sit above the ride

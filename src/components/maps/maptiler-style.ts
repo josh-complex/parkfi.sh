@@ -6,12 +6,15 @@ const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY as string | undefined;
 const MAPTILER_STYLE_ID = "019f3593-8a6f-771b-96d5-db0fec38726e";
 
 /**
- * Built-in MapTiler raster style used as the Leaflet/no-WebGL fallback.
+ * Built-in MapTiler raster styles used as the Leaflet/no-WebGL fallback.
  * Rasterizing our custom Cloud style (`MAPTILER_STYLE_ID`) 404s as an invalid
- * key on our plan tier — first-party styles like this one are rasterizable on
- * the base plan, so the fallback doesn't visually match the GL map exactly.
+ * key on our plan tier — first-party styles like these are rasterizable on the
+ * base plan, so the fallback doesn't visually match the GL map exactly. We keep
+ * a light/dark pair so the fallback tracks the app theme instead of dropping to
+ * a light basemap in dark mode.
  */
 const MAPTILER_FALLBACK_RASTER_STYLE_ID = "streets-v4";
+const MAPTILER_FALLBACK_RASTER_STYLE_ID_DARK = "streets-v4-dark";
 
 export function maptilerStyleUrl(): string {
   // Cache-bust the style *document* once per day. MapTiler serves style.json
@@ -25,11 +28,23 @@ export function maptilerStyleUrl(): string {
 }
 
 /**
- * Rasterized PNG tiles for the Leaflet/no-WebGL fallback. `{r}` is Leaflet's
- * retina placeholder — resolves to `@2x` with `detectRetina: true`.
+ * Vector style document for the GL map's dark theme. Until we build a dark
+ * variant of our custom Cloud style (`MAPTILER_STYLE_ID`), the GL renderer falls
+ * back to MapTiler's first-party `streets-v4-dark`. It's a full vector style, so
+ * the label-stripping in `park-map.tsx` still applies (OpenMapTiles schema).
  */
-export function maptilerFallbackRasterTileUrl(): string {
-  return `https://api.maptiler.com/maps/${MAPTILER_FALLBACK_RASTER_STYLE_ID}/256/{z}/{x}/{y}{r}.png?key=${MAPTILER_KEY}`;
+export function maptilerDarkStyleUrl(): string {
+  return `https://api.maptiler.com/maps/${MAPTILER_FALLBACK_RASTER_STYLE_ID_DARK}/style.json?key=${MAPTILER_KEY}`;
+}
+
+/**
+ * Rasterized PNG tiles for the Leaflet/no-WebGL fallback. `{r}` is Leaflet's
+ * retina placeholder — resolves to `@2x` with `detectRetina: true`. Pass `dark`
+ * to serve the dark basemap so the fallback matches the app theme.
+ */
+export function maptilerFallbackRasterTileUrl(dark = false): string {
+  const styleId = dark ? MAPTILER_FALLBACK_RASTER_STYLE_ID_DARK : MAPTILER_FALLBACK_RASTER_STYLE_ID;
+  return `https://api.maptiler.com/maps/${styleId}/256/{z}/{x}/{y}{r}.png?key=${MAPTILER_KEY}`;
 }
 
 export const MAPTILER_ATTRIBUTION = "© MapTiler © OpenStreetMap contributors";

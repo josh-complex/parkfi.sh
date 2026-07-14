@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowUpDownIcon, LayoutGridIcon, ListIcon, SlidersHorizontalIcon } from "lucide-react";
 
+import { ConnectionLost } from "#/components/connection-lost.tsx";
 import { RideCategoryChips } from "#/components/rides/ride-category-chips.tsx";
 import {
   MAP_FILTER_PILL,
@@ -12,7 +13,6 @@ import {
 } from "#/components/rides/ride-filter-button.tsx";
 import {
   RIDE_CATEGORIES,
-  rideFilterCount,
   rideMatchesFilter,
   useRideFilter,
 } from "#/components/rides/ride-filter.tsx";
@@ -34,6 +34,7 @@ import {
   DrawerTrigger,
 } from "#/components/ui/drawer.tsx";
 import { SortRows, type SortDir, type SortOption } from "#/components/ui/sort-menu.tsx";
+import { queryUnavailable } from "#/hooks/use-online-status.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { Image } from "#/components/ui/image.tsx";
 import { cn } from "#/lib/utils.ts";
@@ -276,21 +277,12 @@ function SortDrawer({
 
 /** Filter chooser — reuses the shared ride-filter controls (same as the map). */
 function FilterDrawer({ variant }: { variant: "ghost" | "outline" | "pill" }) {
-  const { filter } = useRideFilter();
-  const count = rideFilterCount(filter);
-  const badge =
-    count > 0 ? (
-      <span className="bg-primary text-primary-foreground ml-0.5 inline-flex min-w-[1.1rem] items-center justify-center rounded-full px-1 text-[11px] font-bold leading-[1.1rem]">
-        {count}
-      </span>
-    ) : null;
   return (
     <Drawer>
       {variant === "pill" ? (
         <DrawerTrigger className={MAP_FILTER_PILL}>
           <SlidersHorizontalIcon />
           Filter
-          {badge}
         </DrawerTrigger>
       ) : (
         <DrawerTrigger asChild>
@@ -301,7 +293,6 @@ function FilterDrawer({ variant }: { variant: "ghost" | "outline" | "pill" }) {
           >
             <SlidersHorizontalIcon data-icon="inline-start" />
             Filter
-            {badge}
           </Button>
         </DrawerTrigger>
       )}
@@ -364,7 +355,9 @@ function ViewToggle({
  */
 export function CrossParkWaits() {
   const trpc = useTRPC();
-  const { data: rides, isLoading } = useQuery(trpc.parks.allRides.queryOptions());
+  const ridesQ = useQuery(trpc.parks.allRides.queryOptions());
+  const { data: rides, isLoading } = ridesQ;
+  const unavailable = queryUnavailable(ridesQ);
   const { filter } = useRideFilter();
   const [sortKey, setSortKey] = React.useState<Sort>("wait");
   const [sortDir, setSortDir] = React.useState<SortDir>("desc");
@@ -477,7 +470,9 @@ export function CrossParkWaits() {
 
         {isLoading && <WaitsSkeleton view={view} />}
 
-        {!isLoading && shown === 0 && (
+        {!isLoading && unavailable && <ConnectionLost onRetry={() => void ridesQ.refetch()} />}
+
+        {!isLoading && !unavailable && shown === 0 && (
           <div className="py-16 text-center text-sm text-muted-foreground">
             No rides match your filters.
           </div>

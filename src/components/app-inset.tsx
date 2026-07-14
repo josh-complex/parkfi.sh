@@ -4,6 +4,7 @@ import { BuyMeACoffee } from "#/components/buy-me-a-coffee.tsx";
 import { CastMemberHeadline } from "#/components/cast-member-badge.tsx";
 import { MobileBottomNav } from "#/components/mobile-bottom-nav.tsx";
 import { NotificationCenter } from "#/components/notifications/notification-center.tsx";
+import { OfflineBanner } from "#/components/offline-banner.tsx";
 import { OmniSearch } from "#/components/omni-search.tsx";
 import { MenuTrigger } from "#/components/site-header.tsx";
 import { ThemeToggle } from "#/components/theme-toggle.tsx";
@@ -66,6 +67,9 @@ export function AppInset({ children, className }: { children: ReactNode; classNa
       {/* Mobile primary nav — fixed island floating over the content; desktop uses
           the sidebar instead (the bar is `md:hidden`). */}
       <MobileBottomNav />
+      {/* Persistent offline indicator — floats above the nav island whenever the
+          device is offline, clearing itself on reconnect. */}
+      <OfflineBanner />
     </SidebarInset>
   );
 }

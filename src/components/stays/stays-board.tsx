@@ -20,6 +20,7 @@ import {
   SegContent,
   useCloseOnScroll,
 } from "#/components/core-search.tsx";
+import { ConnectionLost } from "#/components/connection-lost.tsx";
 import { MAP_FILTER_PILL, MAP_FILTER_STACK } from "#/components/rides/ride-filter-button.tsx";
 import { StayAlertButton, type StayAlertDims } from "#/components/stays/stay-alert-button.tsx";
 import { StaysAreaChips } from "#/components/stays/stays-area-chips.tsx";
@@ -71,6 +72,7 @@ import {
   DrawerTrigger,
 } from "#/components/ui/drawer.tsx";
 import { useIsMobile } from "#/hooks/use-mobile.ts";
+import { queryUnavailable } from "#/hooks/use-online-status.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
 import { cn } from "#/lib/utils.ts";
@@ -801,7 +803,7 @@ export function StaysBoard() {
         {search ? (
           <ResultsView
             isLoading={availabilityQ.isLoading}
-            isError={availabilityQ.isError}
+            isError={queryUnavailable(availabilityQ)}
             offers={filteredOffers}
             totalAvailable={availableCount}
             tierFilter={tierFilter}
@@ -829,6 +831,8 @@ export function StaysBoard() {
         ) : (
           <BrowseView
             isLoading={catalogQ.isLoading}
+            unavailable={queryUnavailable(catalogQ)}
+            onRetry={() => void catalogQ.refetch()}
             groups={byTier}
             onPickTier={(t) => {
               // Selecting a tier before searching nudges the user to pick dates.
@@ -844,16 +848,23 @@ export function StaysBoard() {
 
 function BrowseView({
   isLoading,
+  unavailable,
+  onRetry,
   groups,
   onPickTier,
 }: {
   isLoading: boolean;
+  unavailable: boolean;
+  onRetry: () => void;
   groups: Array<{
     meta: (typeof TIER_META)[number];
     resorts: Array<ResortCatalogEntry>;
   }>;
   onPickTier: (tier: ResortTier) => void;
 }) {
+  if (unavailable) {
+    return <ConnectionLost onRetry={onRetry} />;
+  }
   if (isLoading) {
     return (
       <div className="flex flex-col gap-10">

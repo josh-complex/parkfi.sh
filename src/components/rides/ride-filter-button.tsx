@@ -12,12 +12,7 @@ import {
 } from "#/components/ui/drawer.tsx";
 import { cn } from "#/lib/utils.ts";
 
-import {
-  EMPTY_RIDE_FILTER,
-  MAX_WAIT_OPTIONS,
-  rideFilterCount,
-  useRideFilter,
-} from "./ride-filter.tsx";
+import { EMPTY_RIDE_FILTER, MAX_WAIT_OPTIONS, useRideFilter } from "./ride-filter.tsx";
 
 /**
  * The map's filter-pill look, shared verbatim by every mobile filter/sort FAB so
@@ -127,14 +122,11 @@ export function RideFilterFooter({ closeLabel = "Show rides" }: { closeLabel?: s
 
 /**
  * Ride filter trigger + drawer, shared by the map and the Waits list. Renders a
- * pill button (with an active-count badge) that opens a bottom drawer of filter
+ * pill button that opens a bottom drawer of filter
  * controls; everything writes straight to the shared `useRideFilter` state.
  * Pass `className` to position/skin the trigger for each surface.
  */
 export function RideFilterButton({ className }: { className?: string }) {
-  const { filter } = useRideFilter();
-  const count = rideFilterCount(filter);
-
   return (
     <Drawer>
       <DrawerTrigger
@@ -145,11 +137,6 @@ export function RideFilterButton({ className }: { className?: string }) {
       >
         <SlidersHorizontalIcon className="size-5" />
         Filter
-        {count > 0 && (
-          <span className="bg-primary text-primary-foreground ml-0.5 inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1 text-xs font-bold leading-[1.25rem]">
-            {count}
-          </span>
-        )}
       </DrawerTrigger>
       <DrawerContent>
         <DrawerHeader className="border-b pb-4">

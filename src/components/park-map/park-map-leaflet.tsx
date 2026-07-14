@@ -11,6 +11,10 @@ import {
   rideMatchesFilter,
   type RideFilter,
 } from "#/components/rides/ride-filter.tsx";
+import {
+  MAPTILER_ATTRIBUTION,
+  maptilerFallbackRasterTileUrl,
+} from "#/components/maps/maptiler-style.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { pointInPolygon } from "#/server/living/geofence.ts";
 
@@ -66,29 +70,23 @@ const EMPTY_DEV_DESTINATIONS: ReadonlyArray<{
 const DECLUTTER_SETTLE_MS = 150;
 
 /**
- * Keyless raster basemap, per the app theme — the same OSM Standard (light) /
- * Carto dark (dark) tiles the MapLibre renderer uses, so the two engines look
- * identical. Leaflet pulls them straight as `<img>` tiles (no WebGL).
+ * MapTiler raster basemap, per the app theme — `streets-v4` (light) /
+ * `streets-v4-dark` (dark), rasterized from the same first-party styles the
+ * GL/MapLibre renderer falls back to, so every raster surface tracks the theme
+ * instead of dropping to a light basemap in dark mode. Leaflet pulls them
+ * straight as `<img>` tiles (no WebGL).
  */
 function makeTileLayer(dark: boolean): L.TileLayer {
   // maxNativeZoom caps the deepest tiles the provider actually serves; maxZoom
   // sits above it so Leaflet upscales (overzooms) those tiles for the extra-close
-  // park levels instead of blanking out.
-  return dark
-    ? L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png", {
-        subdomains: "abcd",
-        maxNativeZoom: 20,
-        maxZoom: 21,
-        attribution:
-          '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
-      })
-    : L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        subdomains: "abc",
-        maxNativeZoom: 19,
-        maxZoom: 21,
-        attribution:
-          '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      });
+  // park levels instead of blanking out. detectRetina resolves the `{r}` in the
+  // URL to `@2x` on hi-dpi screens.
+  return L.tileLayer(maptilerFallbackRasterTileUrl(dark), {
+    detectRetina: true,
+    maxNativeZoom: 20,
+    maxZoom: 21,
+    attribution: MAPTILER_ATTRIBUTION,
+  });
 }
 
 /**

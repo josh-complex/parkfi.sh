@@ -85,12 +85,6 @@ export function rideFilterActive(f: RideFilter): boolean {
   return f.categories.size > 0 || f.openOnly || f.maxWait != null || f.noHeightReq;
 }
 
-export function rideFilterCount(f: RideFilter): number {
-  return (
-    f.categories.size + (f.openOnly ? 1 : 0) + (f.maxWait != null ? 1 : 0) + (f.noHeightReq ? 1 : 0)
-  );
-}
-
 /** Does a ride pass the filter? Fields are normalized so both the map's
  *  `BoardItem` (meta.heightRequirement) and the Waits list's flat row work.
  *

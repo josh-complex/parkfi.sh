@@ -158,7 +158,9 @@ export function LocationMap({
         keyboard: false,
         touchZoom: false,
       });
-      L.tileLayer(maptilerFallbackRasterTileUrl(), { maxZoom: 19, detectRetina: true }).addTo(map);
+      L.tileLayer(maptilerFallbackRasterTileUrl(dark), { maxZoom: 19, detectRetina: true }).addTo(
+        map,
+      );
 
       for (const m of markers ?? []) {
         L.marker([m.latitude, m.longitude], {
