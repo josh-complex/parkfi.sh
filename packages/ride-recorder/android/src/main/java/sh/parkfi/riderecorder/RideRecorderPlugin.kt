@@ -25,13 +25,13 @@ class RideRecorderPlugin : Plugin() {
         return r
     }
 
-    @PluginMethod
-    fun requestPermissions(call: PluginCall) {
+    // Motion sensors need no runtime grant on Android; override the base
+    // permission methods to report "granted" in the shape the JS layer expects.
+    override fun requestPermissions(call: PluginCall) {
         call.resolve(JSObject().put("motion", "granted"))
     }
 
-    @PluginMethod
-    fun checkPermissions(call: PluginCall) {
+    override fun checkPermissions(call: PluginCall) {
         call.resolve(JSObject().put("motion", "granted"))
     }
 

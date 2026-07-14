@@ -12,6 +12,7 @@
     "ios": "cap open ios",
     "android": "cap open android",
     "cap:sync": "cap sync",
+    "plugin:refresh": "rm -rf node_modules/ride-recorder && bun install",
     "preview": "vp preview",
     "test": "vp test run",
     "start": "node .output/server/index.mjs",

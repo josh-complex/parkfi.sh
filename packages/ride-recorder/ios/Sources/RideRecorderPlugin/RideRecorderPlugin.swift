@@ -30,12 +30,13 @@ public class RideRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         return r
     }()
 
-    @objc func requestPermissions(_ call: CAPPluginCall) {
-        // CoreMotion prompts lazily on first use; report the current state.
+    // Override the base CAPPlugin permission methods (CoreMotion prompts lazily
+    // on first use); report the current state in the shape the JS layer expects.
+    @objc override public func requestPermissions(_ call: CAPPluginCall) {
         call.resolve(["motion": RideRecorder.permissionState()])
     }
 
-    @objc func checkPermissions(_ call: CAPPluginCall) {
+    @objc override public func checkPermissions(_ call: CAPPluginCall) {
         call.resolve(["motion": RideRecorder.permissionState()])
     }
 
