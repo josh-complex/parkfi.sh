@@ -36,7 +36,7 @@ import {
 import { SortRows, type SortDir, type SortOption } from "#/components/ui/sort-menu.tsx";
 import { queryUnavailable } from "#/hooks/use-online-status.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
-import { Image, useCfImages } from "#/components/ui/image.tsx";
+import { Image, useCfImages, useDataSaver } from "#/components/ui/image.tsx";
 import { preloadImage } from "#/lib/image-preload.ts";
 import { disneyResizeUrl, HERO_IMAGE, resolveImageUrls } from "#/lib/image.ts";
 import { cn } from "#/lib/utils.ts";
@@ -132,11 +132,13 @@ function WaitBadge({ ride, className }: { ride: Ride; className?: string }) {
  *  the IntersectionObserver. Only the first section's leading cards qualify. */
 function RideCard({ ride, eager }: { ride: Ride; eager?: boolean }) {
   const cf = useCfImages();
+  const dataSaver = useDataSaver();
   // On intent (hover / focus / touch), warm the ride's detail-page hero at low
   // priority so tapping through shows it instantly. Resolves the exact URL
-  // ride-detail's <Image> will request (same HERO_IMAGE transform) so it's a
-  // cache hit, not a wasted second fetch. Pairs with the router's `intent`
-  // route-data preloading; no-op until the hero has loaded once (deduped).
+  // ride-detail's <Image> will request (same HERO_IMAGE transform, same
+  // dataSaver state) so it's a cache hit, not a wasted second fetch. Pairs with
+  // the router's `intent` route-data preloading; no-op until the hero has
+  // loaded once (deduped).
   const warmHero = () => {
     if (!ride.imageHeroUrl) return;
     const heroSrc = disneyResizeUrl(ride.imageHeroUrl, HERO_IMAGE.resizeWidth);
@@ -144,6 +146,7 @@ function RideCard({ ride, eager }: { ride: Ride; eager?: boolean }) {
       cf,
       sizes: HERO_IMAGE.sizes,
       quality: HERO_IMAGE.quality,
+      dataSaver,
     });
     preloadImage(src, { srcSet, sizes: HERO_IMAGE.sizes });
   };

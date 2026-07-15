@@ -52,11 +52,12 @@ export const DEFAULT_IMAGE_WIDTHS = [320, 480, 640, 960, 1280] as const;
 
 /**
  * Default AVIF/WebP quality. Tuned down for the common case (list/grid tiles,
- * rendered ~120–280px, where higher q is invisible — q64→q55 measured −18%
- * bytes on a representative tile with no perceptible change). Detail heroes
- * override this upward via `<Image quality>` since they're viewed large.
+ * rendered ~120–280px, where higher q is invisible — a representative 448×336
+ * tile measured 24.3 kB here vs 32.5 kB at the old q64, and even q40 renders
+ * clean at tile size). Detail heroes override this upward via `<Image quality>`
+ * since they're viewed large.
  */
-export const DEFAULT_IMAGE_QUALITY = 55;
+export const DEFAULT_IMAGE_QUALITY = 50;
 
 /**
  * Width (CSS px) requested for an `<Image>` that declares no `sizes` — i.e. a
@@ -180,23 +181,32 @@ export function resolveImageUrls(
      *  scale with pixel *area*). Omit for card-size tiles, where the
      *  {@link DEFAULT_TILE_WIDTH} cap is the right call. */
     boxWidth?: number;
+    /** Constrained connection (Save-Data header opt-in, or a 2g/3g effective
+     *  type — see `useDataSaver`). Scales quality by 0.8: tiles q50→40 (−30%
+     *  bytes measured), heroes q80→64 (−29%). Callers that mirror an
+     *  `<Image>`'s URL (intent-preloads) must pass the same value or the warm
+     *  misses the cache. */
+    dataSaver?: boolean;
   },
 ): { src: string; srcSet: string | undefined } {
   if (!opts.cf) return { src, srcSet: undefined };
+  const quality = opts.dataSaver
+    ? Math.round((opts.quality ?? DEFAULT_IMAGE_QUALITY) * 0.8)
+    : opts.quality;
   if (opts.sizes) {
     return {
       src: cfImageUrl(src, {
-        quality: opts.quality,
+        quality,
         width: 640,
         height: opts.aspect ? Math.round(640 / opts.aspect) : undefined,
       }),
-      srcSet: cfImageSrcSet(src, opts.widths, { quality: opts.quality, aspect: opts.aspect }),
+      srcSet: cfImageSrcSet(src, opts.widths, { quality, aspect: opts.aspect }),
     };
   }
   const width = opts.boxWidth ? opts.boxWidth * 3 : DEFAULT_TILE_WIDTH;
   return {
     src: cfImageUrl(src, {
-      quality: opts.quality,
+      quality,
       width,
       height: opts.aspect ? Math.round(width / opts.aspect) : undefined,
     }),

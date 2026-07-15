@@ -1,10 +1,11 @@
 "use client";
 
 import { ImageIcon } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { thumbHashToDataURL } from "thumbhash";
 
 import { useCfImagesEnabled } from "#/integrations/posthog/feature-flags.ts";
+import { readDataSaver, subscribeConnection } from "#/lib/connection.ts";
 import { observeForPreload, preloadImage } from "#/lib/image-preload.ts";
 import { resolveImageUrls } from "#/lib/image.ts";
 import { cn } from "#/lib/utils.ts";
@@ -17,6 +18,20 @@ import { cn } from "#/lib/utils.ts";
  */
 export function useCfImages(): boolean {
   return useCfImagesEnabled() && !import.meta.env.DEV;
+}
+
+/**
+ * True on a constrained connection (see `readDataSaver` in lib/connection.ts):
+ * the user opted into data saving (Save-Data), or the network's effective type
+ * is 2g/3g — the congested in-park LTE case. `<Image>` (and intent-preload
+ * callers, which must resolve the *same* URL) trade image quality down ~20%
+ * for roughly 30% fewer bytes, and speculative preloading stops entirely
+ * (`preloadImage` checks the same reader). Live-updates on network changes
+ * (wifi → cell); always false during SSR, so a constrained client re-resolves
+ * after hydration.
+ */
+export function useDataSaver(): boolean {
+  return useSyncExternalStore(subscribeConnection, readDataSaver, () => false);
 }
 
 /**
@@ -137,6 +152,7 @@ export function Image({
   ...props
 }: ImageProps) {
   const cfImages = useCfImages();
+  const dataSaver = useDataSaver();
   const ref = useRef<HTMLImageElement>(null);
   // `faded` — revealed via the load event, so it animates in.
   // `instant` — already complete on mount (cached / warm from SSR), so it's
@@ -173,7 +189,7 @@ export function Image({
   // matches what the <img> fetches). `resolveImageUrls` no-ops on local/`data:`
   // sources and when CF is off.
   const { src: resolvedSrc, srcSet: resolvedSrcSet } = src
-    ? resolveImageUrls(src, { cf: cfImages, sizes, quality, widths, aspect, boxWidth })
+    ? resolveImageUrls(src, { cf: cfImages, sizes, quality, widths, aspect, boxWidth, dataSaver })
     : { src, srcSet: undefined };
 
   // Scroll-preload: warm a lazy tile ~600px before it enters view, at low

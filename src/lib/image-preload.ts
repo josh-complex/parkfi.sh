@@ -13,25 +13,44 @@
  * A later `<img>` for the same URL is a cache hit → it appears without the
  * network round-trip that causes pop-in. All no-ops on the server.
  */
+import { readDataSaver } from "#/lib/connection.ts";
 
 const warmed = new Set<string>();
 
 /**
- * Warm the HTTP cache for an image at low priority so a subsequent `<img>` of
- * the same URL (or `srcSet` candidate) renders instantly. Deduped per session;
- * no-op on the server or for empty input. Pass the *resolved* url/srcSet/sizes
- * (post-Cloudflare) so the warmed bytes match what the real `<img>` will fetch.
+ * Concurrency gate. `fetchPriority="low"` orders requests but doesn't cap how
+ * many run at once — on a content-heavy board the wide preload horizon can
+ * kick off dozens of warms in one scroll, and on a narrow pipe (park LTE)
+ * those in-flight bytes saturate the connection and the image the user is
+ * *looking at* queues behind them. Cap the warms instead: a few in flight,
+ * the rest FIFO. On any healthy connection the queue still stays ahead of the
+ * user's thumb; on a slow one, visible images always find bandwidth headroom.
  */
-export function preloadImage(
-  src: string | null | undefined,
-  opts: { srcSet?: string; sizes?: string } = {},
-): void {
-  if (!src || typeof window === "undefined") return;
-  const key = opts.srcSet ?? src;
-  if (warmed.has(key)) return;
-  warmed.add(key);
+const MAX_INFLIGHT = 4;
+/** Safety valve: a warm whose load/error event never fires (rare — e.g. the
+ *  request dies without an error event) frees its slot after this long. */
+const WARM_TIMEOUT_MS = 30_000;
+let inflight = 0;
+const queue: Array<() => void> = [];
 
+function pump(): void {
+  while (inflight < MAX_INFLIGHT && queue.length > 0) queue.shift()!();
+}
+
+function startWarm(src: string, opts: { srcSet?: string; sizes?: string }): void {
+  inflight++;
+  let settled = false;
+  const done = () => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    inflight--;
+    pump();
+  };
+  const timer = setTimeout(done, WARM_TIMEOUT_MS);
   const img = new Image();
+  img.onload = done;
+  img.onerror = done;
   img.decoding = "async";
   // Never let a warm compete with paint-critical work.
   img.fetchPriority = "low";
@@ -40,6 +59,28 @@ export function preloadImage(
   if (opts.sizes) img.sizes = opts.sizes;
   if (opts.srcSet) img.srcset = opts.srcSet;
   img.src = src;
+}
+
+/**
+ * Warm the HTTP cache for an image at low priority so a subsequent `<img>` of
+ * the same URL (or `srcSet` candidate) renders instantly. Deduped per session
+ * and gated to {@link MAX_INFLIGHT} concurrent fetches; no-op on the server,
+ * for empty input, or on a constrained connection (Save-Data / 2g / 3g —
+ * speculative bytes are exactly what that user asked us not to spend). Pass
+ * the *resolved* url/srcSet/sizes (post-Cloudflare) so the warmed bytes match
+ * what the real `<img>` will fetch.
+ */
+export function preloadImage(
+  src: string | null | undefined,
+  opts: { srcSet?: string; sizes?: string } = {},
+): void {
+  if (!src || typeof window === "undefined") return;
+  if (readDataSaver()) return;
+  const key = opts.srcSet ?? src;
+  if (warmed.has(key)) return;
+  warmed.add(key);
+  queue.push(() => startWarm(src, opts));
+  pump();
 }
 
 type WarmFn = () => void;
