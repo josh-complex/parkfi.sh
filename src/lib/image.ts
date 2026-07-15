@@ -53,11 +53,11 @@ export const DEFAULT_IMAGE_WIDTHS = [320, 480, 640, 960, 1280] as const;
 /**
  * Default AVIF/WebP quality. Tuned down for the common case (list/grid tiles,
  * rendered ~120–280px, where higher q is invisible — a representative 448×336
- * tile measured 24.3 kB here vs 32.5 kB at the old q64, and even q40 renders
+ * tile measured ~21 kB here vs 32.5 kB at the old q64, and even q40 renders
  * clean at tile size). Detail heroes override this upward via `<Image quality>`
  * since they're viewed large.
  */
-export const DEFAULT_IMAGE_QUALITY = 50;
+export const DEFAULT_IMAGE_QUALITY = 44;
 
 /**
  * Width (CSS px) requested for an `<Image>` that declares no `sizes` — i.e. a
