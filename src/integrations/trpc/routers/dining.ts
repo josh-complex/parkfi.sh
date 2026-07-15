@@ -553,12 +553,17 @@ export const diningRouter = {
         .object({
           sinceDays: z.number().int().min(1).max(120).default(30),
           limit: z.number().int().min(1).max(50).default(12),
+          // Restrict to one shelf: true = table-service restaurants,
+          // false = quick-service & carts. Omitted returns both, so each shelf
+          // can fetch its own `limit` instead of splitting a shared budget.
+          bookable: z.boolean().optional(),
         })
         .optional(),
     )
     .query(async ({ input }) => {
       const sinceDays = input?.sinceDays ?? 30;
       const limit = input?.limit ?? 12;
+      const bookable = input?.bookable;
       const result = await db.execute<{
         facility_id: string;
         name: string;
@@ -597,6 +602,7 @@ export const diningRouter = {
         FROM activity a
         JOIN restaurant_dim r ON r.facility_id = a.facility_id
         WHERE r.active = true
+          ${bookable === undefined ? sql`` : sql`AND r.bookable = ${bookable}`}
         GROUP BY r.facility_id, r.name, r.cuisine, r.park_resort, r.price_range, r.image_url,
                  r.bookable
         ORDER BY last_changed_at DESC

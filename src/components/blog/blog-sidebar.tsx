@@ -75,6 +75,8 @@ export function BlogSidebar({ currentSlug }: { currentSlug?: string }) {
                       alt=""
                       className="size-14 shrink-0 rounded-xl border object-cover"
                       loading="lazy"
+                      boxWidth={56}
+                      aspect={1}
                       referrerPolicy="no-referrer"
                     />
                   )}

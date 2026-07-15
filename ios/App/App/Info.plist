@@ -26,6 +26,8 @@
 	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>ParkFi uses your location to detect which park and attraction you're at, so it can track wait times and credit rides automatically.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>ParkFi keeps a background location session while you're in the park so it can keep detecting coaster rides even with your phone locked in your pocket. Grant "Always" for automatic ride tracking.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>ParkFi uses motion data to detect coaster rides and unlock ride-based achievements — drops, airtime, g-force, and inversions.</string>
 	<key>CFBundleURLTypes</key>
@@ -42,6 +44,10 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
+		<!-- Keeps the app scheduled in the background so CMMotionManager keeps
+		     sampling through a pocketed/locked ride (W9-B). Paired with the
+		     LocationKeepAlive session in the ride-recorder plugin. -->
+		<string>location</string>
 	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>

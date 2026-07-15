@@ -46,4 +46,11 @@
     <!-- 50 Hz IMU sampling for the ride-recorder plugin (API 31+). Also declared
          in the plugin manifest; kept here explicitly for review clarity. -->
     <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
+    <!-- Foreground service (specialUse) for ride-capture survival with the screen
+         off, plus its notifications. Also declared in the ride-recorder plugin
+         manifest; mirrored here for review clarity. specialUse needs a Play Console
+         declaration — see docs/plans/capacitor-native/FOLLOWUP.md W8. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

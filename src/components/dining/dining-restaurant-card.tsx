@@ -147,6 +147,7 @@ export function RestaurantCard({
           src={restaurant.imageUrl}
           alt={restaurant.name}
           loading="lazy"
+          boxWidth={152}
           className="size-full object-cover group-hover:scale-105"
         />
         {restaurant.priceRange && (

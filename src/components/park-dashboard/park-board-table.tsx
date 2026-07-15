@@ -199,6 +199,8 @@ function AttractionCell({ item, singleRider }: { item: BoardItem; singleRider?: 
           src={meta.imageThumbUrl}
           alt=""
           loading="lazy"
+          boxWidth={44}
+          aspect={1}
           className="size-11 shrink-0 rounded-lg object-cover"
         />
       ) : null}
@@ -795,6 +797,7 @@ function MobileCardList({
                   src={meta.imageThumbUrl}
                   alt=""
                   loading="lazy"
+                  boxWidth={96}
                   className="w-24 shrink-0 self-stretch object-cover"
                 />
               ) : null}

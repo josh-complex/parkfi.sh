@@ -214,7 +214,7 @@ function RideLogSection() {
         </div>
       ) : rides.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          Sensor-verified rides will show up here once you ride a coaster with the app open in the
+          Sensor-verified rides will show up here once you ride a coaster with ParkFi running in the
           park.
         </p>
       ) : (

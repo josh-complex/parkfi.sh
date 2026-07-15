@@ -4,10 +4,30 @@
     <!-- 50 Hz IMU sampling on API 31+; below that SENSOR_DELAY_GAME is already allowed. -->
     <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
 
+    <!-- Foreground service keeps capture alive with the screen off (W8). The
+         `specialUse` type is the honest fit for continuous novel sensor sampling
+         (not location/health/dataSync) and requires a Play Console declaration —
+         see FOLLOWUP.md W8. POST_NOTIFICATIONS (API 33+) is needed for the ongoing
+         + recap notifications; it's already requested via @capacitor/push-notifications. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Barometer is optional — many midrange phones lack one; don't exclude them
          from the store. baroAvailable=false degrades drop/vertical metrics gracefully. -->
     <uses-feature android:name="android.hardware.sensor.barometer" android:required="false" />
     <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="false" />
     <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false" />
+
+    <application>
+        <service
+            android:name=".RideMonitorService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Detects roller-coaster rides from motion sensors while the user is in a theme park, to credit ride achievements; runs only while the app has armed monitoring in-park." />
+        </service>
+    </application>
 
 </manifest>

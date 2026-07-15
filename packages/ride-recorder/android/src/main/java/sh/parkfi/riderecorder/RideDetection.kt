@@ -267,6 +267,11 @@ object RideMetricsComputer {
             if (alts.isNotEmpty() && (alts.max() - alts.min()) > 3) score += 0.2
         }
         if (duration in 30.0..240.0) score += 0.2
+        // Ride-signature gate (W1): without ANY coaster evidence — no drop, no
+        // airtime — walking jitter still scores ~0.55 additively, enough to clear
+        // the server's 0.5 confidence floor. Collapse the score so only a trace
+        // with real signature can pass. Mirror in RideDetection.swift.
+        if (drops == 0 && airtime < 0.5) score *= 0.4
         return min(1.0, score)
     }
 

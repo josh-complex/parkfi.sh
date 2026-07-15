@@ -118,6 +118,11 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
               fetchPriority="high"
               sizes="100vw"
               quality={80}
+              // Box is h-40/md:h-56 at full width — never narrower than ~2.4:1
+              // (a 390px phone shows 390×160). Cropping the 16:9 source to the
+              // box's worst-case ratio cuts ~38% of hero bytes (the strip
+              // object-cover was discarding) without starving any viewport.
+              aspect={12 / 5}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent" />
             <div className="absolute inset-x-0 bottom-0 flex flex-wrap items-end justify-between gap-3 p-4 lg:p-6">

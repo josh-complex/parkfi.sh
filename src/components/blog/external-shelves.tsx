@@ -35,6 +35,7 @@ export function ExternalCard({ item }: { item: ExternalItem }) {
             alt=""
             className="size-full object-cover group-hover/post:scale-[1.03]"
             loading="lazy"
+            aspect={16 / 9}
             referrerPolicy="no-referrer"
           />
         </div>

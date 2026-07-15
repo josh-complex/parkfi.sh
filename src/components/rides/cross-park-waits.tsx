@@ -190,6 +190,8 @@ function RideRow({ ride }: { ride: Ride }) {
           src={ride.imageThumbUrl}
           alt={ride.imageAlt ?? ride.name}
           loading="lazy"
+          boxWidth={44}
+          aspect={1}
           className="size-11 shrink-0 rounded-lg object-cover"
         />
       ) : (

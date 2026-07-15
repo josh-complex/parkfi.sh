@@ -162,13 +162,20 @@ function UpdatedShelf({
 
 export function DiningRecentlyUpdated() {
   const trpc = useTRPC();
-  const updatedQ = useQuery(trpc.dining.recentlyUpdated.queryOptions({ sinceDays: 30, limit: 24 }));
-  const venues = (updatedQ.data ?? []) as Array<UpdatedVenue>;
-  if (updatedQ.isLoading) return <RecentlyUpdatedSkeleton />;
-  if (!venues.length) return null;
+  // Fetch each shelf independently so table-service restaurants and
+  // quick-service/carts each get their own `limit`, rather than competing for a
+  // single shared budget where the more active carts crowd restaurants out.
+  const restaurantsQ = useQuery(
+    trpc.dining.recentlyUpdated.queryOptions({ sinceDays: 30, limit: 18, bookable: true }),
+  );
+  const cartsQ = useQuery(
+    trpc.dining.recentlyUpdated.queryOptions({ sinceDays: 30, limit: 18, bookable: false }),
+  );
+  const restaurants = (restaurantsQ.data ?? []) as Array<UpdatedVenue>;
+  const carts = (cartsQ.data ?? []) as Array<UpdatedVenue>;
 
-  const restaurants = venues.filter((v) => v.bookable);
-  const carts = venues.filter((v) => !v.bookable);
+  if (restaurantsQ.isLoading || cartsQ.isLoading) return <RecentlyUpdatedSkeleton />;
+  if (!restaurants.length && !carts.length) return null;
 
   return (
     <div className="flex flex-col gap-4">

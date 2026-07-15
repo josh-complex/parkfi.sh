@@ -32,17 +32,23 @@ export interface CfImageOpts {
   /** `auto` negotiates AVIF/WebP per the browser's Accept header. */
   format?: "auto" | "webp" | "avif";
   /**
-   * How the image fits `width` (and height, when given). Defaults to `cover`
-   * when both dimensions are set (the aspect-crop tile path) and `scale-down`
-   * otherwise — `cover` with a lone `width` *enlarges* a smaller source
-   * (verified: a 500px master ballooned to a 457 kB 1600² upscale), while
-   * `scale-down` never exceeds the source's own resolution.
+   * How the image fits `width` (and height, when given). Defaults to `crop`
+   * when both dimensions are set (the aspect-crop path) and `scale-down`
+   * otherwise. Neither default ever *enlarges* a smaller source — `cover`
+   * does (verified: a 500px master ballooned to a 457 kB 1600² upscale),
+   * which is why it isn't a default; `crop` behaves like `cover` when
+   * shrinking but returns the source untouched instead of upscaling.
    */
   fit?: "cover" | "contain" | "scale-down" | "crop" | "pad";
 }
 
-/** The default width ladder for `srcSet`, spanning tiny tiles to full-bleed heroes. */
-export const DEFAULT_IMAGE_WIDTHS = [320, 480, 640, 960, 1280, 1600] as const;
+/**
+ * The default width ladder for `srcSet`, spanning tiny tiles to full-bleed
+ * heroes. Capped at 1280: the Disney hero masters top out at 1600px of real
+ * detail, and CF's 1600-wide output measured byte-identical to the 1280 one —
+ * a higher rung would only fragment the cache and bill extra transformations.
+ */
+export const DEFAULT_IMAGE_WIDTHS = [320, 480, 640, 960, 1280] as const;
 
 /**
  * Default AVIF/WebP quality. Tuned down for the common case (list/grid tiles,
@@ -104,7 +110,7 @@ function optionString(opts: CfImageOpts): string {
     opts.height ? `height=${opts.height}` : null,
     `quality=${opts.quality ?? DEFAULT_IMAGE_QUALITY}`,
     `format=${opts.format ?? "auto"}`,
-    opts.width || opts.height ? `fit=${opts.fit ?? (opts.height ? "cover" : "scale-down")}` : null,
+    opts.width || opts.height ? `fit=${opts.fit ?? (opts.height ? "crop" : "scale-down")}` : null,
     "onerror=redirect",
   ]
     .filter(Boolean)
@@ -129,14 +135,22 @@ export function cfImageUrl(url: string, opts: CfImageOpts = {}): string {
 }
 
 /** Build a width-descriptor `srcSet` for `url`. Returns undefined when the URL
- *  isn't transformable, so the caller falls back to a bare `src`. */
+ *  isn't transformable, so the caller falls back to a bare `src`. With `aspect`,
+ *  each rung carries a matching `height` so CF crops server-side (see
+ *  {@link resolveImageUrls}). */
 export function cfImageSrcSet(
   url: string,
   widths: readonly number[] = DEFAULT_IMAGE_WIDTHS,
-  opts: Omit<CfImageOpts, "width"> = {},
+  opts: Omit<CfImageOpts, "width" | "height"> & { aspect?: number } = {},
 ): string | undefined {
   if (!isTransformable(url)) return undefined;
-  return widths.map((w) => `${cfImageUrl(url, { ...opts, width: w })} ${w}w`).join(", ");
+  const { aspect, ...cfOpts } = opts;
+  return widths
+    .map((w) => {
+      const height = aspect ? Math.round(w / aspect) : undefined;
+      return `${cfImageUrl(url, { ...cfOpts, width: w, height })} ${w}w`;
+    })
+    .join(", ");
 }
 
 /**
@@ -153,20 +167,33 @@ export function resolveImageUrls(
     sizes?: string;
     quality?: number;
     widths?: readonly number[];
-    /** Display box ratio (width / height). On a tile, makes CF crop to the box
-     *  so a mismatched source (e.g. a square master in a 4:3 tile) doesn't ship
-     *  pixels `object-cover` discards. Ignored on the `sizes`/srcSet path. */
+    /** Display box ratio (width / height). Makes CF crop to the box so a
+     *  mismatched source (e.g. a square master in a 4:3 tile, or a 16:9 hero
+     *  in a short banner) doesn't ship pixels `object-cover` discards. On the
+     *  `sizes`/srcSet path every rung gets a matching height. Only pass a
+     *  ratio the box holds at *every* viewport — crop to the narrowest
+     *  (tallest) ratio the layout reaches, or the edge starves the box. */
     aspect?: number;
+    /** The display box's CSS width in px (e.g. `44` for a `size-11` thumb).
+     *  Tile path only (no `sizes`): requests `boxWidth × 3` — sharp on the
+     *  densest screens, and still a fraction of the 448px default (bytes
+     *  scale with pixel *area*). Omit for card-size tiles, where the
+     *  {@link DEFAULT_TILE_WIDTH} cap is the right call. */
+    boxWidth?: number;
   },
 ): { src: string; srcSet: string | undefined } {
   if (!opts.cf) return { src, srcSet: undefined };
   if (opts.sizes) {
     return {
-      src: cfImageUrl(src, { quality: opts.quality, width: 640 }),
-      srcSet: cfImageSrcSet(src, opts.widths, { quality: opts.quality }),
+      src: cfImageUrl(src, {
+        quality: opts.quality,
+        width: 640,
+        height: opts.aspect ? Math.round(640 / opts.aspect) : undefined,
+      }),
+      srcSet: cfImageSrcSet(src, opts.widths, { quality: opts.quality, aspect: opts.aspect }),
     };
   }
-  const width = DEFAULT_TILE_WIDTH;
+  const width = opts.boxWidth ? opts.boxWidth * 3 : DEFAULT_TILE_WIDTH;
   return {
     src: cfImageUrl(src, {
       quality: opts.quality,

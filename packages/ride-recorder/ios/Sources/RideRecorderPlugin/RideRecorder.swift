@@ -17,6 +17,9 @@ final class RideRecorder {
     private let motion = CMMotionManager()
     private let altimeter = CMAltimeter()
     private let queue = OperationQueue()
+    // Background keep-alive so capture survives screen-lock (W9-B). Owned by the
+    // monitoring lifecycle — started on arm, stopped on disarm.
+    private let keepAlive = LocationKeepAlive()
 
     private var monitoring = false
     private var recording = false
@@ -54,13 +57,24 @@ final class RideRecorder {
         monitoring = true
         gyroAvailable = motion.isGyroAvailable
         queue.maxConcurrentOperationCount = 1
+        // Hold a background location session so iOS keeps scheduling us with the
+        // screen locked — otherwise deviceMotion updates stop within seconds of
+        // suspension mid-ride (W9-B).
+        keepAlive.start()
         startDeviceMotion(hz: imuHz)
+        // Run the altimeter from arming, not from ride-start, so the 10 s
+        // pre-trigger ring carries real altitude and the lift-hill climb is
+        // captured (W3/F5). CMAltimeter is ~1 Hz — negligible battery vs the IMU.
+        // relAltitude continuity across rides in one arming session is fine: all
+        // metrics use relative deltas/drawdowns within a single capture.
+        startAltimeter()
     }
 
     func stopMonitoring() {
         monitoring = false
         recording = false
         manual = false
+        keepAlive.stop()
         motion.stopDeviceMotionUpdates()
         altimeter.stopRelativeAltitudeUpdates()
         ring.removeAll()
@@ -199,7 +213,9 @@ final class RideRecorder {
         highVarSince = nil
         capture = seedFromRing ? ring : []
         recordStart = capture.first?.t ?? (ring.last?.t ?? Date().timeIntervalSince1970)
-        startAltimeter()
+        // Altimeter already running from startMonitoring (W3) — do not restart it
+        // here or the ring's pre-trigger altitude baseline resets to the trigger
+        // point, losing the lift hill.
         startDeviceMotion(hz: RideConst.activeHz)  // escalate to full rate
         onRideStarted?()
     }
@@ -211,7 +227,9 @@ final class RideRecorder {
         manual = false
         let samples = capture
         capture = []
-        altimeter.stopRelativeAltitudeUpdates()
+        // Leave the altimeter running — it's owned by the monitoring lifecycle
+        // now (started in startMonitoring, stopped in stopMonitoring), so the
+        // next ride's pre-trigger ring keeps getting real altitude (W3).
 
         // back down to monitoring rate (unless we're fully stopping)
         if monitoring { startDeviceMotion(hz: RideConst.monitorHz) }

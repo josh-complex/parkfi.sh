@@ -299,6 +299,11 @@ enum RideMetricsComputer {
             if let mn = alts.min(), let mx = alts.max(), mx - mn > 3 { score += 0.2 }
         }
         if duration >= 30 && duration <= 240 { score += 0.2 }
+        // Ride-signature gate (W1): without ANY coaster evidence — no drop, no
+        // airtime — walking jitter still scores ~0.55 additively, enough to clear
+        // the server's 0.5 confidence floor. Collapse the score so only a trace
+        // with real signature can pass. Mirror in RideDetection.kt.
+        if drops == 0 && airtime < 0.5 { score *= 0.4 }
         return min(1.0, score)
     }
 

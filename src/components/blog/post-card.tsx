@@ -92,6 +92,7 @@ export function PostCard({
             alt=""
             className="size-full object-cover group-hover/post:scale-[1.03]"
             loading="lazy"
+            aspect={16 / 9}
             referrerPolicy="no-referrer"
           />
         </div>

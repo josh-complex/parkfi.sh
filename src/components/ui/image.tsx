@@ -58,12 +58,22 @@ type ImageProps = Omit<React.ComponentProps<"img">, "src"> & {
    */
   quality?: number;
   /**
-   * Display box ratio (width / height, e.g. `4 / 3` or `1`). On a tile (no
-   * `sizes`) with the `cf-images` flag on, makes Cloudflare crop to the box so a
-   * mismatched source — a square master in a 4:3 tile — doesn't ship pixels that
-   * `object-cover` would discard. Set it to the tile's own `aspect-*` ratio.
+   * Display box ratio (width / height, e.g. `4 / 3` or `1`). With the
+   * `cf-images` flag on, makes Cloudflare crop to the box so a mismatched
+   * source — a square master in a 4:3 tile, a 16:9 hero in a short banner —
+   * doesn't ship pixels that `object-cover` would discard. Works on both the
+   * tile path and the `sizes`/srcSet path (each rung gets a matching height).
+   * Only pass a ratio the box holds at every viewport: for a fixed-height,
+   * fluid-width hero, use the *narrowest* (tallest) ratio the layout reaches.
    */
   aspect?: number;
+  /**
+   * The display box's CSS width in px, for small fixed-size thumbs (e.g. `44`
+   * for a `size-11` avatar). Caps the CF request at `boxWidth × 3` instead of
+   * the tile-wide {@link DEFAULT_TILE_WIDTH} default — a 44px thumb drops from
+   * ~21 kB to ~3 kB. Ignored when `sizes` is set.
+   */
+  boxWidth?: number;
 };
 
 /**
@@ -87,6 +97,7 @@ export function Image({
   sizes,
   quality,
   aspect,
+  boxWidth,
   loading,
   className,
   onLoad,
@@ -130,7 +141,7 @@ export function Image({
   // matches what the <img> fetches). `resolveImageUrls` no-ops on local/`data:`
   // sources and when CF is off.
   const { src: resolvedSrc, srcSet: resolvedSrcSet } = src
-    ? resolveImageUrls(src, { cf: cfImages, sizes, quality, widths, aspect })
+    ? resolveImageUrls(src, { cf: cfImages, sizes, quality, widths, aspect, boxWidth })
     : { src, srcSet: undefined };
 
   // Scroll-preload: warm a lazy tile ~600px before it enters view, at low

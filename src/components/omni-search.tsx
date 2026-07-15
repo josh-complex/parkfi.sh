@@ -845,7 +845,14 @@ function ResultRow({
         )}
       >
         {item.image ? (
-          <Image src={item.image} alt="" className="size-full object-cover" loading="lazy" />
+          <Image
+            src={item.image}
+            alt=""
+            className="size-full object-cover"
+            loading="lazy"
+            boxWidth={40}
+            aspect={1}
+          />
         ) : (
           GROUP_ICON[item.group]
         )}
