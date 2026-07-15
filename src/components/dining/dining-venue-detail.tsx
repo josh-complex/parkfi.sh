@@ -436,7 +436,7 @@ export function DiningVenueDetail({
                 loading="eager"
                 fetchPriority="high"
                 sizes="100vw"
-                quality={90}
+                quality={80}
               />
             </div>
           )}

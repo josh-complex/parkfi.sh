@@ -105,6 +105,7 @@ function UpdatedCard({ v }: { v: UpdatedVenue }) {
               src={v.imageUrl}
               alt={v.name}
               loading="lazy"
+              aspect={4 / 3}
               className="size-full object-cover group-hover:scale-105"
             />
           ) : null}

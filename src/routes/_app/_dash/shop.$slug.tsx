@@ -83,7 +83,7 @@ function ShopPage() {
             loading="eager"
             fetchPriority="high"
             sizes="(min-width: 768px) 42rem, 100vw"
-            quality={90}
+            quality={80}
           />
         ) : (
           <div className="from-muted to-muted/40 flex aspect-[16/9] w-full items-center justify-center bg-gradient-to-br">

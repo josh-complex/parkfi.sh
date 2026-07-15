@@ -52,10 +52,18 @@ type ImageProps = Omit<React.ComponentProps<"img">, "src"> & {
   widths?: readonly number[];
   /**
    * CF AVIF/WebP quality (1–100). Defaults to {@link DEFAULT_IMAGE_QUALITY},
-   * which suits list tiles; pass a higher value (~88–90) on detail-page heroes
-   * that are viewed large. Only applies when the `cf-images` flag is on.
+   * which suits list tiles; pass a higher value (~80, past which AVIF bytes
+   * balloon with no visible gain) on detail-page heroes that are viewed large.
+   * Only applies when the `cf-images` flag is on.
    */
   quality?: number;
+  /**
+   * Display box ratio (width / height, e.g. `4 / 3` or `1`). On a tile (no
+   * `sizes`) with the `cf-images` flag on, makes Cloudflare crop to the box so a
+   * mismatched source — a square master in a 4:3 tile — doesn't ship pixels that
+   * `object-cover` would discard. Set it to the tile's own `aspect-*` ratio.
+   */
+  aspect?: number;
 };
 
 /**
@@ -78,6 +86,7 @@ export function Image({
   widths,
   sizes,
   quality,
+  aspect,
   loading,
   className,
   onLoad,
@@ -121,7 +130,7 @@ export function Image({
   // matches what the <img> fetches). `resolveImageUrls` no-ops on local/`data:`
   // sources and when CF is off.
   const { src: resolvedSrc, srcSet: resolvedSrcSet } = src
-    ? resolveImageUrls(src, { cf: cfImages, sizes, quality, widths })
+    ? resolveImageUrls(src, { cf: cfImages, sizes, quality, widths, aspect })
     : { src, srcSet: undefined };
 
   // Scroll-preload: warm a lazy tile ~600px before it enters view, at low

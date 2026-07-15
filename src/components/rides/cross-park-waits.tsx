@@ -158,6 +158,7 @@ function RideCard({ ride }: { ride: Ride }) {
               src={ride.imageCardUrl}
               alt={ride.imageAlt ?? ride.name}
               loading="lazy"
+              aspect={4 / 3}
               className="size-full object-cover group-hover:scale-105"
             />
           ) : null}

@@ -19,13 +19,25 @@ export interface CfImageOpts {
   /** Target width in CSS px. Omit to re-encode at the source's own size. */
   width?: number;
   /**
+   * Target height in CSS px. With `width` + `fit: "cover"`, Cloudflare crops to
+   * this box server-side — so a source wider/taller than the display box doesn't
+   * ship pixels that `object-cover` would just discard. Omit to keep aspect.
+   */
+  height?: number;
+  /**
    * 1–100. Lower = smaller bytes. Defaults to {@link DEFAULT_IMAGE_QUALITY}
    * (tuned for list tiles); detail heroes pass a higher value for crispness.
    */
   quality?: number;
   /** `auto` negotiates AVIF/WebP per the browser's Accept header. */
   format?: "auto" | "webp" | "avif";
-  /** How the image fits `width` (and height, when given). Only meaningful with `width`. */
+  /**
+   * How the image fits `width` (and height, when given). Defaults to `cover`
+   * when both dimensions are set (the aspect-crop tile path) and `scale-down`
+   * otherwise — `cover` with a lone `width` *enlarges* a smaller source
+   * (verified: a 500px master ballooned to a 457 kB 1600² upscale), while
+   * `scale-down` never exceeds the source's own resolution.
+   */
   fit?: "cover" | "contain" | "scale-down" | "crop" | "pad";
 }
 
@@ -34,10 +46,11 @@ export const DEFAULT_IMAGE_WIDTHS = [320, 480, 640, 960, 1280, 1600] as const;
 
 /**
  * Default AVIF/WebP quality. Tuned down for the common case (list/grid tiles,
- * where the extra bytes of q80+ aren't visible at tile size). Detail heroes
+ * rendered ~120–280px, where higher q is invisible — q64→q55 measured −18%
+ * bytes on a representative tile with no perceptible change). Detail heroes
  * override this upward via `<Image quality>` since they're viewed large.
  */
-export const DEFAULT_IMAGE_QUALITY = 64;
+export const DEFAULT_IMAGE_QUALITY = 55;
 
 /**
  * Width (CSS px) requested for an `<Image>` that declares no `sizes` — i.e. a
@@ -55,7 +68,7 @@ export const DEFAULT_TILE_WIDTH = 448;
  * `<Image>` will fetch — a warm is only a cache hit if it matches. Heroes with a
  * non-100vw layout (e.g. the shop hero) don't use this.
  */
-export const HERO_IMAGE = { resizeWidth: 1600, sizes: "100vw", quality: 90 } as const;
+export const HERO_IMAGE = { resizeWidth: 1600, sizes: "100vw", quality: 80 } as const;
 
 /**
  * The Disney CDN's own resize segment (`/resize/mwImage/1/{w}/{h}/75/`). Mirrors
@@ -88,9 +101,10 @@ function isTransformable(url: string): boolean {
 function optionString(opts: CfImageOpts): string {
   return [
     opts.width ? `width=${opts.width}` : null,
+    opts.height ? `height=${opts.height}` : null,
     `quality=${opts.quality ?? DEFAULT_IMAGE_QUALITY}`,
     `format=${opts.format ?? "auto"}`,
-    opts.width ? `fit=${opts.fit ?? "cover"}` : null,
+    opts.width || opts.height ? `fit=${opts.fit ?? (opts.height ? "cover" : "scale-down")}` : null,
     "onerror=redirect",
   ]
     .filter(Boolean)
@@ -134,11 +148,31 @@ export function cfImageSrcSet(
  */
 export function resolveImageUrls(
   src: string,
-  opts: { cf: boolean; sizes?: string; quality?: number; widths?: readonly number[] },
+  opts: {
+    cf: boolean;
+    sizes?: string;
+    quality?: number;
+    widths?: readonly number[];
+    /** Display box ratio (width / height). On a tile, makes CF crop to the box
+     *  so a mismatched source (e.g. a square master in a 4:3 tile) doesn't ship
+     *  pixels `object-cover` discards. Ignored on the `sizes`/srcSet path. */
+    aspect?: number;
+  },
 ): { src: string; srcSet: string | undefined } {
   if (!opts.cf) return { src, srcSet: undefined };
+  if (opts.sizes) {
+    return {
+      src: cfImageUrl(src, { quality: opts.quality, width: 640 }),
+      srcSet: cfImageSrcSet(src, opts.widths, { quality: opts.quality }),
+    };
+  }
+  const width = DEFAULT_TILE_WIDTH;
   return {
-    src: cfImageUrl(src, { quality: opts.quality, width: opts.sizes ? 640 : DEFAULT_TILE_WIDTH }),
-    srcSet: opts.sizes ? cfImageSrcSet(src, opts.widths, { quality: opts.quality }) : undefined,
+    src: cfImageUrl(src, {
+      quality: opts.quality,
+      width,
+      height: opts.aspect ? Math.round(width / opts.aspect) : undefined,
+    }),
+    srcSet: undefined,
   };
 }

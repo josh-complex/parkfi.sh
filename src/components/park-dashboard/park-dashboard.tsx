@@ -117,7 +117,7 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
               loading="eager"
               fetchPriority="high"
               sizes="100vw"
-              quality={90}
+              quality={80}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent" />
             <div className="absolute inset-x-0 bottom-0 flex flex-wrap items-end justify-between gap-3 p-4 lg:p-6">
