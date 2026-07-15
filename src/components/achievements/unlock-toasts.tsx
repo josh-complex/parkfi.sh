@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactElement } from "react";
 import { toast } from "sonner";
 
 import { AchievementCard, LevelUpCard } from "./achievement-toast.tsx";
@@ -19,11 +20,34 @@ const UNLOCK_MS = 4000;
 const CELEBRATION_HOLD_MS = 6000;
 
 // Bumped once per level-up celebration so its cards get fresh toast ids. Reusing
-// a stable id right after `toast.dismiss()` collides with the same toast still
-// animating out — sonner takes its "update existing" path on a component that's
-// already latched to unmount, so the re-fired card never re-appears. Fresh ids
-// dodge that entirely (the celebration owns the stack, so it needs no dedupe).
+// a stable id right after dismissal collides with the same toast still animating
+// out — sonner takes its "update existing" path on a component that's already
+// latched to unmount, so the re-fired card never re-appears. Fresh ids dodge
+// that entirely (the celebration owns the stack, so it needs no dedupe).
 let celebrationSeq = 0;
+
+// The location-services nudge toast ids (owned by AchievementTracker). Exported
+// so the tracker doesn't re-declare them, and so a level-up celebration can
+// clear them WITHOUT a bare `toast.dismiss()` — which would also eat a ride
+// recap toast fired milliseconds earlier by the same submit handler (F8).
+export const LOCNUDGE_TOAST_IDS = ["locnudge:1", "locnudge:2", "locnudge:3"] as const;
+
+// Every achievement toast id this funnel has created, so a celebration can
+// dismiss its own leftovers precisely instead of nuking the whole stack (which
+// includes the recap toast). Cleared when a celebration flushes them.
+const activeAchvIds = new Set<string>();
+
+function emitAchvToast(id: string, node: ReactElement, duration: number): void {
+  activeAchvIds.add(id);
+  toast.custom(() => node, { id, className: TOAST_CLASS, duration });
+}
+
+/** Dismiss only the funnel's own toasts + the location nudges — never the recap. */
+function dismissAchievementStack(): void {
+  for (const id of activeAchvIds) toast.dismiss(id);
+  activeAchvIds.clear();
+  for (const id of LOCNUDGE_TOAST_IDS) toast.dismiss(id);
+}
 
 const LEVEL_KEY = "parkfi:achv:level";
 
@@ -84,7 +108,7 @@ export function showUnlockToasts(
     // first so those own the moment, and force-expand the toaster so they show
     // at once instead of collapsing (released once they've all exited).
     const seq = (celebrationSeq += 1);
-    toast.dismiss();
+    dismissAchievementStack();
     const releaseExpand = pushToastExpand();
     writeCelebratedLevel(opts.level.level);
 
@@ -93,22 +117,18 @@ export function showUnlockToasts(
     // exits cascade the same way, gold lingering last.
     entries.forEach((entry, i) => {
       setTimeout(() => {
-        toast.custom(() => <AchievementCard entry={{ family: entry.family, tier: entry.tier }} />, {
-          id: `achv:${entry.tier.id}#${seq}`,
-          className: TOAST_CLASS,
-          duration: CELEBRATION_HOLD_MS,
-        });
+        emitAchvToast(
+          `achv:${entry.tier.id}#${seq}`,
+          <AchievementCard entry={{ family: entry.family, tier: entry.tier }} />,
+          CELEBRATION_HOLD_MS,
+        );
         vibrateUnlock(entry.tierIndex + 1);
       }, i * ENTRY_STAGGER_MS);
     });
 
     const levelDelay = entries.length * ENTRY_STAGGER_MS;
     setTimeout(() => {
-      toast.custom(() => <LevelUpCard level={opts.level} />, {
-        id: `achv:levelup#${seq}`,
-        className: TOAST_CLASS,
-        duration: CELEBRATION_HOLD_MS,
-      });
+      emitAchvToast(`achv:levelup#${seq}`, <LevelUpCard level={opts.level} />, CELEBRATION_HOLD_MS);
       vibrateLevelUp();
     }, levelDelay);
 
@@ -119,11 +139,11 @@ export function showUnlockToasts(
     // animates in rather than slamming.
     entries.forEach((entry, i) => {
       setTimeout(() => {
-        toast.custom(() => <AchievementCard entry={{ family: entry.family, tier: entry.tier }} />, {
-          id: `achv:${entry.tier.id}`,
-          className: TOAST_CLASS,
-          duration: UNLOCK_MS,
-        });
+        emitAchvToast(
+          `achv:${entry.tier.id}`,
+          <AchievementCard entry={{ family: entry.family, tier: entry.tier }} />,
+          UNLOCK_MS,
+        );
         vibrateUnlock(entry.tierIndex + 1);
       }, i * ENTRY_STAGGER_MS);
     });

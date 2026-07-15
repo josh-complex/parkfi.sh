@@ -1,9 +1,11 @@
 import { TRPCError, type TRPCRouterRecord } from "@trpc/server";
-import { and, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "#/db/index.ts";
 import {
+  attractions,
+  parks,
   pinHave,
   user,
   userAchievement,
@@ -82,6 +84,70 @@ export const achievementsRouter = {
         bestMaxG: row?.bestMaxG ?? null,
         lastRiddenAt: row?.lastRiddenAt ?? null,
       };
+    }),
+
+  /**
+   * The caller's durable sensor-ride journal — the per-ride receipts behind the
+   * aggregate sensor stats. Keyset-paginated (riddenAt DESC, id DESC); only rows
+   * carrying on-device metrics (dwell-only rides have none). The audit `trace`
+   * blob is deliberately not selected — it never ships to the client.
+   */
+  myRideLog: protectedProcedure
+    .input(
+      z.object({
+        limit: z.number().int().min(1).max(50).default(20),
+        cursor: z.object({ riddenAt: z.string(), id: z.number().int() }).nullish(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const cur = input.cursor;
+      const rows = await db
+        .select({
+          id: userRideEvent.id,
+          riddenAt: userRideEvent.riddenAt,
+          source: userRideEvent.source,
+          metrics: userRideEvent.metrics,
+          attractionName: attractions.name,
+          attractionSlug: attractions.slug,
+          parkName: parks.name,
+          parkSlug: parks.slug,
+          parkTimezone: parks.timezone,
+        })
+        .from(userRideEvent)
+        .innerJoin(attractions, eq(attractions.id, userRideEvent.attractionId))
+        .innerJoin(parks, eq(parks.id, userRideEvent.parkId))
+        .where(
+          and(
+            eq(userRideEvent.userId, ctx.userId),
+            isNotNull(userRideEvent.metrics),
+            cur
+              ? or(
+                  lt(userRideEvent.riddenAt, new Date(cur.riddenAt)),
+                  and(
+                    eq(userRideEvent.riddenAt, new Date(cur.riddenAt)),
+                    lt(userRideEvent.id, cur.id),
+                  ),
+                )
+              : undefined,
+          ),
+        )
+        .orderBy(desc(userRideEvent.riddenAt), desc(userRideEvent.id))
+        .limit(input.limit + 1);
+
+      const hasMore = rows.length > input.limit;
+      const items = (hasMore ? rows.slice(0, input.limit) : rows).map((r) => ({
+        id: r.id,
+        riddenAt: r.riddenAt,
+        source: r.source,
+        metrics: r.metrics,
+        attraction: { name: r.attractionName, slug: r.attractionSlug },
+        park: { name: r.parkName, slug: r.parkSlug, timezone: r.parkTimezone },
+      }));
+      const last = items.at(-1);
+      const nextCursor =
+        hasMore && last ? { riddenAt: last.riddenAt.toISOString(), id: last.id } : null;
+
+      return { items, nextCursor };
     }),
 
   /** Full progress for the achievements page: stats + unlocked ids + xp/level.

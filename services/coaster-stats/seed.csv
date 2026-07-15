@@ -8,24 +8,42 @@
 # An unresolved slug is logged and skipped; if a coaster doesn't seed the ride is
 # either renamed or not yet ingested. Blank numeric cells store NULL.
 # Run: bun run cron:coaster-stats
+#
+# Height/drop/length backfilled 2026-07-14 from RCDB (ft→m). Where RCDB lists no
+# figure the cell stays blank: several rides publish only a lift height (no
+# separate drop), and Guardians/Slinky list no track drop. The 2025 Epic Universe
+# rides curse-of-the-werewolf, hiccups-wing-gliders and mine-cart-madness — plus
+# escape-from-gringotts and pteranodon-flyers — have no length/height/drop in RCDB
+# yet; revisit once RCDB fills them in. Corrected two inversion counts to match
+# RCDB: stardust-racers 0→1 (barrel-roll downdrop / zero-g roll, 1 per track),
+# curse-of-the-werewolf 1→0 (spinning coaster, no inversions).
+#
+# Coverage note: this is EVERY RCDB-listed roller coaster at the 7 dry Orlando
+# parks the app tracks (the 3 water parks have no dry coasters). Added 2026-07-14:
+# escape-from-gringotts (USF) and pteranodon-flyers (IOA), both real coasters the
+# original seed omitted. hollywood-rip-ride-rockit is kept but currently does NOT
+# resolve — that attraction isn't in the DB yet (upstream ThemeParks.wiki ingest
+# gap); the row self-heals once it's ingested.
 park_slug,attraction_slug,track_length_m,top_speed_kmh,drop_height_m,max_height_m,inversions,coaster_type,manufacturer,opened_year
 magic-kingdom,space-mountain,975,44,,27,0,steel,WED Enterprises,1975
 magic-kingdom,big-thunder-mountain-railroad,1097,48,,,0,steel,Arrow Dynamics,1980
-magic-kingdom,seven-dwarfs-mine-train,610,55,,,0,steel,Vekoma,2014
-magic-kingdom,tron-lightcycle-run,1004,95,,,0,steel,Vekoma,2023
-magic-kingdom,the-barnstormer,350,40,,,0,steel,Vekoma,2012
+magic-kingdom,seven-dwarfs-mine-train,610,55,12.5,,0,steel,Vekoma,2014
+magic-kingdom,tron-lightcycle-run,1004,95,,23.8,0,steel,Vekoma,2023
+magic-kingdom,the-barnstormer,350,40,,9.1,0,steel,Vekoma,2012
 epcot,guardians-of-the-galaxy-cosmic-rewind,1583,96,,,0,steel,Vekoma,2022
-animal-kingdom,expedition-everest-legend-of-the-forbidden-mountain,1394,80,,60,0,steel,Vekoma,2006
-hollywood-studios,rock-n-roller-coaster-starring-the-muppets,1113,93,,,3,steel,Vekoma,1999
+animal-kingdom,expedition-everest-legend-of-the-forbidden-mountain,1394,80,24.4,34,0,steel,Vekoma,2006
+hollywood-studios,rock-n-roller-coaster-starring-the-muppets,1113,93,,24.4,3,steel,Vekoma,1999
 hollywood-studios,slinky-dog-dash,352,64,,,0,steel,Mack Rides,2018
 universal-studios-florida,hollywood-rip-ride-rockit,1112,105,,51,0,steel,Maurer Rides,2009
-universal-studios-florida,revenge-of-the-mummy,671,72,,,0,steel,Premier Rides,2004
-universal-studios-florida,trolls-trollercoaster,,,,,0,steel,Zamperla,2024
-islands-of-adventure,the-incredible-hulk-coaster,1128,108,,34,7,steel,Bolliger & Mabillard,1999
+universal-studios-florida,revenge-of-the-mummy,671,72,,13.5,0,steel,Premier Rides,2004
+universal-studios-florida,trolls-trollercoaster,207,35,,8.5,0,steel,Zamperla,2024
+universal-studios-florida,harry-potter-and-the-escape-from-gringotts,,,,,0,steel,Intamin,2014
+islands-of-adventure,the-incredible-hulk-coaster,1128,108,32,34,7,steel,Bolliger & Mabillard,1999
 islands-of-adventure,jurassic-world-velocicoaster,1433,112,,47,4,steel,Intamin,2021
-islands-of-adventure,hagrids-magical-creatures-motorbike-adventure,1567,80,,,0,steel,Intamin,2019
-islands-of-adventure,flight-of-the-hippogriff,400,45,,,0,steel,Vekoma,2010
-epic-universe,stardust-racers,1600,100,,40,0,steel,Mack Rides,2025
-epic-universe,curse-of-the-werewolf,,60,,,1,steel,Mack Rides,2025
+islands-of-adventure,hagrids-magical-creatures-motorbike-adventure,1567,80,5.2,19.8,0,steel,Intamin,2019
+islands-of-adventure,flight-of-the-hippogriff,400,45,,13,0,steel,Vekoma,2010
+islands-of-adventure,pteranodon-flyers,,,,,0,steel,Setpoint,1999
+epic-universe,stardust-racers,1600,100,,40,1,steel,Mack Rides,2025
+epic-universe,curse-of-the-werewolf,,60,,,0,steel,Mack Rides,2025
 epic-universe,hiccups-wing-gliders,,,,,0,steel,Intamin,2025
 epic-universe,mine-cart-madness,,,,,0,steel,Vekoma,2025

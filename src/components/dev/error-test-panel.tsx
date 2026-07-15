@@ -12,6 +12,8 @@ import {
 } from "#/components/achievements/unlock-toasts.tsx";
 import { useNavTestToolsEnabled } from "#/integrations/posthog/feature-flags.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
+import { getRideDebugLog, useRideDebugLog } from "#/lib/ride-debug-log.ts";
+import { rideRecapSegments } from "#/lib/ride-recap.ts";
 import { reportError } from "#/lib/report-error.ts";
 import { cn } from "#/lib/utils.ts";
 
@@ -44,6 +46,73 @@ type Action = {
   confirm?: string;
   danger?: boolean;
 };
+
+const KIND_COLOR: Record<string, string> = {
+  accepted: "text-emerald-300",
+  suppressed: "text-amber-300",
+  rejected: "text-rose-300",
+  duplicate: "text-sky-300",
+};
+
+/**
+ * Live view of the client ride-detection ring (FOLLOWUP.md W5). Shows every
+ * detected trace's fate so a "nothing happened" field run can be diagnosed as a
+ * suppression vs. rejection vs. dedupe. "Copy JSON" dumps the raw ring for
+ * filing tuning notes from the park.
+ */
+function RideDebugSection() {
+  const log = useRideDebugLog();
+
+  const copy = () => {
+    const json = JSON.stringify(getRideDebugLog(), null, 2);
+    void navigator.clipboard?.writeText(json).then(
+      () => toast.success("Ride log copied"),
+      () => toast.error("Clipboard unavailable"),
+    );
+  };
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 px-3 pt-2">
+        <span className="flex-1 text-[10px] uppercase tracking-wide text-white/40">
+          Ride recorder
+        </span>
+        {log.length > 0 && (
+          <button
+            type="button"
+            onClick={copy}
+            className="rounded px-1.5 py-0.5 text-[10px] text-white/60 transition hover:bg-white/10 hover:text-white"
+          >
+            Copy JSON
+          </button>
+        )}
+      </div>
+      {log.length === 0 ? (
+        <div className="px-3 py-1.5 text-[11px] text-white/30">No detections yet</div>
+      ) : (
+        <ul className="py-1">
+          {log.map((e) => {
+            const recap = rideRecapSegments(e.metrics).join(" · ") || "—";
+            return (
+              <li key={e.at} className="px-3 py-1 text-[11px] leading-tight">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-white/40 tabular-nums">
+                    {new Date(e.at).toLocaleTimeString()}
+                  </span>
+                  <span className={cn("font-semibold", KIND_COLOR[e.kind] ?? "text-white/70")}>
+                    {e.kind}
+                  </span>
+                </div>
+                <div className="text-white/50">{recap}</div>
+                {e.reason && <div className="text-white/30">{e.reason}</div>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 export function ErrorTestPanel() {
   const navTestTools = useNavTestToolsEnabled();
@@ -369,6 +438,7 @@ export function ErrorTestPanel() {
             </ul>
           </div>
         ))}
+        <RideDebugSection />
       </div>
     </div>
   );

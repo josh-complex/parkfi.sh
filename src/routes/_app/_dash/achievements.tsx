@@ -1,11 +1,12 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
 import { Sparkle } from "#/components/achievements/achievement-toast.tsx";
 import { LevelBadge } from "#/components/achievements/level-badge.tsx";
 import { TierBadge } from "#/components/achievements/tier-badge.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
+import { Button } from "#/components/ui/button.tsx";
 import {
   Carousel,
   CarouselArrows,
@@ -24,6 +25,7 @@ import {
   type Stats,
 } from "#/lib/achievements.ts";
 import { authClient } from "#/lib/auth-client.ts";
+import { rideRecapSegments } from "#/lib/ride-recap.ts";
 import { seo } from "#/lib/seo.ts";
 
 export const Route = createFileRoute("/_app/_dash/achievements")({
@@ -158,6 +160,107 @@ function FamilyShelf({
   );
 }
 
+/** park-local date + time for a ride, e.g. "Jul 9, 2:14 PM". */
+function formatRiddenAt(riddenAt: string | Date, timezone: string): string {
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      timeZone: timezone,
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(new Date(riddenAt));
+  } catch {
+    return new Date(riddenAt).toLocaleString();
+  }
+}
+
+/**
+ * The durable ride journal — the per-ride receipts behind the sensor stat
+ * shelves above. Sensor-only (dwell rides carry no metrics), keyset-paginated.
+ * Renders nothing until there's at least one ride, except a soft empty state so
+ * pre-native users understand where sensor rides will land.
+ */
+function RideLogSection() {
+  const trpc = useTRPC();
+  const q = useInfiniteQuery(
+    trpc.achievements.myRideLog.infiniteQueryOptions(
+      { limit: 20 },
+      { getNextPageParam: (last) => last.nextCursor ?? undefined },
+    ),
+  );
+
+  const rides = q.data?.pages.flatMap((p) => p.items) ?? [];
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex flex-col gap-0.5">
+        <h3 className="flex items-center gap-2 text-base font-semibold tracking-tight">
+          <span className="text-xl leading-none" aria-hidden>
+            🎢
+          </span>
+          Ride log
+        </h3>
+        <p className="text-muted-foreground text-sm">
+          Every sensor-verified ride, most recent first.
+        </p>
+      </div>
+
+      {q.isLoading ? (
+        <div className="flex flex-col gap-2">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-14 w-full rounded-xl" />
+          ))}
+        </div>
+      ) : rides.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Sensor-verified rides will show up here once you ride a coaster with the app open in the
+          park.
+        </p>
+      ) : (
+        <>
+          <ul className="flex flex-col gap-2">
+            {rides.map((ride) => {
+              const recap = rideRecapSegments(ride.metrics!).join(" · ");
+              return (
+                <li
+                  key={ride.id}
+                  className="flex items-start justify-between gap-3 rounded-xl border bg-card px-4 py-3"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{ride.attraction.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {ride.park.name} · {formatRiddenAt(ride.riddenAt, ride.park.timezone)}
+                    </p>
+                    {recap && <p className="mt-1 text-xs text-muted-foreground">{recap}</p>}
+                  </div>
+                  {ride.source === "sensor+dwell" && (
+                    <Badge variant="secondary" className="shrink-0">
+                      sensor+dwell
+                    </Badge>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          {q.hasNextPage && (
+            <div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void q.fetchNextPage()}
+                disabled={q.isFetchingNextPage}
+              >
+                {q.isFetchingNextPage ? "Loading…" : "Load more"}
+              </Button>
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 function AchievementsPage() {
   const { data: session, isPending } = authClient.useSession();
   const trpc = useTRPC();
@@ -229,6 +332,8 @@ function AchievementsPage() {
           />
         ))}
       </div>
+
+      <RideLogSection />
 
       {!everGrantedLocation && (
         <p className="text-xs text-muted-foreground">

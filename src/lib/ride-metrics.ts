@@ -37,3 +37,36 @@ export interface RideTrace {
   /** ~4 Hz downsample for server plausibility checks; hard cap 600 samples. */
   samples?: RideSample[];
 }
+
+/**
+ * Ride-signature thresholds. A trace must clear at least one of these to be
+ * treated as a coaster ride rather than ordinary movement (walking, a bus, an
+ * elevator). Kept in one place so field-tuning is a one-file change.
+ *
+ * These are starting points that have never seen a real accelerometer trace —
+ * expect to re-cut them from field data (see FOLLOWUP.md Part 3).
+ */
+export const RIDE_SIGNATURE = {
+  /** Any detected barometric descent counts. */
+  minDropCount: 1,
+  /** Cumulative airtime (|a| < 0.4 g), in seconds. */
+  minAirtimeS: 0.5,
+  /** Peak windowed-median g — walking never sustains this. */
+  minMaxG: 1.8,
+  /** Any gyroscope-confirmed inversion counts. */
+  minInversions: 1,
+} as const;
+
+/**
+ * Whether a trace shows coaster-like evidence, not just walking jitter. Pure and
+ * shared by both the client suppression gate (`achievement-tracker.tsx`) and the
+ * authoritative server gate (`ingestRideTrace`).
+ */
+export function hasRideSignature(m: RideMetrics): boolean {
+  return (
+    m.dropCount >= RIDE_SIGNATURE.minDropCount ||
+    m.airtimeS >= RIDE_SIGNATURE.minAirtimeS ||
+    m.maxG >= RIDE_SIGNATURE.minMaxG ||
+    m.inversions >= RIDE_SIGNATURE.minInversions
+  );
+}

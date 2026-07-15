@@ -1,15 +1,18 @@
 "use client";
 
 import * as React from "react";
+import posthog from "posthog-js";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { showRideRecapToast } from "#/components/achievements/ride-recap-toast.tsx";
-import { showUnlockToasts } from "#/components/achievements/unlock-toasts.tsx";
+import { LOCNUDGE_TOAST_IDS, showUnlockToasts } from "#/components/achievements/unlock-toasts.tsx";
 import { useGeolocation } from "#/hooks/use-geolocation.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
 import { isNative } from "#/lib/platform.ts";
+import { logRideDebug } from "#/lib/ride-debug-log.ts";
+import { hasRideSignature } from "#/lib/ride-metrics.ts";
 import {
   addRideDetectedListener,
   armRideMonitoring,
@@ -24,7 +27,6 @@ const NUDGE_DELAY_MS = 8_000;
 const NUDGE_STAGGER_MS = 300;
 const NUDGE_SNOOZE_MS = 14 * 24 * 60 * 60 * 1000;
 const NUDGE_KEY = "parkfi:achv:locnudge";
-const LOCNUDGE_IDS = ["locnudge:1", "locnudge:2", "locnudge:3"] as const;
 
 function readNudgeSnoozedAt(): number {
   if (typeof window === "undefined") return 0;
@@ -125,9 +127,23 @@ export function AchievementTracker() {
     let handle: PluginListenerHandle | null = null;
     let cancelled = false;
     void addRideDetectedListener((trace) => {
+      // Client-side signature gate: don't even submit ordinary movement. The
+      // server enforces the same rule authoritatively; this just spares the
+      // round-trip and keeps the field-tuning ring honest about what the device
+      // detected vs. what we suppressed.
+      if (!hasRideSignature(trace.metrics)) {
+        logRideDebug({ kind: "suppressed", reason: "no ride signature", metrics: trace.metrics });
+        posthog.capture("ride_trace_suppressed", {
+          confidence: trace.metrics.confidence,
+          durationS: trace.metrics.durationS,
+          maxG: trace.metrics.maxG,
+        });
+        return;
+      }
       submitRef.current.mutate(trace, {
         onSuccess: (r) => {
-          showRideRecapToast(trace.metrics);
+          logRideDebug({ kind: r.duplicate ? "duplicate" : "accepted", metrics: trace.metrics });
+          if (!r.duplicate) showRideRecapToast(trace.metrics);
           if (r.newlyUnlocked.length > 0) {
             celebrate(
               r.newlyUnlocked.map((u) => u.id),
@@ -135,6 +151,15 @@ export function AchievementTracker() {
               r.level,
             );
           }
+        },
+        onError: (err) => {
+          logRideDebug({ kind: "rejected", reason: err.message, metrics: trace.metrics });
+          posthog.capture("ride_trace_rejected", {
+            reason: err.message,
+            confidence: trace.metrics.confidence,
+            durationS: trace.metrics.durationS,
+            maxG: trace.metrics.maxG,
+          });
         },
       });
     }).then((h) => {
@@ -175,7 +200,7 @@ export function AchievementTracker() {
       if (snoozedAt && Date.now() - snoozedAt < NUDGE_SNOOZE_MS) return;
 
       const fireStack = () => {
-        const dismissAll = () => LOCNUDGE_IDS.forEach((id) => toast.dismiss(id));
+        const dismissAll = () => LOCNUDGE_TOAST_IDS.forEach((id) => toast.dismiss(id));
 
         setTimeout(() => {
           toast.info("ParkFi is better in the park", {

@@ -26,6 +26,7 @@ import {
   userStat,
 } from "#/db/schema.ts";
 import type { StatKey } from "#/lib/achievements.ts";
+import { hasRideSignature } from "#/lib/ride-metrics.ts";
 import { distanceMeters } from "./geo.ts";
 import { evaluateAndUnlock, settleDay, type UnlockDTO } from "./engine.ts";
 import type { LevelInfo } from "#/lib/achievements.ts";
@@ -138,15 +139,24 @@ export function resolveRideAttractionId(
  * metrics are plausible / there's no published figure to check against.
  */
 export function coasterClampReason(
-  metrics: { inversions: number; verticalM: number },
-  stats: { inversions: number | null; dropHeightM: number | null } | null,
+  metrics: { inversions: number; maxDropM: number },
+  stats: {
+    inversions: number | null;
+    dropHeightM: number | null;
+    maxHeightM: number | null;
+  } | null,
 ): string | null {
   if (!stats) return null;
   if (stats.inversions != null && metrics.inversions > stats.inversions + 2) {
     return `inversions ${metrics.inversions} exceeds published ${stats.inversions}+2`;
   }
-  if (stats.dropHeightM != null && metrics.verticalM > stats.dropHeightM * 3) {
-    return `verticalM ${metrics.verticalM} exceeds 3× published drop ${stats.dropHeightM}`;
+  // Compare like with like: maxDropM is a single descent, so bound it by the
+  // published single-descent figure (max height, falling back to drop height) —
+  // NOT the cumulative Σ|Δalt| verticalM, which legitimately runs 2×+ a drop
+  // (lift up + drop down + mid-course hills) and has no published bound.
+  const bound = stats.maxHeightM ?? stats.dropHeightM;
+  if (bound != null && metrics.maxDropM > bound * 1.5) {
+    return `maxDropM ${metrics.maxDropM} exceeds 1.5× published ${bound}`;
   }
   return null;
 }
@@ -208,10 +218,27 @@ async function raiseStat(userId: string, stat: StatKey, to: number): Promise<voi
 export async function ingestRideTrace(
   userId: string,
   input: RideTraceInput,
-): Promise<{ newlyUnlocked: UnlockDTO[]; xp: number; level: LevelInfo }> {
+): Promise<{ newlyUnlocked: UnlockDTO[]; xp: number; level: LevelInfo; duplicate: boolean }> {
   const { metrics } = input;
   const startedAt = new Date(metrics.startedAt);
   const now = new Date();
+
+  // 0. Ride-signature gate (authoritative). Walking with a pocketed phone clears
+  // the device's loose variance trigger, so without this a ~23 s walk-then-stop
+  // reads as a ride. `confidence` is a client-supplied tiebreak; the signature
+  // is the real defense (see FOLLOWUP.md W1).
+  if (!hasRideSignature(metrics)) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: "No ride signature — looks like ordinary movement.",
+    });
+  }
+  if (metrics.confidence < 0.5) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: "Ride confidence too low.",
+    });
+  }
 
   // 1. Geofence cross-check — a recent ping in a park is required.
   const [state] = await db.select().from(userGeoState).where(eq(userGeoState.userId, userId));
@@ -253,7 +280,11 @@ export async function ingestRideTrace(
 
   // 2. Sanity-clamp against published coaster figures when we have them.
   const [stats] = await db
-    .select({ inversions: coasterStats.inversions, dropHeightM: coasterStats.dropHeightM })
+    .select({
+      inversions: coasterStats.inversions,
+      dropHeightM: coasterStats.dropHeightM,
+      maxHeightM: coasterStats.maxHeightM,
+    })
     .from(coasterStats)
     .where(eq(coasterStats.attractionId, resolvedId));
   const clamp = coasterClampReason(metrics, stats ?? null);
@@ -275,7 +306,11 @@ export async function ingestRideTrace(
     )
     .orderBy(desc(userRideEvent.riddenAt))
     .limit(1);
-  if (dupe) return evaluateAndUnlock(userId);
+  if (dupe) {
+    // Idempotent re-submit of the same physical ride — the client uses this flag
+    // to skip a second "Ride recorded" recap toast.
+    return { ...(await evaluateAndUnlock(userId)), duplicate: true };
+  }
 
   const decision = creditDecision(state.anchorAttractionId, resolvedId);
 
@@ -329,5 +364,5 @@ export async function ingestRideTrace(
   await raiseStat(userId, "max_g_best", metrics.maxG);
 
   // 7. Re-evaluate — same shape the ping/track toast funnel consumes.
-  return evaluateAndUnlock(userId);
+  return { ...(await evaluateAndUnlock(userId)), duplicate: false };
 }

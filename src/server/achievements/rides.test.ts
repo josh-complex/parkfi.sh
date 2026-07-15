@@ -146,28 +146,56 @@ describe("resolveRideAttractionId", () => {
 
 describe("coasterClampReason", () => {
   it("passes when there are no published stats", () => {
-    expect(coasterClampReason({ inversions: 5, verticalM: 300 }, null)).toBeNull();
+    expect(coasterClampReason({ inversions: 5, maxDropM: 40 }, null)).toBeNull();
   });
   it("rejects inversions beyond published + 2", () => {
     expect(
-      coasterClampReason({ inversions: 5, verticalM: 50 }, { inversions: 2, dropHeightM: 50 }),
+      coasterClampReason(
+        { inversions: 5, maxDropM: 20 },
+        { inversions: 2, dropHeightM: 50, maxHeightM: 60 },
+      ),
     ).not.toBeNull();
   });
   it("allows inversions within the +2 tolerance", () => {
     expect(
-      coasterClampReason({ inversions: 4, verticalM: 50 }, { inversions: 2, dropHeightM: 50 }),
+      coasterClampReason(
+        { inversions: 4, maxDropM: 20 },
+        { inversions: 2, dropHeightM: 50, maxHeightM: 60 },
+      ),
     ).toBeNull();
   });
-  it("rejects verticalM beyond 3× published drop", () => {
+  it("rejects maxDropM beyond 1.5× the published single-descent figure", () => {
+    // 40 m drop vs a 20 m max-height coaster → spoof-shaped.
     expect(
-      coasterClampReason({ inversions: 0, verticalM: 200 }, { inversions: 0, dropHeightM: 50 }),
+      coasterClampReason(
+        { inversions: 0, maxDropM: 40 },
+        { inversions: 0, dropHeightM: null, maxHeightM: 20 },
+      ),
     ).not.toBeNull();
+  });
+  it("no longer rejects a legitimately large cumulative ride (maxDropM within bound)", () => {
+    // Same coaster whose Σ|Δalt| would blow past the old 3× drop check, but
+    // whose single largest drop is within 1.5× the published figure.
+    expect(
+      coasterClampReason(
+        { inversions: 0, maxDropM: 55 },
+        { inversions: 0, dropHeightM: 40, maxHeightM: 60 },
+      ),
+    ).toBeNull();
+  });
+  it("falls back to dropHeightM when maxHeightM is null", () => {
+    expect(
+      coasterClampReason(
+        { inversions: 0, maxDropM: 80 },
+        { inversions: 0, dropHeightM: 50, maxHeightM: null },
+      ),
+    ).not.toBeNull(); // 80 > 50 × 1.5
   });
   it("skips a check whose published figure is null", () => {
     expect(
       coasterClampReason(
-        { inversions: 9, verticalM: 500 },
-        { inversions: null, dropHeightM: null },
+        { inversions: 9, maxDropM: 500 },
+        { inversions: null, dropHeightM: null, maxHeightM: null },
       ),
     ).toBeNull();
   });
