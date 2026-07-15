@@ -447,6 +447,7 @@ export function ResortDetail({ slug }: { slug: string }) {
             fetchPriority="high"
             sizes="100vw"
             quality={80}
+            placeholder={resort.imageThumbhash}
           />
         </div>
       )}

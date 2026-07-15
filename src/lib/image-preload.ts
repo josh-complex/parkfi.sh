@@ -59,10 +59,13 @@ function getObserver(): IntersectionObserver | null {
         warm?.();
       }
     },
-    // Warm ~600px before the element scrolls into view — earlier than we can
-    // ask native lazy-loading for, and reliable for horizontal carousels where
-    // native lazy is not.
-    { rootMargin: "600px" },
+    // Warm 150% of the viewport ahead of the element — earlier than we can ask
+    // native lazy-loading for, and reliable for horizontal carousels where
+    // native lazy is not. A percentage (not px) so phones get ~1.5 screens of
+    // headroom in *both* axes: a fast flick downward and the next few carousel
+    // cards sideways are already warm when they arrive. (The old 600px was
+    // under one mobile screen — decisive scrolls outran it, landing on blanks.)
+    { rootMargin: "150%" },
   );
   return observer;
 }

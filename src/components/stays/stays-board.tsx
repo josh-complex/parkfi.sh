@@ -113,6 +113,7 @@ function ResortCard({
   name,
   area,
   image,
+  imageThumbhash,
   detailUrl,
   slug,
   tier,
@@ -125,6 +126,7 @@ function ResortCard({
   name: string;
   area: string | null;
   image: string | null;
+  imageThumbhash?: string | null;
   detailUrl: string;
   /** Catalog slug — when set, the tile links to the in-app `/resort/$slug` page. */
   slug?: string | null;
@@ -149,6 +151,7 @@ function ResortCard({
             alt={name}
             loading="lazy"
             aspect={4 / 3}
+            placeholder={imageThumbhash}
             className="size-full object-cover group-hover:scale-105"
           />
         ) : null}
@@ -922,6 +925,7 @@ function BrowseView({
                     name={r.name}
                     area={r.area}
                     image={r.image}
+                    imageThumbhash={r.imageThumbhash}
                     detailUrl={r.detailUrl}
                     slug={r.slug}
                     tier={r.tier}
@@ -1026,6 +1030,7 @@ function ResultsView({
     name: string;
     area: string | null;
     image: string | null;
+    imageThumbhash: string | null;
     detailUrl: string;
     tier: ResortTier;
     pricePerNight: number | null;
@@ -1165,6 +1170,7 @@ function ResultsView({
               name={o.name}
               area={o.area}
               image={o.image}
+              imageThumbhash={o.imageThumbhash}
               detailUrl={o.detailUrl}
               slug={SLUG_BY_ID.get(o.id) ?? null}
               tier={o.tier}

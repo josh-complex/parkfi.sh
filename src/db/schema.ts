@@ -161,6 +161,9 @@ export const parks = pgTable("parks", {
   // entry `heroImage`). Nullable — absent until the geo cron runs.
   imageUrl: text("image_url"),
   imageAlt: text("image_alt"),
+  // ThumbHash placeholder pair — see attractionMeta.imageThumbhash.
+  imageThumbhash: text("image_thumbhash"),
+  imageThumbhashSrc: text("image_thumbhash_src"),
 });
 
 /** GeoJSON geometry stored on `parks.boundary` — a park's outline in [lng,lat]. */
@@ -211,6 +214,16 @@ export const attractionMeta = pgTable("attraction_meta", {
   imageThumbUrl: text("image_thumb_url"),
   imageHeroUrl: text("image_hero_url"),
   imageAlt: text("image_alt"),
+  /**
+   * ThumbHash of the attraction's artwork (base64, ~32 chars) — an instant
+   * blurry placeholder the client paints before the real image arrives. One
+   * hash covers thumb/card/hero (same artwork at different sizes). Computed
+   * from `image_thumb_url` by `fillMissingThumbhashes`; `_src` records which
+   * URL it was computed from so the filler recomputes when artwork changes —
+   * the same self-healing pair every image-bearing table carries.
+   */
+  imageThumbhash: text("image_thumbhash"),
+  imageThumbhashSrc: text("image_thumbhash_src"),
   detailUrl: text("detail_url"),
   land: text("land"),
   heightRequirement: text("height_requirement"),
@@ -529,6 +542,9 @@ export const restaurantDim = pgTable(
     priority: boolean("priority").notNull().default(false),
     // Optional card metadata (UOR places carry these; WDW leaves them null).
     imageUrl: text("image_url"),
+    // ThumbHash placeholder pair — see attractionMeta.imageThumbhash.
+    imageThumbhash: text("image_thumbhash"),
+    imageThumbhashSrc: text("image_thumbhash_src"),
     detailUrl: text("detail_url"),
     // Map metadata from the Disney finder marker (null for UOR). `land` is the
     // granular in-park area (finer than park_resort); `map_pin` is the marker
@@ -641,6 +657,9 @@ export const shopDim = pgTable("shop_dim", {
   parkResortId: text("park_resort_id"),
   // Card metadata from the finder marker.
   imageUrl: text("image_url"),
+  // ThumbHash placeholder pair — see attractionMeta.imageThumbhash.
+  imageThumbhash: text("image_thumbhash"),
+  imageThumbhashSrc: text("image_thumbhash_src"),
   detailUrl: text("detail_url"),
   // Merchandise category facets ("apparel-accessories", "pins", "toys-plush", …)
   // — power a shops category filter, mirroring `restaurant_dim` taxonomy arrays.
@@ -699,6 +718,9 @@ export const parkPoi = pgTable(
     // Card thumbnail (null for guest-service icon PNGs, which fall back to the
     // category glyph); the operator's detail page URL.
     imageUrl: text("image_url"),
+    // ThumbHash placeholder pair — see attractionMeta.imageThumbhash.
+    imageThumbhash: text("image_thumbhash"),
+    imageThumbhashSrc: text("image_thumbhash_src"),
     detailUrl: text("detail_url"),
     source: smallint("source")
       .notNull()
@@ -1446,6 +1468,9 @@ export const newsItem = pgTable(
     // cron so the "Around the parks" shelves/cards can show a thumbnail. Null
     // until backfilled, or when the article publishes no og:image.
     imageUrl: text("image_url"),
+    // ThumbHash placeholder pair — see attractionMeta.imageThumbhash.
+    imageThumbhash: text("image_thumbhash"),
+    imageThumbhashSrc: text("image_thumbhash_src"),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
     clusteredInto: bigint("clustered_into", { mode: "number" }),
@@ -1488,6 +1513,9 @@ export const blogPost = pgTable(
       .notNull()
       .default(sql`'[]'::jsonb`),
     heroImageUrl: text("hero_image_url"),
+    // ThumbHash placeholder pair (of the hero) — see attractionMeta.imageThumbhash.
+    imageThumbhash: text("image_thumbhash"),
+    imageThumbhashSrc: text("image_thumbhash_src"),
     // Alt text + visible photo credit for the hero image (the cron pulls the
     // source article's OpenGraph image and attributes it back to that source).
     heroImageAlt: text("hero_image_alt"),

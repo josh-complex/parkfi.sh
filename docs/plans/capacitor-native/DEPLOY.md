@@ -182,6 +182,41 @@ internal is fine without it). Account deletion is required and already implement
 re-signs; your upload key just authenticates uploads. Location permission with any
 background/precise use may need a declaration form.
 
+**Foreground-service declaration (W8):** the ride-recorder ships a `specialUse`
+foreground service (`RideMonitorService`) so IMU/barometer capture survives screen-off.
+`specialUse` requires a **Play Console declaration** — Console → App content → declare the
+foreground-service use, pasting the justification from the manifest `PROPERTY_SPECIAL_USE_FGS_SUBTYPE`
+value (continuous motion sampling for in-park ride detection). If review rejects `specialUse`,
+switch to `health` + `FOREGROUND_SERVICE_HEALTH` (change `RideMonitorService.foregroundServiceType`,
+the manifest `<service>` type, and the permission together). `POST_NOTIFICATIONS` is requested via
+the existing push flow; if denied, the service still runs but its ongoing/recap notifications don't show.
+
+### Background sensor-capture posture (W9 → option B)
+
+Both platforms keep capturing with the screen off / phone pocketed:
+
+- **Android** — a `specialUse` foreground service holds the capture alive; a ride detected while the
+  WebView is suspended is retained and flushed to JS on resume, with a local recap notification in
+  the meantime (W8 + W11).
+- **iOS** — a low-accuracy **background `location` session** (`LocationKeepAlive`) keeps the process
+  scheduled so `CMMotionManager` keeps delivering through a locked-screen ride (W9-B). Requires the
+  `location` UIBackgroundMode and an **Always** location grant; the recap arrives as a local
+  `UNUserNotification` (W11). This is the same background-location capability the Living Layer needs —
+  keep it shared, don't fork a second one.
+
+**iOS App Review (this WILL be scrutinized — the user accepted this):**
+
+- Justify continuous background location by its _user benefit_ (automatic in-park ride detection),
+  not the implementation detail (keeping the process alive). Reviewers reject "we use location to
+  run in the background."
+- The purpose string `NSLocationAlwaysAndWhenInUseUsageDescription` must name the benefit (done in
+  `Info.plist`). Expect the "why always?" review note — answer: detection must continue with the app
+  backgrounded and the screen locked, which WhenInUse can't guarantee mid-ride.
+- Ship a short demo video / notes showing the in-park flow; be ready for the blue background-location
+  indicator to appear (leave `showsBackgroundLocationIndicator` default).
+- Battery: accuracy is `kCLLocationAccuracyHundredMeters` with a 50 m distance filter and the session
+  is only armed **while in-park** (the tracker arms/disarms on geofence). Don't raise accuracy.
+
 ---
 
 ## Phase 4 — Post-deploy

@@ -15,6 +15,7 @@ export interface HeroPostSlide {
   dek: string;
   tags: string[];
   heroImageUrl: string;
+  imageThumbhash: string | null;
   publishedAt: Date | string | null;
 }
 
@@ -25,6 +26,7 @@ export interface HeroExternalSlide {
   title: string;
   url: string;
   imageUrl: string;
+  imageThumbhash: string | null;
   publishedAt: Date | string | null;
 }
 
@@ -62,6 +64,7 @@ function SlideBody({ slide }: { slide: HeroSlideData }) {
         alt=""
         className="absolute inset-0 size-full object-cover"
         loading="eager"
+        placeholder={slide.imageThumbhash}
         referrerPolicy="no-referrer"
         sizes="100vw"
       />

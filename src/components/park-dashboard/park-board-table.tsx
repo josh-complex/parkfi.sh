@@ -201,6 +201,7 @@ function AttractionCell({ item, singleRider }: { item: BoardItem; singleRider?: 
           loading="lazy"
           boxWidth={44}
           aspect={1}
+          placeholder={meta.imageThumbhash}
           className="size-11 shrink-0 rounded-lg object-cover"
         />
       ) : null}
@@ -772,7 +773,7 @@ function MobileCardList({
 }) {
   return (
     <div className="flex flex-col gap-2.5">
-      {rows.map((item) => {
+      {rows.map((item, index) => {
         const meta = item.meta;
         const down = item.status === "DOWN" || item.status === "REFURBISHMENT";
         // "Open with a live wait" gets the wait time; everything else (closed,
@@ -796,8 +797,11 @@ function MobileCardList({
                 <Image
                   src={meta.imageThumbUrl}
                   alt=""
-                  loading="lazy"
+                  // First screenful loads eagerly so the preload scanner grabs
+                  // these from the SSR HTML — lazy images wait for layout/JS.
+                  loading={index < 6 ? "eager" : "lazy"}
                   boxWidth={96}
+                  placeholder={meta.imageThumbhash}
                   className="w-24 shrink-0 self-stretch object-cover"
                 />
               ) : null}

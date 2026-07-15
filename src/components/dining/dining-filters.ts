@@ -26,6 +26,7 @@ export interface Restaurant {
   priceRange: string | null;
   parkResort: string | null;
   imageUrl: string | null;
+  imageThumbhash: string | null;
   detailUrl: string | null;
   source: number;
   // Catalog attribute flags (DISNEY_DIRECT only; UOR rows are all false).

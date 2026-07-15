@@ -93,6 +93,7 @@ function BlogIndex() {
         dek: lead.dek,
         tags: lead.tags,
         heroImageUrl: lead.heroImageUrl,
+        imageThumbhash: lead.imageThumbhash,
         publishedAt: lead.publishedAt,
       });
     }
@@ -104,6 +105,7 @@ function BlogIndex() {
           title: item.title,
           url: item.url,
           imageUrl: item.imageUrl,
+          imageThumbhash: item.imageThumbhash,
           publishedAt: item.publishedAt,
         });
       }

@@ -123,6 +123,7 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
               // box's worst-case ratio cuts ~38% of hero bytes (the strip
               // object-cover was discarding) without starving any viewport.
               aspect={12 / 5}
+              placeholder={park?.imageThumbhash}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent" />
             <div className="absolute inset-x-0 bottom-0 flex flex-wrap items-end justify-between gap-3 p-4 lg:p-6">

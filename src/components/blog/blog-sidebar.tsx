@@ -77,6 +77,7 @@ export function BlogSidebar({ currentSlug }: { currentSlug?: string }) {
                       loading="lazy"
                       boxWidth={56}
                       aspect={1}
+                      placeholder={p.imageThumbhash}
                       referrerPolicy="no-referrer"
                     />
                   )}

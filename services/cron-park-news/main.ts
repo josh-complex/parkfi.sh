@@ -32,6 +32,7 @@ import Parser from "rss-parser";
 import { db } from "#/db/index.ts";
 import { blogPost, newsItem } from "#/db/schema.ts";
 import { parseSocialUrl, socialExists, type SocialEmbed } from "#/server/blog/embeds.ts";
+import { fillMissingThumbhashes } from "#/server/parks/thumbhash.ts";
 
 import { fetchOgImage, type OgImage, UA } from "./og-image.ts";
 
@@ -974,6 +975,19 @@ async function main() {
   console.log(
     `[park-news] done — ${drafted} draft(s), ${skipped} skipped as covered, from ${items.length} new item(s)`,
   );
+
+  // ThumbHash placeholders for any artwork that's new or changed since the last
+  // run — news og:images and blog heroes written above, plus every other
+  // registered table (dining/shops/parks/attractions). Riding this cron gives
+  // hashes daily freshness; the monthly geo cron and backfill:thumbhashes run
+  // the same idempotent filler. Best-effort: never fails the news run.
+  try {
+    const { hashed, failed } = await fillMissingThumbhashes();
+    if (hashed || failed)
+      console.log(`[park-news] thumbhashes: ${hashed} computed, ${failed} failed`);
+  } catch (err) {
+    reportServiceError("cron-park-news", "thumbhashes", err);
+  }
 }
 
 main()

@@ -80,25 +80,65 @@ iOS background modes, and Android service posture.
 - **W14** — every RCDB-published figure backfilled in `services/coaster-stats/seed.csv`
   (ft→m): drop/max-height for seven-dwarfs, tron, barnstormer, everest (also
   corrected its 60 m show-structure height to the 34 m track height), rock-n-roller,
-  revenge-of-the-mummy, hulk, hagrids, flight-of-the-hippogriff; track length + speed
-  - height for trolls. Corrected two inversion counts to RCDB (stardust 0→1,
-    curse-of-the-werewolf 1→0). **Left blank where RCDB has no figure** (indoor/launch
-    coasters with no listed drop; the 2025 Epic Universe rides curse/hiccups/mine-cart).
-    **Coverage audited against the live DB** (probe over all 10 tracked parks — 7 dry
-    Orlando parks + 3 water parks): the seed now covers every RCDB-listed roller coaster
-    at the dry parks. **Added two the original seed missed** — `escape-from-gringotts`
-    (USF) and `pteranodon-flyers` (IOA), both real coasters (no RCDB numbers yet, seeded
-    with inversions only). **Data gap flagged:** `hollywood-rip-ride-rockit` is in the
-    seed but has NO matching `attractions` row (upstream ThemeParks.wiki ingest gap), so
-    that row is inert until USF re-ingests it; kept so it self-heals. 22 rows total.
-    **Remaining deploy step (I did NOT run — touches the DB):** `bun run cron:coaster-stats`
-    then `achievements.adminReevaluateAll` so the clamp arms and trackmiles credit
-    retroactively.
+  revenge-of-the-mummy, hulk, hagrids, flight-of-the-hippogriff; track length, speed
+  and height for trolls. Corrected two inversion counts to RCDB (stardust 0→1,
+  curse-of-the-werewolf 1→0). **Left blank where RCDB has no figure** (indoor/launch
+  coasters with no listed drop; the 2025 Epic Universe rides curse/hiccups/mine-cart).
+  **Coverage audited against the live DB** (probe over all 10 tracked parks — 7 dry
+  Orlando parks + 3 water parks): the seed now covers every RCDB-listed roller coaster
+  at the dry parks. **Added two the original seed missed** — `escape-from-gringotts`
+  (USF) and `pteranodon-flyers` (IOA), both real coasters (no RCDB numbers yet, seeded
+  with inversions only). **Data gap flagged:** `hollywood-rip-ride-rockit` is in the
+  seed but has NO matching `attractions` row (upstream ThemeParks.wiki ingest gap), so
+  that row is inert until USF re-ingests it; kept so it self-heals. 22 rows total.
+  **Remaining deploy step (I did NOT run — touches the DB):** `bun run cron:coaster-stats`
+  then `achievements.adminReevaluateAll` so the clamp arms and trackmiles credit
+  retroactively.
 
 **Still open in Part 1:** the W14 deploy step above (cron + reevaluate). DB-level
 integration tests for the W1 server gate / W6 dedupe flag were not added:
 `rides.test.ts` covers pure helpers only (no DB test harness exists); those paths
 are covered by typecheck + the pure `hasRideSignature` table.
+
+**Applied 2026-07-14 (Part 2 — native. TS parts `bun vp check` clean; Swift/Kotlin
+are COMPILE-UNVERIFIED in this env — confirm on first `bun cap sync` + Xcode/Gradle
+build. `bun cap sync` is REQUIRED so the new @capacitor/haptics pod/gradle dep and
+the foreground service register natively):**
+
+- **W3** — iOS altimeter now starts in `startMonitoring` (was `beginRecording`) and
+  stops only in `stopMonitoring`; removed the per-ride restart and the
+  `finishRecording` stop, so the pre-trigger ring carries real altitude and the
+  lift hill is captured. `RideRecorder.swift`.
+- **W1·4 (native)** — `computeConfidence` now multiplies the score by 0.4 when
+  `drops == 0 && airtime < 0.5`, in BOTH `RideDetection.swift` and `RideDetection.kt`,
+  so walking can't clear the server's 0.5 floor on jitter alone.
+- **W13** — `@capacitor/haptics` added; `src/lib/vibrate.ts` branches on `isNative()`
+  (dynamic import) → impact ladder for `vibrateUnlock`, impact-run + Success
+  notification for `vibrateLevelUp`; web path unchanged. Exported API identical.
+- **W8** — new `RideMonitorService` (Android foreground service, `specialUse` type)
+  owns the `RideRecorder`; `RideRecorderPlugin.kt` starts/stops it, forwards
+  `rideDetected` with `retainUntilConsumed = true`, and tracks foreground via
+  resume/pause. 12 h dead-man self-stop. Manifest: service decl + `FOREGROUND_SERVICE`
+  / `FOREGROUND_SERVICE_SPECIAL_USE` / `POST_NOTIFICATIONS` (plugin manifest, mirrored
+  in the app manifest). **Decision made: `specialUse` (needs a Play Console
+  declaration — see DEPLOY.md); `health` is the documented fallback.**
+- **W11** — local recap notification when the app isn't foreground: Android posts
+  from `RideMonitorService` (`ride-recap` channel); iOS posts via
+  `UNUserNotificationCenter` in the plugin's `onRideDetected` (guarded on
+  `applicationState != .active`). Dumb recap string mirrors `rideRecapSegments` in
+  each native language. De-duped against the in-app toast (skipped when active).
+- **W9** — **decision made: option B (iOS background location).** New
+  `LocationKeepAlive` (CoreLocation) holds a low-accuracy background `location`
+  session while monitoring so `CMMotionManager` survives screen-lock mid-ride;
+  started/stopped by `RideRecorder` with the monitoring lifecycle. `Info.plist`:
+  added `location` to `UIBackgroundModes` + `NSLocationAlwaysAndWhenInUseUsageDescription`.
+  No iOS-specific "keep app open" copy (capture is now backgrounded on both
+  platforms). App Review will scrutinize continuous background location — notes in
+  DEPLOY.md. Deliberately the SAME capability the Living Layer needs (don't fork).
+
+**Still open after Part 2:** device verification of all native halves per DEPLOY.md
+G5–G8 (can't compile/run here); `bun cap sync`; the Play Console `specialUse`
+declaration; and Part 3 field tuning.
 
 ---
 
@@ -353,7 +393,7 @@ afterward so trackmiles credits retroactively.
 
 # Part 2 — Native work (needs Xcode/Android Studio; device-verify per DEPLOY.md)
 
-## W3. iOS: start the altimeter with monitoring — F5
+## W3. iOS: start the altimeter with monitoring — F5 ✅ APPLIED (compile-unverified native)
 
 **Evidence.** `RideRecorder.swift`: `startAltimeter()` is called inside
 `beginRecording()`, so the 10 s pre-trigger ring samples all carry `altRel: nil` and
@@ -372,7 +412,7 @@ session is fine: all metrics use relative deltas/drawdowns within a capture.
 **Verify.** Simulator can't do barometer — this is a G6 field check: compare
 verticalM for the same coaster iOS vs Android after the change (should converge).
 
-## W8. Android: foreground service for capture survival — F2
+## W8. Android: foreground service for capture survival — F2 ✅ APPLIED — specialUse FGS (compile-unverified; needs Play Console declaration)
 
 **Evidence.** PLAN.md B2 specified "Foreground service while monitoring"; the
 shipped plugin has none (no `Service`, no wakelock — `RideRecorder.kt` runs a bare
@@ -407,7 +447,7 @@ submit until resume.
 **Verify (device-gated):** G5/G6 with screen locked — sensors keep sampling, a ride
 detected while pocketed lands in JS on unlock, and the submit succeeds.
 
-## W9. iOS capture posture — decision, then (maybe) code — F2
+## W9. iOS capture posture — decision, then (maybe) code — F2 ✅ APPLIED — option B (iOS background location; compile-unverified; App Review scrutiny expected)
 
 **Evidence.** `ios/App/App/Info.plist` `UIBackgroundModes` = `remote-notification`
 only. No `location` mode exists despite PLAN.md B2's note assuming one. Locked
@@ -436,7 +476,7 @@ procedures prohibit.
 asymmetry + a `nativePlatform() === "ios"` copy tweak wherever sensor achievements
 are pitched (check the achievements page empty states).
 
-## W11. Local notification recap — F3
+## W11. Local notification recap — F3 ✅ APPLIED (compile-unverified native)
 
 **Evidence.** The recap's natural moment (phone comes out of pocket after the ride)
 is exactly when the WebView was suspended. A lock-screen notification is the right
@@ -458,7 +498,7 @@ on-device notification at detection time sidesteps the whole problem.
 - De-dupe with the in-app toast: if the app is active, skip the notification (both
   platforms).
 
-## W13. Native haptics — F9
+## W13. Native haptics — F9 ✅ APPLIED (needs bun install + cap sync)
 
 **Evidence.** `src/lib/vibrate.ts` uses `navigator.vibrate`, undefined in WKWebView —
 every unlock/level-up celebration is silent on iOS native. The file's own comment

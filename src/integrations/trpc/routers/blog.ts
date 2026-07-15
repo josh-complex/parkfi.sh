@@ -45,6 +45,7 @@ const listColumns = {
   dek: blogPost.dek,
   tags: blogPost.tags,
   heroImageUrl: blogPost.heroImageUrl,
+  imageThumbhash: blogPost.imageThumbhash,
   publishedAt: blogPost.publishedAt,
 };
 
@@ -144,6 +145,7 @@ export const blogRouter = {
           title: newsItem.title,
           url: newsItem.url,
           imageUrl: newsItem.imageUrl,
+          imageThumbhash: newsItem.imageThumbhash,
           publishedAt: sql<Date>`coalesce(${newsItem.publishedAt}, ${newsItem.fetchedAt})`.as("ts"),
         })
         .from(newsItem)
@@ -232,6 +234,7 @@ export const blogRouter = {
       parkSlugs: post.parkSlugs,
       sourceUrls: (post.sourceUrls as Array<SourceUrl>) ?? [],
       heroImageUrl: post.heroImageUrl,
+      imageThumbhash: post.imageThumbhash,
       heroImageAlt: post.heroImageAlt,
       heroImageCredit: post.heroImageCredit,
       heroImageCreditUrl: post.heroImageCreditUrl,

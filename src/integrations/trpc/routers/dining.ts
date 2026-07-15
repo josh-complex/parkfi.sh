@@ -19,6 +19,7 @@ export const diningRouter = {
       price_range: string | null;
       park_resort: string | null;
       image_url: string | null;
+      image_thumbhash: string | null;
       detail_url: string | null;
       source: number;
       walkup_wait_list: boolean;
@@ -37,7 +38,7 @@ export const diningRouter = {
       bookable: boolean;
     }>(sql`
       SELECT r.facility_id, r.name, r.cuisine, r.experience_type, r.price_range, r.park_resort,
-             r.image_url, r.detail_url, r.source,
+             r.image_url, r.image_thumbhash, r.detail_url, r.source,
              r.walkup_wait_list, r.mobile_order, r.character_dining, r.fine_dining,
              r.dining_package,
              r.annual_pass_discount, r.disney_visa_discount, r.dining_plan_qs, r.dining_plan_ts,
@@ -59,6 +60,7 @@ export const diningRouter = {
       priceRange: r.price_range,
       parkResort: r.park_resort,
       imageUrl: r.image_url,
+      imageThumbhash: r.image_thumbhash,
       detailUrl: r.detail_url,
       source: Number(r.source),
       walkupWaitList: r.walkup_wait_list,
@@ -96,6 +98,7 @@ export const diningRouter = {
       price_range: string | null;
       park_resort: string | null;
       image_url: string | null;
+      image_thumbhash: string | null;
       detail_url: string | null;
       url_friendly_id: string | null;
       entity_type: string;
@@ -125,7 +128,7 @@ export const diningRouter = {
       location_type: string | null;
     }>(sql`
       SELECT r.facility_id, r.name, r.cuisine, r.experience_type, r.price_range, r.park_resort,
-             r.image_url, r.detail_url, r.url_friendly_id, r.entity_type,
+             r.image_url, r.image_thumbhash, r.detail_url, r.url_friendly_id, r.entity_type,
              r.character_dining, r.fine_dining, r.dining_package,
              r.walkup_wait_list, r.mobile_order,
              r.annual_pass_discount, r.disney_visa_discount, r.trip_advisor_award,
@@ -156,6 +159,7 @@ export const diningRouter = {
       priceRange: r.price_range,
       parkResort: r.park_resort,
       imageUrl: suppressed.has("image") ? null : r.image_url,
+      imageThumbhash: suppressed.has("image") ? null : r.image_thumbhash,
       detailUrl: r.detail_url,
       urlFriendlyId: r.url_friendly_id,
       dinnerShow: r.entity_type === "dinner-show",
@@ -201,6 +205,7 @@ export const diningRouter = {
       park_resort: string | null;
       price_range: string | null;
       image_url: string | null;
+      image_thumbhash: string | null;
       detail_url: string | null;
       character_dining: boolean;
       fine_dining: boolean;
@@ -209,7 +214,7 @@ export const diningRouter = {
       dining_interests: string[] | null;
       disney_favorites: string[] | null;
     }>(sql`
-      SELECT facility_id, name, cuisine, park_resort, price_range, image_url, detail_url,
+      SELECT facility_id, name, cuisine, park_resort, price_range, image_url, image_thumbhash, detail_url,
              character_dining, fine_dining, bookable, mobile_order,
              dining_interests, disney_favorites
       FROM restaurant_dim
@@ -224,6 +229,7 @@ export const diningRouter = {
       parkResort: r.park_resort,
       priceRange: r.price_range,
       imageUrl: r.image_url,
+      imageThumbhash: r.image_thumbhash,
       detailUrl: r.detail_url,
       characterDining: r.character_dining,
       fineDining: r.fine_dining,
@@ -318,6 +324,7 @@ export const diningRouter = {
         parkResort: v.parkResort,
         priceRange: v.priceRange,
         imageUrl: v.imageUrl,
+        imageThumbhash: v.imageThumbhash,
         detailUrl: v.detailUrl,
       })),
     })).filter((b) => b.venues.length > 0);
@@ -338,11 +345,12 @@ export const diningRouter = {
       park_resort: string | null;
       price_range: string | null;
       image_url: string | null;
+      image_thumbhash: string | null;
       detail_url: string | null;
       bookable: boolean;
       mobile_order: boolean;
     }>(sql`
-      SELECT facility_id, name, cuisine, park_resort, price_range, image_url, detail_url,
+      SELECT facility_id, name, cuisine, park_resort, price_range, image_url, image_thumbhash, detail_url,
              bookable, mobile_order
       FROM restaurant_dim
       WHERE active = true AND park_resort = ${input.resortName}
@@ -355,6 +363,7 @@ export const diningRouter = {
       parkResort: r.park_resort,
       priceRange: r.price_range,
       imageUrl: r.image_url,
+      imageThumbhash: r.image_thumbhash,
       detailUrl: r.detail_url,
       bookable: r.bookable,
       mobileOrder: r.mobile_order,
@@ -571,6 +580,7 @@ export const diningRouter = {
         park_resort: string | null;
         price_range: string | null;
         image_url: string | null;
+        image_thumbhash: string | null;
         bookable: boolean;
         change_count: string;
         added_count: string;
@@ -590,6 +600,7 @@ export const diningRouter = {
           WHERE changed_at >= now() - make_interval(days => ${sinceDays})
         )
         SELECT r.facility_id, r.name, r.cuisine, r.park_resort, r.price_range, r.image_url,
+               r.image_thumbhash,
                r.bookable,
                count(*) AS change_count,
                count(*) FILTER (WHERE a.kind = 'added') AS added_count,
@@ -604,6 +615,7 @@ export const diningRouter = {
         WHERE r.active = true
           ${bookable === undefined ? sql`` : sql`AND r.bookable = ${bookable}`}
         GROUP BY r.facility_id, r.name, r.cuisine, r.park_resort, r.price_range, r.image_url,
+                 r.image_thumbhash,
                  r.bookable
         ORDER BY last_changed_at DESC
         LIMIT ${limit}
@@ -621,6 +633,7 @@ export const diningRouter = {
           parkResort: r.park_resort,
           priceRange: r.price_range,
           imageUrl: r.image_url,
+          imageThumbhash: r.image_thumbhash,
           // Split the shelf: bookable = table-service restaurants, non-bookable =
           // quick-service & carts (Aloha Isle, popcorn carts, kiosks…).
           bookable: r.bookable,
@@ -853,13 +866,14 @@ export const diningRouter = {
         name: string;
         park_resort: string | null;
         image_url: string | null;
+        image_thumbhash: string | null;
         title: string;
         price: number | null;
         currency: string | null;
         price_type: string | null;
       }>(sql`
         SELECT DISTINCT ON (i.facility_id)
-               r.facility_id, r.name, r.park_resort, r.image_url,
+               r.facility_id, r.name, r.park_resort, r.image_url, r.image_thumbhash,
                i.title, i.price, i.currency, i.price_type
         FROM dining_menu_item i
         JOIN dining_menu_snapshot s
@@ -877,6 +891,7 @@ export const diningRouter = {
           name: r.name,
           parkResort: r.park_resort,
           imageUrl: r.image_url,
+          imageThumbhash: r.image_thumbhash,
           title: r.title,
           price: r.price === null ? null : Number(r.price),
           currency: r.currency,

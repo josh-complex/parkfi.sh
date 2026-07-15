@@ -24,6 +24,7 @@ type UpdatedVenue = {
   parkResort: string | null;
   priceRange: string | null;
   imageUrl: string | null;
+  imageThumbhash: string | null;
   bookable: boolean;
   changeCount: number;
   addedCount: number;
@@ -106,6 +107,7 @@ function UpdatedCard({ v }: { v: UpdatedVenue }) {
               alt={v.name}
               loading="lazy"
               aspect={4 / 3}
+              placeholder={v.imageThumbhash}
               className="size-full object-cover group-hover:scale-105"
             />
           ) : null}

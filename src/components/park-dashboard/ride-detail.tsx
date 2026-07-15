@@ -229,6 +229,7 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
               fetchPriority="high"
               sizes={HERO_IMAGE.sizes}
               quality={HERO_IMAGE.quality}
+              placeholder={ride.meta?.imageThumbhash}
             />
           </div>
         )}

@@ -48,6 +48,7 @@ export interface ResortOffer {
   tier: ResortTier;
   area: string | null;
   image: string | null;
+  imageThumbhash: string | null;
   detailUrl: string;
   /** Average price per night (USD) when bookable, else null. */
   pricePerNight: number | null;
@@ -132,6 +133,7 @@ export async function fetchResortAvailability(
       tier: entry.tier,
       area: entry.area,
       image: entry.image,
+      imageThumbhash: entry.imageThumbhash,
       detailUrl: entry.detailUrl,
       pricePerNight: available ? Math.round(subtotal) : null,
       available,
@@ -185,6 +187,7 @@ function catalogOffer(
     tier: entry.tier,
     area: entry.area,
     image: entry.image,
+    imageThumbhash: entry.imageThumbhash,
     detailUrl: entry.detailUrl,
     pricePerNight: fields.pricePerNight,
     available: fields.available,

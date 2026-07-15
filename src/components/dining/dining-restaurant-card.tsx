@@ -148,6 +148,7 @@ export function RestaurantCard({
           alt={restaurant.name}
           loading="lazy"
           boxWidth={152}
+          placeholder={restaurant.imageThumbhash}
           className="size-full object-cover group-hover:scale-105"
         />
         {restaurant.priceRange && (

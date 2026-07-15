@@ -49,6 +49,7 @@ import {
   type MapCategory,
 } from "#/server/parks/codes.ts";
 import { config } from "#/server/parks/config.ts";
+import { fillMissingThumbhashes } from "#/server/parks/thumbhash.ts";
 import { browserlessConfigured } from "#/server/parks/sources/browserless.ts";
 import { fetchParkDetail, toNum } from "#/server/parks/sources/disney-finder.ts";
 import {
@@ -192,6 +193,9 @@ async function upsertAttractionMeta(
           imageThumbUrl: sql`excluded.image_thumb_url`,
           imageHeroUrl: sql`excluded.image_hero_url`,
           imageAlt: sql`excluded.image_alt`,
+          // image_thumbhash/_src are deliberately untouched: the thumbhash
+          // step (below) recomputes any row whose hash_src no longer matches
+          // the (possibly just-updated) image_thumb_url.
           detailUrl: sql`excluded.detail_url`,
           land: sql`excluded.land`,
           heightRequirement: sql`excluded.height_requirement`,
@@ -768,6 +772,15 @@ async function main() {
       );
     }
   }
+
+  // ThumbHash placeholders for any artwork that's new or changed this run
+  // (the meta upsert NULLs the hash when a thumb URL changes). Also serves as
+  // the standing backfill — see scripts/backfill-thumbhashes.ts for the
+  // one-shot version.
+  await runStep("thumbhashes", async () => {
+    const { hashed, failed } = await fillMissingThumbhashes();
+    console.log(`[geo] thumbhashes: ${hashed} computed, ${failed} failed (left for next run)`);
+  });
 
   console.log(`[cron-geo] done — ${parks.length} parks processed`);
 }

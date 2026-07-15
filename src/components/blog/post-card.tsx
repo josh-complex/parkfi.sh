@@ -10,6 +10,7 @@ export interface PostCardData {
   dek: string;
   tags: string[];
   heroImageUrl: string | null;
+  imageThumbhash: string | null;
   publishedAt: Date | null;
 }
 
@@ -53,6 +54,7 @@ export function PostCard({
           alt=""
           className="absolute inset-0 size-full object-cover group-hover/post:scale-[1.04]"
           loading="lazy"
+          placeholder={post.imageThumbhash}
           referrerPolicy="no-referrer"
           sizes="(min-width: 640px) 42rem, 100vw"
         />
@@ -93,6 +95,7 @@ export function PostCard({
             className="size-full object-cover group-hover/post:scale-[1.03]"
             loading="lazy"
             aspect={16 / 9}
+            placeholder={post.imageThumbhash}
             referrerPolicy="no-referrer"
           />
         </div>

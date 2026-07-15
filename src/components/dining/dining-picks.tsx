@@ -34,6 +34,7 @@ export interface PickVenue {
   parkResort: string | null;
   priceRange: string | null;
   imageUrl: string | null;
+  imageThumbhash: string | null;
   detailUrl: string | null;
 }
 
@@ -70,6 +71,7 @@ export function PickCard({
             alt={venue.name}
             loading="lazy"
             aspect={4 / 3}
+            placeholder={venue.imageThumbhash}
             className="size-full object-cover group-hover:scale-105"
           />
         ) : null}

@@ -2,6 +2,7 @@
 
 import { ImageIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { thumbHashToDataURL } from "thumbhash";
 
 import { useCfImagesEnabled } from "#/integrations/posthog/feature-flags.ts";
 import { observeForPreload, preloadImage } from "#/lib/image-preload.ts";
@@ -16,6 +17,27 @@ import { cn } from "#/lib/utils.ts";
  */
 export function useCfImages(): boolean {
   return useCfImagesEnabled() && !import.meta.env.DEV;
+}
+
+/**
+ * base64 ThumbHash → PNG data URL, memoized per hash. Boards repeat hashes
+ * across renders/virtual rows, and decoding is pure JS (no canvas), so this is
+ * SSR-safe — the placeholder is painted in the server HTML, before any JS.
+ * Malformed hashes decode to `null` once and render as no placeholder.
+ */
+const thumbhashCache = new Map<string, string | null>();
+function thumbhashToUrl(hash: string | null | undefined): string | undefined {
+  if (!hash) return undefined;
+  let url = thumbhashCache.get(hash);
+  if (url === undefined) {
+    try {
+      url = thumbHashToDataURL(Uint8Array.from(atob(hash), (c) => c.charCodeAt(0)));
+    } catch {
+      url = null;
+    }
+    thumbhashCache.set(hash, url);
+  }
+  return url ?? undefined;
 }
 
 /**
@@ -74,6 +96,14 @@ type ImageProps = Omit<React.ComponentProps<"img">, "src"> & {
    * ~21 kB to ~3 kB. Ignored when `sizes` is set.
    */
   boxWidth?: number;
+  /**
+   * base64 ThumbHash of the image (e.g. `attraction_meta.image_thumbhash`).
+   * Painted instantly — including in SSR HTML — as a blurry, color-accurate
+   * preview behind the loading image, so the tile is never a blank box. The
+   * real photo still fades/de-blurs in over it; on error the normal fallback
+   * replaces it.
+   */
+  placeholder?: string | null;
 };
 
 /**
@@ -98,8 +128,10 @@ export function Image({
   quality,
   aspect,
   boxWidth,
+  placeholder,
   loading,
   className,
+  style,
   onLoad,
   onError,
   ...props
@@ -163,6 +195,14 @@ export function Image({
     return fallback === undefined ? <ImageFallback className={className} /> : <>{fallback}</>;
   }
 
+  // ThumbHash underlay: painted as the <img>'s own background so it needs no
+  // wrapper (callers style the bare <img>). Only while loading — once the
+  // photo lands its pixels cover the same box, so the background is dropped to
+  // keep transparent sources honest. Because the background lives on the
+  // element, the placeholder path must keep the element visible (opacity-100)
+  // and reveal via blur/scale only.
+  const placeholderUrl = !loaded ? thumbhashToUrl(placeholder) : undefined;
+
   return (
     <img
       ref={ref}
@@ -171,6 +211,16 @@ export function Image({
       srcSet={resolvedSrcSet}
       sizes={sizes}
       alt={alt}
+      style={
+        placeholderUrl
+          ? {
+              backgroundImage: `url(${placeholderUrl})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              ...style,
+            }
+          : style
+      }
       decoding="async"
       onLoad={(e) => {
         setFadedSrc(src);
@@ -189,7 +239,16 @@ export function Image({
         !noFade &&
           (!instant || armed) &&
           "transition-[opacity,filter,scale] duration-500 ease-out motion-reduce:transition-none",
-        !noFade && (loaded ? "scale-100 opacity-100 blur-0" : "scale-105 opacity-0 blur-md"),
+        !noFade &&
+          (loaded
+            ? "scale-100 opacity-100 blur-0"
+            : // With a ThumbHash the element stays visible (it *is* the
+              // placeholder) and un-blurred — the hash is inherently blurry,
+              // and a CSS blur on a visible element bleeds past the box edges.
+              // The photo lands over matching colors and eases via scale.
+              placeholder
+              ? "scale-105 opacity-100 blur-0"
+              : "scale-105 opacity-0 blur-md"),
         className,
       )}
       {...props}

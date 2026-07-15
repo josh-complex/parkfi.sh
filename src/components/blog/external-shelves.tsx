@@ -6,6 +6,7 @@ export interface ExternalItem {
   title: string;
   url: string;
   imageUrl: string | null;
+  imageThumbhash: string | null;
   publishedAt: Date | string;
 }
 
@@ -36,6 +37,7 @@ export function ExternalCard({ item }: { item: ExternalItem }) {
             className="size-full object-cover group-hover/post:scale-[1.03]"
             loading="lazy"
             aspect={16 / 9}
+            placeholder={item.imageThumbhash}
             referrerPolicy="no-referrer"
           />
         </div>

@@ -57,6 +57,7 @@ type Ride = {
   imageCardUrl: string | null;
   imageHeroUrl: string | null;
   imageAlt: string | null;
+  imageThumbhash: string | null;
 };
 
 type Sort = "wait" | "name";
@@ -126,7 +127,10 @@ function WaitBadge({ ride, className }: { ride: Ride; className?: string }) {
 }
 
 /** Card for the grid view — same shape as the Eats "picks" cards. */
-function RideCard({ ride }: { ride: Ride }) {
+/** `eager` marks above-the-fold cards: eager-loaded so the browser's preload
+ *  scanner fetches them from the SSR HTML instead of waiting for hydration +
+ *  the IntersectionObserver. Only the first section's leading cards qualify. */
+function RideCard({ ride, eager }: { ride: Ride; eager?: boolean }) {
   const cf = useCfImages();
   // On intent (hover / focus / touch), warm the ride's detail-page hero at low
   // priority so tapping through shows it instantly. Resolves the exact URL
@@ -157,8 +161,9 @@ function RideCard({ ride }: { ride: Ride }) {
             <Image
               src={ride.imageCardUrl}
               alt={ride.imageAlt ?? ride.name}
-              loading="lazy"
+              loading={eager ? "eager" : "lazy"}
               aspect={4 / 3}
+              placeholder={ride.imageThumbhash}
               className="size-full object-cover group-hover:scale-105"
             />
           ) : null}
@@ -178,7 +183,7 @@ function RideCard({ ride }: { ride: Ride }) {
 }
 
 /** Row for the list view (the plain vertical list). */
-function RideRow({ ride }: { ride: Ride }) {
+function RideRow({ ride, eager }: { ride: Ride; eager?: boolean }) {
   return (
     <Link
       to="/park/$slug/ride/$rideSlug"
@@ -189,9 +194,10 @@ function RideRow({ ride }: { ride: Ride }) {
         <Image
           src={ride.imageThumbUrl}
           alt={ride.imageAlt ?? ride.name}
-          loading="lazy"
+          loading={eager ? "eager" : "lazy"}
           boxWidth={44}
           aspect={1}
+          placeholder={ride.imageThumbhash}
           className="size-11 shrink-0 rounded-lg object-cover"
         />
       ) : (
@@ -502,7 +508,7 @@ export function CrossParkWaits() {
           </div>
         )}
 
-        {groups.map((g) => {
+        {groups.map((g, gi) => {
           const subtitle =
             g.isOpen && g.avg != null
               ? `${g.avg} min average wait`
@@ -532,20 +538,20 @@ export function CrossParkWaits() {
                     className="-ml-4"
                     viewportClassName="px-4 lg:px-6 [mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%_-_1.5rem),transparent)]"
                   >
-                    {g.rides.map((r) => (
+                    {g.rides.map((r, i) => (
                       <CarouselItem
                         key={r.id}
                         className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5 2xl:basis-1/6"
                       >
-                        <RideCard ride={r} />
+                        <RideCard ride={r} eager={gi === 0 && i < 5} />
                       </CarouselItem>
                     ))}
                   </CarouselContent>
                 ) : (
                   <div className="px-4 lg:px-6">
                     <div className="mx-auto flex w-full max-w-3xl flex-col rounded-2xl border bg-card/40 p-1">
-                      {g.rides.map((r) => (
-                        <RideRow key={r.id} ride={r} />
+                      {g.rides.map((r, i) => (
+                        <RideRow key={r.id} ride={r} eager={gi === 0 && i < 10} />
                       ))}
                     </div>
                   </div>

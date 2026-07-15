@@ -60,11 +60,12 @@ export const parksRouter = {
       boundary: GeoPolygon | null;
       image_url: string | null;
       image_alt: string | null;
+      image_thumbhash: string | null;
     }>(sql`
       SELECT p.id, p.slug, p.name, p.timezone,
              o.slug AS operator_slug, o.name AS operator_name, r.name AS resort_name,
              p.latitude, p.longitude, p.lat_min, p.lat_max, p.lng_min, p.lng_max, p.map_zoom,
-             p.boundary, p.image_url, p.image_alt
+             p.boundary, p.image_url, p.image_alt, p.image_thumbhash
       FROM parks p
       LEFT JOIN operators o ON o.id = p.operator_id
       LEFT JOIN resorts r ON r.id = p.resort_id
@@ -89,6 +90,7 @@ export const parksRouter = {
       boundary: p.boundary,
       imageUrl: p.image_url,
       imageAlt: p.image_alt,
+      imageThumbhash: p.image_thumbhash,
     }));
   }),
 
@@ -197,6 +199,7 @@ export const parksRouter = {
       meta_image_thumb_url: string | null;
       meta_image_hero_url: string | null;
       meta_image_alt: string | null;
+      meta_image_thumbhash: string | null;
       meta_detail_url: string | null;
       meta_land: string | null;
       meta_height_requirement: string | null;
@@ -276,6 +279,7 @@ export const parksRouter = {
                m.image_thumb_url AS meta_image_thumb_url,
                m.image_hero_url AS meta_image_hero_url,
                m.image_alt AS meta_image_alt,
+               m.image_thumbhash AS meta_image_thumbhash,
                m.detail_url AS meta_detail_url,
                m.land AS meta_land,
                m.height_requirement AS meta_height_requirement,
@@ -337,6 +341,7 @@ export const parksRouter = {
               imageThumbUrl: r.meta_image_thumb_url,
               imageHeroUrl: r.meta_image_hero_url,
               imageAlt: r.meta_image_alt,
+              imageThumbhash: r.meta_image_thumbhash,
               detailUrl: r.meta_detail_url,
               land: r.meta_land,
               heightRequirement: r.meta_height_requirement,
@@ -480,13 +485,14 @@ export const parksRouter = {
       land: string | null;
       park_resort: string | null;
       image_url: string | null;
+      image_thumbhash: string | null;
       detail_url: string | null;
       merchandise: Array<string> | null;
       latitude: number | null;
       longitude: number | null;
     }>(sql`
-      SELECT facility_id, name, url_friendly_id, land, park_resort, image_url, detail_url,
-             merchandise, latitude, longitude
+      SELECT facility_id, name, url_friendly_id, land, park_resort, image_url, image_thumbhash,
+             detail_url, merchandise, latitude, longitude
       FROM shop_dim
       WHERE active = true AND url_friendly_id = ${input.slug}
       LIMIT 1
@@ -503,6 +509,7 @@ export const parksRouter = {
       land: r.land,
       parkResort: r.park_resort,
       imageUrl: suppressed.has("image") ? null : r.image_url,
+      imageThumbhash: suppressed.has("image") ? null : r.image_thumbhash,
       detailUrl: r.detail_url,
       merchandise: r.merchandise ?? [],
       latitude: r.latitude,
@@ -536,6 +543,7 @@ export const parksRouter = {
       meta_image_thumb_url: string | null;
       meta_image_hero_url: string | null;
       meta_image_alt: string | null;
+      meta_image_thumbhash: string | null;
       is_open: boolean | null;
       has_schedule: boolean;
     }>(sql`
@@ -573,6 +581,7 @@ export const parksRouter = {
              m.image_thumb_url AS meta_image_thumb_url,
              m.image_hero_url AS meta_image_hero_url,
              m.image_alt AS meta_image_alt,
+             m.image_thumbhash AS meta_image_thumbhash,
              po.is_open, coalesce(po.has_schedule, false) AS has_schedule
       FROM attractions a
       JOIN parks p ON p.id = a.park_id AND p.active = true
@@ -609,6 +618,7 @@ export const parksRouter = {
           disneyCardUrl(r.meta_image_thumb_url) ?? r.meta_image_hero_url ?? r.meta_image_thumb_url,
         imageHeroUrl: r.meta_image_hero_url,
         imageAlt: r.meta_image_alt,
+        imageThumbhash: r.meta_image_thumbhash,
       };
     });
   }),
@@ -732,6 +742,7 @@ export const parksRouter = {
         meta_image_thumb_url: string | null;
         meta_image_hero_url: string | null;
         meta_image_alt: string | null;
+        meta_image_thumbhash: string | null;
         meta_detail_url: string | null;
         meta_land: string | null;
         meta_height_requirement: string | null;
@@ -798,6 +809,7 @@ export const parksRouter = {
                m.image_thumb_url AS meta_image_thumb_url,
                m.image_hero_url AS meta_image_hero_url,
                m.image_alt AS meta_image_alt,
+               m.image_thumbhash AS meta_image_thumbhash,
                m.detail_url AS meta_detail_url,
                m.land AS meta_land,
                m.height_requirement AS meta_height_requirement,
@@ -881,6 +893,7 @@ export const parksRouter = {
                 imageThumbUrl: hideImage ? null : r.meta_image_thumb_url,
                 imageHeroUrl: hideImage ? null : r.meta_image_hero_url,
                 imageAlt: r.meta_image_alt,
+                imageThumbhash: hideImage ? null : r.meta_image_thumbhash,
                 detailUrl: r.meta_detail_url,
                 land: r.meta_land,
                 heightRequirement: r.meta_height_requirement,
@@ -928,6 +941,7 @@ export const parksRouter = {
       boundary: GeoPolygon | null;
       image_url: string | null;
       image_alt: string | null;
+      image_thumbhash: string | null;
       operator_slug: string | null;
       operator_name: string | null;
       resort_name: string | null;
@@ -1002,6 +1016,7 @@ export const parksRouter = {
         GROUP BY p.id
       )
       SELECT p.id, p.slug, p.name, p.latitude, p.longitude, p.boundary, p.image_url, p.image_alt,
+             p.image_thumbhash,
              o.slug AS operator_slug, o.name AS operator_name, r.name AS resort_name,
              coalesce(pa.total_rides, 0) AS total_rides,
              coalesce(pa.operating, 0) AS operating,
@@ -1037,6 +1052,7 @@ export const parksRouter = {
         boundary: p.boundary,
         imageUrl: p.image_url,
         imageAlt: p.image_alt,
+        imageThumbhash: p.image_thumbhash,
         operatorSlug: p.operator_slug,
         operatorName: p.operator_name,
         resortName: p.resort_name,

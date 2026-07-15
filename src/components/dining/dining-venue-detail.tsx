@@ -440,6 +440,7 @@ export function DiningVenueDetail({
                 // Box is h-40/sm:h-56/lg:h-64 at full width — worst case ~2.4:1
                 // on a small phone. Same banner crop as the park-dashboard hero.
                 aspect={12 / 5}
+                placeholder={venue.imageThumbhash}
               />
             </div>
           )}
