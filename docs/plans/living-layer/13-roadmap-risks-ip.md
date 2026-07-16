@@ -33,9 +33,11 @@ could run under any future IP or venue without a rebuild.
 
 Everything in [12](12-demo-vertical-slice.md): dev/armchair mode → `world` +
 geofences → the `mark` primitive + Darkness engine (**the mic-drop**) → discovery
-marks → a scoped AR encounter + one-World recruit → the logbook → wrapped as a
-QR-code link. **Web AR, full Kingdom Hearts dress.** Outcome: a 3-minute
-walkthrough that ends on a _real_ reactive ride-down.
+marks → a scoped AR encounter + one-World recruit → the logbook → packaged as a
+TestFlight/internal build (+ a QR web link for the 2D loop). **In-app lite AR,
+full Kingdom Hearts dress.** _(Revised 2026-07-15: was "web AR behind a QR
+code" — that path died with 8th Wall; see [07](07-ar-and-channels.md).)_
+Outcome: a 3-minute walkthrough that ends on a _real_ reactive ride-down.
 
 ### Phase 1 — Standalone product v1 (ship to real users, web)
 

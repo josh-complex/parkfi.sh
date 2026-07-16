@@ -32,6 +32,7 @@ import { Route as AppDashRouteImport } from './routes/_app/_dash'
 import { Route as AppDashIndexRouteImport } from './routes/_app/_dash/index'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
 import { Route as ApiPushSubscribeRouteImport } from './routes/api/push/subscribe'
+import { Route as ApiMapStyleThemeRouteImport } from './routes/api/map-style/$theme'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AppStaysAlertsRouteImport } from './routes/_app/stays_.alerts'
 import { Route as AppResortSlugRouteImport } from './routes/_app/resort.$slug'
@@ -175,6 +176,11 @@ const ApiTrpcSplatRoute = ApiTrpcSplatRouteImport.update({
 const ApiPushSubscribeRoute = ApiPushSubscribeRouteImport.update({
   id: '/api/push/subscribe',
   path: '/api/push/subscribe',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMapStyleThemeRoute = ApiMapStyleThemeRouteImport.update({
+  id: '/api/map-style/$theme',
+  path: '/api/map-style/$theme',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -373,6 +379,7 @@ export interface FileRoutesByFullPath {
   '/resort/$slug': typeof AppResortSlugRoute
   '/stays/alerts': typeof AppStaysAlertsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/map-style/$theme': typeof ApiMapStyleThemeRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/account/alerts': typeof AppDashAccountAlertsRoute
@@ -425,6 +432,7 @@ export interface FileRoutesByTo {
   '/resort/$slug': typeof AppResortSlugRoute
   '/stays/alerts': typeof AppStaysAlertsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/map-style/$theme': typeof ApiMapStyleThemeRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/account/alerts': typeof AppDashAccountAlertsRoute
@@ -481,6 +489,7 @@ export interface FileRoutesById {
   '/_app/resort/$slug': typeof AppResortSlugRoute
   '/_app/stays_/alerts': typeof AppStaysAlertsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/map-style/$theme': typeof ApiMapStyleThemeRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/_app/_dash/': typeof AppDashIndexRoute
@@ -538,6 +547,7 @@ export interface FileRouteTypes {
     | '/resort/$slug'
     | '/stays/alerts'
     | '/api/auth/$'
+    | '/api/map-style/$theme'
     | '/api/push/subscribe'
     | '/api/trpc/$'
     | '/account/alerts'
@@ -590,6 +600,7 @@ export interface FileRouteTypes {
     | '/resort/$slug'
     | '/stays/alerts'
     | '/api/auth/$'
+    | '/api/map-style/$theme'
     | '/api/push/subscribe'
     | '/api/trpc/$'
     | '/account/alerts'
@@ -645,6 +656,7 @@ export interface FileRouteTypes {
     | '/_app/resort/$slug'
     | '/_app/stays_/alerts'
     | '/api/auth/$'
+    | '/api/map-style/$theme'
     | '/api/push/subscribe'
     | '/api/trpc/$'
     | '/_app/_dash/'
@@ -680,6 +692,7 @@ export interface RootRouteChildren {
   BlogRssDotxmlRoute: typeof BlogRssDotxmlRoute
   BlogIndexRoute: typeof BlogIndexRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiMapStyleThemeRoute: typeof ApiMapStyleThemeRoute
   ApiPushSubscribeRoute: typeof ApiPushSubscribeRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
   OgDiningFacilityIdCardDotpngRoute: typeof OgDiningFacilityIdCardDotpngRoute
@@ -849,6 +862,13 @@ declare module '@tanstack/react-router' {
       path: '/api/push/subscribe'
       fullPath: '/api/push/subscribe'
       preLoaderRoute: typeof ApiPushSubscribeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/map-style/$theme': {
+      id: '/api/map-style/$theme'
+      path: '/api/map-style/$theme'
+      fullPath: '/api/map-style/$theme'
+      preLoaderRoute: typeof ApiMapStyleThemeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
@@ -1194,6 +1214,7 @@ const rootRouteChildren: RootRouteChildren = {
   BlogRssDotxmlRoute: BlogRssDotxmlRoute,
   BlogIndexRoute: BlogIndexRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiMapStyleThemeRoute: ApiMapStyleThemeRoute,
   ApiPushSubscribeRoute: ApiPushSubscribeRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,
   OgDiningFacilityIdCardDotpngRoute: OgDiningFacilityIdCardDotpngRoute,

@@ -54,9 +54,10 @@ run**.
 | 09  | [Moderation, trust & safety](09-moderation-trust-safety.md)                        | UGC pins, physical safety, the two-layer model                                                       |
 | 10  | [Data model](10-data-model.md)                                                     | New Drizzle tables; how they hang off the existing schema                                            |
 | 11  | [Architecture](11-architecture.md)                                                 | How every piece reuses infra we already operate                                                      |
-| 12  | [The demo / vertical slice](12-demo-vertical-slice.md)                             | What to build first; web AR; the dev/armchair mode                                                   |
+| 12  | [The demo / vertical slice](12-demo-vertical-slice.md)                             | What to build first; the in-app lite-AR demo; the dev/armchair mode                                  |
 | 13  | [Roadmap, risks & IP](13-roadmap-risks-ip.md)                                      | Phasing, the IP fork, the kill-risks                                                                 |
 | 14  | [Implementation plan](14-implementation-plan.md)                                   | File-by-file build plan for the Phase-0 demo (M0–M7)                                                 |
+| 15  | [State of the game (2026-07-15)](15-state-of-the-game-2026-07-15.md)               | Audit + research digest: feel gaps, social ladder, AR revision, sync backends, priorities            |
 
 ## Reading order
 

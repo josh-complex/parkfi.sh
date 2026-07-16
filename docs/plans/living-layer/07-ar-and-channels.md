@@ -3,8 +3,9 @@
 > **Theme:** Four channels — **wrist, ear, screen, AR** — choreographed so the
 > phone is _punctuation, not the paragraph_. The wrist says "look up," the ear
 > narrates hands-free, the screen/AR delivers the _reveal_, then it goes back in
-> the pocket. AR is the punchline, never the wallpaper. And the demo is **web
-> AR**, so an exec can open it from a QR code with no install.
+> the pocket. AR is the punchline, never the wallpaper. The AR runtime is
+> **native, inside the Capacitor shell** — the web-AR path this doc originally
+> planned around died with 8th Wall (see the revised tech path below).
 
 ## Core insight
 
@@ -51,36 +52,64 @@ Rules of engagement for AR:
    the AR viewport — which is exactly what feeds persistence and cold-start
    ([02](02-living-layer-and-flywheel.md), [03](03-marks-and-discovery.md)).
 
-## The AR tech path (ship, don't stall)
+## The AR tech path (revised 2026-07-15 — the landscape moved)
+
+> **What changed since this doc was written.** The original plan bet on
+> **8th Wall web AR**. That bet is dead: Niantic shut the hosted 8th Wall
+> platform down on **2026-02-28** (hosted campaigns die 2027-02-28). The engine
+> core was open-sourced (MIT, at 8thwall.org) — but **SLAM ships only as a
+> binary-only "Distributed Engine Binary,"** and VPS / Maps / hand-tracking were
+> never released at all. Meanwhile **WebXR `immersive-ar` still does not work on
+> iOS Safari** in 2026 (the feature flag exists but is non-functional), and
+> WebXR is generally unavailable inside webviews. Finally, the product itself
+> changed shape: ParkFi now ships a **Capacitor native shell** on iOS/Android,
+> so "no install" is no longer the binding constraint and native AR APIs are one
+> plugin away. **Web AR is dead as our path; the ladder below replaces it.**
 
 Climb the ladder; do not start at the top.
 
-| Rung | Technique                                                                                                                                                                                               | Robustness | When               |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ------------------ |
-| 1    | **Image-anchored AR** — recognize a known landmark/sign, overlay relative to it. Re-aim the **pin CLIP embedding** tech we already run.                                                                 | High       | **demo / v1**      |
-| 2    | **Plane-anchored AR** — drop the Heartless on a detected ground plane in front of a stationary Wielder.                                                                                                 | High       | **demo / v1**      |
-| 3    | **VPS (visual positioning)** — Niantic Lightship / Google Geospatial (ARCore) / 8th Wall anchor to a _visually-scanned_ location with sub-meter precision. Google has already mapped much public space. | Medium     | v2                 |
-| 4    | **Shared-anchor co-op** — two Wielders pointing at the same spot see the _same_ boss. The magic, and the hard part.                                                                                     | Hard       | v2+ (Convergences) |
+| Rung | Technique                                                                                                                                                                                                                                                                                                                                                                                                                        | Robustness                 | When               |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ------------------ |
+| 1    | **Camera-overlay "lite AR"** — a native camera preview rendered _behind_ a transparent webview (e.g. a Capacitor camera-preview plugin with `toBack: true`); the Heartless is an animated DOM/canvas/WebGL overlay with device-orientation parallax. No tracking — but for a **stand-still, seconds-long reveal** it reads as AR, and it ships entirely in the existing web UI.                                                  | High                       | **v1**             |
+| 2    | **Plane-anchored native AR** — a thin Capacitor plugin hosting **ARKit/RealityKit** (iOS) and **ARCore/SceneView** (Android); drop the Heartless on a detected ground plane in front of a stationary Wielder. Plugin surface stays tiny: `showEncounter(spec) → outcome`.                                                                                                                                                        | High                       | v1.5               |
+| 3    | **VPS (visual positioning)** — the **ARCore Geospatial API** (actively maintained on _both_ Android and iOS): sub-meter world anchors by lat/lng/alt wherever Street View coverage exists, plus Streetscape Geometry for occlusion and Rooftop anchors. Probe park coverage in-app with `checkVpsAvailability`. Niantic Lightship VPS is **de-prioritized** — post-Scopely, Niantic Spatial pivoted to enterprise geospatial AI. | Medium                     | v2                 |
+| 4    | **Shared-anchor co-op** — two Wielders pointing at the same spot see the _same_ boss. Via rung 3 this is far cheaper than classic cloud anchors: both clients simply resolve the **same geospatial anchor** (identical lat/lng/alt) — no session pairing, no anchor hosting.                                                                                                                                                     | Hard → Medium (via rung 3) | v2+ (Convergences) |
 
 Raw GPS will **not** hold a virtual object on a real statue — that's why we start
-at image/plane anchors, not world-scale GPS placement.
+at overlay/plane anchors, not world-scale GPS placement. The original ladder's
+image-anchored idea (recognize a landmark via the **pin CLIP embedding** service,
+overlay relative to it) survives as an optional _enhancer_ at rungs 1–2, not a
+rung of its own.
 
-## Web AR first (the demo's secret weapon)
+### AR posture: the market data backs pillar 4
 
-Our entire stack is web (TanStack Start + tRPC). **8th Wall / WebXR** do
-plane-, image-, and location-AR _in the browser_. For the demo this is enormous
-(full plan in [12 — Demo](12-demo-vertical-slice.md)):
+Most Pokémon GO players play with AR **off**, and Monster Hunter Now — the best
+location-game combat shipped to date — runs its battles AR-off by default (AR is
+an opt-in flourish). This is evidence for what was already canon: the **2D battle
+is canonical**, the AR reveal is an _earned peak moment_, and no loop may require
+the camera.
 
-- **"Scan this QR code at the park and it just works"** — no app store, no
-  TestFlight invite for a skeptical exec.
-- Reuse existing tRPC + the live feed directly; the Darkness hook is just another
-  subscription.
-- Ship a _link_; iterate in minutes.
+## The Capacitor-native path (replaces "web AR first")
 
-**Native is the eventual product** (better sensors, background geofencing,
-battery control, AR fidelity, haptics, audio session management) — but native is
-the _wrong_ call for the demo. Build the demo on web AR; pitch the native
-roadmap.
+The stack is still web (TanStack Start + tRPC) — it just runs inside the
+**Capacitor** shell we now ship:
+
+- **The webview stays the game.** Map, battle, roster, Journal remain web UI
+  reusing tRPC + the live feed directly; iterate at web speed.
+- **AR is a native moment.** Rung 1 needs only a camera-preview plugin + a
+  transparent webview; rung 2+ is a small native plugin the web UI invokes for
+  the seconds the reveal lasts, then control returns to the web layer.
+- **Demo distribution:** TestFlight / Play internal track (the native app
+  already exists — it is no longer a "roadmap slide"). A QR code can still open
+  the _web_ app for a no-install audience — they get the 2D-canonical loop,
+  which is complete by design.
+- The open-sourced 8th Wall engine (MIT) is worth _watching_ as a fallback, but
+  its binary-only SLAM and dead hosted infrastructure make it a foundation
+  risk, not a plan.
+
+Native advantages the shell already unlocks as the game needs them: background
+geofencing, battery control, haptics, audio session management
+([06](06-location-and-geofencing.md)).
 
 ## Channel availability & graceful degradation
 

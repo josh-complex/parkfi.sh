@@ -1,9 +1,21 @@
 // MapTiler API key (client-side, domain-restricted — safe to expose via VITE_).
+// Still needed on the client for the raster tiles the Leaflet fallback builds
+// directly; the vector *style documents* now go through our own edge proxy.
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY as string | undefined;
 
+/**
+ * Origin the `/api/map-style/*` proxy path resolves against. Empty on the web
+ * build so it stays relative to whatever Cloudflare-fronted host serves us; in
+ * the native shell the WebView runs from `capacitor://` / `https://localhost`,
+ * so `VITE_API_BASE` (baked to `https://parkfi.sh` for native builds) makes it
+ * absolute — exactly as `lib/image.ts`, the tRPC client, and auth do.
+ */
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
+
 /** Same vector style as the interactive park map, so every map surface in the
- *  app shares one basemap look. */
-const MAPTILER_STYLE_ID = "019f3593-8a6f-771b-96d5-db0fec38726e";
+ *  app shares one basemap look. Exported so the style proxy route
+ *  (`routes/api/map-style/$theme.ts`) resolves `theme=light` to it. */
+export const MAPTILER_STYLE_ID = "019f3593-8a6f-771b-96d5-db0fec38726e";
 
 /**
  * Built-in MapTiler raster styles used as the Leaflet/no-WebGL fallback.
@@ -14,27 +26,30 @@ const MAPTILER_STYLE_ID = "019f3593-8a6f-771b-96d5-db0fec38726e";
  * a light basemap in dark mode.
  */
 const MAPTILER_FALLBACK_RASTER_STYLE_ID = "streets-v4";
-const MAPTILER_FALLBACK_RASTER_STYLE_ID_DARK = "streets-v4-dark";
-
-export function maptilerStyleUrl(): string {
-  // Cache-bust the style *document* once per day. MapTiler serves style.json
-  // with a `Last-Modified` header but no `Cache-Control`, so clients (esp. the
-  // Capacitor WebView) apply heuristic freshness and can serve a pre-publish
-  // style for a long time without revalidating. A day-bucketed param means a
-  // republished style shows up within 24h at most, while the tiles/sprites/
-  // glyphs referenced *inside* the style keep caching normally.
-  const day = Math.floor(Date.now() / 86_400_000);
-  return `https://api.maptiler.com/maps/${MAPTILER_STYLE_ID}/style.json?key=${MAPTILER_KEY}&_=${day}`;
-}
+/** GL dark-theme style ID. Exported for the style proxy route to resolve
+ *  `theme=dark`. Until we build a dark variant of our custom Cloud style, the GL
+ *  renderer falls back to MapTiler's first-party `streets-v4-dark` — a full
+ *  vector style, so the label-stripping in `park-map.tsx` still applies. */
+export const MAPTILER_FALLBACK_RASTER_STYLE_ID_DARK = "streets-v4-dark";
 
 /**
- * Vector style document for the GL map's dark theme. Until we build a dark
- * variant of our custom Cloud style (`MAPTILER_STYLE_ID`), the GL renderer falls
- * back to MapTiler's first-party `streets-v4-dark`. It's a full vector style, so
- * the label-stripping in `park-map.tsx` still applies (OpenMapTiles schema).
+ * Vector style documents are served through our own edge proxy
+ * (`routes/api/map-style/$theme.ts`) rather than fetched straight from
+ * `api.maptiler.com`. MapTiler returns style.json with a `Last-Modified` header
+ * but no `Cache-Control`, so clients — especially the Capacitor WebView — apply
+ * unbounded heuristic freshness (serving pre-publish styles) or needlessly
+ * re-fetch on the critical first-paint path. The proxy stamps `CACHE.MAP_STYLE`
+ * and lets Cloudflare serve it from an edge near the user. The tiles / sprites /
+ * glyphs referenced *inside* the returned style still load direct from MapTiler
+ * (per their ToS); only the descriptor is proxied.
  */
+export function maptilerStyleUrl(): string {
+  return `${API_BASE}/api/map-style/light`;
+}
+
+/** Dark-theme companion to {@link maptilerStyleUrl}, via the same edge proxy. */
 export function maptilerDarkStyleUrl(): string {
-  return `https://api.maptiler.com/maps/${MAPTILER_FALLBACK_RASTER_STYLE_ID_DARK}/style.json?key=${MAPTILER_KEY}`;
+  return `${API_BASE}/api/map-style/dark`;
 }
 
 /**

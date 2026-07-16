@@ -283,10 +283,13 @@ counter. Router unit tests for `leaveMark` (presence gate) + `reactMark`
 
 ## M4 — AR encounter + scoped battle
 
-**Add dependency:** an AR runtime — **8th Wall** (account) or open WebXR via
-`@react-three/fiber` + `@react-three/xr` (no new account; CSP/CDN per
-[07](07-ar-and-channels.md)). Recommend starting with WebXR + R3F for the demo to
-avoid a vendor account; document the 8th Wall upgrade path.
+**Add dependency (revised 2026-07-15):** no web-AR vendor — 8th Wall's hosted
+platform is gone and WebXR `immersive-ar` still doesn't work on iOS Safari
+([07](07-ar-and-channels.md)). M4b is **rung-1 camera-overlay lite AR** inside
+the Capacitor shell: a camera-preview plugin (`toBack: true`) + a transparent
+webview, with the Heartless as an animated overlay (DOM/canvas, or
+`@react-three/fiber` if 3D is wanted) and device-orientation parallax. The
+native ARKit/ARCore plane-anchor plugin is the rung-2 upgrade path.
 
 **New files**
 
@@ -361,14 +364,17 @@ its achievement (with evidence provenance). Profile query renders the timeline.
 
 ## M7 — package the pitch
 
-- Wrap the play route behind a **QR-code link** (a clean `/play/$slug` entry).
+- Package the pitch build: **TestFlight / Play internal track** of the
+  Capacitor app, plus a **QR-code web link** (a clean play entry) for the
+  no-install 2D loop.
 - A 3-minute scripted walkthrough ending on a **real ride-down** mic-drop;
   `livingDev.injectStatus` is the in-meeting fallback ([12](12-demo-vertical-slice.md)).
 - Capture the genuine reactive moment on video (the asset for Path-1 pitch,
   [13](13-roadmap-risks-ip.md)).
 
-**Acceptance:** a fresh device opens the QR link with no install and runs the
-full loop (web AR, [07](07-ar-and-channels.md)).
+**Acceptance:** a fresh device installs the TestFlight build and runs the full
+loop including the lite-AR reveal; a second device opens the QR web link with no
+install and completes the 2D-canonical loop ([07](07-ar-and-channels.md)).
 
 ---
 

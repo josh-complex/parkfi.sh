@@ -3,9 +3,12 @@
 > **Theme:** Build the smallest thing that makes a Disney exec lean forward — and
 > the same thing is the v1 of the product. The demo's mic-drop is the **live-data
 > hook**, so that part is _real_; everything else is scoped or Wizard-of-Oz'd.
-> Ship it as **web AR behind a QR code** so it opens with no install. The first
-> thing to build is the **dev/armchair mode**, because you can't live in the
-> park.
+> Ship it **inside the Capacitor app we already distribute** (TestFlight/Play
+> internal track); a QR code can still open the web app's 2D-canonical loop for
+> a no-install audience. _(Revised 2026-07-15: the original "web AR behind a QR
+> code" framing died with 8th Wall — see [07](07-ar-and-channels.md).)_ The
+> first thing to build is the **dev/armchair mode**, because you can't live in
+> the park.
 
 ## Core insight
 
@@ -44,30 +47,35 @@ cross-park travel, the full dex — is _narrated_ over this working core.
 
 ## Build vs. fake, for the demo
 
-| System                                           | Demo version                                             | Rationale                                  |
-| ------------------------------------------------ | -------------------------------------------------------- | ------------------------------------------ |
-| **Live-data Darkness hook**                      | **Real**                                                 | the moat — the whole point                 |
-| **Geofencing**                                   | **Real** (+ dev spoofer)                                 | proves "it knows where you are"            |
-| **AR encounter**                                 | Real but **simple** — plane-/image-anchored, stand-still | impressive without markerless multiplayer  |
-| **Battle**                                       | **Scoped** — turn-based, 2–3 moves                       | full combat is a v2 problem                |
-| **Companion roster**                             | **Real but tiny** — 3–4 characters, one World            | shows the collection hook                  |
-| **Discovery marks**                              | **Real** — create + find + react                         | low-risk, no game balance, proves UGC loop |
-| **Cross-park / raids / synthesis**               | **Narrated**, not built                                  | "here's where it goes"                     |
-| **Native app, background geofencing, watch app** | **Roadmap slide**                                        | web AR carries the demo                    |
+| System                               | Demo version                                                         | Rationale                                                   |
+| ------------------------------------ | -------------------------------------------------------------------- | ----------------------------------------------------------- |
+| **Live-data Darkness hook**          | **Real**                                                             | the moat — the whole point                                  |
+| **Geofencing**                       | **Real** (+ dev spoofer)                                             | proves "it knows where you are"                             |
+| **AR encounter**                     | Real but **simple** — camera-overlay "lite AR" (rung 1), stand-still | impressive without tracking or multiplayer                  |
+| **Battle**                           | **Scoped** — turn-based, 2–3 moves                                   | full combat is a v2 problem                                 |
+| **Companion roster**                 | **Real but tiny** — 3–4 characters, one World                        | shows the collection hook                                   |
+| **Discovery marks**                  | **Real** — create + find + react                                     | low-risk, no game balance, proves UGC loop                  |
+| **Cross-park / raids / synthesis**   | **Narrated**, not built                                              | "here's where it goes"                                      |
+| **Background geofencing, watch app** | **Roadmap slide**                                                    | the Capacitor shell already exists; deep native comes later |
 
-## Web AR is the demo's secret weapon
+## The Capacitor app is the demo vehicle (revised 2026-07-15)
 
-Our stack is web (TanStack Start + tRPC). **8th Wall / WebXR** do plane-, image-,
-and location-AR in the browser ([07](07-ar-and-channels.md)):
+The original secret weapon — 8th Wall web AR behind a QR code — no longer
+exists: the 8th Wall hosted platform shut down 2026-02-28, and WebXR
+`immersive-ar` still doesn't work on iOS Safari ([07](07-ar-and-channels.md)).
+The good news is we no longer need it:
 
-- **"Scan this QR code and it just works"** — no app store, no TestFlight invite
-  for a skeptical exec.
-- Reuse existing tRPC + the live feed directly; the Darkness hook is one more
-  subscription.
-- Ship a _link_; iterate in minutes.
-
-Native is the eventual product; web AR is how the _demo_ gets to "leaning
-forward" 10× faster.
+- **The native shell already ships.** The demo is a TestFlight / Play internal
+  build of the app the exec would actually use — arguably a _stronger_ pitch
+  than a web toy.
+- **The web game is unchanged** — map, battle, roster all reuse tRPC + the live
+  feed inside the webview; iterate at web speed right up to the meeting.
+- **The AR reveal is rung-1 "lite AR"** (camera preview behind a transparent
+  webview + device-orientation parallax) — no tracking dependency, no vendor,
+  works on every phone in the room.
+- A QR code still works for the no-install audience: it opens the web app's
+  **2D-canonical loop**, which is complete by design (pillar: the game never
+  _requires_ AR).
 
 ## Build the dev / armchair mode FIRST
 
@@ -97,12 +105,14 @@ requires a theme-park trip to test.
    ([11](11-architecture.md)). **This is the mic-drop; do it early.**
 4. **Discovery marks** — create/find/react ([03](03-marks-and-discovery.md)).
    Lowest-risk real feature; proves the UGC + flywheel loop with no AR.
-5. **AR encounter + scoped battle** — WebXR/8th Wall plane anchor; turn-based.
+5. **AR encounter + scoped battle** — rung-1 camera-overlay lite AR
+   ([07](07-ar-and-channels.md)); turn-based.
 6. **Companion recruit (one World)** — the collection hook
    ([05](05-companions-and-proximity.md)).
 7. **The logbook** — persistence made visible ([08](08-achievements-persistence-coldstart.md));
    the shareable artifact.
-8. **Wrap it as a QR-code link** + a 3-minute scripted walkthrough for the pitch.
+8. **Package the pitch build** — TestFlight/internal-track install plus a
+   QR-code web link (2D loop) — + a 3-minute scripted walkthrough.
 
 ## Validation plan
 

@@ -10,7 +10,7 @@
 
 ```
         ┌──────────────────────── client (web-first, then native) ───────────────────────┐
-        │  geofence + motion engine · AR runtime (WebXR/8th Wall) · channels (wrist/ear)   │
+        │  geofence + motion engine · AR (native, via Capacitor plugin) · channels (wrist/ear) │
         └───────────────┬───────────────────────────────────────────────┬─────────────────┘
                         │ tRPC (presence, marks, encounters, roster)     │ push
         ┌───────────────▼───────────────┐                  ┌─────────────▼──────────────┐
@@ -83,8 +83,10 @@ the **only writer** of `presence_event` and any progression it gates.
 - **Geofence/motion:** web (Geolocation + DeviceMotion / Generic Sensor APIs)
   for the demo; native (Core Location region monitoring + Core Motion / the
   Android equivalents) for the product, for background + battery control.
-- **AR runtime:** **WebXR / 8th Wall** for the demo (no install); native ARKit/
-  ARCore later for fidelity. AR ladder in [07](07-ar-and-channels.md).
+- **AR runtime:** native, inside the Capacitor shell — rung-1 camera-overlay
+  lite AR first, then a thin ARKit/ARCore plugin, then the ARCore Geospatial
+  API for VPS/shared anchors. (Revised 2026-07-15; the original WebXR/8th Wall
+  path is dead — full ladder in [07](07-ar-and-channels.md).)
 
 ### 4. The `living.*` tRPC router
 
@@ -127,7 +129,9 @@ Every "existing" step is infrastructure already running in production today; the
 - **No new datastore.** Game tables live in the existing Timescale Postgres;
   hypertables + retention follow the `queue_obs` pattern.
 - **New worker job** co-deployed with the existing worker on Railway.
-- **Web client** ships inside the existing TanStack Start app (a new route +
-  the AR runtime), deployable as a **QR-code link** for the demo
-  ([12](12-demo-vertical-slice.md)).
-- **Native app** is a later phase, sharing the same tRPC API and DB.
+- **Web client** ships inside the existing TanStack Start app; the same web UI
+  runs in the **Capacitor shell we already distribute**, which is the demo
+  vehicle ([12](12-demo-vertical-slice.md)). A QR-code web link still serves the
+  2D-canonical loop.
+- **Deep native** (background geofencing, watch, AR fidelity) grows inside that
+  shell over time, sharing the same tRPC API and DB.

@@ -298,8 +298,8 @@ constraint, not a bolt-on ([09](09-moderation-trust-safety.md)).
 ### 3.8 Interactionspace — _how the Kingdom Hearts perceives & acts_
 
 Not entities — **channels and schemes** (full detail §6). Channels: **map/screen**
-(now), **AR** (M4b, 8th Wall), **wrist/ear** (later). The rule: episodic,
-stand-still, heads-up.
+(now), **AR** (M4b — native lite-AR in the Capacitor shell; see [07](07-ar-and-channels.md)),
+**wrist/ear** (later). The rule: episodic, stand-still, heads-up.
 
 ---
 
@@ -637,7 +637,7 @@ generate`); run bins via `bun`; filter `category IS NOT NULL` on attractions;
 | Companions acting in battle (ally action + home-World passive)        | Companionspace/Interaction | ✅ M5a (`fieldParty`, §6)                      |
 | Companion proximity tiers wired into play (`tierFor` in `fieldParty`) | Companionspace             | ✅ M5a (battle only; roam/party UI still ⏳)   |
 | Presence verification (sensor fusion)                                 | Userspace/Worldspace       | ⏳ M5b (in-park)                               |
-| AR reveal (8th Wall)                                                  | Interactionspace           | ⏳ M4b                                         |
+| AR reveal (camera-overlay lite AR → native ARKit/ARCore)              | Interactionspace           | ⏳ M4b                                         |
 | Logbook / Wrapped                                                     | Userspace                  | ⏳ M6                                          |
 | Rank curve + Mark of Mastery trials                                   | Userspace                  | ⏳ designed §4.1 (linear placeholder shipping) |
 | Journal / defeat-collection                                           | Userspace                  | ⏳ designed §4.2                               |
@@ -720,6 +720,22 @@ generate`); run bins via `bun`; filter `category IS NOT NULL` on attractions;
   (that's M5b presence). Open follow-up: the ally-action magnitude is derived
   from `base_stats.atk` — when the Journal/forge land (§4.2–4.4), companion
   power should read from gear/level too, not just seed stats.
+
+- **2026-07-15 — AR tech path revised; web AR is dead.** Facts on the ground:
+  Niantic shut the hosted **8th Wall** platform down 2026-02-28 (engine core now
+  MIT open source, but SLAM is binary-only and VPS/Maps were never released);
+  **WebXR `immersive-ar` remains non-functional on iOS Safari**; and ParkFi now
+  ships a **Capacitor native shell**. New canonical ladder (doc 07): rung 1
+  camera-overlay "lite AR" (camera preview behind a transparent webview) → rung
+  2 native ARKit/ARCore plane anchors via a thin Capacitor plugin → rung 3
+  **ARCore Geospatial API** VPS (Niantic Lightship de-prioritized) → rung 4
+  shared geospatial anchors for co-op. The demo vehicle is the Capacitor app
+  (TestFlight/internal track), not a QR-code web-AR link; a QR web link still
+  serves the 2D loop. Docs 01/07/11/12/13/14 re-aligned in the same change. No
+  gameplay canon changes: the 2D battle stays canonical and AR stays the
+  episodic, stand-still reveal (pillar 4) — a posture now also backed by market
+  evidence (Pokémon GO players largely play AR-off; Monster Hunter Now ships
+  combat AR-off by default).
 
 ### Open questions (decide before the relevant build)
 
