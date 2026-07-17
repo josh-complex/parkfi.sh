@@ -25,6 +25,13 @@ import {
   ingestPing,
 } from "#/server/achievements/engine.ts";
 import { ingestRideTrace, rideTraceSchema } from "#/server/achievements/rides.ts";
+import {
+  buildScenario,
+  loadSimPark,
+  runScenario,
+  SCENARIO_PRESETS,
+  setSyntheticWeather,
+} from "#/server/achievements/scenarios.ts";
 import { adminProcedure, protectedProcedure } from "../init.ts";
 
 const TRACK_EVENT_KEYS = Object.keys(TRACK_EVENTS) as [TrackEvent, ...TrackEvent[]];
@@ -310,4 +317,160 @@ export const achievementsRouter = {
     for (const userId of ids) await evaluateAndUnlock(userId);
     return { evaluated: ids.size };
   }),
+
+  // ---- device-test-tooling: time-warp scenarios + synthetic weather ----
+
+  /** Active parks that can seed a sim/scenario (have geocoded attractions),
+   *  for the park picker in the on-device sim panel & admin page. */
+  adminSimParks: adminProcedure.query(async () => {
+    const rows = await db
+      .select({
+        id: parks.id,
+        slug: parks.slug,
+        name: parks.name,
+        timezone: parks.timezone,
+        attractionCount: sql<number>`count(${attractions.id})`.mapWith(Number),
+      })
+      .from(parks)
+      .innerJoin(
+        attractions,
+        and(
+          eq(attractions.parkId, parks.id),
+          eq(attractions.entityType, "ATTRACTION"),
+          eq(attractions.active, true),
+          isNotNull(attractions.category),
+          isNotNull(attractions.latitude),
+          isNotNull(attractions.longitude),
+        ),
+      )
+      .where(eq(parks.active, true))
+      .groupBy(parks.id, parks.slug, parks.name, parks.timezone)
+      .orderBy(parks.name);
+    return rows;
+  }),
+
+  /** One park's anchorable attractions (with coords) for the sim panel's
+   *  teleport/queue targets. */
+  adminSimPark: adminProcedure
+    .input(z.object({ parkId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const park = await loadSimPark(input.parkId);
+      if (!park) throw new TRPCError({ code: "NOT_FOUND" });
+      return park;
+    }),
+
+  /**
+   * Replay a scripted park day through the real `ingestPing` pipeline with an
+   * injected clock, on the caller's own account. Returns the same
+   * unlock/xp/level shape the ping funnel does, so the client fires the whole
+   * batch through the live toast/haptic path in one session.
+   */
+  adminSimulateScenario: adminProcedure
+    .input(
+      z.object({
+        preset: z.enum(SCENARIO_PRESETS),
+        parkId: z.number().int().positive(),
+        secondParkId: z.number().int().positive().optional(),
+        days: z.number().int().min(2).max(30).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const park = await loadSimPark(input.parkId);
+      if (!park) throw new TRPCError({ code: "NOT_FOUND", message: "Park not found" });
+      const secondPark = input.secondParkId ? await loadSimPark(input.secondParkId) : undefined;
+      let script;
+      try {
+        script = buildScenario(input.preset, {
+          park,
+          secondPark: secondPark ?? undefined,
+          days: input.days,
+        });
+      } catch (err) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: err instanceof Error ? err.message : "Could not build scenario",
+        });
+      }
+      return runScenario(ctx.userId, script);
+    }),
+
+  /** Insert a synthetic "raining now" observation so the rainy-day family is
+   *  testable without real weather. Self-expires via the engine's 2 h window. */
+  adminSetWeather: adminProcedure
+    .input(z.object({ parkId: z.number().int().positive() }))
+    .mutation(async ({ input }) => {
+      await setSyntheticWeather(input.parkId);
+      return { ok: true };
+    }),
+
+  // ---- device-test-tooling: Layer D observability ----
+
+  /** Live geo cursor for a user — park, coords, and the dwell state machine's
+   *  current anchor (resolved to a name). Refetch on an interval to watch a
+   *  queue sim tick. */
+  adminGeoCursor: adminProcedure
+    .input(z.object({ userId: z.string() }))
+    .query(async ({ input }) => {
+      const [row] = await db
+        .select({
+          parkId: userGeoState.parkId,
+          parkName: parks.name,
+          lng: userGeoState.lng,
+          lat: userGeoState.lat,
+          at: userGeoState.at,
+          anchorAttractionId: userGeoState.anchorAttractionId,
+          anchorName: attractions.name,
+          anchorSince: userGeoState.anchorSince,
+          anchorSeconds: userGeoState.anchorSeconds,
+        })
+        .from(userGeoState)
+        .leftJoin(parks, eq(parks.id, userGeoState.parkId))
+        .leftJoin(attractions, eq(attractions.id, userGeoState.anchorAttractionId))
+        .where(eq(userGeoState.userId, input.userId));
+      return row ?? null;
+    }),
+
+  /** Recent park-day rollups (flags included) for a user — the raw rows behind
+   *  the geo-derived stat families. */
+  adminRecentDays: adminProcedure
+    .input(z.object({ userId: z.string() }))
+    .query(async ({ input }) => {
+      return db
+        .select({
+          day: userParkDay.day,
+          parkName: parks.name,
+          distanceM: userParkDay.distanceM,
+          presentSeconds: userParkDay.presentSeconds,
+          queueSeconds: userParkDay.queueSeconds,
+          rides: userParkDay.rides,
+          ropeDrop: userParkDay.ropeDrop,
+          nightOwl: userParkDay.nightOwl,
+          rainy: userParkDay.rainy,
+        })
+        .from(userParkDay)
+        .innerJoin(parks, eq(parks.id, userParkDay.parkId))
+        .where(eq(userParkDay.userId, input.userId))
+        .orderBy(desc(userParkDay.day))
+        .limit(30);
+    }),
+
+  /** Recent sensor/dwell ride events for a user, with the gate `source` — the
+   *  raw rows behind the sensor stat families. */
+  adminRecentRides: adminProcedure
+    .input(z.object({ userId: z.string() }))
+    .query(async ({ input }) => {
+      return db
+        .select({
+          id: userRideEvent.id,
+          riddenAt: userRideEvent.riddenAt,
+          source: userRideEvent.source,
+          attractionName: attractions.name,
+          metrics: userRideEvent.metrics,
+        })
+        .from(userRideEvent)
+        .innerJoin(attractions, eq(attractions.id, userRideEvent.attractionId))
+        .where(eq(userRideEvent.userId, input.userId))
+        .orderBy(desc(userRideEvent.riddenAt), desc(userRideEvent.id))
+        .limit(20);
+    }),
 } satisfies TRPCRouterRecord;

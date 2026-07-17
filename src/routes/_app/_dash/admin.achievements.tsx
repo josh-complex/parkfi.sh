@@ -101,6 +101,57 @@ function AdminAchievements() {
     }),
   );
 
+  // --- device-test-tooling: caller-scoped simulation ------------------------
+  const simParksQ = useQuery(trpc.achievements.adminSimParks.queryOptions());
+  const [simParkId, setSimParkId] = React.useState<number | null>(null);
+  React.useEffect(() => {
+    if (simParkId == null && simParksQ.data && simParksQ.data.length > 0) {
+      setSimParkId(simParksQ.data[0].id);
+    }
+  }, [simParksQ.data, simParkId]);
+
+  const invalidateObservability = () => {
+    void queryClient.invalidateQueries({
+      queryKey: trpc.achievements.adminGeoCursor.queryKey({ userId: selectedUserId ?? "" }),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: trpc.achievements.adminRecentDays.queryKey({ userId: selectedUserId ?? "" }),
+    });
+  };
+
+  const simulate = useMutation(
+    trpc.achievements.adminSimulateScenario.mutationOptions({
+      onSuccess: (r) => {
+        invalidateObservability();
+        toast.success(
+          `Ran ${r.pings} pings on your account — ${r.newlyUnlocked.length} new unlock(s). ` +
+            `Unlock toasts replay on your next app open.`,
+        );
+      },
+      onError: (err) => toast.error(err.message || "Scenario failed"),
+    }),
+  );
+  const setWeather = useMutation(
+    trpc.achievements.adminSetWeather.mutationOptions({
+      onSuccess: () => toast.success("Rain observation inserted (2 h window)"),
+      onError: (err) => toast.error(err.message || "Could not set weather"),
+    }),
+  );
+
+  const runSim = (
+    preset: "fullParkDay" | "parkHopDay" | "weekendPair" | "streak" | "crossMidnightDwell",
+  ) => {
+    if (simParkId == null) return;
+    const secondParkId =
+      preset === "parkHopDay" ? simParksQ.data?.find((p) => p.id !== simParkId)?.id : undefined;
+    simulate.mutate({
+      preset,
+      parkId: simParkId,
+      secondParkId,
+      days: preset === "streak" ? 7 : undefined,
+    });
+  };
+
   const detail = detailQ.data;
   const unlockedByFamily = React.useMemo(() => {
     if (!detail) return [];
@@ -121,6 +172,81 @@ function AdminAchievements() {
           (with toast and buzz) anything they still qualify for.
         </p>
       </header>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Time-warp simulation</CardTitle>
+          <CardDescription>
+            Replays a scripted park day through the real ping engine on <strong>your own</strong>{" "}
+            account, with an injected clock — so clock-gated, calendar, and queue families are
+            testable in seconds. Unlock toasts replay on your next app open; run these from the
+            on-device panel to see them live.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={simParkId ?? ""}
+              onChange={(e) => setSimParkId(Number(e.target.value))}
+              className="rounded-md border bg-background px-2 py-1.5 text-sm"
+            >
+              {(simParksQ.data ?? []).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={simulate.isPending}
+              onClick={() => runSim("fullParkDay")}
+            >
+              Full park day
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={simulate.isPending}
+              onClick={() => runSim("streak")}
+            >
+              7-day streak
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={simulate.isPending}
+              onClick={() => runSim("weekendPair")}
+            >
+              Weekend pair
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={simulate.isPending}
+              onClick={() => runSim("parkHopDay")}
+            >
+              Park hop
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={simulate.isPending}
+              onClick={() => runSim("crossMidnightDwell")}
+            >
+              Cross-midnight
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={setWeather.isPending || simParkId == null}
+              onClick={() => simParkId != null && setWeather.mutate({ parkId: simParkId })}
+            >
+              Make it rain
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -339,8 +465,159 @@ function AdminAchievements() {
                 </AlertDialog>
               </CardContent>
             </Card>
+
+            <ObservabilityCards userId={detail.user.id} />
           </>
         ) : null)}
+    </div>
+  );
+}
+
+/**
+ * Layer D observability: the live geo cursor (dwell state machine), recent
+ * park-day rollups, and recent ride events for a user — so a queue sim or
+ * scenario run can be watched tick-by-tick and a failure pinned to the exact
+ * transition. All read-only.
+ */
+function ObservabilityCards({ userId }: { userId: string }) {
+  const trpc = useTRPC();
+  const [watch, setWatch] = React.useState(false);
+
+  const cursorQ = useQuery({
+    ...trpc.achievements.adminGeoCursor.queryOptions({ userId }),
+    refetchInterval: watch ? 3000 : false,
+  });
+  const daysQ = useQuery(trpc.achievements.adminRecentDays.queryOptions({ userId }));
+  const ridesQ = useQuery(trpc.achievements.adminRecentRides.queryOptions({ userId }));
+  const cursor = cursorQ.data;
+
+  return (
+    <>
+      <Card>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <div>
+            <CardTitle>Geo cursor</CardTitle>
+            <CardDescription>Live dwell state machine for this user.</CardDescription>
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={watch} onCheckedChange={(v) => setWatch(v === true)} />
+            Auto-refresh
+          </label>
+        </CardHeader>
+        <CardContent>
+          {cursor ? (
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
+              <Stat
+                label="Park"
+                value={cursor.parkName ?? (cursor.parkId ? `#${cursor.parkId}` : "—")}
+              />
+              <Stat
+                label="Coords"
+                value={
+                  cursor.lat != null && cursor.lng != null
+                    ? `${cursor.lat.toFixed(5)}, ${cursor.lng.toFixed(5)}`
+                    : "—"
+                }
+              />
+              <Stat label="Last ping" value={formatDate(cursor.at)} />
+              <Stat label="Anchor" value={cursor.anchorName ?? "—"} />
+              <Stat label="Anchor secs" value={String(cursor.anchorSeconds)} />
+              <Stat label="Anchor since" value={formatDate(cursor.anchorSince)} />
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No geo state yet.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent park days</CardTitle>
+          <CardDescription>Raw rollups with the geo-derived flags.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {daysQ.data && daysQ.data.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Day</TableHead>
+                  <TableHead>Park</TableHead>
+                  <TableHead>Dist</TableHead>
+                  <TableHead>Queue</TableHead>
+                  <TableHead>Rides</TableHead>
+                  <TableHead>Flags</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {daysQ.data.map((d) => (
+                  <TableRow key={`${d.day}-${d.parkName}`}>
+                    <TableCell className="whitespace-nowrap">{d.day}</TableCell>
+                    <TableCell>{d.parkName}</TableCell>
+                    <TableCell>{Math.round(d.distanceM)} m</TableCell>
+                    <TableCell>{Math.round(d.queueSeconds / 60)} min</TableCell>
+                    <TableCell>{d.rides}</TableCell>
+                    <TableCell className="space-x-1">
+                      {d.ropeDrop && <Badge variant="secondary">rope</Badge>}
+                      {d.nightOwl && <Badge variant="secondary">owl</Badge>}
+                      {d.rainy && <Badge variant="secondary">rain</Badge>}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="text-sm text-muted-foreground">No park days yet.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent rides</CardTitle>
+          <CardDescription>Sensor/dwell ride events with their gate source.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {ridesQ.data && ridesQ.data.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>When</TableHead>
+                  <TableHead>Attraction</TableHead>
+                  <TableHead>Source</TableHead>
+                  <TableHead>Metrics</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {ridesQ.data.map((r) => (
+                  <TableRow key={r.id}>
+                    <TableCell className="whitespace-nowrap">{formatDate(r.riddenAt)}</TableCell>
+                    <TableCell>{r.attractionName}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{r.source}</Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {r.metrics
+                        ? `${r.metrics.dropCount} drops · maxG ${r.metrics.maxG.toFixed(1)}`
+                        : "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="text-sm text-muted-foreground">No ride events yet.</p>
+          )}
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="tabular-nums">{value}</div>
     </div>
   );
 }

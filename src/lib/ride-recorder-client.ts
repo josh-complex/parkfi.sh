@@ -59,6 +59,31 @@ export async function disarmRideMonitoring(): Promise<void> {
 }
 
 /**
+ * Manual record mode (device-test-tooling C3). Start/stop an explicit recording
+ * on the native plugin — the only way to drive the *real* IMU → metrics bridge
+ * on hardware without a coaster (record a car ride, a vigorous shake, stairs).
+ * `stopRideRecording` returns the computed `RideTrace`, or null on web / if
+ * nothing was recorded. Native-only; inert and non-throwing on web.
+ */
+export async function startRideRecording(): Promise<void> {
+  if (!isNative()) return;
+  try {
+    await RideRecorder.startRecording();
+  } catch {
+    /* sensors unavailable — non-fatal */
+  }
+}
+
+export async function stopRideRecording(): Promise<RideTrace | null> {
+  if (!isNative()) return null;
+  try {
+    return await RideRecorder.stopRecording();
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Subscribe to sensor-detected rides. Returns a handle to remove the listener,
  * or `null` on web. Callers own the handle's lifecycle.
  */

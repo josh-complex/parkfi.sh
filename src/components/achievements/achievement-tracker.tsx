@@ -1,18 +1,16 @@
 "use client";
 
 import * as React from "react";
-import posthog from "posthog-js";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { showRideRecapToast } from "#/components/achievements/ride-recap-toast.tsx";
+import { useDetectedRideHandler } from "#/components/achievements/use-detected-ride.ts";
 import { LOCNUDGE_TOAST_IDS, showUnlockToasts } from "#/components/achievements/unlock-toasts.tsx";
 import { useGeolocation } from "#/hooks/use-geolocation.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
+import { reportSimPing, useGeoSim } from "#/lib/dev-geo-sim.ts";
 import { isNative } from "#/lib/platform.ts";
-import { logRideDebug } from "#/lib/ride-debug-log.ts";
-import { hasRideSignature } from "#/lib/ride-metrics.ts";
 import {
   addRideDetectedListener,
   armRideMonitoring,
@@ -57,6 +55,10 @@ export function AchievementTracker() {
   const loggedIn = !!session?.user;
   const trpc = useTRPC();
   const { state, locate } = useGeolocation({ watch: true, rememberActive: true });
+  const sim = useGeoSim();
+  // Faster cadence while the location sim is armed (Layer A) so dwell state
+  // transitions show up in seconds, not 30-s multiples. No-op in normal use.
+  const pingIntervalMs = sim.armed && sim.config?.fastPing ? 5_000 : PING_INTERVAL_MS;
 
   const ack = useMutation(
     trpc.achievements.ackUnlocks.mutationOptions({ meta: { errorToast: false } }),
@@ -90,6 +92,14 @@ export function AchievementTracker() {
       if (!coords) return;
       pingRef.current.mutate(coords, {
         onSuccess: (r) => {
+          // Echo the response to the dev sim panel (no-op when disarmed).
+          reportSimPing({
+            inPark: r.inPark,
+            parkId: r.parkId,
+            distanceM: r.today?.distanceM,
+            queueSeconds: r.today?.queueSeconds,
+            rides: r.today?.rides,
+          });
           // Arm/disarm the native ride recorder on park entry/exit (no-op on
           // web). Only sensor-monitor while actually in a park — that's what
           // bounds battery. Edge-triggered off the ping's inPark flag.
@@ -108,61 +118,24 @@ export function AchievementTracker() {
         },
       });
     };
-    const id = setInterval(tick, PING_INTERVAL_MS);
+    const id = setInterval(tick, pingIntervalMs);
     return () => clearInterval(id);
-  }, [loggedIn, state.status, celebrate]);
+  }, [loggedIn, state.status, celebrate, pingIntervalMs]);
 
   // --- Native ride detection -------------------------------------------------
-  // On device only: a sensor-detected coaster ride → submit its trace → recap
-  // toast + any newly-unlocked sensor achievements through the same funnel.
+  // On device only: a sensor-detected coaster ride flows through the shared
+  // detected-ride funnel (signature gate → submit → recap toast + unlocks +
+  // debug ring) — the exact path the synthetic-trace dev panel drives too.
   const inParkRef = React.useRef(false);
-  const submit = useMutation(
-    trpc.achievements.submitRideTrace.mutationOptions({ meta: { errorToast: false } }),
-  );
-  const submitRef = React.useRef(submit);
-  submitRef.current = submit;
+  const handleDetectedRide = useDetectedRideHandler();
+  const handleRideRef = React.useRef(handleDetectedRide);
+  handleRideRef.current = handleDetectedRide;
 
   React.useEffect(() => {
     if (!loggedIn || !isNative()) return;
     let handle: PluginListenerHandle | null = null;
     let cancelled = false;
-    void addRideDetectedListener((trace) => {
-      // Client-side signature gate: don't even submit ordinary movement. The
-      // server enforces the same rule authoritatively; this just spares the
-      // round-trip and keeps the field-tuning ring honest about what the device
-      // detected vs. what we suppressed.
-      if (!hasRideSignature(trace.metrics)) {
-        logRideDebug({ kind: "suppressed", reason: "no ride signature", metrics: trace.metrics });
-        posthog.capture("ride_trace_suppressed", {
-          confidence: trace.metrics.confidence,
-          durationS: trace.metrics.durationS,
-          maxG: trace.metrics.maxG,
-        });
-        return;
-      }
-      submitRef.current.mutate(trace, {
-        onSuccess: (r) => {
-          logRideDebug({ kind: r.duplicate ? "duplicate" : "accepted", metrics: trace.metrics });
-          if (!r.duplicate) showRideRecapToast(trace.metrics);
-          if (r.newlyUnlocked.length > 0) {
-            celebrate(
-              r.newlyUnlocked.map((u) => u.id),
-              r.xp,
-              r.level,
-            );
-          }
-        },
-        onError: (err) => {
-          logRideDebug({ kind: "rejected", reason: err.message, metrics: trace.metrics });
-          posthog.capture("ride_trace_rejected", {
-            reason: err.message,
-            confidence: trace.metrics.confidence,
-            durationS: trace.metrics.durationS,
-            maxG: trace.metrics.maxG,
-          });
-        },
-      });
-    }).then((h) => {
+    void addRideDetectedListener((trace) => handleRideRef.current(trace)).then((h) => {
       if (cancelled) void h?.remove();
       else handle = h;
     });
@@ -171,7 +144,7 @@ export function AchievementTracker() {
       void handle?.remove();
       void disarmRideMonitoring();
     };
-  }, [loggedIn, celebrate]);
+  }, [loggedIn]);
 
   // --- Pending replay --------------------------------------------------------
   // Anything still un-acked (app closed mid-toast, etc.) — replayed once.

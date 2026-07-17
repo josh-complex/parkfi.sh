@@ -197,15 +197,18 @@ function localParts(now: Date, timeZone: string): { day: string; hour: number; m
   return { day, hour, minute };
 }
 
-/** Latest weather_obs for the park within the last 2h — FORECAST or ACTUAL, latest wins. */
-async function isRainyNow(parkId: number): Promise<boolean> {
+/** Latest weather_obs for the park within the 2h before `now` — FORECAST or
+ *  ACTUAL, latest wins. `now` is explicit (not `now()`) so a time-warped
+ *  scenario ping evaluates rain against the *injected* clock, not the DB wall
+ *  clock — see `adminSimulateScenario`. */
+async function isRainyNow(parkId: number, now: Date): Promise<boolean> {
   const [row] = await db
     .select({ precipMm: weatherObs.precipMm, condition: weatherObs.condition })
     .from(weatherObs)
     .where(
       and(
         eq(weatherObs.parkId, parkId),
-        gt(weatherObs.observedAt, sql`now() - interval '2 hours'`),
+        gt(weatherObs.observedAt, new Date(now.getTime() - 2 * 60 * 60 * 1000)),
       ),
     )
     .orderBy(desc(weatherObs.observedAt))
@@ -248,20 +251,25 @@ async function settleAnchorRow(
 
 /**
  * The core: fold one location ping into the user's park-day rollup, run the
- * queue-dwell state machine, and re-evaluate achievements. Server time only —
- * never trusts a client timestamp.
+ * queue-dwell state machine, and re-evaluate achievements.
+ *
+ * The public `ping` procedure never forwards a client time — it calls this with
+ * the default `now = new Date()`, so real pings still run on server time only.
+ * The `now` parameter exists solely for the admin time-warp scenario runner
+ * (`adminSimulateScenario`), which replays a scripted day through the real
+ * pipeline with an injected clock. Keep the injectable path admin-only.
  */
 export async function ingestPing(
   userId: string,
   lng: number,
   lat: number,
   accuracyM: number,
+  now: Date = new Date(),
 ): Promise<IngestResult> {
   if (accuracyM > PING_MAX_ACCURACY_M) {
     return { inPark: false, newlyUnlocked: [] };
   }
 
-  const now = new Date();
   const point: LngLat = [lng, lat];
   const allParks = await getParks();
   const park = parkForPoint(point, allParks);
@@ -327,7 +335,7 @@ export async function ingestPing(
   const ropeDrop =
     hour < ROPE_DROP_BEFORE.h || (hour === ROPE_DROP_BEFORE.h && minute < ROPE_DROP_BEFORE.m);
   const nightOwl = hour >= NIGHT_OWL_AFTER_H;
-  const rainy = await isRainyNow(park.id);
+  const rainy = await isRainyNow(park.id, now);
 
   await db
     .insert(userParkDay)

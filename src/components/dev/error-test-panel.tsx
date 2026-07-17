@@ -10,6 +10,7 @@ import {
   resetCelebratedLevel,
   showUnlockToasts,
 } from "#/components/achievements/unlock-toasts.tsx";
+import { GeoSimSection } from "#/components/dev/geo-sim-panel.tsx";
 import { useNavTestToolsEnabled } from "#/integrations/posthog/feature-flags.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { getRideDebugLog, useRideDebugLog } from "#/lib/ride-debug-log.ts";
@@ -438,6 +439,7 @@ export function ErrorTestPanel() {
             </ul>
           </div>
         ))}
+        <GeoSimSection />
         <RideDebugSection />
       </div>
     </div>

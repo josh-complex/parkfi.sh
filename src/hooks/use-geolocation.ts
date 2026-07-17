@@ -1,6 +1,8 @@
 import * as React from "react";
 import posthog from "posthog-js";
 
+import { useGeoSim } from "#/lib/dev-geo-sim.ts";
+
 /**
  * Discriminated geolocation state. Coords follow the project's [lng, lat]
  * convention (GeoJSON / MapLibre order) so they drop straight into the map and
@@ -134,6 +136,21 @@ export function useGeolocation(opts?: { watch?: boolean; rememberActive?: boolea
 
   React.useEffect(() => stop, [stop]);
 
+  // Dev location simulator (Layer A). When armed from the dev panel, sim coords
+  // masquerade as a live `granted` fix so the whole client loop — ping cadence,
+  // in-park UI, ride-recorder arm/disarm — runs for real off simulated
+  // positions. Disarmed for everyone else, so this is inert in normal use.
+  const sim = useGeoSim();
+  const effectiveState: GeoState =
+    sim.armed && sim.coords
+      ? {
+          status: "granted",
+          coords: [sim.coords.lng, sim.coords.lat],
+          accuracy: sim.coords.accuracy,
+          heading: null,
+        }
+      : state;
+
   // Cross-session resume: if the user previously had locate on, re-engage it on
   // mount — but only after the Permissions API confirms geolocation is already
   // `granted`, so no dialog is ever surfaced without a gesture. Runs once. If
@@ -159,5 +176,5 @@ export function useGeolocation(opts?: { watch?: boolean; rememberActive?: boolea
     };
   }, [rememberActive]);
 
-  return { state, locate, stop, deactivate };
+  return { state: effectiveState, locate, stop, deactivate };
 }
