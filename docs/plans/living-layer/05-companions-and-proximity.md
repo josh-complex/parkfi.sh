@@ -70,7 +70,7 @@ another _threshold moment_ (wrist cue: "Jack is at full strength here").
    mark blooms at the signature attraction).
 3. **Quest** — complete the land's signature challenge: clear N Heartless in the
    World, _and/or_ a ride-as-controller beat (motion-verified ride completion —
-   [06](06-location-and-geofencing.md)), _and/or_ find a `discovery` chain.
+   [06](06-location-and-geofencing.md)), _and/or_ follow a chain of echoes.
 4. **Recruit** — the Companion joins your roster, permanently.
 5. **Deepen** — re-running the World under different conditions (night, rain,
    ride-down) levels and "masters" the Companion.
@@ -90,6 +90,14 @@ characters; the current Ember/Tide/Quill seed is placeholder art/names only.)
   save-file differentiator.
 - It is **legible**: players always understand _why_ they can/can't field a
   Companion — they can see the World they're standing in.
+
+## Beyond battle: answering a Trinity's call (2026-07-16)
+
+The roster's first purpose outside combat: a wielder woven into a dormant
+**Trinity Mark** may fill its missing hearts with **fielded companions** after
+~72 h of dormancy — the KH1 image (Sora, Donald, Goofy) literally — at reduced
+XP and no bond credit (GDD §3.7). Proximity still matters: whether only the
+sigil's home-World companions may answer the call is an open playtest knob.
 
 ## Data & eval notes
 

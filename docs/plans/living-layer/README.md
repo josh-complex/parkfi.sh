@@ -39,25 +39,30 @@ run**.
 > companionspace / socialspace / interactionspace), interaction schemes, balance
 > knobs, and the loose story. The numbered docs are deep dives it sits above; if
 > they disagree, the GDD wins.
+>
+> **For build status, go straight to [GDD §10](GDD.md)** — the "where we are
+> right now" block (shipped / known gaps / actively next) plus the per-system
+> real-vs-designed table. It is required to be updated in the same change as
+> any milestone that ships.
 
 | #   | Doc                                                                                | What it covers                                                                                       |
 | --- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | ★   | [GDD.md](GDD.md)                                                                   | **Game design canon** — pillars, glossary, the spaces, loops, interaction, story, balance, decisions |
 | 01  | [Vision & strategy](01-vision-and-strategy.md)                                     | Why, the moat, the design ethic                                                                      |
 | 02  | [The living layer & the flywheel](02-living-layer-and-flywheel.md)                 | The core mental model; the self-reinforcing loop                                                     |
-| 03  | [Marks & discovery](03-marks-and-discovery.md)                                     | The atomic unit; user-defined pins; the discovery layer                                              |
+| 03  | [Marks & discovery](03-marks-and-discovery.md)                                     | The atomic unit; echoes, Trinity Marks, Lucky Emblems, letters; decay                                |
 | 04  | [Game design — the machine](04-game-design.md)                                     | Worlds, encounters, the darkness engine, battles, progression                                        |
 | 05  | [Companions & land-proximity](05-companions-and-proximity.md)                      | Square-Enix-style party system gated by physical land proximity                                      |
 | 06  | [Location & geofencing](06-location-and-geofencing.md)                             | Tracking, sensor fusion, battery, anti-spoof, privacy                                                |
 | 07  | [AR & the multi-channel UX](07-ar-and-channels.md)                                 | Screen / ear / wrist / AR; the reveal; web-AR tech path                                              |
 | 08  | [Achievements, persistence & cold-start](08-achievements-persistence-coldstart.md) | Verified-by-physics, the save file, the empty-world problem                                          |
-| 09  | [Moderation, trust & safety](09-moderation-trust-safety.md)                        | UGC pins, physical safety, the two-layer model                                                       |
+| 09  | [Moderation, trust & safety](09-moderation-trust-safety.md)                        | The (deliberately shrunken) UGC surface, physical safety, the two-layer model                        |
 | 10  | [Data model](10-data-model.md)                                                     | New Drizzle tables; how they hang off the existing schema                                            |
 | 11  | [Architecture](11-architecture.md)                                                 | How every piece reuses infra we already operate                                                      |
 | 12  | [The demo / vertical slice](12-demo-vertical-slice.md)                             | What to build first; the in-app lite-AR demo; the dev/armchair mode                                  |
 | 13  | [Roadmap, risks & IP](13-roadmap-risks-ip.md)                                      | Phasing, the IP fork, the kill-risks                                                                 |
 | 14  | [Implementation plan](14-implementation-plan.md)                                   | File-by-file build plan for the Phase-0 demo (M0–M7)                                                 |
-| 15  | [State of the game (2026-07-15)](15-state-of-the-game-2026-07-15.md)               | Audit + research digest: feel gaps, social ladder, AR revision, sync backends, priorities            |
+| 15  | [State of the game (2026-07-15)](15-state-of-the-game-2026-07-15.md)               | Audit + research digest — **folded into canon 2026-07-16**; kept as the deep rationale record        |
 
 ## Reading order
 
@@ -76,16 +81,20 @@ unchanged. User-facing copy uses **Kingdom Hearts** and its canonical terms.
 
 The game uses Kingdom Hearts vocabulary throughout code, UI, and docs:
 
-| Term                | Meaning (and code identifier)                              |
-| ------------------- | ---------------------------------------------------------- |
-| **Wielder**         | the player, a Keyblade wielder (`wielder` table / profile) |
-| **Keyblade**        | the player's weapon                                        |
-| **Companions**      | party members, recruited by reaching their home World      |
-| **Worlds**          | themed lands (`world` table)                               |
-| **Heartless**       | the darkness-born enemies (`ref_heartless_type`)           |
-| **the Darkness**    | the live spawn phenomenon — a downed ride leaks it         |
-| **Sealing a World** | clearing a World's Heartless breach (sealing its keyhole)  |
-| **Convergence**     | a live raid / world-event boss                             |
+| Term                | Meaning (and code identifier)                               |
+| ------------------- | ----------------------------------------------------------- |
+| **Wielder**         | the player, a Keyblade wielder (`wielder` table / profile)  |
+| **Keyblade**        | the player's weapon                                         |
+| **Companions**      | party members, recruited by reaching their home World       |
+| **Worlds**          | themed lands (`world` table)                                |
+| **Heartless**       | the darkness-born enemies (`ref_heartless_type`)            |
+| **the Darkness**    | the live spawn phenomenon — a downed ride leaks it          |
+| **Sealing a World** | clearing a World's Heartless breach (sealing its keyhole)   |
+| **Echo**            | a feeling a wielder left at a place (`mark type=discovery`) |
+| **Trinity Mark**    | a dormant sigil that wakes when three hearts stand on it    |
+| **Lucky Emblem**    | a registered real hidden Mickey — the King's sign           |
+| **World light**     | communal vitality; dim Worlds darken faster                 |
+| **Convergence**     | a live raid / world-event boss                              |
 
 Deeper design tiers in the numbered docs still use working codenames for
 not-yet-built concepts — **Nobodies** (Nobodies), **Organization XIII** (Organization XIII),

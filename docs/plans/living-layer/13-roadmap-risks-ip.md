@@ -32,8 +32,8 @@ could run under any future IP or venue without a rebuild.
 ### Phase 0 — Demo / vertical slice (the pitch artifact)
 
 Everything in [12](12-demo-vertical-slice.md): dev/armchair mode → `world` +
-geofences → the `mark` primitive + Darkness engine (**the mic-drop**) → discovery
-marks → a scoped AR encounter + one-World recruit → the logbook → packaged as a
+geofences → the `mark` primitive + Darkness engine (**the mic-drop**) → echoes
+→ a scoped AR encounter + one-World recruit → the logbook → packaged as a
 TestFlight/internal build (+ a QR web link for the 2D loop). **In-app lite AR,
 full Kingdom Hearts dress.** _(Revised 2026-07-15: was "web AR behind a QR
 code" — that path died with 8th Wall; see [07](07-ar-and-channels.md).)_

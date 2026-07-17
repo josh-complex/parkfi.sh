@@ -68,8 +68,9 @@ the wire. Spawn weighting detail in [11 — Architecture](11-architecture.md).
 7. **Seal the Keyhole** — clear **every active wound** in a World while the
    darkness presses; the first seal grants that World's **keychain**
    ([GDD §4.3](GDD.md)).
-8. **Leave a mark** — drop a `discovery`/`dare`, place your seal — feeding the
-   flywheel ([02](02-living-layer-and-flywheel.md)).
+8. **Leave an echo** — a trace of feeling at the place that moved you, place
+   your seal — feeding the flywheel and the World's light
+   ([02](02-living-layer-and-flywheel.md), GDD §3.7).
 
 Every step is **complete solo**; density only _adds_ (Convergences, contested
 seals).

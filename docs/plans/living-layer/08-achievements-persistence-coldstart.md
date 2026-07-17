@@ -38,6 +38,41 @@ of sensor fusion + the live feed ([06](06-location-and-geofencing.md)).
 - **Server-authoritative, validated against the live feed.** The client proposes;
   the server confirms with the data it holds.
 
+### The shipped engine, and the boundary (canon, 2026-07-16)
+
+Much of Part A is no longer aspiration: **ParkFi ships a mature civilian
+achievements engine** (`src/lib/achievements.ts` +
+`src/server/achievements/engine.ts`) — 28 families / 97 tiers as a **catalog
+in code** (the DB stores only sticky unlocked tier ids), a location-ping
+pipeline folding GPS into `user_park_day` rollups, a queue-dwell state machine
+(≥8 min anchored ⇒ a ride), sensor-verified coaster traces, and per-day
+condition flags (`rainy`, `rope_drop`, `night_owl`) — precisely the
+verified-by-physics checks this doc demands. Its evaluation shape (rows → pure
+aggregate → closed-set reconcile → sticky idempotent insert → ceremony delta)
+is the **architectural donor for the game's Journal** (GDD §4.2).
+
+The boundary rules (GDD Canon Log 2026-07-16 — _two XP ledgers, permanently_):
+
+1. **Steal the architecture, share the substrate, never merge the systems.**
+   ParkFi levels are the civilian identity (works for users who never arm play
+   mode, store-review-safe, the app's stablest code); Wielder rank is the game
+   (volatile, flagged, IP-entangled). Both consume the same observation tables
+   and may share pure helpers lifted into `lib/` (`localParts`, the rain
+   query, `pointInPolygon`); **neither server module imports the other, ever**
+   (the boundary comment in both files is load-bearing).
+2. **Game→app crosstalk is a server-side stat bump** — an allowlisted
+   `user_stat` counter (e.g. `breaches_sealed`) the achievements catalog can
+   celebrate without knowing the game exists. **Gated on battle integrity**:
+   until seals are server-verified, a couch script would farm civilian XP too.
+3. **App→game crosstalk is a read** of achievements-owned rows
+   (`user_park_day` day flags, `user_attraction`, presence). The **M5b
+   presence primitive lands on the achievements side** — that engine already
+   owns geo state and the dwell machine — and is consumed by both.
+
+Mark of Mastery trials (GDD §4.1) are achievements-shaped predicates — pure,
+unit-tested functions over `encounter_log`/journal rows, built in the same
+idiom from day one.
+
 ## Part B — Persistence (your theme-park life, recorded)
 
 ### Three tiers, increasingly emotional
@@ -82,7 +117,11 @@ _actually_ empty.
 
 The "other players" texture comes from **traces**, not concurrency:
 
-- `discovery`/`dare` **marks left** by past Wielders ([03](03-marks-and-discovery.md)).
+- **Echoes left** by past Wielders ([03](03-marks-and-discovery.md)) — "the
+  castle steps hold 4,812 echoes."
+- **Dormant Trinity Marks** — cold-start's weakness (nobody's here _right
+  now_) converted into anticipation (someone will be); waiting is the
+  mechanic, and the awakening push makes last Tuesday matter today.
 - "1,204 explorers sealed this World before you."
 - Ghost paths / aggregated "how others played here."
 

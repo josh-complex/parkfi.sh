@@ -99,6 +99,12 @@ The stack is still web (TanStack Start + tRPC) — it just runs inside the
 - **AR is a native moment.** Rung 1 needs only a camera-preview plugin + a
   transparent webview; rung 2+ is a small native plugin the web UI invokes for
   the seconds the reveal lasts, then control returns to the web layer.
+- **Rung 1 debuts as the Lucky-Emblem registration viewfinder** (2026-07-16,
+  15 §7): the KH3 Gummiphone framing, literally — a circular reticle over the
+  camera preview for photographing real hidden Mickeys (GDD §3.7), rather
+  than a generic battle reveal. It gives the first AR ship a purpose the 2D
+  loop can't serve. Run the `checkVpsAvailability` coverage probe (rung 3
+  de-risk) on the same in-park trip as M5b presence validation.
 - **Demo distribution:** TestFlight / Play internal track (the native app
   already exists — it is no longer a "roadmap slide"). A QR code can still open
   the _web_ app for a no-install audience — they get the 2D-canonical loop,

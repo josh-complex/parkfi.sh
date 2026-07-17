@@ -40,7 +40,7 @@ One land, a few spots, the loop end to end ([04](04-game-design.md)):
    ([05](05-companions-and-proximity.md)).
 5. **The live hook** — trigger a real (or simulated) ride-down and watch the
    world react.
-6. **Leave a mark** — drop a `discovery` pin → the flywheel, made visible.
+6. **Leave an echo** — a feeling left at the spot → the flywheel, made visible.
 
 Complete, legible, shippable. Everything past it — Convergences, synthesis,
 cross-park travel, the full dex — is _narrated_ over this working core.
@@ -103,7 +103,7 @@ requires a theme-park trip to test.
 3. **The `mark` primitive + Darkness engine** — the worker job that turns a
    (real or injected) ride-down into a `world`/`encounter` mark
    ([11](11-architecture.md)). **This is the mic-drop; do it early.**
-4. **Discovery marks** — create/find/react ([03](03-marks-and-discovery.md)).
+4. **Echoes** — leave/find/resonate ([03](03-marks-and-discovery.md)).
    Lowest-risk real feature; proves the UGC + flywheel loop with no AR.
 5. **AR encounter + scoped battle** — rung-1 camera-overlay lite AR
    ([07](07-ar-and-channels.md)); turn-based.

@@ -7,7 +7,7 @@
 > optional; both have clean design answers that mostly fall out of decisions
 > we've already made.
 
-## Part A — UGC moderation (the `discovery`/`dare` marks)
+## Part A — UGC moderation (the player-authored marks)
 
 ### Core insight
 
@@ -17,12 +17,36 @@ real-world spots. The good news: most of the defenses are **already in the mark
 model** ([03](03-marks-and-discovery.md)). The bad news: if we don't design for
 it from the first commit, it becomes unmanageable fast.
 
+### The 2026-07-16 taxonomy shrank this surface by design
+
+The social re-foundation (GDD §3.7) deliberately minimizes what this doc must
+defend:
+
+- **`dare` is cut** — anonymous strangers instructing guests to _do things_ in
+  a physical park was the single riskiest item in the old taxonomy, sitting
+  exactly where the fiction was weakest. We decline to build it;
+  system-authored Trinity content absorbs the impulse it served.
+- **Echoes ship structured-only**: the required content is a _picked_
+  resonance (~6 named feelings) — **zero free-text surface in v1**. Free text
+  and photos are optional attachments unlocked later and/or trust-gated
+  (trusted wielders type; new accounts pick).
+- **Trinity Marks carry no user content at all** — the planter chooses only
+  the spot.
+- **Lucky Emblems convert broadcast UGC into curation of a bounded registry**
+  — the moderation surface collapses to a photo review queue (face-blur
+  before storage; frame-the-emblem prompts, never people).
+- **Letters** (future) are friendship-gated — a DM between mutuals, the
+  smallest possible audience.
+
+What remains for launch is reports, photo review, and rate limits — a queue,
+not a firehose.
+
 ### Defenses (defense in depth)
 
 | Defense                       | Mechanism                                                                                                         | Already in the model?    |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------ |
 | **Verified-presence-to-post** | you can only leave a mark where you were _verifiably present_ ([06](06-location-and-geofencing.md))               | yes — the integrity rule |
-| **Aggressive decay**          | nothing stays long; bad content fades fast, good content (upvoted/found) lives longer                             | yes — the decay knob     |
+| **Aggressive decay**          | nothing stays long; bad content fades fast, good content (resonated) lives longer                                 | yes — the decay knob     |
 | **Rate limits**               | per-Wielder caps on marks/hour, escalating with trust/rank                                                        | new, simple              |
 | **Reporting + fast takedown** | one-tap report; auto-hide on threshold; human review queue                                                        | new, standard            |
 | **Reputation / trust tiers**  | new accounts post to a quarantined layer; trust unlocks reach                                                     | new                      |
@@ -34,14 +58,17 @@ it from the first commit, it becomes unmanageable fast.
 Split the world into:
 
 - **A curated/system layer** everyone sees by default — `world`, `collectible`,
-  `companion`, `encounter` marks. Fully under our control. Safe, always-on.
-- **An open player layer** (`discovery`, `dare`) that a Wielder **opts into**,
-  governed by all the defenses above.
+  `companion`, `encounter` marks, plus zero-content player artifacts
+  (Trinity sigils, confirmed emblems). Fully under our control or bounded by
+  construction. Safe, always-on.
+- **An open player layer** (echo text/photo attachments) that a Wielder
+  **opts into**, governed by all the defenses above.
 
 This bounds the blast radius: the default experience is never at the mercy of
-UGC, and the social layer is a deliberate, governable opt-in. **Decide the
-curated-vs-open split before writing the first UGC feature** — it shapes
-everything downstream.
+UGC, and the free-text layer is a deliberate, governable opt-in. The
+structured-only echo v1 means the open layer can ship **empty** — the
+remaining open question is when (and whether) free-text attachments unlock
+(GDD open questions).
 
 ## Part B — Physical safety (the heads-down hazard)
 

@@ -83,27 +83,32 @@ These are the constitution. Every feature is checked against them.
 Read left-to-right: **Kingdom Hearts** is the canonical term we design and ship
 (the IP is licensed); **Code** is the identifier in the schema.
 
-| Concept               | Kingdom Hearts                                                   | Code                                         |
-| --------------------- | ---------------------------------------------------------------- | -------------------------------------------- |
-| the player            | **Keyblade wielder**                                             | `wielder`                                    |
-| the weapon            | **Keyblade**                                                     | `keyblade` (future)                          |
-| the enemy             | **Heartless**                                                    | `ref_heartless_type`                         |
-| the escalation tier   | **Nobodies** — Dusks (common), Berserker/Sorcerer-class (elite)  | `ref_heartless_type` tier _(future)_         |
-| the antagonists       | **Organization XIII** (a cloaked member)                         | `mark type=incursion` _(future)_             |
-| the chaos event       | an **Organization incursion**                                    | incursion engine _(future)_                  |
-| the threat            | **the darkness** encroaching                                     | `darkness` engine                            |
-| a land                | **World**                                                        | `world`                                      |
-| clearing one spawn    | **closing a wound**                                              | `mark.state=claimed`                         |
-| clearing a whole land | **sealing the World's Keyhole** (first seal grants its keychain) | world-clear check _(future)_                 |
-| an ally               | **Disney-character party member**                                | `companion`                                  |
-| the bestiary          | **Jiminy's Journal**                                             | `encounter_log` + `journal_entry` _(future)_ |
-| the weapon loot       | a **keychain** (transforms the Keyblade)                         | `keyblade`, `wielder_keyblade` _(future)_    |
-| crafting              | **synthesis**                                                    | `material`, `wielder_material` _(future)_    |
-| a rank-up gate        | a **Mark of Mastery** trial                                      | `rank_trial` _(future)_                      |
-| atomic geo unit       | a mote/trace                                                     | `mark`                                       |
-| spawn                 | a **Heartless** swarm                                            | `mark type=encounter`                        |
-| player-left pin       | a wielder's mark                                                 | `mark type=discovery`                        |
-| park-wide live event  | a **World-wide darkness surge**                                  | future                                       |
+| Concept               | Kingdom Hearts                                                      | Code                                                |
+| --------------------- | ------------------------------------------------------------------- | --------------------------------------------------- |
+| the player            | **Keyblade wielder**                                                | `wielder`                                           |
+| the weapon            | **Keyblade**                                                        | `keyblade` (future)                                 |
+| the enemy             | **Heartless**                                                       | `ref_heartless_type`                                |
+| the escalation tier   | **Nobodies** — Dusks (common), Berserker/Sorcerer-class (elite)     | `ref_heartless_type` tier _(future)_                |
+| the antagonists       | **Organization XIII** (a cloaked member)                            | `mark type=incursion` _(future)_                    |
+| the chaos event       | an **Organization incursion**                                       | incursion engine _(future)_                         |
+| the threat            | **the darkness** encroaching                                        | `darkness` engine                                   |
+| a land                | **World**                                                           | `world`                                             |
+| clearing one spawn    | **closing a wound**                                                 | `mark.state=claimed`                                |
+| clearing a whole land | **sealing the World's Keyhole** (first seal grants its keychain)    | world-clear check _(future)_                        |
+| an ally               | **Disney-character party member**                                   | `companion`                                         |
+| the bestiary          | **Jiminy's Journal**                                                | `encounter_log` + `journal_entry` _(future)_        |
+| the weapon loot       | a **keychain** (transforms the Keyblade)                            | `keyblade`, `wielder_keyblade` _(future)_           |
+| crafting              | **synthesis**                                                       | `material`, `wielder_material` _(future)_           |
+| a rank-up gate        | a **Mark of Mastery** trial                                         | `rank_trial` _(future)_                             |
+| atomic geo unit       | a mote/trace _(engineering term only — never user-facing)_          | `mark`                                              |
+| spawn                 | a **Heartless** swarm                                               | `mark type=encounter`                               |
+| a trace a player left | an **echo** — feeling lingering in a place (The Final World)        | `mark type=discovery` _(UI: echo)_                  |
+| a private echo        | a **memory** — your own echo, kept for you                          | `mark` visibility flag _(absorbs `type=memory`)_    |
+| async co-op sigil     | a **Trinity Mark** (KH1) — wakes when three hearts have stood on it | `mark type=trinity` + `mark_participant` _(future)_ |
+| the park's own secret | a **Lucky Emblem** (KH3) — the King's sign                          | `mark type=emblem` + `mark_participant` _(future)_  |
+| a message to a friend | the **bottle letter** (Kairi's)                                     | `mark type=letter` _(future, friend-gated)_         |
+| communal vitality     | **the light of a World**                                            | derived aggregate _(future)_                        |
+| park-wide live event  | a **World-wide darkness surge**                                     | future                                              |
 
 > **Canon:** the player is a **Keyblade wielder**; **Kingdom Hearts** is the
 > user-facing brand. Core KH characters are **never playable** — only
@@ -113,8 +118,11 @@ Read left-to-right: **Kingdom Hearts** is the canonical term we design and ship
 > (common), **Neoshadow/Soldier** ↔ `wisp` (fast/fragile), **Large Body /
 > Darkside-spawn** ↔ `breaker` (born from a downed headliner — the big one).
 > **Nobody types** (future codes): **Dusk** ↔ `husk` (common), **Berserker/
-> Sorcerer-class** ↔ `echo` (elite); an **Organization member** ↔ `organization`.
-> Heartless are the wound; Nobodies are the wound left untended (§3.4).
+> Sorcerer-class** ↔ `sorcerer` (elite); an **Organization member** ↔ `organization`.
+> (The elite code was `echo` before 2026-07-16; renamed to free **echo** for the
+> social artifact above — the codes were never shipped. `sorcerer` chosen over
+> an invented word: it passes the "what is this in KH?" test.) Heartless are the
+> wound; Nobodies are the wound left untended (§3.4).
 
 ---
 
@@ -129,14 +137,14 @@ tables/code that realize it. This is the model everything must conform to.
               │ drives
               ▼
         ENEMYSPACE  ──spawns──▶  WORLDSPACE  ◀──authors/owns──  USERSPACE
-        (the Darkness,            (places + Marks)               (the Kingdom Hearts,
+        (the Darkness,            (places + Marks)               (the wielder,
          Heartless, spawns)                ▲                         party, history)
                                        │ recruits from
                                   COMPANIONSPACE
                                   (allies bound to Worlds)
 
         SOCIALSPACE spans Worldspace × Userspace (async marks, later co-op)
-        INTERACTIONSPACE = how a Kingdom Hearts perceives/acts on all of the above
+        INTERACTIONSPACE = how a wielder perceives/acts on all of the above
 ```
 
 ### 3.1 Userspace — _who the player is and what they own_
@@ -150,7 +158,7 @@ differentiator — [08](08-achievements-persistence-coldstart.md)).
 | **Kingdom Hearts**     | rank, xp, home park, display name                    | `wielder`                                 |
 | **Party / Roster**     | recruited companions, level, xp                      | `wielder_companion`                       |
 | **Logbook**            | history of encounters, recruits, visits              | `encounter_log` (+ future)                |
-| **Authored Marks**     | discovery pins the player left                       | `mark` (author_user_id)                   |
+| **Authored Marks**     | echoes the player left (their memories included)     | `mark` (author_user_id)                   |
 | **Loadout** _(future)_ | equipped Keyblade (keychain), armor, accessories     | future `wielder_keyblade`, `wielder_gear` |
 | **Satchel** _(future)_ | synthesis materials (element × tier, husks, threads) | future `wielder_material`                 |
 | **Journal** _(future)_ | per-species defeat pages + condition entries         | `encounter_log` + future `journal_entry`  |
@@ -186,22 +194,35 @@ Everything geo-anchored is one `mark` row; `type` selects the payload shape.
 This is the most important modeling decision in the project
 ([03](03-marks-and-discovery.md)).
 
-| Mark `type`   | Author | Lives in              | Meaning                                                         |
-| ------------- | ------ | --------------------- | --------------------------------------------------------------- |
-| `encounter`   | system | Enemyspace            | a Heartless spawn to fight                                      |
-| `world`       | system | Enemyspace/Worldspace | narrative beacon of the Darkness                                |
-| `collectible` | system | Worldspace            | a catchable (future)                                            |
-| `discovery`   | player | Socialspace           | a left tip/detail/photo                                         |
-| `dare`        | player | Socialspace           | a micro-challenge (future)                                      |
-| `companion`   | system | Companionspace        | a recruit node (future surfacing)                               |
-| `incursion`   | system | Enemyspace/Eventspace | an incursion — an Organization member + Nobody escorts (future) |
-| `memory`      | player | Userspace             | personal pinned memory (future)                                 |
+| Mark `type`   | Author | Lives in               | Meaning                                                         |
+| ------------- | ------ | ---------------------- | --------------------------------------------------------------- |
+| `encounter`   | system | Enemyspace             | a Heartless spawn to fight                                      |
+| `world`       | system | Enemyspace/Worldspace  | narrative beacon of the Darkness                                |
+| `collectible` | system | Worldspace             | a catchable (future)                                            |
+| `discovery`   | player | Socialspace            | an **echo** — feeling left at a place (§3.7)                    |
+| `trinity`     | player | Socialspace            | a **Trinity Mark** — dormant until three hearts (future)        |
+| `emblem`      | player | Socialspace/Worldspace | a **Lucky Emblem** registration (future)                        |
+| `letter`      | player | Socialspace            | a **bottle letter** to a named friend (future, friend-gated)    |
+| `companion`   | system | Companionspace         | a recruit node (future surfacing)                               |
+| `incursion`   | system | Enemyspace/Eventspace  | an incursion — an Organization member + Nobody escorts (future) |
+
+> **2026-07-16:** `dare` is **cut** (fails the cosmology test, §3.7); `memory`
+> folds into `discovery` as a **visibility flag** — an echo never fades for its
+> author, for whom it is simply their memory at that spot. Participation in a
+> shared mark (trinity weaves, emblem confirmations) is one table,
+> `mark_participant` ([10](10-data-model.md)). **Naming rule:** "mark" is
+> schema/engineering vocabulary only — the product speaks _breach, echo,
+> Trinity, emblem, letter_; the types are the features.
 
 **Lifecycle (canonical):** `bloom → active → decaying → faded` (or `claimed`).
 **Decay is the master tuning knob** for how alive the world feels. Per-type TTL;
 the Darkness spawn TTL is `LIVING_SPAWN_TTL_MS` (default 30m), refreshed while the
-ride stays down, then lingers after recovery. **Integrity rule:** a player can
-only author a Mark where they're verifiably present.
+ride stays down, then lingers after recovery; an echo fades for others in ~4–6
+weeks unless resonated (never for its author); a dormant Trinity fades in ~14
+days, refreshed by each new weave. Player marks snap to the nearest **named
+anchor** (`anchorKey`) within ~30 m — they attach to meanings, not coordinates.
+**Integrity rule:** a player can only author a Mark where they're verifiably
+present.
 
 ### 3.4 Enemyspace — _the antagonist_ (KH: the darkness / Heartless)
 
@@ -290,12 +311,50 @@ until the Disney-character roster is authored — same mechanic, final names/art
 ### 3.7 Socialspace — _other people_ (mostly future)
 
 Spans Userspace × Worldspace. Async-first (cold-start: the "others" you feel are
-people who _already left_ Marks). Entities: discovery/dare Marks, reactions
-(found/upvote/report), later Convergences (co-op), trading (atoms↔bits w/ pins).
-Realized by `mark` (discovery/dare) + `mark_reaction`. Moderation is a day-one
-constraint, not a bolt-on ([09](09-moderation-trust-safety.md)).
+people who _already left_ traces). **The cosmology test (canon, 2026-07-16):**
+every community feature must be an expression of one of KH's four substances —
+_hearts connect; memory is substance; light pushes back darkness; keys open and
+close_ — or it doesn't ship. The artifacts:
 
-### 3.8 Interactionspace — _how the Kingdom Hearts perceives & acts_
+- **Echoes** (`discovery`) — a heart's feeling left at a place (canon: The
+  Final World). Authoring is **structured-first**: the required part is a
+  picked resonance (~6 named feelings), free text/photo an optional, later (or
+  trust-gated) attachment — so v1 ships with zero text-moderation surface. The
+  find-verb is **resonate** ("12 hearts have touched this echo"), which extends
+  the echo's decay. An echo never fades for its author — it is their **memory**
+  (one row, visibility flag).
+- **The light of a World** — communal vitality in [0,1]: raised by seals ≫
+  Trinity awakenings > echoes left ≈ echoes resonated, decaying with time
+  (τ ≈ 4 days, cold-start floor ~0.35, per-wielder daily caps). Dim Worlds
+  spawn rarer Heartless and escalate faster; bright Worlds are calmer and
+  recruit better — a self-balancing loop that steers wielders toward neglected
+  Worlds. Derived aggregate over existing rows; five named bands (radiant /
+  bright / dim / waning / dark) rendered as literal map brightness.
+- **Trinity Marks** (`trinity`) — dormant sigils, placement-only (zero user
+  text), that wake when **three hearts** have stood on them — hours or weeks
+  apart; everyone woven gets the retroactive push. A woven wielder may instead
+  **call on their party** (the KH1 image — Sora, Donald, Goofy): fielded
+  companions stand in after ~72 h dormancy, at reduced XP and no bond credit.
+  Waiting is the mechanic; co-op that works at low density.
+- **Lucky Emblems** (`emblem`) — the real parks' hidden Mickeys as **the
+  King's sign**: first finder registers (photo + presence), three wielders
+  confirm, the registry is permanent with first-witness credit. UGC becomes
+  curation of a bounded registry; the park itself is the content author.
+- **Letters** (`letter`, with the tier-3 friend graph) — the bottle letter:
+  left for a **named friend** at a place, found when they next stand there,
+  even years later.
+- Reactions (found/resonate/report) via `mark_reaction`; later Convergences
+  (co-op) and trading (atoms↔bits w/ pins).
+
+Delivery rides the five-tier ladder — read-only aggregates → async pushes →
+presence rooms → friends → Convergences ([15 §4](15-state-of-the-game-2026-07-15.md)).
+**Canon rules:** park-public events carry **aggregates, never identities**;
+personal payloads ("your Trinity woke") ride FCM, never the park channel.
+`dare` is cut — it fails the cosmology test and was the design's riskiest
+safety surface; system-authored Trinity content absorbs its role. Moderation is
+a day-one constraint, not a bolt-on ([09](09-moderation-trust-safety.md)).
+
+### 3.8 Interactionspace — _how the wielder perceives & acts_
 
 Not entities — **channels and schemes** (full detail §6). Channels: **map/screen**
 (now), **AR** (M4b — native lite-AR in the Capacitor shell; see [07](07-ar-and-channels.md)),
@@ -374,9 +433,25 @@ The Pokédex analogue, but of _defeats_. One page per species:
   our feed can verify it: _defeated during a real ride-down_ (naturally earned),
   _in rain_ (`weather_obs`), _after dark_, _in its home World_, _flawless_ (no
   damage taken), _surge-less_.
+- **Witness classes (canon, 2026-07-16):** every condition entry needs a
+  server-held witness. **World-shaped** conditions (ride-down, rain, after
+  dark, home World) are witnessed by live state at battle time;
+  **battle-shaped** ones (flawless, surge-less) by the submitted move list
+  under server replay. Verdicts are **stamped onto `encounter_log` at
+  resolve** — transient witnesses (obs retention, the move list) are heavy or
+  gone by evaluation time — while counts stay derived. Stamping ships ahead of
+  the Journal itself: every unstamped battle is a trophy that can never be
+  awarded retroactively.
 - **Completing a page** grants a material cache + a title; **completing a
   World's page set** unlocks that World's keychain upgrade tier. **Secret
   pages** exist and are never checklisted (per [08](08-achievements-persistence-coldstart.md)).
+- **Architecture (canon):** the Journal is built as the sibling of the shipped
+  ParkFi achievements engine — catalog in code, pure aggregate over
+  `encounter_log`, closed-set reconcile, sticky idempotent unlocks
+  (`journal_entry`), shared ceremony funnel — never as a fork of it
+  ([08](08-achievements-persistence-coldstart.md) Part A records the boundary).
+  Emblem pages and Trinity ticks are Journal entry _types_ from day one, not
+  retrofits.
 
 Why defeat-collection beats catch-collection _for us_: no box/storage/CP
 management to build or moderate; every single battle advances something; and
@@ -422,7 +497,7 @@ competitor can even express.
 | Soldier-class (`wisp`) defeat              | +8   | 〃                                                  |
 | Large-Body-class (`breaker`) defeat        | +15  | 〃                                                  |
 | Nobody: Dusk (`husk`)                      | +20  | fills Adept-band Journal pages                      |
-| Nobody: elite (`echo`)                     | +40  |                                                     |
+| Nobody: elite (`sorcerer`)                 | +40  |                                                     |
 | incursion: survive the duel                | +40  | any rank                                            |
 | incursion: defeat the Organization member  | +120 | Adept+ objective                                    |
 | Keyhole seal (first full clear of a World) | +25  | on top of the battle XP                             |
@@ -479,21 +554,21 @@ Three nested loops; each must stand alone.
 
 - **Moment-to-moment (seconds–minutes):** see a spawn on the map → reach/tap it →
   fight the Heartless (Strike/Guard/Surge, shaped by your loadout) → seal it → XP +
-  **drops** + a Journal tick. _Discovery variant:_ spot a place → leave/find a
-  Mark → react. _Chaos variant:_ the park-wide incursion pulse → choose to converge →
+  **drops** + a Journal tick. _Echo variant:_ a place moves you → leave an
+  echo / touch one and resonate. _Chaos variant:_ the park-wide incursion pulse → choose to converge →
   survive (or defeat) the duel.
 - **Session (a park visit):** travel Worlds → seal breaches as the real park
   breaks → chase the **condition entries today makes possible** (rain pages,
   downtime pages) → recruit the World's Companion by clearing its signature
   ride → **seal the World's Keyhole for its keychain** → forge at day's end →
-  leave Marks for the next Kingdom Hearts.
+  leave echoes for the next wielder.
 - **Meta (across visits/parks — retention):** climb the rank bands via
   **Mark of Mastery trials** → complete Journal pages and keychain sets per World →
   carry roster/rank/loadout to new parks → seasonal Organization rotations →
   the Logbook / "Wrapped" recap. The cross-park save file is the long-term hook.
 
 The **flywheel** ties them: presence → Mark/seal → achievement/arc → the Mark
-persists → seeds the world for the next Kingdom Hearts → density grows → communal layer
+persists → seeds the world for the next wielder → density grows → communal layer
 activates. ([02](02-living-layer-and-flywheel.md).)
 
 ---
@@ -504,16 +579,16 @@ Per context — input, feedback, channel, and the heads-up/safety rule.
 
 | Context                          | Input                                    | Feedback                                          | Channel                                    | Rule                                          |
 | -------------------------------- | ---------------------------------------- | ------------------------------------------------- | ------------------------------------------ | --------------------------------------------- |
-| **Explore the map**              | pan/zoom/tap                             | live pins (coral=Darkness, blue=discovery)        | screen                                     | glanceable                                    |
+| **Explore the map**              | pan/zoom/tap                             | live pins (coral=Darkness, blue=echoes)           | screen                                     | glanceable                                    |
 | **Encounter / battle**           | tap moves (Strike/Guard/Surge)           | HP bars, combat log                               | screen now → **AR** (M4b), **stand-still** | short, stationary; speed-lockout in AR        |
-| **Leave a discovery**            | tap map → compose                        | confirm + "found N times" later                   | screen                                     | presence-gated                                |
-| **Find / react**                 | tap pin → found/upvote/report            | counters                                          | screen                                     | one-tap                                       |
+| **Leave an echo**                | tap map → pick a resonance (text later)  | leave ceremony + "N hearts touched it" later      | screen                                     | presence-gated; feeling-first prompt          |
+| **Find / resonate**              | tap echo → resonate/report               | resonance ring + counters (KH voice)              | screen                                     | one-tap                                       |
 | **Recruit a companion**          | open Party → Recruit                     | roster + XP update                                | screen                                     | gated on signature-ride win (→ presence, M5b) |
 | **Threshold crossing** _(later)_ | walk across a geofence                   | buzz + a line in your ear                         | wrist/ear                                  | eyes-up                                       |
 | **incursion** _(later)_          | park-wide pulse → converge → phased duel | escort wave, then the duel; rank-scaled objective | screen now → wrist/AR                      | opt-in; never interrupts a queue; stand-still |
 | **Convergence** _(later)_        | converge physically                      | shared finale                                     | wrist → AR                                 | communal                                      |
 
-**Battle scheme (canonical, current):** turn-based; Kingdom Hearts HP 42; **Strike** 9,
+**Battle scheme (canonical, current):** turn-based; Wielder HP 42; **Strike** 9,
 **Surge** 22 (once per fight), **Guard** halves the next incoming hit; the Heartless
 counterattacks each turn. (Solo tuning: a rarity-3 Breaker is only winnable if
 Surge is spent — Surge is the skill expression; see `battle.ts`.)
@@ -575,6 +650,23 @@ stays playable without AR_ (2D is the canonical fallback, not throwaway).
 - **Sealing a Keyhole** is the heroic beat: clear _every_ wound in a World while
   the darkness presses, and the Keyblade's light locks the World's heart away
   from the dark again — the World, in thanks, yields its **keychain**.
+- **Echoes:** strong feelings linger. When a heart is truly moved, it leaves
+  an echo — a small warmth in the stone, invisible to everyone who isn't
+  carrying a Key. Touch one, and for a moment two hearts meet across the days
+  between them.
+- **The light of a World:** a World's heart is kept not only by sealing its
+  wounds. Every echo left, every Trinity woken, every breach closed kindles
+  its light — and light left untended dims. The darkness always knows where
+  no one has been keeping watch.
+- **Trinities:** in the old stories, wielders traveled in threes. The sigils
+  remember. Plant one and it waits — a promise that others will come. When
+  three hearts have stood in the same place, even days apart, the promise
+  keeps, and the Trinity wakes for all of them at once. A companion's heart
+  counts — it always has — though the old magic burns brightest when all
+  three carry Keys.
+- **The King's sign:** the King walked these Worlds long before you, and left
+  his mark where only the attentive would think to look. Every emblem you
+  witness is proof — you saw what he saw.
 - **Tone:** the heart of Kingdom Hearts — earnest, warm, lightly melancholic,
   friendship-forward. You **seal and protect**, you don't "kill"; the darkness is
   pushed back, not destroyed.
@@ -591,7 +683,7 @@ stays playable without AR_ (2D is the canonical fallback, not throwaway).
 | Spawn TTL (linger)                 | 30 min (`LIVING_SPAWN_TTL_MS`)                                                                | `config.ts`              |
 | Spawn rule                         | DOWN → Breaker; rarity≥60min standby                                                          | `darkness.spawnDecision` |
 | Heartless base stats               | Shade 20/4, Wisp 14/3, Breaker 30/6 (+10/+2 per rarity)                                       | `battle.ts`              |
-| Kingdom Hearts HP                  | 42                                                                                            | `battle.ts`              |
+| Wielder HP                         | 42                                                                                            | `battle.ts`              |
 | Moves                              | Strike 9 / Surge 22 (1×) / Guard ½                                                            | `battle.ts`              |
 | Companion ally action              | attacker → foe dmg = atk+(lvl−1); support → heal, same; ×1.5 home / ×1.0 guest / benched away | `battle.fieldParty`      |
 | Party capacity                     | 1 (rank<5) / 2 (5–14) / 3 (≥15)                                                               | `battle.partyCapacity`   |
@@ -600,7 +692,10 @@ stays playable without AR_ (2D is the canonical fallback, not throwaway).
 | Escalation thresholds _(designed)_ | ~45 min unsealed → Dusks; ~90 min headliner / 2-down World / cancellation → incursion roll    | §3.4                     |
 | incursion TTL _(designed)_         | ~45 min, roaming                                                                              | §4.6                     |
 | Drop table _(designed)_            | deterministic f(mark seed, species, tier, live snapshot)                                      | §4.4                     |
-| Discovery rate limit               | 20 / hour                                                                                     | `living` router          |
+| World light _(designed)_           | τ ≈ 4 d half-life; floor ~0.35; seal ≫ trinity > echo left ≈ resonated; daily caps; 5 bands   | §3.7                     |
+| Echo economy _(designed)_          | ~1/wielder/anchor/day, ~10/park-day; fades in ~4–6 wk unless resonated; never for author      | §3.3, §3.7               |
+| Trinity lifecycle _(designed)_     | 3 hearts; ~14 d dormancy, refreshed per weave; companion stand-ins after ~72 h at reduced XP  | §3.7                     |
+| Echo rate limit                    | 20 / hour (code; supersede with the designed economy above)                                   | `living` router          |
 | Report auto-hide                   | 3 reports                                                                                     | `living` router          |
 
 Balance philosophy: keep the **best rewards behind the hardest-to-fake
@@ -625,28 +720,61 @@ generate`); run bins via `bun`; filter `category IS NOT NULL` on attractions;
 
 ## 10. Status traceability (what's real vs designed)
 
-| System                                                                | Space                      | Status                                         |
-| --------------------------------------------------------------------- | -------------------------- | ---------------------------------------------- |
-| Worlds + geofence lib                                                 | Worldspace                 | ✅ M1                                          |
-| Mark primitive                                                        | cross-space                | ✅ M2                                          |
-| Darkness engine (DOWN→spawn)                                          | Enemyspace/Eventspace      | ✅ M2                                          |
-| Discovery pins + react                                                | Socialspace                | ✅ M3                                          |
-| Map UI (Kingdom Hearts view)                                          | Interactionspace           | ✅ M3                                          |
-| Encounter + 2D battle                                                 | Enemyspace/Interaction     | ✅ M4a                                         |
-| Companions: catalog/recruit/roster/XP                                 | Companionspace/Userspace   | ✅ M5                                          |
-| Companions acting in battle (ally action + home-World passive)        | Companionspace/Interaction | ✅ M5a (`fieldParty`, §6)                      |
-| Companion proximity tiers wired into play (`tierFor` in `fieldParty`) | Companionspace             | ✅ M5a (battle only; roam/party UI still ⏳)   |
-| Presence verification (sensor fusion)                                 | Userspace/Worldspace       | ⏳ M5b (in-park)                               |
-| AR reveal (camera-overlay lite AR → native ARKit/ARCore)              | Interactionspace           | ⏳ M4b                                         |
-| Logbook / Wrapped                                                     | Userspace                  | ⏳ M6                                          |
-| Rank curve + Mark of Mastery trials                                   | Userspace                  | ⏳ designed §4.1 (linear placeholder shipping) |
-| Journal / defeat-collection                                           | Userspace                  | ⏳ designed §4.2                               |
-| Keyblades & keychains                                                 | Userspace/Worldspace       | ⏳ designed §4.3                               |
-| Forge: gear, materials, synthesis                                     | Userspace                  | ⏳ designed §4.4                               |
-| Nobodies (escalation tier)                                            | Enemyspace                 | ⏳ designed §3.4                               |
-| Rifts / Organization incursions                                       | Eventspace/Enemyspace      | ⏳ designed §4.6                               |
-| Convergences, seasons, surges                                         | Eventspace                 | ⏳ later                                       |
-| Cross-park save, trading, co-op                                       | Socialspace                | ⏳ later                                       |
+### Where we are right now (as of 2026-07-16)
+
+> **Maintenance rule (same spirit as the balance canon rule):** any change
+> that ships or re-orders a milestone updates this block in the same change.
+> This block is the single "you are here"; the table below is the per-system
+> detail.
+
+**Shipped and live behind the flag:** the full solo loop — real ride-downs
+spawn Heartless (the moat), tap-to-battle with the three-verb kit, companions
+recruit off signature-ride wins and act in battle with home-World proximity
+passives, echoes (as discovery pins) + reactions, XP/rank (linear
+placeholder), all inside the park map behind the PostHog `living-layer` flag.
+
+**Known gaps in what shipped:** battle outcomes are client-trusted (no
+sessions, no replay — the §2/Canon-Log integrity hole); `encounter_log`
+snapshots are spawn-time-only and thinner than their type (no rain/hour/status
+witness at resolve); XP is the flat +10/+50 placeholder; the client is pure
+30-second poll (no push channel); growth changes no verbs (no
+Journal/drops/keychains yet).
+
+**Actively next (the adopted 2026-07-16 order, detail in
+[14](14-implementation-plan.md)):** ① integrity — sessions + server replay,
+with resolve-time verdict stamping shipping first (the only
+unrecoverable-if-delayed item); ② the feel workstream (event-queue
+architecture: command menu, turn theater, audio/haptics, echo ceremony);
+③ the SSE wire; ④ World light; ⑤ the progression spine; ⑥ Trinity Marks +
+tier-0/1 social; ⑦ emblem-viewfinder lite AR + M5b presence, same in-park
+trip; ⑧ Nobodies/Rifts/rooms.
+
+| System                                                                | Space                      | Status                                                          |
+| --------------------------------------------------------------------- | -------------------------- | --------------------------------------------------------------- |
+| Worlds + geofence lib                                                 | Worldspace                 | ✅ M1                                                           |
+| Mark primitive                                                        | cross-space                | ✅ M2                                                           |
+| Darkness engine (DOWN→spawn)                                          | Enemyspace/Eventspace      | ✅ M2                                                           |
+| Echoes (shipped as discovery pins; refiction ⏳) + react              | Socialspace                | ✅ M3                                                           |
+| Map UI (Kingdom Hearts view)                                          | Interactionspace           | ✅ M3                                                           |
+| Encounter + 2D battle                                                 | Enemyspace/Interaction     | ✅ M4a                                                          |
+| Companions: catalog/recruit/roster/XP                                 | Companionspace/Userspace   | ✅ M5                                                           |
+| Companions acting in battle (ally action + home-World passive)        | Companionspace/Interaction | ✅ M5a (`fieldParty`, §6)                                       |
+| Companion proximity tiers wired into play (`tierFor` in `fieldParty`) | Companionspace             | ✅ M5a (battle only; roam/party UI still ⏳)                    |
+| Presence verification (sensor fusion)                                 | Userspace/Worldspace       | ⏳ M5b (in-park)                                                |
+| AR reveal (camera-overlay lite AR → native ARKit/ARCore)              | Interactionspace           | ⏳ M4b                                                          |
+| Logbook / Wrapped                                                     | Userspace                  | ⏳ M6                                                           |
+| Rank curve + Mark of Mastery trials                                   | Userspace                  | ⏳ designed §4.1 (linear placeholder shipping)                  |
+| Journal / defeat-collection                                           | Userspace                  | ⏳ designed §4.2                                                |
+| Keyblades & keychains                                                 | Userspace/Worldspace       | ⏳ designed §4.3                                                |
+| Forge: gear, materials, synthesis                                     | Userspace                  | ⏳ designed §4.4                                                |
+| Nobodies (escalation tier)                                            | Enemyspace                 | ⏳ designed §3.4                                                |
+| Rifts / Organization incursions                                       | Eventspace/Enemyspace      | ⏳ designed §4.6                                                |
+| Battle integrity (sessions, server replay, verdict stamping)          | Enemyspace/Userspace       | ⏳ designed ([15 §2/§3.10](15-state-of-the-game-2026-07-15.md)) |
+| Push channel (mark triggers → SSE; event vocabulary)                  | Eventspace/Interaction     | ⏳ designed ([11](11-architecture.md))                          |
+| World light                                                           | Socialspace/Enemyspace     | ⏳ designed §3.7                                                |
+| Trinity Marks, Lucky Emblems, letters                                 | Socialspace                | ⏳ designed §3.7                                                |
+| Convergences, seasons, surges                                         | Eventspace                 | ⏳ later                                                        |
+| Cross-park save, trading, co-op                                       | Socialspace                | ⏳ later                                                        |
 
 ---
 
@@ -736,13 +864,80 @@ generate`); run bins via `bun`; filter `category IS NOT NULL` on attractions;
   episodic, stand-still reveal (pillar 4) — a posture now also backed by market
   evidence (Pokémon GO players largely play AR-off; Monster Hunter Now ships
   combat AR-off by default).
+- **2026-07-16 — State-of-the-game digest adopted.** Doc
+  [15](15-state-of-the-game-2026-07-15.md)'s four research passes (combat feel,
+  progression spine, social re-foundation, push channel) are canon; this GDD
+  and docs 03/08/09/10/11/14 were re-aligned in the same pass. The build
+  priority order is 15 §7: integrity (+ resolve-time verdict stamping +
+  loadout pinning) → the feel workstream (one event-queue architecture, three
+  consumers) → the wire → World light → the progression spine → social tiers
+  and Trinity Marks → emblem-viewfinder lite-AR → escalation/rooms.
+- **2026-07-16 — Two XP ledgers, permanently.** ParkFi levels (civilian
+  identity, achievements engine) and Wielder rank (the game) are **never
+  unified**: shared substrate (obs tables, pure `lib/` helpers), never shared
+  modules; game→app crosstalk is a server-side allowlisted `user_stat` bump
+  (gated on battle integrity); app→game crosstalk is a read of
+  achievements-owned rows. The M5b presence primitive lands on the
+  achievements side and is consumed by both. Do not merge the pools in a
+  refactor. ([08](08-achievements-persistence-coldstart.md) Part A; 15 §3.11.)
+- **2026-07-16 — Battle integrity via server replay; verdicts stamped at
+  resolve.** `startEncounter` creates a session row that **pins the loadout**
+  (keychain, upgrade level, party); the client submits its **move list**; the
+  server replays the deterministic fight (`resolveRound(state, move) →
+RoundEvent[]` — the same event list drives turn theater, the battle log, and
+  aria-live). `resolveEncounter` stamps a resolve-time snapshot (attraction
+  status, weather, park-local hour) and, once replay lands, battle-shaped
+  verdict booleans onto `encounter_log` — condition trophies become a pure
+  function of the log row forever. Stamping ships **first**; delay here is the
+  only unrecoverable loss in the spine. (15 §2, §3.1, §3.10, §3.13.)
+- **2026-07-16 — Socialspace re-founded on KH cosmology.** The **cosmology
+  test** is canon (§3.7): every community feature expresses one of hearts /
+  memory / light / keys, or it doesn't ship. `discovery` is refictioned as the
+  **echo** (structured resonance first, UI-only rename — schema rename is a
+  deferred, separate decision); `memory` folds into an echo **visibility
+  flag**; **`dare` is cut** (cosmology fail + the design's riskiest safety
+  surface). **Trinity Marks** wake at exactly **three hearts** — companion
+  stand-ins allowed after ~72 h dormancy at reduced XP and no bond credit
+  (waiting stays the premium path). **Lucky Emblems** are first-finder
+  registration + 3-wielder confirmation into a permanent registry. **World
+  light** is a derived per-World aggregate feeding spawn/escalation weights.
+  Participation (weaves, confirmations) is one table, `mark_participant`. The
+  never-shipped elite-Nobody code `echo` is renamed **`sorcerer`** to free the
+  term. (15 §4.1–4.9.)
+- **2026-07-16 — The push channel: vocabulary is canon, transports are not.**
+  World events are typed, caused, park-scoped, and **simultaneous**:
+  `eruption` / `incursion` / `fade` / `seal` / `echo`, growing `light` (band
+  crossings only) and `trinity`. Emission is a property of the mark primitive
+  (row-level triggers → `pg_notify`), delivery is tRPC v11 SSE
+  (`httpSubscriptionLink`) on a public park-scoped subscription. Canon rules:
+  **aggregates, never identities**, on the park channel; **personal payloads
+  ride FCM only** — a permanent split; `seal` broadcasts are **gated on battle
+  integrity**; presentation ships **before** transport (poll-diff feeds the
+  same event queue first). (15 §6.1–6.6.)
 
 ### Open questions (decide before the relevant build)
 
 - Convergence resolution: synchronized solo instances vs true shared-anchor co-op
   for v1?
-- Curated-vs-open split for the Socialspace UGC layer (default-on system layer +
-  opt-in player layer?). ([09](09-moderation-trust-safety.md).)
+- Curated-vs-open split for the Socialspace UGC layer — narrowed by the
+  2026-07-16 re-foundation (echoes ship structured-only; emblems are bounded
+  curation): what remains is **when/how free-text echo attachments unlock**
+  (trust-gated? rank-gated?) and whether they're emotionally necessary at all.
+  ([09](09-moderation-trust-safety.md); 15 §4.9.)
+- Trinity discount modeling: size the companion stand-in discount and the
+  ~72 h delay jointly against realistic park-DAU so waiting dominates wherever
+  human completion within ~a week is plausible. (15 §4.9.)
+- World-light tuning: τ, band thresholds, contribution weights, cold-start
+  floor — simulate against real `attraction_status_obs`; verify the negative
+  feedback loop damps rather than oscillates; joint balancing pass with the
+  §3.4 escalation clock. (15 §4.9.)
+- Emblem photo pipeline: face-blur before storage, review-queue volume,
+  spatial+visual dedupe — and the IP question (hidden-Mickey hunt vs Disney's
+  own Hidden Mickeys lore/merch). (15 §4.9; [13](13-roadmap-risks-ip.md).)
+- Dormant-sigil legibility outdoors: show weave progress (default) vs mystery.
+- Schema rename strategy: `discovery`→`echo` UI alias forever vs a real
+  migration; same for the `memory` fold — decide before Trinity Marks add
+  adjacent code.
 - Cross-park identity: when does the "traveling save file" unlock, and does it
   raise the IP question? ([13](13-roadmap-risks-ip.md).)
 - **Munny:** does a currency ever join the forge, or does it stay barter-only

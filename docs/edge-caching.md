@@ -33,6 +33,37 @@ The live numbers still refresh on the client after hydration (tRPC refetch), so
 a slightly stale HTML snapshot only affects first paint and crawler content,
 never the interactive UX.
 
+### Map style proxy (`/api/map-style/:theme`)
+
+The map basemap style documents are proxied through the origin
+(`routes/api/map-style/$theme.ts`) instead of being fetched straight from
+`api.maptiler.com` — MapTiler sends `Last-Modified` but no `Cache-Control`, which
+the Capacitor WebView mishandles and which put a cross-origin round-trip on the
+map's first paint. The proxy stamps `CACHE.MAP_STYLE` so CF can serve it from a
+POP near the user. Only the style descriptor is proxied; the tiles/sprites/glyphs
+it references still load direct from MapTiler (their ToS requires it).
+
+This path lives **under `/api/`, which rule #1 bypasses** — so it needs its own
+Cache Rule ordered **above** the bypass (same as the tRPC cache rule):
+
+| When (URI Path)               | Action                                                                                                                                     |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `starts_with /api/map-style/` | Eligible for cache · Edge TTL **"Use cache-control header if present, bypass if not"** · Browser TTL "Respect origin TTL" · Serve stale ON |
+
+Use the origin's headers — don't pick "Ignore cache-control and use this TTL":
+the route sends `no-store` on upstream errors (`502`/`404`) so a transient
+MapTiler blip isn't cached for the full window, and that only works if CF
+respects the header.
+
+**Gotcha — CORS.** The response **must** send `Access-Control-Allow-Origin: *`
+(the route does). On the web the map fetches this same-origin, but the native
+Capacitor WebView runs from `https://localhost`, making it a cross-origin fetch;
+without the header the style load is blocked and the map shows "failed to load"
+on device only. MapTiler's own API sends `*`, so the pre-proxy direct URL didn't
+hit this. After changing the route's headers, **purge the two URLs**
+(`/api/map-style/light`, `/api/map-style/dark`) or the old cached copy without
+CORS keeps serving to native for up to the edge TTL.
+
 Also enable, both free:
 
 - **Tiered Cache** (Caching → Tiered Cache) — a miss in one PoP pulls from an

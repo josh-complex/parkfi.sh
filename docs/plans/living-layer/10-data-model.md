@@ -22,7 +22,9 @@
 ## New `ref_*` lookup tables
 
 ```ts
-// mark kinds — discovery | dare | world | collectible | companion | encounter | memory
+// mark kinds — discovery (the echo) | trinity | emblem | letter | world |
+// collectible | companion | encounter
+// (2026-07-16: `dare` cut; `memory` folded into discovery via mark.visibility)
 export const refMarkType = pgTable("ref_mark_type", {
   code: text("code").primaryKey(),
   label: text("label").notNull(),
@@ -101,10 +103,17 @@ export const mark = pgTable(
     // optional landmark anchor key for image-anchored AR (CLIP, reused from pins)
     anchorKey: text("anchor_key"),
 
-    // typed content — discovery: {note, photoR2Key}; collectible: {heartlessType,
-    // rarity, rewardTable}; world: {sourceEvent, attractionId}; dare: {text};
-    // companion: {companionId}; memory: {visitId, snapshot}
+    // typed content — discovery/echo: {resonance, note?, photoR2Key?};
+    // trinity: {} (placement-only, zero user content); emblem: {photoR2Key,
+    // status: pending|confirmed}; letter: {toUserId, note}; collectible:
+    // {heartlessType, rarity, rewardTable}; world: {sourceEvent, attractionId};
+    // companion: {companionId}
     payload: jsonb("payload").$type<MarkPayload>().notNull().default({}),
+
+    // echo/memory unification (2026-07-16): an echo never fades for its
+    // author — `public` rows are the world's ambience, `private` rows are the
+    // author's memories; one row, one flag (absorbs the old `memory` type)
+    visibility: text("visibility").notNull().default("public"), // public | private
 
     // moment — when + a snapshot of live park state at creation
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -115,7 +124,7 @@ export const mark = pgTable(
       .notNull()
       .default("active")
       .references(() => refMarkState.code),
-    expiresAt: timestamp("expires_at", { withTimezone: true }), // null = permanent (memory)
+    expiresAt: timestamp("expires_at", { withTimezone: true }), // null = permanent (private memories, confirmed emblems)
 
     // quality / social signal
     findCount: integer("find_count").notNull().default(0),
@@ -148,12 +157,51 @@ export const markReaction = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id),
-    kind: text("kind").notNull(), // found | upvote | report
+    kind: text("kind").notNull(), // found | upvote (UI: resonate) | report
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.markId, t.userId, t.kind] })],
 );
 ```
+
+## `mark_participant` — participation in a shared mark (2026-07-16)
+
+Trinity weaves and emblem confirmations are the same shape — doc
+[03](03-marks-and-discovery.md)'s one-primitive spirit applied to
+_participation_. "Who awakened this Trinity, and how" and "who confirmed this
+emblem" are answered by one table.
+
+```ts
+export const markParticipant = pgTable(
+  "mark_participant",
+  {
+    markId: bigint("mark_id", { mode: "number" })
+      .notNull()
+      .references(() => mark.id),
+    // the wielder acting; companion stand-ins carry the summoning wielder's id
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id),
+    // planter | woven | witness | confirmer | companion
+    role: text("role").notNull(),
+    // set only for role=companion (a fielded party member standing in)
+    companionId: bigint("companion_id", { mode: "number" }).references(() => companion.id),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    // presence provenance (geofence dwell now; the M5b primitive later)
+    verification: jsonb("verification").$type<PresenceSignals>(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.markId, t.userId, t.role] }),
+    index("mark_participant_user_idx").on(t.userId),
+  ],
+);
+```
+
+> A trinity **awakens** when three distinct hearts are woven (wielders, or a
+> woven wielder's fielded companions after ~72 h dormancy, at reduced XP — GDD
+> §3.7); an emblem **confirms** at three distinct `confirmer` rows. Same-moment
+> completions are verifiable purely from `at` timestamps (the tier-3 "sealed
+> together" bond input).
 
 ## Game-save tables (keyed to `user`)
 
@@ -301,7 +349,34 @@ export const presenceEvent = pgTable(
   (t) => [index("presence_user_ts_idx").on(t.userId, t.ts)],
 ); // hypertable, ~30–90d retention
 
-// resolved battles/captures (analytics + economy tuning)
+// battle integrity (2026-07-16): a session row created at startEncounter.
+// Pins the loadout so equip-after-fight can't retro-buff a submitted move
+// list; holds the in-progress move list for pocket-safe resume; expiry = flee.
+export const encounterSession = pgTable(
+  "encounter_session",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id),
+    markId: bigint("mark_id", { mode: "number" })
+      .notNull()
+      .references(() => mark.id),
+    // pinned at start; server replay resolves with THESE, never current state
+    keybladeId: bigint("keyblade_id", { mode: "number" }).references(() => keyblade.id),
+    keybladeLevel: integer("keyblade_level"),
+    fieldParty: jsonb("field_party").$type<FieldPartySnapshot>(),
+    // the client's submitted moves — replayed server-side (anti-cheat) AND the
+    // witness for battle-shaped Journal verdicts (flawless / surge-less)
+    moveList: jsonb("move_list").$type<BattleMove[]>(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (t) => [index("encounter_session_user_idx").on(t.userId, t.startedAt)],
+);
+
+// resolved battles (analytics + economy tuning + THE Journal substrate)
 export const encounterLog = pgTable(
   "encounter_log",
   {
@@ -314,39 +389,77 @@ export const encounterLog = pgTable(
     outcome: text("outcome").notNull(), // win | flee | loss
     // the live state that drove this spawn (proves the Darkness hook, [04])
     liveStateSnapshot: jsonb("live_state_snapshot").$type<LiveStateSnapshot>(),
+    // 2026-07-16: stamped AT RESOLVE, not copied from spawn — attraction
+    // status, weather condition, park-local hour as they were when the seal
+    // landed. Makes world-shaped Journal conditions a pure function of the
+    // log row forever, independent of obs retention. Ships FIRST (GDD §4.2).
+    resolveSnapshot: jsonb("resolve_snapshot").$type<LiveStateSnapshot>(),
+    // battle-shaped verdicts from the server replay (flawless, surgeless, …)
+    verdicts: jsonb("verdicts").$type<Record<string, boolean>>(),
+    // the deterministic computed drop, recorded for audit (GDD §4.4)
+    drop: jsonb("drop").$type<Record<string, number>>(),
     ts: timestamp("ts", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("encounter_user_ts_idx").on(t.userId, t.ts)],
 ); // hypertable, retention
 ```
 
-## Achievements
+## The progression spine (2026-07-16 — Journal, materials)
+
+Built as the architectural **sibling of the shipped ParkFi achievements
+engine** (`src/lib/achievements.ts` + `src/server/achievements/engine.ts`),
+never a fork of it: **catalog in code** (pages, condition entries, thresholds,
+XP live in a `JOURNAL` catalog next to `ACHIEVEMENTS` — content ships in a
+deploy, not a migration), pure aggregates over `encounter_log`, a closed-set
+reconcile, and sticky idempotent unlocks. The DB stores only what a user has
+unlocked. (There is deliberately **no** `achievement_def` / catalog table —
+that earlier sketch is superseded; the shipped engine proved catalog-in-code.)
 
 ```ts
-export const achievementDef = pgTable("achievement_def", {
-  code: text("code").primaryKey(),
-  label: text("label").notNull(),
-  description: text("description"),
-  category: text("category").notNull(), // motion | live_gated | mastery | discovery | collection | social | secret
-  isSecret: boolean("is_secret").notNull().default(false),
-});
-
-export const wielderAchievement = pgTable(
-  "wielder_achievement",
+// sticky Journal unlocks — the user_achievement mirror. Insert
+// onConflictDoNothing; never deleted (admin revoke only); retroactive by
+// construction (add a catalog entry later, history satisfies it instantly).
+export const journalEntry = pgTable(
+  "journal_entry",
   {
     userId: text("user_id")
       .notNull()
       .references(() => user.id),
-    code: text("code")
-      .notNull()
-      .references(() => achievementDef.code),
-    earnedAt: timestamp("earned_at", { withTimezone: true }).notNull().defaultNow(),
-    // provenance: the presence/encounter rows that verified it (unfakeable, [08])
-    evidence: jsonb("evidence").$type<AchievementEvidence>(),
+    // catalog entry id, e.g. "breaker.first" | "breaker.tally_50" |
+    // "breaker.cond_ridedown" | "world_<slug>.emblem_page" | "trinity.awakened_party"
+    entryId: text("entry_id").notNull(),
+    unlockedAt: timestamp("unlocked_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.userId, t.code] })],
+  (t) => [primaryKey({ columns: [t.userId, t.entryId] })],
+);
+
+// the forge's material ledger (GDD §4.4) — keys are element × tier
+// (shard | stone | gem) plus `husk` (Nobody-only) and `thread`
+// (incursion-only). Recipes are code; no currency in v1.
+export const wielderMaterial = pgTable(
+  "wielder_material",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id),
+    material: text("material").notNull(),
+    qty: integer("qty").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.material] })],
 );
 ```
+
+> **The two-ledger boundary (canon):** civilian ParkFi levels/achievements and
+> Wielder rank/Journal are permanently separate systems — shared substrate
+> (obs tables, pure `lib/` helpers), never shared modules; crosstalk through
+> rows only (GDD Canon Log 2026-07-16;
+> [08](08-achievements-persistence-coldstart.md) Part A). Emblem pages and
+> trinity ticks are Journal entry _types_, not separate systems.
+>
+> **World light needs no table:** it is a derived, cached aggregate over
+> existing rows (seal timestamps from `encounter_log`, echo/resonance rows) —
+> zero new writes. If history is ever needed, a `world_light_obs` hypertable
+> follows the repo's obs idiom.
 
 ## TypeScript payload types (co-located, like `GeoPolygon`)
 
@@ -367,7 +480,17 @@ export type PresenceSignals = {
 };
 export type CompanionStats = { hp: number; atk: number; def: number; spd: number };
 export type KeyStats = { atk: number; element?: string };
-export type AchievementEvidence = { presenceIds?: number[]; encounterIds?: number[] };
+// the integrity artifact AND the battle-shaped Journal witness (one structure)
+export type BattleMove = {
+  verb: "strike" | "surge" | "guard";
+  timing?: "good" | "perfect";
+  at: number;
+};
+export type FieldPartySnapshot = Array<{
+  companionId: number;
+  level: number;
+  tier: "home" | "guest" | "away";
+}>;
 ```
 
 ## Migration note
@@ -381,11 +504,11 @@ a timestamped `migration.sql` folder; no `_journal.json`; do not use
 
 ## How it hangs off the existing schema
 
-| New table                                                                 | Anchored to existing                                                                         |
-| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `world`                                                                   | `parks`; seeded from `attraction_meta.land`                                                  |
-| `mark`                                                                    | `parks`, `world`, `attractions`, `user`                                                      |
-| `wielder`, `wielder_companion`, `wielder_keyblade`, `wielder_achievement` | `user` (Better-Auth)                                                                         |
-| `companion`                                                               | `world`, `attractions`                                                                       |
-| `presence_event`, `encounter_log`                                         | `user`, `parks`, `attractions` — driven by the live `queue_obs`/`attraction_status_obs` feed |
-| `seal_state`                                                              | `world`, `user`                                                                              |
+| New table                                                                               | Anchored to existing                                                                         |
+| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `world`                                                                                 | `parks`; seeded from `attraction_meta.land`                                                  |
+| `mark`, `mark_reaction`, `mark_participant`                                             | `parks`, `world`, `attractions`, `user`                                                      |
+| `wielder`, `wielder_companion`, `wielder_keyblade`, `journal_entry`, `wielder_material` | `user` (Better-Auth)                                                                         |
+| `companion`                                                                             | `world`, `attractions`                                                                       |
+| `presence_event`, `encounter_session`, `encounter_log`                                  | `user`, `parks`, `attractions` — driven by the live `queue_obs`/`attraction_status_obs` feed |
+| `seal_state`                                                                            | `world`, `user`                                                                              |

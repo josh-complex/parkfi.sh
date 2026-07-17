@@ -14,7 +14,15 @@ import { CACHE } from "#/lib/cache.ts";
  * the map's first paint. Only the style *descriptor* is proxied; the tiles,
  * sprites, and glyphs it references keep loading direct from MapTiler (their ToS
  * requires end-users to hit `api.maptiler.com` for tile bytes).
+ *
+ * `Access-Control-Allow-Origin: *` is required: on the web the map fetches this
+ * same-origin, but the Capacitor WebView runs from `https://localhost` /
+ * `capacitor://`, making it a cross-origin fetch. MapTiler's own API sends `*`
+ * (which is why the pre-proxy direct URL worked on native); we mirror it. The
+ * style is public and non-credentialed, so `*` is correct — no `Vary` needed,
+ * which keeps it cleanly edge-cacheable.
  */
+const CORS_ORIGIN = "access-control-allow-origin";
 
 // Server-side key. `process.env.VITE_MAPTILER_KEY` is populated in the deploy
 // (same as `VITE_POSTHOG_KEY` in `server/posthog.ts`); fall back to the build-
@@ -35,7 +43,9 @@ export const Route = createFileRoute("/api/map-style/$theme")({
       GET: async ({ request }) => {
         const theme = new URL(request.url).pathname.replace(/^\/api\/map-style\//, "");
         const styleId = styleIdFor(theme);
-        if (!styleId) return new Response("not found", { status: 404 });
+        if (!styleId) {
+          return new Response("not found", { status: 404, headers: { [CORS_ORIGIN]: "*" } });
+        }
 
         const upstream = `https://api.maptiler.com/maps/${styleId}/style.json?key=${MAPTILER_KEY}`;
 
@@ -47,7 +57,7 @@ export const Route = createFileRoute("/api/map-style/$theme")({
           // soon rather than caching a broken style for the long TTL.
           return new Response("upstream unavailable", {
             status: 502,
-            headers: { "cache-control": "no-store" },
+            headers: { "cache-control": "no-store", [CORS_ORIGIN]: "*" },
           });
         }
 
@@ -55,7 +65,7 @@ export const Route = createFileRoute("/api/map-style/$theme")({
           // Pass the failure through without the long cache window.
           return new Response(await res.text(), {
             status: res.status,
-            headers: { "cache-control": "no-store" },
+            headers: { "cache-control": "no-store", [CORS_ORIGIN]: "*" },
           });
         }
 
@@ -63,6 +73,7 @@ export const Route = createFileRoute("/api/map-style/$theme")({
           headers: {
             "content-type": "application/json; charset=utf-8",
             "cache-control": CACHE.MAP_STYLE,
+            [CORS_ORIGIN]: "*",
           },
         });
       },

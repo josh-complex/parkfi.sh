@@ -7,7 +7,48 @@
 > Darkness hook) is wired for real against the existing ingest path; everything
 > else is scoped per [12](12-demo-vertical-slice.md).
 
-## Build status — M0–M3 shipped (2026-06-20)
+## Build status — M0–M3 shipped (2026-06-20); M4a/M5/M5a since (see GDD §10)
+
+> **2026-07-16 update:** the 2D battle (M4a), companions
+> (catalog/recruit/roster/XP, M5) and companions-acting-in-battle with
+> proximity tiers (M5a) have shipped since this section was written — GDD §10
+> is the authoritative status table. The remaining tail is M4b (lite AR), M5b
+> (presence), M6 (logbook), M7 (packaging) — **re-ordered by the adopted
+> priority list below** (doc [15 §7](15-state-of-the-game-2026-07-15.md)).
+
+### The adopted workstream order (2026-07-16 — supersedes plain M-order)
+
+1. **Integrity** — encounter **session row** at `startEncounter` (pinning
+   keychain/level/party), client submits its **move list**, server **replays**
+   the deterministic fight; minimum-duration check. Rides along:
+   **resolve-time snapshot stamping** on `encounter_log` (the only
+   unrecoverable-if-delayed work — ship it first, even before replay) and the
+   `resolveRound(state, move) → RoundEvent[]` refactor in `battle.ts` (shared
+   with priority 2). ([10](10-data-model.md); GDD Canon Log 2026-07-16.)
+2. **The feel workstream** — one event-queue/presentation architecture, three
+   consumers: combat theater (KH command menu, turn beats, timing verbs, Web
+   Audio buses, haptics — 15 §3.1–3.7), the **map presentation queue** driven
+   by poll-diff (15 §6.4 rung A), and the **echo refiction** + leave/find
+   ceremony (which also deletes the free-text moderation surface).
+3. **The wire** — mark triggers → LISTEN/NOTIFY → `httpSubscriptionLink`
+   ([11 §5](11-architecture.md)), vocabulary v1 minus `seal` until priority 1
+   lands.
+4. **World light** — derived aggregate → map brightness → spawn-weight input →
+   `light` band events (GDD §3.7).
+5. **The progression spine** — Journal (`journal_entry`, catalog-in-code,
+   sibling of the achievements engine) → XP economy (GDD §4.5 replaces the
+   flat +10) → rank bands + trials → drops (`wielder_material`) → keychains +
+   loadout-aware battle + `seal_state`; forge UI last. Two-ledger boundary
+   per [08](08-achievements-persistence-coldstart.md) Part A.
+6. **Tier 0/1 social + Trinity Marks** — honest aggregates, echo-touched FCM
+   push, then `trinity` + `mark_participant` with the retroactive awakening
+   push (FCM's marquee payload).
+7. **Lite AR debuts as the Lucky-Emblem registration viewfinder** (not a
+   generic reveal); run the VPS coverage probe on the same in-park trip as
+   M5b presence validation (M5b also upgrades trinity weaving from dwell to
+   the real presence primitive, landing on the achievements side).
+8. **Nobodies → solo Rifts → DO presence rooms → shared-anchor Convergences**
+   — after the joint balancing pass (escalation clock × World light).
 
 M0 (dev mode), M1 (world + geofence), M2 (mark + Darkness engine — the mic-drop),
 and M3 (public `living` router + discovery pins + the gated play map) are
@@ -82,11 +123,11 @@ at most one active system mark per `(attraction, type)`).
 5. Create the PostHog `living-layer` flag and roll it out to gate the UI
    (M3+).
 
-### Still to build (next): M3 → M7
+### The per-milestone sections below are build history + remaining scope
 
-M3 (discovery pins + `living` router + the play route/UI), then M4 (AR +
-battle), M5 (presence verification + recruit), M6 (logbook), M7 (QR-code
-packaging). See the per-milestone sections below.
+M0–M3 (and since, M4a/M5/M5a) document what shipped and how; M4b/M5b/M6/M7
+remain, sequenced by the adopted workstream order above rather than by their
+original M-numbers.
 
 ## Repo conventions this plan follows
 
@@ -298,11 +339,16 @@ native ARKit/ARCore plane-anchor plugin is the rung-2 upgrade path.
   ([07](07-ar-and-channels.md), [09](09-moderation-trust-safety.md) safety:
   speed-lockout + stationary).
 - `src/components/living/battle/` — turn-based UI (2–3 moves, one Companion, a
-  Surge meter). Pure client state machine; server validates start/resolve.
-- Extend `living.ts`: `encounter.start({ markId })` → returns Heartless spec;
-  `encounter.resolve({ markId, outcome })` → **server-authoritative**, writes
-  `encounter_log`, grants drops/XP, advances `seal_state`
-  ([10](10-data-model.md)).
+  Surge meter). _(Shipped as M4a. **2026-07-16 canon revision:** the client
+  state machine becomes a **presentation** layer over
+  `resolveRound(state, move) → RoundEvent[]`; `resolve` takes the **move
+  list**, not an outcome, and the server replays it against the pinned
+  session — GDD Canon Log.)_
+- Extend `living.ts`: `encounter.start({ markId })` → creates the session row
+  (pinned loadout) + returns Heartless spec; `encounter.resolve({ markId,
+moves })` → **server-replay-authoritative**, stamps resolve
+  snapshot/verdicts, writes `encounter_log`, grants drops/XP/Journal ticks,
+  advances `seal_state` ([10](10-data-model.md)).
 
 **Migration** — add `encounter_log` (hypertable + retention),
 `seal_state` per [10](10-data-model.md).
@@ -350,10 +396,13 @@ The shareable artifact ([08 — Achievements, persistence & cold-start](08-achie
 
 **New files / migration**
 
-- `achievement_def`, `wielder_achievement` ([10](10-data-model.md)); seed a few
-  verified-by-physics + one secret achievement.
-- `src/server/living/achievements.ts` — evaluate achievement rules off
-  `presence_event` / `encounter_log` (run post-tick or on resolve).
+- `journal_entry` ([10](10-data-model.md)) — **catalog-in-code** per the
+  2026-07-16 canon (no `achievement_def` table; the earlier sketch is
+  superseded — the shipped civilian achievements engine proved the pattern).
+- `src/server/living/journal.ts` — `computeJournalStats(logRows)` (pure,
+  DB-free) + `evaluateAndUnlockJournal` (closed-set reconcile, sticky
+  inserts, ceremony delta), run inside `resolveEncounter`; mirrors
+  `src/server/achievements/engine.ts` without importing it.
 - `living.profile()` → wielder, roster, logbook timeline, achievements.
 - `src/routes/_dash/$slug.play.logbook.tsx` + `src/components/living/logbook/`.
 
