@@ -52,9 +52,10 @@ const MAP_CTRL_3D =
 // insets, gesture bars, etc.). `md:` drops it since desktop has no bottom nav.
 const CLUSTER_BOTTOM =
   "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+1.4rem)] md:bottom-3";
-// While navigating, the right column rises to clear the green nav ETA card.
+// While navigating, the right column rises to clear the green nav ETA card —
+// tuned so the gap above the card matches the card's own gap to the nav island.
 const CLUSTER_BOTTOM_LIFTED =
-  "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+6.25rem)] md:bottom-[5rem]";
+  "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+5.75rem)] md:bottom-[5.25rem]";
 
 /**
  * Shared positioning shell for the two floating bottom map-control clusters

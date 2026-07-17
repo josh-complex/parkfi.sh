@@ -310,6 +310,10 @@ export function MapStageProvider({
     // even though the GPS-driven "traveled" breadcrumb kept updating. "always"
     // lets the real fetch decide, and makes the manual Retry reliable too.
     networkMode: "always",
+    // The nav overlay already renders routing failures inline ("No walking
+    // route found" + the Retry bar), so skip the generic error toast — the
+    // failure still reaches telemetry via the query cache's global sink.
+    meta: { errorToast: false },
   });
   // `keepPreviousData` keeps the last route cached after the query is disabled,
   // so gate the drawn geometry on an active trip — otherwise clearing/ending nav

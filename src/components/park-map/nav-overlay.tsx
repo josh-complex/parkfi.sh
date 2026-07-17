@@ -38,6 +38,25 @@ import { cn } from "#/lib/utils.ts";
 import type { NavSummary } from "#/components/park-map/nav-store.ts";
 import type { RouteManeuver } from "#/server/routing/valhalla.ts";
 
+// Nav-green 3D chrome — the same emboss system as the app's popovers/buttons
+// (see the "3D surface system" in styles.css), tinted for the solid green
+// panels: shelf/border in a darker green, glare a faint white top highlight.
+// The full treatment (border + shelf shadow) is the top turn sign's; the bottom
+// bar and arrival card take the border-only variant — their bottom edge sits
+// against the nav island, where a 3D shelf reads as clutter.
+const GREEN_PANEL_3D =
+  "border-3d shadow-3d [--btn-3d:color-mix(in_oklch,var(--color-green-700),black_32%)] [--btn-glare:oklch(1_0_0_/_25%)]";
+const GREEN_PANEL_BORDER =
+  "border-3d [--btn-3d:color-mix(in_oklch,var(--color-green-700),black_32%)]";
+// White action pills (Start / Retry / Exit) get the standard outline emboss +
+// the press-down active state used by the app's other 3D buttons.
+const PILL_3D =
+  "border-3d btn-3d-outline shadow-3d active:translate-y-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active";
+// Translucent circle buttons (swap / close) — dark-green shelf so the emboss
+// still reads against the green panel behind them.
+const CIRCLE_3D =
+  "border-3d shadow-3d [--btn-3d:color-mix(in_oklch,var(--color-green-700),black_38%)] [--btn-glare:oklch(1_0_0_/_30%)] active:translate-y-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active";
+
 function formatDistance(m: number): string {
   return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`;
 }
@@ -221,7 +240,10 @@ export function NavOverlay({
     return (
       <div
         data-map-chrome="bottom"
-        className="pointer-events-auto absolute inset-x-3 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+0.75rem)] z-10 mx-auto flex max-w-md flex-col gap-3 rounded-2xl bg-green-700 px-4 py-4 text-white shadow-lg ring-1 ring-white/15 md:bottom-3"
+        className={cn(
+          "pointer-events-auto absolute inset-x-4 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+1.4rem)] z-10 mx-auto flex max-w-md flex-col gap-3 rounded-3xl border-t-3 bg-green-700 px-4 py-4 text-white ring-1 ring-white/15 md:bottom-3",
+          GREEN_PANEL_BORDER,
+        )}
       >
         <div className="flex items-center gap-3">
           <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-white/15">
@@ -269,7 +291,10 @@ export function NavOverlay({
         <button
           type="button"
           onClick={onClear}
-          className="inline-flex w-full items-center justify-center rounded-full bg-white px-4 py-2 text-sm font-semibold text-green-700 shadow-sm transition hover:bg-white/90 active:scale-95"
+          className={cn(
+            "inline-flex w-full items-center justify-center rounded-full bg-white px-4 py-2 text-sm font-semibold text-green-700 transition hover:bg-white/90",
+            PILL_3D,
+          )}
         >
           Exit
         </button>
@@ -285,7 +310,10 @@ export function NavOverlay({
           steals room from the instruction. */}
       <div
         data-map-chrome="top"
-        className="pointer-events-auto absolute inset-x-3 top-[calc(var(--safe-top)+4.5rem)] z-10 mx-auto max-w-md overflow-hidden rounded-2xl bg-green-700 text-white shadow-lg ring-1 ring-white/15 md:top-3"
+        className={cn(
+          "pointer-events-auto absolute inset-x-4 top-[calc(var(--safe-top)+4.5rem)] z-10 mx-auto max-w-md overflow-hidden rounded-3xl bg-green-700 text-white ring-1 ring-white/15 md:top-3",
+          GREEN_PANEL_3D,
+        )}
       >
         {canExpand ? (
           <button
@@ -342,7 +370,10 @@ export function NavOverlay({
           onClick={onToggleHeadingUp}
           aria-label={headingUp ? "Lock map to north" : "Rotate map to my heading"}
           aria-pressed={!headingUp}
-          className="pointer-events-auto absolute left-3 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+4.75rem)] z-10 inline-flex size-11 items-center justify-center rounded-full bg-green-700 text-white shadow-lg ring-1 ring-white/15 transition active:scale-95 md:bottom-[4.75rem]"
+          className={cn(
+            "pointer-events-auto absolute left-4 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+5.75rem)] z-10 inline-flex size-11 items-center justify-center rounded-full bg-green-700 text-white ring-1 ring-white/15 transition md:bottom-[5rem]",
+            CIRCLE_3D,
+          )}
         >
           <CompassIcon
             // North-lock engaged → fill just the needle (the icon's polygon), not
@@ -357,7 +388,10 @@ export function NavOverlay({
       {/* Bottom ETA bar — sits where the Filter button was. */}
       <div
         data-map-chrome="bottom"
-        className="pointer-events-auto absolute inset-x-3 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+0.75rem)] z-10 mx-auto flex max-w-md items-center gap-3 rounded-2xl bg-green-700 px-4 py-2.5 text-white shadow-lg ring-1 ring-white/15 md:bottom-3"
+        className={cn(
+          "pointer-events-auto absolute inset-x-4 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+1.4rem)] z-10 mx-auto flex max-w-md items-center gap-3 rounded-3xl border-t-3 bg-green-700 px-4 py-2.5 text-white ring-1 ring-white/15 md:bottom-3",
+          GREEN_PANEL_BORDER,
+        )}
       >
         <div className="min-w-0 flex-1">
           {routed ? (
@@ -378,7 +412,10 @@ export function NavOverlay({
           <button
             type="button"
             onClick={onStart}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-semibold text-green-700 shadow-sm transition hover:bg-white/90 active:scale-95"
+            className={cn(
+              "inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-semibold text-green-700 transition hover:bg-white/90",
+              PILL_3D,
+            )}
           >
             <NavigationIcon className="size-4 fill-current" />
             Start
@@ -390,7 +427,10 @@ export function NavOverlay({
           <button
             type="button"
             onClick={onRetry}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-semibold text-green-700 shadow-sm transition hover:bg-white/90 active:scale-95"
+            className={cn(
+              "inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-semibold text-green-700 transition hover:bg-white/90",
+              PILL_3D,
+            )}
           >
             <RotateCwIcon className="size-4" />
             Retry
@@ -403,7 +443,10 @@ export function NavOverlay({
             type="button"
             onClick={onSwap}
             aria-label="Reverse route"
-            className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-white/15 transition hover:bg-white/25 active:scale-95"
+            className={cn(
+              "inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-white/15 transition hover:bg-white/25",
+              CIRCLE_3D,
+            )}
           >
             <ArrowUpDownIcon className="size-4" />
           </button>
@@ -415,7 +458,10 @@ export function NavOverlay({
           type="button"
           onClick={() => (started ? setConfirmOpen(true) : onClear())}
           aria-label={started ? "End navigation" : "Cancel route"}
-          className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-white/15 transition hover:bg-white/25 active:scale-95"
+          className={cn(
+            "inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-white/15 transition hover:bg-white/25",
+            CIRCLE_3D,
+          )}
         >
           <XIcon className="size-4" />
         </button>

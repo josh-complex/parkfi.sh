@@ -2,11 +2,11 @@
 import PackageDescription
 
 let package = Package(
-    name: "RideRecorderPlugin",
+    name: "RideRecorder",
     platforms: [.iOS(.v14)],
     products: [
         .library(
-            name: "RideRecorderPlugin",
+            name: "RideRecorder",
             targets: ["RideRecorderPlugin"])
     ],
     dependencies: [
