@@ -1,6 +1,7 @@
 import { Outlet, createFileRoute } from "@tanstack/react-router";
 
 import { AchievementTracker } from "#/components/achievements/achievement-tracker.tsx";
+import { load } from "#/lib/loader.ts";
 
 /**
  * Dashboard-only layer, nested inside the persistent `_app` shell. The map-stage
@@ -23,7 +24,10 @@ export const Route = createFileRoute("/_app/_dash")({
   // Prefetch the park list on the server so the dehydrated cache hydrates the
   // sidebar/header instantly and crawlers see real park names — not a spinner.
   // Stays on `_dash` (not `_app`) so non-dashboard routes never fetch parks.
+  // `load` blocks only on the server: this loader re-runs on every dashboard
+  // navigation, and a client-side await here would freeze every tab switch on a
+  // `parks.list` round trip whenever the cache entry has gone stale.
   loader: async ({ context }) => {
-    await context.queryClient.ensureQueryData(context.trpc.parks.list.queryOptions());
+    await load(context.queryClient, context.trpc.parks.list.queryOptions());
   },
 });

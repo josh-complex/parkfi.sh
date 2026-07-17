@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { isServer, useQuery } from "@tanstack/react-query";
 
 import { ParkDashboard } from "#/components/park-dashboard/park-dashboard.tsx";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
@@ -29,11 +29,17 @@ export const Route = createFileRoute("/_app/_dash/park/$slug")({
       context.queryClient,
       context.trpc.parks.board.queryOptions({ parkSlug: params.slug }),
     );
-    // `parks.list` is already prefetched by the `_dash` loader — read it here to
-    // resolve the real park name + operator for operator-aware head copy. It's a
-    // cache hit in practice, so keep it awaited (cheap identity data feeds head).
-    const parks = await context.queryClient.ensureQueryData(context.trpc.parks.list.queryOptions());
-    const park = parks.find((p) => p.slug === params.slug);
+    // `parks.list` resolves the real park name + operator for operator-aware
+    // head copy. Server: await it (it feeds the SSR'd <title>). Client: a stale
+    // entry would turn this await into a network round trip that freezes the
+    // navigation, so read whatever the cache holds synchronously — the `_dash`
+    // loader is already refreshing it in the background — and fall back to the
+    // titleized slug when it's cold.
+    const listOptions = context.trpc.parks.list.queryOptions();
+    const parks = isServer
+      ? await context.queryClient.ensureQueryData(listOptions)
+      : context.queryClient.getQueryData(listOptions.queryKey);
+    const park = parks?.find((p) => p.slug === params.slug);
     // Server: block on the board so it ships in the HTML. Client: `undefined`,
     // resolves instantly — the board streams in behind the skeleton.
     await boardPromise;

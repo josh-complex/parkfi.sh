@@ -1,5 +1,5 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { isServer, useQuery } from "@tanstack/react-query";
 import { ArrowLeftIcon, ExternalLinkIcon, MapPinIcon, ShoppingBagIcon } from "lucide-react";
 
 import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
@@ -30,9 +30,16 @@ export const Route = createFileRoute("/_app/_dash/shop/$slug")({
   // SSR-prefetch the shop so the rendered HTML carries its name, location, and
   // categories — the indexable content that lets the page rank / deep-link.
   loader: async ({ context, params }) => {
-    const shop = await context.queryClient.ensureQueryData(
-      context.trpc.parks.shop.queryOptions({ slug: params.slug }),
-    );
+    const options = context.trpc.parks.shop.queryOptions({ slug: params.slug });
+    if (!isServer) {
+      // Client: warm the cache and render immediately instead of freezing the
+      // previous page on the fetch; the component renders a titleized-slug
+      // fallback until data lands. Only the server hard-404s unknown slugs —
+      // that's the path crawlers see.
+      void context.queryClient.prefetchQuery(options);
+      return;
+    }
+    const shop = await context.queryClient.ensureQueryData(options);
     if (!shop) throw notFound();
     return { name: shop.name, land: shop.land, parkResort: shop.parkResort };
   },

@@ -5,6 +5,7 @@ import { ArrowUpDownIcon, LayoutGridIcon, ListIcon, SlidersHorizontalIcon } from
 
 import { ConnectionLost } from "#/components/connection-lost.tsx";
 import { RideCategoryChips } from "#/components/rides/ride-category-chips.tsx";
+import { BoardTableSkeleton, ShelfGhost } from "#/components/skeletons.tsx";
 import {
   MAP_FILTER_PILL,
   MAP_FILTER_STACK,
@@ -25,6 +26,7 @@ import {
   CarouselContent,
   CarouselItem,
 } from "#/components/ui/carousel.tsx";
+import { LazyMount } from "#/components/ui/lazy-mount.tsx";
 import {
   Drawer,
   DrawerContent,
@@ -519,7 +521,7 @@ export function CrossParkWaits() {
           // Bleed the whole section to the container edges (canceling the page's
           // px-4/lg:px-6) so the card track scrolls flush to the device edge; the
           // heading, resting cards, and list re-inset to stay aligned.
-          return (
+          const section = (
             <Carousel
               key={g.parkSlug}
               opts={{ align: "start", dragFree: true }}
@@ -561,6 +563,37 @@ export function CrossParkWaits() {
                 )}
               </section>
             </Carousel>
+          );
+          // First two parks mount eagerly — enough real content to fill the
+          // first viewport — and the rest defer until scrolled near or their
+          // idle-reveal turn, so switching to this tab commits ~2 parks' cards
+          // instead of every ride in every park at once.
+          if (gi <= 1) return section;
+          return (
+            <LazyMount
+              key={g.parkSlug}
+              estimatedHeight={view === "grid" ? 320 : g.rides.length * 60 + 110}
+              fallback={
+                view === "grid" ? (
+                  <ShelfGhost
+                    title={formatParkName(g.parkName)}
+                    subtitle={subtitle}
+                    items={g.rides.map((r) => ({
+                      thumbhash: r.imageThumbhash,
+                      name: r.name,
+                      sub: r.land,
+                    }))}
+                  />
+                ) : (
+                  <BoardTableSkeleton
+                    rows={Math.min(g.rides.length, 8)}
+                    className="mx-auto w-full max-w-3xl"
+                  />
+                )
+              }
+            >
+              {section}
+            </LazyMount>
           );
         })}
       </div>

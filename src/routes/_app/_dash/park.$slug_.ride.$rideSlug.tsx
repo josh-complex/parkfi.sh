@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { isServer, useQuery } from "@tanstack/react-query";
 
 import { RideDetail } from "#/components/park-dashboard/ride-detail.tsx";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
@@ -20,12 +20,18 @@ export const Route = createFileRoute("/_app/_dash/park/$slug_/ride/$rideSlug")({
   // indexable content. Without it crawlers (and the client refetch via the
   // robots-disallowed /api/trpc) see an empty shell.
   loader: async ({ context, params }) => {
-    const ride = await context.queryClient.ensureQueryData(
-      context.trpc.parks.attraction.queryOptions({
-        parkSlug: params.slug,
-        rideSlug: params.rideSlug,
-      }),
-    );
+    const options = context.trpc.parks.attraction.queryOptions({
+      parkSlug: params.slug,
+      rideSlug: params.rideSlug,
+    });
+    if (!isServer) {
+      // Client: warm the cache and render immediately — RideDetail owns its own
+      // skeleton, so don't freeze the previous page on the attraction fetch.
+      // `head()` falls back to titleized slugs until data lands.
+      void context.queryClient.prefetchQuery(options);
+      return;
+    }
+    const ride = await context.queryClient.ensureQueryData(options);
     return {
       name: ride?.name ?? null,
       parkName: ride?.park.name ?? null,

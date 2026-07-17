@@ -24,6 +24,8 @@ import {
   CarouselContent,
   CarouselItem,
 } from "#/components/ui/carousel.tsx";
+import { LazyMount } from "#/components/ui/lazy-mount.tsx";
+import { ShelfGhost } from "#/components/skeletons.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
@@ -201,39 +203,54 @@ export function DiningPicks({
   return (
     <div className="flex flex-col gap-4">
       {shelves.map((shelf) => (
-        <Carousel
+        // Each shelf mounts ~24 image cards plus an Embla instance — deferring
+        // below-fold shelves keeps the navigation commit to what's on screen.
+        <LazyMount
           key={shelf.key}
-          opts={{ align: "start", dragFree: true }}
-          className="-mx-4 lg:-mx-6"
+          estimatedHeight={290}
+          fallback={
+            <ShelfGhost
+              title={shelf.title}
+              subtitle={shelf.subtitle}
+              items={shelf.venues.map((v) => ({
+                thumbhash: v.imageThumbhash,
+                name: v.name,
+                sub: v.parkResort,
+                sub2: v.cuisine,
+              }))}
+            />
+          }
         >
-          <section className="flex flex-col gap-3">
-            <div className="flex items-end justify-between gap-4 px-4 lg:px-6">
-              <div className="flex flex-col gap-0.5">
-                <h3 className="text-lg font-semibold tracking-tight">{shelf.title}</h3>
-                <p className="text-muted-foreground text-sm">{shelf.subtitle}</p>
+          <Carousel opts={{ align: "start", dragFree: true }} className="-mx-4 lg:-mx-6">
+            <section className="flex flex-col gap-3">
+              <div className="flex items-end justify-between gap-4 px-4 lg:px-6">
+                <div className="flex flex-col gap-0.5">
+                  <h3 className="text-lg font-semibold tracking-tight">{shelf.title}</h3>
+                  <p className="text-muted-foreground text-sm">{shelf.subtitle}</p>
+                </div>
+                <CarouselArrows className="hidden md:flex" />
               </div>
-              <CarouselArrows className="hidden md:flex" />
-            </div>
-            <CarouselContent
-              className="-ml-4"
-              viewportClassName="px-4 lg:px-6 [mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%_-_1.5rem),transparent)]"
-            >
-              {shelf.venues.map((v) => (
-                <CarouselItem
-                  key={v.facilityId}
-                  className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5 2xl:basis-1/6"
-                >
-                  <PickCard
-                    venue={v}
-                    nextAvail={nextAvail.get(v.facilityId)}
-                    schedules={hoursMap.get(v.facilityId)}
-                    nowMin={nowMin}
-                  />
-                </CarouselItem>
-              ))}
-            </CarouselContent>
-          </section>
-        </Carousel>
+              <CarouselContent
+                className="-ml-4"
+                viewportClassName="px-4 lg:px-6 [mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%_-_1.5rem),transparent)]"
+              >
+                {shelf.venues.map((v) => (
+                  <CarouselItem
+                    key={v.facilityId}
+                    className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5 2xl:basis-1/6"
+                  >
+                    <PickCard
+                      venue={v}
+                      nextAvail={nextAvail.get(v.facilityId)}
+                      schedules={hoursMap.get(v.facilityId)}
+                      nowMin={nowMin}
+                    />
+                  </CarouselItem>
+                ))}
+              </CarouselContent>
+            </section>
+          </Carousel>
+        </LazyMount>
       ))}
     </div>
   );

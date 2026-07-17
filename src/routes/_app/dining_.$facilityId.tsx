@@ -1,6 +1,6 @@
 import * as React from "react";
 import { createFileRoute, useRouterState } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { isServer, useQuery } from "@tanstack/react-query";
 
 import { validateDiningSearch } from "#/components/dining/dining-search-params.ts";
 import { DiningVenueDetail } from "#/components/dining/dining-venue-detail.tsx";
@@ -16,18 +16,23 @@ export const Route = createFileRoute("/_app/dining_/$facilityId")({
   validateSearch: validateDiningSearch,
   // SSR-prefetch the venue header + its menu so the rendered HTML carries the
   // indexable content (and the menu deep-link target is present before JS runs).
-  // The venue header is cheap identity data that feeds `head()`, so keep it
-  // awaited; the heavy menu + hours are already fire-and-forget prefetches, so
-  // an in-app dining nav paints the header immediately and streams the menu in.
+  // Server: await the venue — it feeds `head()` and the SSR'd markup. Client:
+  // fire-and-forget everything so tapping a restaurant card never freezes the
+  // list on the venue fetch; DiningVenueDetail owns its loading skeleton.
   loader: async ({ context, params }) => {
-    const venue = await context.queryClient.ensureQueryData(
-      context.trpc.dining.venue.queryOptions({ facilityId: params.facilityId }),
-    );
+    const venueOptions = context.trpc.dining.venue.queryOptions({
+      facilityId: params.facilityId,
+    });
     void context.queryClient.prefetchQuery(
       context.trpc.dining.menu.queryOptions({ facilityId: params.facilityId }),
     );
     // Today's operating hours back the SSR'd open-now chip (indexable, no flash).
     void context.queryClient.prefetchQuery(context.trpc.dining.hours.queryOptions({}));
+    if (!isServer) {
+      void context.queryClient.prefetchQuery(venueOptions);
+      return;
+    }
+    const venue = await context.queryClient.ensureQueryData(venueOptions);
     return {
       name: venue?.name ?? null,
       cuisine: venue?.cuisine ?? null,

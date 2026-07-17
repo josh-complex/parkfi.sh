@@ -313,20 +313,29 @@ export const diningRouter = {
       },
     ];
 
+    // Cap each shelf: a carousel only ever gets swiped a screen or two deep, and
+    // the wide buckets (Mobile Ordering matches most quick-service venues) would
+    // otherwise put hundreds of cards into one shelf — the client mounts every
+    // card it receives, so an uncapped payload directly stalls the browse page.
+    const SHELF_LIMIT = 24;
+
     return BUCKETS.map((b) => ({
       key: b.key,
       title: b.title,
       subtitle: b.subtitle,
-      venues: venues.filter(b.match).map((v) => ({
-        facilityId: v.facilityId,
-        name: v.name,
-        cuisine: v.cuisine,
-        parkResort: v.parkResort,
-        priceRange: v.priceRange,
-        imageUrl: v.imageUrl,
-        imageThumbhash: v.imageThumbhash,
-        detailUrl: v.detailUrl,
-      })),
+      venues: venues
+        .filter(b.match)
+        .slice(0, SHELF_LIMIT)
+        .map((v) => ({
+          facilityId: v.facilityId,
+          name: v.name,
+          cuisine: v.cuisine,
+          parkResort: v.parkResort,
+          priceRange: v.priceRange,
+          imageUrl: v.imageUrl,
+          imageThumbhash: v.imageThumbhash,
+          detailUrl: v.detailUrl,
+        })),
     })).filter((b) => b.venues.length > 0);
   }),
 

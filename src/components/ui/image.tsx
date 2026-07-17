@@ -41,7 +41,7 @@ export function useDataSaver(): boolean {
  * Malformed hashes decode to `null` once and render as no placeholder.
  */
 const thumbhashCache = new Map<string, string | null>();
-function thumbhashToUrl(hash: string | null | undefined): string | undefined {
+export function thumbhashToUrl(hash: string | null | undefined): string | undefined {
   if (!hash) return undefined;
   let url = thumbhashCache.get(hash);
   if (url === undefined) {

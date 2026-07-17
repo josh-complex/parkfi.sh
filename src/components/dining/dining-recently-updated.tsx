@@ -186,6 +186,9 @@ export function DiningRecentlyUpdated() {
         subtitle="Fresh updates at restaurants in the last 30 days"
         venues={restaurants}
       />
+      {/* Second shelf stays eager: two shelves fill the first viewport so a
+          navigation lands on real content, and the picks shelves below are the
+          ones that defer. */}
       <UpdatedShelf
         title="Recently updated quick service"
         subtitle="What's new at snack carts, kiosks & quick-service spots"

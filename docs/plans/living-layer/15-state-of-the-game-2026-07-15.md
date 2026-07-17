@@ -64,6 +64,10 @@ future-proofs timed combat (below).
 
 ## 3. What "feels like Kingdom Hearts" decomposes into
 
+> _(Frozen record — this section was folded into canon 2026-07-16. Current
+> truth: the [GDD](GDD.md) + the adopted workstream list in
+> [14](14-implementation-plan.md). Read on for rationale, not instruction.)_
+
 The systems are KH-shaped; the sensation isn't. Cheapest-first ladder — none
 of it is AR:
 
@@ -986,6 +990,10 @@ coverage before committing to rung 3.
 
 ## 6. Sync backend — the ladder
 
+> _(Frozen record — the wire spec below was folded into canon; the living
+> version is [11 §5](11-architecture.md). Read on for rationale, not
+> instruction.)_
+
 External game-backend platforms were evaluated (including all-in-one
 "database-owns-the-logic" offerings) and rejected: anything that wants to own
 both state and logic would put a dual-write seam exactly through the moat,
@@ -1247,6 +1255,10 @@ attraction_id}` — and the listener maps rows to vocabulary (`INSERT` +
   ~25 s ping is the price; it's cheaper than the refetch it replaces.
 
 ## 7. Priority order (rewritten through the four passes)
+
+> _(Frozen record — this list was **adopted** 2026-07-16 and now lives as the
+> workstream order at the top of [14](14-implementation-plan.md), which is
+> where any future re-ordering happens. Do not plan from this copy.)_
 
 1. **Integrity: server-replay battle validation + encounter sessions.** Start
    with the §3.1 event-queue refactor — it is shared with priority 2. The

@@ -14,3 +14,18 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 - [ ] If setup, runtime, or package-manager behavior looks wrong, run `vp env doctor` and include its output when asking for help.
 
 <!--VITE PLUS END-->
+
+## The Living Layer / Kingdom Hearts initiative
+
+The in-park game initiative is documented at `docs/plans/living-layer/`.
+Before reading or editing anything there (docs **or** the `src/server/living/`
+/ `living` router code):
+
+- **`docs/plans/living-layer/GDD.md` is canon and wins** over the numbered
+  docs and the code. Design changes update the GDD first (with a Canon
+  Decision Log entry), in the same change.
+- **Read the authority ladder in `docs/plans/living-layer/README.md` first.**
+  Some docs there are frozen research records or unadopted proposals — they
+  read like instructions but must not be followed as build orders.
+- Current build status lives in **GDD §10** only; the adopted build order is
+  the workstream list at the top of doc 14 (not doc 14's M-numbered sections).

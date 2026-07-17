@@ -324,6 +324,11 @@ counter. Router unit tests for `leaveMark` (presence gate) + `reactMark`
 
 ## M4 — AR encounter + scoped battle
 
+> **⚠ Superseded ordering.** M-numbers are build history / scope reference,
+> not the sequence. The live build order is the **adopted workstream list at
+> the top of this doc** (2026-07-16). M4a shipped; M4b (lite AR) now lands at
+> workstream 7 as the emblem viewfinder.
+
 **Add dependency (revised 2026-07-15):** no web-AR vendor — 8th Wall's hosted
 platform is gone and WebXR `immersive-ar` still doesn't work on iOS Safari
 ([07](07-ar-and-channels.md)). M4b is **rung-1 camera-overlay lite AR** inside
@@ -362,6 +367,10 @@ declined (the loop must complete without AR — [07](07-ar-and-channels.md)).
 
 ## M5 — presence verification (real anti-cheat) + companion recruit
 
+> **⚠ Superseded ordering** (see the adopted workstream list at top). M5/M5a
+> shipped; M5b (presence) rides workstream 7's in-park trip, landing on the
+> achievements side per the two-ledger boundary.
+
 **Presence verification** ([06 — Location & geofencing](06-location-and-geofencing.md))
 
 - `src/server/living/presence.ts` — `verifyPresence({ userId, claim })`:
@@ -392,6 +401,10 @@ contradicts the live feed (unit test).
 
 ## M6 — the logbook (persistence made visible)
 
+> **⚠ Superseded ordering** (see the adopted workstream list at top). The
+> Journal portion of this section belongs to workstream 5 (the progression
+> spine).
+
 The shareable artifact ([08 — Achievements, persistence & cold-start](08-achievements-persistence-coldstart.md)).
 
 **New files / migration**
@@ -412,6 +425,8 @@ its achievement (with evidence provenance). Profile query renders the timeline.
 ---
 
 ## M7 — package the pitch
+
+> **⚠ Superseded ordering** (see the adopted workstream list at top).
 
 - Package the pitch build: **TestFlight / Play internal track** of the
   Capacitor app, plus a **QR-code web link** (a clean play entry) for the
