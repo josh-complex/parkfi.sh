@@ -5,9 +5,15 @@ import { distanceMeters } from "#/server/living/geofence.ts";
 import {
   angleDelta,
   bearingBetween,
+  buildRouteModel,
+  computeProgress,
   extendSnappedTrail,
+  isStartManeuver,
   projectOntoRoute,
+  SNAP_OFF_ROUTE_M,
 } from "./nav-geometry.ts";
+
+import type { RouteManeuver, RouteResult } from "#/server/routing/valhalla.ts";
 
 // A test-local metre offsetter around an Orlando-ish anchor, so routes read in
 // metres east/north instead of raw degree soup.
@@ -108,5 +114,88 @@ describe("extendSnappedTrail", () => {
     trail = extendSnappedTrail(trail, route, at(200, 98)); // ~296m along in one hop
     // Snapped endpoints only — no vertex parade faking a walked path.
     expect(trail).toHaveLength(2);
+  });
+});
+
+describe("isStartManeuver", () => {
+  it("flags Valhalla start codes 1/2/3 only", () => {
+    expect(isStartManeuver(1)).toBe(true);
+    expect(isStartManeuver(2)).toBe(true);
+    expect(isStartManeuver(3)).toBe(true);
+    expect(isStartManeuver(15)).toBe(false); // turn left
+    expect(isStartManeuver(4)).toBe(false); // destination
+  });
+});
+
+// A 200m-east-then-100m-north route (total 300m) with the canonical maneuver
+// shape Valhalla emits: a start preamble, one real turn, and a destination.
+const maneuver = (
+  type: number,
+  beginShapeIndex: number,
+  extra?: Partial<RouteManeuver>,
+): RouteManeuver => ({
+  instruction: `maneuver ${type}`,
+  distanceMeters: 0,
+  timeSeconds: 0,
+  type,
+  beginShapeIndex,
+  ...extra,
+});
+const routeResult: RouteResult = {
+  coordinates: [at(0, 0), at(200, 0), at(200, 100)],
+  distanceMeters: 300,
+  durationSeconds: 300, // 1 m/s, so eta seconds == remaining metres
+  maneuvers: [maneuver(1, 0), maneuver(15, 1), maneuver(4, 2)],
+};
+
+describe("buildRouteModel", () => {
+  it("prefix-sums the route and locates each maneuver along it", () => {
+    const model = buildRouteModel(routeResult)!;
+    expect(model).not.toBeNull();
+    expect(model.totalM).toBeCloseTo(300, 0);
+    expect(model.cumM).toHaveLength(3);
+    expect(model.cumM[1]).toBeCloseTo(200, 0);
+    expect(model.maneuverAlongM).toEqual([
+      expect.closeTo(0, 0),
+      expect.closeTo(200, 0),
+      expect.closeTo(300, 0),
+    ]);
+  });
+
+  it("returns null for a degenerate route", () => {
+    expect(buildRouteModel({ ...routeResult, coordinates: [at(0, 0)] })).toBeNull();
+  });
+});
+
+describe("computeProgress", () => {
+  const model = buildRouteModel(routeResult)!;
+
+  it("skips the start maneuver and headlines the real next turn (defect 1.1)", () => {
+    // Standing at the origin: the next actionable maneuver is the turn (index 1),
+    // never the start preamble (index 0).
+    const p = computeProgress(model, at(0, 0))!;
+    expect(p.nextManeuverIndex).toBe(1);
+    expect(p.distToNextM).toBeCloseTo(200, 0);
+  });
+
+  it("ticks distance-to-turn and remaining/ETA down as you walk (defect 1.2)", () => {
+    const p = computeProgress(model, at(100, 3))!; // 100m along, 3m off the path
+    expect(p.alongM).toBeCloseTo(100, 0);
+    expect(p.distToNextM).toBeCloseTo(100, 0);
+    expect(p.remainingM).toBeCloseTo(200, 0);
+    expect(p.etaSeconds).toBeCloseTo(200, 0);
+    expect(p.offRouteM).toBeCloseTo(3, 0);
+  });
+
+  it("advances to the destination maneuver past the turn", () => {
+    const p = computeProgress(model, at(200, 50))!; // 250m along, on the north leg
+    expect(p.nextManeuverIndex).toBe(2); // destination
+    expect(p.distToNextM).toBeCloseTo(50, 0);
+    expect(p.remainingM).toBeCloseTo(50, 0);
+  });
+
+  it("reports a genuine off-route fix beyond the snap threshold", () => {
+    const p = computeProgress(model, at(100, 60))!; // 60m off the path
+    expect(p.offRouteM).toBeGreaterThan(SNAP_OFF_ROUTE_M);
   });
 });

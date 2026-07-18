@@ -141,6 +141,18 @@ function livingMarkerEl(kind: "darkness" | "discovery"): HTMLElement {
 // back to park badges). Park-bounds fits land around 15–16, comfortably above.
 const ROAM_RIDE_ZOOM = 14;
 
+// Walking-nav camera framing (§3.3): while heading-up, pitch the map and drop the
+// puck to the lower third so most of the screen shows what's *ahead* — standard
+// turn-by-turn framing that makes "navigating" feel like a mode. Restored flat +
+// centered when heading-up is off (north-lock) or follow drops.
+const NAV_PITCH = 48;
+/** Downward pixel offset of the puck from the viewport centre, so it sits in the
+ *  lower third. A fraction of the map height, capped so it stays sane on tall
+ *  screens. */
+function navOffsetY(container: HTMLElement | null): number {
+  return Math.min((container?.clientHeight ?? 0) * 0.24, 160);
+}
+
 // Route styling. The remaining route is drawn as short dashes marching toward
 // the destination (Google's pedestrian style); the already-walked breadcrumb
 // sits behind it as a trail of *static* gray dots — same visual language as the
@@ -659,14 +671,36 @@ export function ParkMap({
         // flag would disable the follow-cam for the rest of the trip.
         map.once("moveend", done);
         setTimeout(done, dur + 200);
+        const tilt = opts?.tilt ?? false;
         map.easeTo({
           center: coords,
           zoom: opts?.zoom ?? map.getZoom(),
           bearing: opts?.bearing ?? map.getBearing(),
+          pitch: tilt ? NAV_PITCH : 0,
+          offset: tilt ? [0, navOffsetY(containerRef.current)] : [0, 0],
           duration: dur,
         });
       },
-      setBearing: (bearing, opts) => map.easeTo({ bearing, duration: opts?.duration ?? 400 }),
+      setBearing: (bearing, opts) =>
+        map.easeTo({
+          bearing,
+          ...(opts?.tilt != null ? { pitch: opts.tilt ? NAV_PITCH : 0 } : {}),
+          duration: opts?.duration ?? 400,
+        }),
+      fitRoute: (coords) => {
+        if (!coords || coords.length < 2) return;
+        const b = new maplibregl.LngLatBounds();
+        for (const c of coords) b.extend(c);
+        // Frame flat + north-up so the whole remaining route reads at a glance,
+        // reserving the nav-overlay chrome. easeTo (not fitBounds) so we can drop
+        // the pitch back to 0 in the same move.
+        const cam = map.cameraForBounds(b, {
+          padding: chromePadding(containerRef.current),
+          maxZoom: 17,
+        });
+        if (cam)
+          map.easeTo({ center: cam.center, zoom: cam.zoom, bearing: 0, pitch: 0, duration: 500 });
+      },
     });
     return () => {
       map.remove();
@@ -1363,13 +1397,22 @@ export function ParkMap({
   React.useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready || !followRef.current || !userLocation || engagingRef.current) return;
-    const bearing = headingUpRef.current
+    // Heading-up → tilted walking-nav framing (puck low, pitched, rotated to
+    // facing); north-lock → flat and centered.
+    const tilt = headingUpRef.current;
+    const bearing = tilt
       ? (deviceHeadingRef.current ??
         userLocation.heading ??
         lastHeadingRef.current ??
         map.getBearing())
       : 0;
-    map.easeTo({ center: userLocation.coords, bearing, duration: 500 });
+    map.easeTo({
+      center: userLocation.coords,
+      bearing,
+      pitch: tilt ? NAV_PITCH : 0,
+      offset: tilt ? [0, navOffsetY(containerRef.current)] : [0, 0],
+      duration: 500,
+    });
   }, [userLocation, ready]);
 
   // Heading-up live rotation: while following with heading-up on, rotate the map

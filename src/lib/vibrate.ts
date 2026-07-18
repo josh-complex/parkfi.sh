@@ -74,6 +74,22 @@ export function vibrateUnlock(tierIndex: number): void {
   webVibrate([...pulses, 35, 60, 35, 60, finale]);
 }
 
+/** Arrival buzz for walking navigation: a short double-pulse capped by a Success
+ *  notification on native — a distinct "you're here" that reads apart from the
+ *  celebratory unlock ladder. Best-effort; silent where haptics are unavailable. */
+export function vibrateArrival(): void {
+  if (isNative()) {
+    void (async () => {
+      const { Haptics, NotificationType } = await import("@capacitor/haptics");
+      await Haptics.notification({ type: NotificationType.Success });
+    })().catch(() => {
+      /* haptics unavailable — best-effort */
+    });
+    return;
+  }
+  webVibrate([60, 80, 120]);
+}
+
 /** Level-up drumroll: web = six 15 ms taps then a 250 ms boom; native = a short
  *  impact run capped by a Success notification. */
 export function vibrateLevelUp(): void {

@@ -20,6 +20,7 @@ import {
   LocateFixedIcon,
   NavigationIcon,
   RotateCwIcon,
+  RouteIcon,
   XIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -34,8 +35,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "#/components/ui/alert-dialog.tsx";
+import { useStore } from "@tanstack/react-store";
+
 import { cn } from "#/lib/utils.ts";
-import type { NavSummary } from "#/components/park-map/nav-store.ts";
+import { formatDistance, type UnitSystem } from "#/lib/units.ts";
+import type { NavProgress } from "#/components/park-map/nav-geometry.ts";
+import { navStore, type NavSummary } from "#/components/park-map/nav-store.ts";
 import type { RouteManeuver } from "#/server/routing/valhalla.ts";
 
 // Nav-green 3D chrome — the same emboss system as the app's popovers/buttons
@@ -57,15 +62,19 @@ const PILL_3D =
 const CIRCLE_3D =
   "border-3d shadow-3d [--btn-3d:color-mix(in_oklch,var(--color-green-700),black_38%)] [--btn-glare:oklch(1_0_0_/_30%)] active:translate-y-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active";
 
-function formatDistance(m: number): string {
-  return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`;
-}
 function formatWalk(s: number): string {
   const mins = Math.max(1, Math.round(s / 60));
   if (mins < 60) return `${mins} min walk`;
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return m === 0 ? `${h} hr walk` : `${h} hr ${m} min walk`;
+}
+/** Wall-clock arrival time ("3:42 PM") for a walk `s` seconds out — guests plan
+ *  around showtimes and return windows, so the clock time is more actionable
+ *  than the duration alone. Locale-formatted, hour+minute only. */
+function formatArrivalClock(s: number): string {
+  const at = new Date(Date.now() + s * 1000);
+  return at.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 /** Elapsed walk time for the completion summary — seconds under a minute, else
  *  minutes (with trailing seconds when it isn't a clean minute). */
@@ -115,6 +124,46 @@ function maneuverIcon(type: number): LucideIcon {
 }
 
 /**
+ * Heading-lock compass (GL only). The needle counter-rotates with the map
+ * bearing so it always points to true north. Tap toggles heading-up (map
+ * rotates to your facing) vs north-lock; the icon fills in when north-lock is
+ * engaged so the current mode reads at a glance.
+ *
+ * Reads the live bearing straight from the nav store: it changes on every
+ * animation frame of a rotate, so subscribing here keeps those per-frame writes
+ * from re-rendering anything beyond this one button.
+ */
+function HeadingCompassButton({
+  headingUp,
+  onToggle,
+}: {
+  headingUp: boolean;
+  onToggle: () => void;
+}) {
+  const bearing = useStore(navStore, (s) => s.mapBearing);
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={headingUp ? "Lock map to north" : "Rotate map to my heading"}
+      aria-pressed={!headingUp}
+      className={cn(
+        "pointer-events-auto inline-flex size-11 items-center justify-center rounded-full bg-green-700 text-white ring-1 ring-white/15 transition",
+        CIRCLE_3D,
+      )}
+    >
+      <CompassIcon
+        // North-lock engaged → fill just the needle (the icon's polygon),
+        // not the whole circle, so it reads as an active/pressed state.
+        className={cn("size-6 transition-transform", !headingUp && "[&>polygon]:fill-current")}
+        style={{ transform: `rotate(${-bearing}deg)` }}
+        aria-hidden
+      />
+    </button>
+  );
+}
+
+/**
  * Google-style walking-nav UI, overlaid on the map while a trip is active (it
  * travels in the portal with the map, and the filter chrome hides beneath it).
  * Two parts, deliberately solid highway-sign green to read as "actively
@@ -133,15 +182,19 @@ export function NavOverlay({
   distanceMeters,
   durationSeconds,
   maneuvers,
+  progress,
+  rerouting,
+  unitSystem,
   started,
   arrived,
   summary,
+  walkedMeters,
   canRotate,
   headingUp,
-  bearing,
   onStart,
   onRetry,
   onToggleHeadingUp,
+  onOverview,
   onSwap,
   onClear,
 }: {
@@ -155,21 +208,32 @@ export function NavOverlay({
   arrived: boolean;
   /** Frozen trip stats for the completion card (walked distance + elapsed). */
   summary: NavSummary | null;
+  /** Live distance walked this trip (metres) — with the ticking remaining
+   *  distance it yields a progress fraction that survives reroutes (a re-keyed
+   *  route shrinks the route total, but not what's already been walked). */
+  walkedMeters: number;
   distanceMeters: number | null;
   durationSeconds: number | null;
   maneuvers: Array<RouteManeuver> | null;
+  /** Live per-fix progress while navigating — next-turn distance, remaining
+   *  distance/ETA. Null in preview / before the first fix. */
+  progress: NavProgress | null;
+  /** A wrong turn was detected and a fresh route is being computed. */
+  rerouting: boolean;
+  /** Distance units (feet/miles vs metres/km) inferred from the guest's locale. */
+  unitSystem: UnitSystem;
   /** Preview (route framed) vs navigating (follow-cam). */
   started: boolean;
   /** Whether the map can rotate (GL) — gates the compass. */
   canRotate: boolean;
   /** Heading-up engaged (compass needle points off-north). */
   headingUp: boolean;
-  /** Live map bearing in degrees, for the compass needle. */
-  bearing: number;
   onStart: () => void;
   /** Re-run the route query after a full failure (Retry button). */
   onRetry: () => void;
   onToggleHeadingUp: () => void;
+  /** Frame the whole remaining route (overview peek); recenter returns to follow. */
+  onOverview: () => void;
   onSwap: () => void;
   onClear: () => void;
 }) {
@@ -178,6 +242,7 @@ export function NavOverlay({
   // Steps only make sense on a resolved route; keep the ones with real copy
   // (Valhalla sometimes emits an empty final maneuver).
   const steps = (maneuvers ?? []).filter((m) => m.instruction.trim().length > 0);
+  const fmtDist = (m: number) => formatDistance(m, unitSystem);
   const routed =
     !geoBlocked &&
     !locating &&
@@ -191,34 +256,75 @@ export function NavOverlay({
   React.useEffect(() => {
     if (!canExpand) setExpanded(false);
   }, [canExpand]);
-  // Top sign: headline the first maneuver once routed. While navigating the trip
-  // origin re-keys to the live position (see the re-route logic in nav-store), so
-  // the route is recomputed from where you are and its first step *is* the next
-  // turn; otherwise a status line.
+  // Top sign headline. In preview we headline the route's opening step
+  // (`steps[0]`, which may be a "walk east on the path" start maneuver — fine
+  // before you've moved). While navigating, the live projection picks the next
+  // *actionable* turn (start maneuvers skipped, §1.1) and a ticking distance to
+  // it (§1.2); a detected wrong turn shows a "Rerouting…" state instead.
   const first = steps[0];
+  const liveManeuver =
+    started && progress?.nextManeuverIndex != null
+      ? (maneuvers?.[progress.nextManeuverIndex] ?? null)
+      : null;
+  // The live pick indexes the *unfiltered* maneuvers, so Valhalla's empty final
+  // maneuver can land here — treat it as "no maneuver" so the headline falls
+  // through to "Heading to <dest>" instead of a blank sign on the final leg.
+  const headManeuver =
+    liveManeuver != null
+      ? liveManeuver.instruction.trim().length > 0
+        ? liveManeuver
+        : null
+      : first;
   const HeadIcon = geoBlocked
     ? LocateFixedIcon
-    : locating || loading
+    : locating || loading || rerouting
       ? LoaderCircleIcon
-      : routed && first
-        ? maneuverIcon(first.type)
+      : routed && headManeuver
+        ? maneuverIcon(headManeuver.type)
         : ArrowUpIcon;
   let headline: React.ReactNode;
   if (geoBlocked) headline = "Enable location to navigate";
   else if (locating) headline = "Getting your location…";
   else if (loading) headline = "Finding route…";
   else if (error || !routed) headline = `No walking route found to ${destName}`;
-  else headline = first ? first.instruction : `Heading to ${destName}`;
+  else if (rerouting) headline = "Rerouting…";
+  else headline = headManeuver ? headManeuver.instruction : `Heading to ${destName}`;
+  // Sub-line: the live ticking distance to the next turn while navigating, else
+  // the maneuver's own (static) length in preview.
+  const liveDistToTurn = started && progress ? progress.distToNextM : null;
   const headSub =
-    routed && first && first.distanceMeters > 0 ? formatDistance(first.distanceMeters) : null;
+    rerouting || !routed
+      ? null
+      : liveDistToTurn != null
+        ? fmtDist(liveDistToTurn)
+        : headManeuver && headManeuver.distanceMeters > 0
+          ? fmtDist(headManeuver.distanceMeters)
+          : null;
+  // Bottom-bar figures: the live remaining distance/ETA while navigating (ticking
+  // between reroutes), the whole-route totals in preview.
+  const barDistanceMeters = started && progress ? progress.remainingM : distanceMeters;
+  const barDurationSeconds = started && progress ? progress.etaSeconds : durationSeconds;
+  // Estimated wall-clock arrival, and how far along the route we are (0–1) for
+  // the progress bar — both only meaningful once actually navigating. The
+  // fraction is walked / (walked + remaining), both live model-space metres, so
+  // it neither disagrees with Valhalla's summary total nor collapses when a
+  // reroute re-keys the route to just the remaining leg.
+  const arrivalClock =
+    routed && barDurationSeconds != null ? formatArrivalClock(barDurationSeconds) : null;
+  const progressFraction =
+    started && progress && walkedMeters + progress.remainingM > 0
+      ? Math.min(1, Math.max(0, walkedMeters / (walkedMeters + progress.remainingM)))
+      : null;
 
   const topSign = (
     <div className="flex items-center gap-3 px-4 py-3 text-left">
       <HeadIcon
-        className={cn("size-7 shrink-0", (locating || loading) && "animate-spin")}
+        className={cn("size-7 shrink-0", (locating || loading || rerouting) && "animate-spin")}
         aria-hidden
       />
-      <div className="min-w-0 flex-1">
+      {/* Announce instruction changes to screen readers as they update, without
+          stealing focus (§5). */}
+      <div className="min-w-0 flex-1" aria-live="polite">
         <div className="font-semibold leading-snug">{headline}</div>
         {headSub && <div className="text-xs text-white/70">{headSub}</div>}
       </div>
@@ -249,7 +355,10 @@ export function NavOverlay({
           <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-white/15">
             <CircleCheckBigIcon className="size-6" aria-hidden />
           </span>
-          <div className="min-w-0 flex-1">
+          {/* role=status so arrival is announced to screen readers — the polite
+              live region up in the top sign unmounts in this branch, and the
+              haptic is the only other signal. */}
+          <div className="min-w-0 flex-1" role="status">
             <div className="font-semibold leading-tight">You’ve completed your navigation!</div>
             {destName && (
               <div className="truncate text-sm text-white/80">Arrived at {destName}</div>
@@ -281,7 +390,7 @@ export function NavOverlay({
                     Distance
                   </div>
                   <div className="truncate text-sm font-semibold tabular-nums">
-                    {formatDistance(summary.walkedMeters)}
+                    {fmtDist(summary.walkedMeters)}
                   </div>
                 </div>
               </div>
@@ -346,7 +455,7 @@ export function NavOverlay({
                       <span className="min-w-0 flex-1">{m.instruction}</span>
                       {m.distanceMeters > 0 && (
                         <span className="shrink-0 text-xs text-white/70 tabular-nums">
-                          {formatDistance(m.distanceMeters)}
+                          {fmtDist(m.distanceMeters)}
                         </span>
                       )}
                     </li>
@@ -358,54 +467,64 @@ export function NavOverlay({
         )}
       </div>
 
-      {/* Heading-lock compass — bottom-left, above the ETA bar (GL only), so the
-          instruction sign can span the full width up top. The needle
-          counter-rotates with the map bearing so it always points to true north.
-          Tap toggles heading-up (map rotates to your facing) vs north-lock; the
-          icon fills in when north-lock is engaged so the current mode reads at a
-          glance. */}
-      {showCompass && (
-        <button
-          type="button"
-          onClick={onToggleHeadingUp}
-          aria-label={headingUp ? "Lock map to north" : "Rotate map to my heading"}
-          aria-pressed={!headingUp}
-          className={cn(
-            "pointer-events-auto absolute left-4 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+5.75rem)] z-10 inline-flex size-11 items-center justify-center rounded-full bg-green-700 text-white ring-1 ring-white/15 transition md:bottom-[5rem]",
-            CIRCLE_3D,
+      {/* Bottom-left control stack (while navigating), above the ETA bar so the
+          instruction sign can span the full width up top. The column's bottom
+          edge is pinned; buttons stack upward — the compass sits lowest (where it
+          always has), the route-overview peek above it. */}
+      {started && (
+        <div className="pointer-events-none absolute left-4 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+5.75rem)] z-10 flex flex-col gap-2 md:bottom-[5rem]">
+          {/* Route overview — frame the whole remaining route, then the recenter
+              button returns to follow (§3.4). */}
+          <button
+            type="button"
+            onClick={onOverview}
+            aria-label="Show the whole route"
+            className={cn(
+              "pointer-events-auto inline-flex size-11 items-center justify-center rounded-full bg-green-700 text-white ring-1 ring-white/15 transition",
+              CIRCLE_3D,
+            )}
+          >
+            <RouteIcon className="size-6" aria-hidden />
+          </button>
+          {showCompass && (
+            <HeadingCompassButton headingUp={headingUp} onToggle={onToggleHeadingUp} />
           )}
-        >
-          <CompassIcon
-            // North-lock engaged → fill just the needle (the icon's polygon), not
-            // the whole circle, so it reads as an active/pressed state.
-            className={cn("size-6 transition-transform", !headingUp && "[&>polygon]:fill-current")}
-            style={{ transform: `rotate(${-bearing}deg)` }}
-            aria-hidden
-          />
-        </button>
+        </div>
       )}
 
       {/* Bottom ETA bar — sits where the Filter button was. */}
       <div
         data-map-chrome="bottom"
         className={cn(
-          "pointer-events-auto absolute inset-x-4 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+1.4rem)] z-10 mx-auto flex max-w-md items-center gap-3 rounded-3xl border-t-3 bg-green-700 px-4 py-2.5 text-white ring-1 ring-white/15 md:bottom-3",
+          "pointer-events-auto absolute inset-x-4 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+1.4rem)] z-10 mx-auto flex max-w-md items-center gap-3 overflow-hidden rounded-3xl border-t-3 bg-green-700 px-4 py-2.5 text-white ring-1 ring-white/15 md:bottom-3",
           GREEN_PANEL_BORDER,
         )}
       >
         <div className="min-w-0 flex-1">
-          {routed ? (
+          {routed && barDurationSeconds != null && barDistanceMeters != null ? (
             <div className="leading-tight">
-              <span className="font-semibold">{formatWalk(durationSeconds)}</span>
-              <span className="text-white/70"> · {formatDistance(distanceMeters)}</span>
+              <span className="font-semibold">{formatWalk(barDurationSeconds)}</span>
+              <span className="text-white/70"> · {fmtDist(barDistanceMeters)}</span>
             </div>
           ) : (
             <div className="font-medium leading-tight">
               {geoBlocked ? "Location off" : error ? "Route unavailable" : "Routing…"}
             </div>
           )}
-          <div className="truncate text-xs text-white/70">to {destName}</div>
+          <div className="truncate text-xs text-white/70">
+            {arrivalClock ? `Arrive ${arrivalClock} · to ${destName}` : `to ${destName}`}
+          </div>
         </div>
+        {/* Progress bar hugging the bar's bottom edge — fraction of the route
+            walked (§5). Only while navigating, where "how far along am I" reads. */}
+        {progressFraction != null && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1 bg-white/15">
+            <div
+              className="h-full bg-white/80 transition-[width] duration-500 ease-out motion-reduce:transition-none"
+              style={{ width: `${progressFraction * 100}%` }}
+            />
+          </div>
+        )}
         {/* Start — the preview→navigate CTA, next to the ETA. White-on-green so
             it reads as the primary action; hidden once navigating. */}
         {routed && !started && (
@@ -436,8 +555,9 @@ export function NavOverlay({
             Retry
           </button>
         )}
-        {/* Swap only in preview — once navigating, the origin re-keys to your
-            live position every fix, so a reversed origin wouldn't stick. */}
+        {/* Swap only in preview — once navigating, the origin tracks your live
+            position (and re-keys on a reroute), so a reversed origin wouldn't
+            stick. */}
         {!locating && !geoBlocked && !started && (
           <button
             type="button"

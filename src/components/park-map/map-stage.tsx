@@ -5,7 +5,6 @@ import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useStore } from "@tanstack/react-store";
 import { createPortal } from "react-dom";
-import { toast } from "sonner";
 import posthog from "posthog-js";
 
 import { playModeStore, setHudExpanded } from "#/components/living/play-mode.ts";
@@ -17,10 +16,13 @@ import { useRideFilter } from "#/components/rides/ride-filter.tsx";
 import { useDeviceHeading } from "#/hooks/use-device-heading.ts";
 import { useGeolocation } from "#/hooks/use-geolocation.ts";
 import { useIsMobile } from "#/hooks/use-mobile.ts";
+import { useWakeLock } from "#/hooks/use-wake-lock.ts";
+import { vibrateArrival } from "#/lib/vibrate.ts";
 import { useNavTestToolsEnabled } from "#/integrations/posthog/feature-flags.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { DEV_SPOTS } from "#/lib/dev-location.ts";
 import { lazyWithReload } from "#/lib/lazy-with-reload.tsx";
+import { preferredUnitSystem, valhallaUnits } from "#/lib/units.ts";
 import { distanceMeters, pointInPolygon } from "#/server/living/geofence.ts";
 
 import {
@@ -35,9 +37,11 @@ import {
   ZoomControl,
 } from "./map-controls.tsx";
 import { morph, settleMorph } from "./map-morph.ts";
+import { buildRouteModel } from "./nav-geometry.ts";
 import { NavOverlay } from "./nav-overlay.tsx";
 import {
   clearNavTrip,
+  clearRerouting,
   dropFollow,
   engageFollow,
   navStore,
@@ -88,6 +92,11 @@ function useMapStage() {
 // Stable empty list for the dev-destination pins when the nav QA tools are off,
 // so the renderer's dev-marker effect sees an unchanging identity (no churn).
 const EMPTY_DEV_SPOTS: typeof DEV_SPOTS = [];
+
+// Fixes worse than this (metres of reported accuracy) don't drive the trip —
+// trail, arrival, and rerouting ignore them (§1.6). Generous enough that a
+// typical urban fix still counts, tight enough to reject just-woke/canyon spikes.
+const NAV_ACCURACY_MAX_M = 35;
 
 /**
  * The last map-bearing route the user viewed, so a ride page's "back" affordances
@@ -193,7 +202,11 @@ export function MapStageProvider({
   }, [playActive, battleMarkId, dropAt]);
   // One geolocation watch for the whole app, owned here so it survives the map
   // moving between routes. Never auto-prompts — the locate button calls locate().
-  const geo = useGeolocation({ watch: true, rememberActive: true });
+  // While a trip is `started` the watch tightens its `maximumAge` (see
+  // `navActive`) so turn-by-turn runs off near-live fixes instead of a puck that
+  // can lag ~20 m behind at walking speed (§1.5).
+  const navStarted = useStore(navStore, (s) => s.started);
+  const geo = useGeolocation({ watch: true, rememberActive: true, navActive: navStarted });
   // Live compass heading from the device magnetometer, only while location is on.
   // iOS needs a permission grant from a gesture — hung off the locate tap below.
   const compass = useDeviceHeading(geo.state.status === "granted");
@@ -267,17 +280,22 @@ export function MapStageProvider({
   // re-fetch/re-frame on every GPS tick) and routes to the destination via the
   // `routing.route` query. If location isn't granted yet, the store parks the
   // destination and the effect below fulfills it once a fix arrives.
-  const {
-    pendingDest,
-    trip,
-    started,
-    following,
-    headingUp,
-    arrived,
-    summary,
-    traveled,
-    mapBearing,
-  } = useStore(navStore);
+  // Per-field selectors (the default compare is `===`), so writes to fields this
+  // provider doesn't render — above all `mapBearing`, which changes every
+  // animation frame of a rotate — never re-render the whole stage tree. The
+  // compass needle subscribes to the bearing itself, inside the overlay.
+  const pendingDest = useStore(navStore, (s) => s.pendingDest);
+  const trip = useStore(navStore, (s) => s.trip);
+  const started = useStore(navStore, (s) => s.started);
+  const following = useStore(navStore, (s) => s.following);
+  const headingUp = useStore(navStore, (s) => s.headingUp);
+  const arrived = useStore(navStore, (s) => s.arrived);
+  const summary = useStore(navStore, (s) => s.summary);
+  const traveled = useStore(navStore, (s) => s.traveled);
+  const walkedM = useStore(navStore, (s) => s.walkedM);
+  const progress = useStore(navStore, (s) => s.progress);
+  const rerouting = useStore(navStore, (s) => s.rerouting);
+  const rerouteCount = useStore(navStore, (s) => s.rerouteCount);
   const requestDirections = React.useCallback(
     (d: NavDest) => {
       requestNavDirections(d, geo.state.status === "granted" ? geo.state.coords : null);
@@ -288,10 +306,15 @@ export function MapStageProvider({
   React.useEffect(() => {
     if (geo.state.status === "granted") resolvePendingDest(geo.state.coords);
   }, [geo.state]);
+  // Feet/miles vs metres/km, from the guest's locale. Drives both the chrome
+  // formatting and the Valhalla narrative units so "300 feet" agrees with the
+  // bar (§1.4). Stable per session, so computed once.
+  const unitSystem = React.useMemo(() => preferredUnitSystem(), []);
   const routeQ = useQuery({
     ...trpc.routing.route.queryOptions({
       from: trip?.from.coords ?? [0, 0],
       to: trip?.to.coords ?? [0, 0],
+      units: valhallaUnits(unitSystem),
     }),
     enabled: trip != null,
     // A mid-trip re-route re-keys the origin, which would normally blank the
@@ -317,28 +340,106 @@ export function MapStageProvider({
   });
   // `keepPreviousData` keeps the last route cached after the query is disabled,
   // so gate the drawn geometry on an active trip — otherwise clearing/ending nav
-  // leaves the route line and dots painted on the map.
+  // leaves the route line and dots painted on the map. The route model (prefix
+  // sums + per-maneuver distances) is what per-fix progress tracking projects
+  // onto; rebuilt only when a fresh route lands, not on every GPS tick.
+  const routeModel = React.useMemo(
+    () => (trip && routeQ.data ? buildRouteModel(routeQ.data) : null),
+    [trip, routeQ.data],
+  );
   const routeCoords = trip ? (routeQ.data?.coordinates ?? null) : null;
-  // Live fixes drive the trip: arrival detection, the traveled breadcrumb
-  // (snapped to the routed path), and the mid-trip re-route throttle — all in
-  // one store transition per fix (see recordNavFix).
+  // Latest route geometry read inside the stable overview callback.
+  const routeCoordsRef = React.useRef(routeCoords);
+  routeCoordsRef.current = routeCoords;
+  // Live fixes drive the trip: progress (next-turn/remaining/ETA), arrival
+  // detection, the traveled breadcrumb (snapped to the routed path), and
+  // off-route rerouting — all in one store transition per fix (see recordNavFix),
+  // projecting onto `routeModel` rather than re-routing every few metres.
   const durationSeconds = routeQ.data?.durationSeconds ?? null;
+  const coarseFixStreakRef = React.useRef(0);
   React.useEffect(() => {
-    if (geo.state.status === "granted")
-      recordNavFix(geo.state.coords, routeCoords, durationSeconds);
-  }, [geo.state, routeCoords, durationSeconds]);
-  // Announce the finish once, when arrival first latches (the summary card takes
-  // over the overlay at the same moment). Reset when a fresh trip clears it.
-  const arrivedToastRef = React.useRef(false);
+    if (geo.state.status !== "granted") return;
+    // Accuracy gating (§1.6): a coarse fix (just-woke GPS, a canyon between show
+    // buildings) can extend the trail with a bogus point, trigger a needless
+    // reroute, or falsely latch arrival — so it doesn't drive the trip. The puck
+    // still renders (with its accuracy ring) via `userLocation`. But the gate
+    // only rejects *spikes*: when every fix is coarse (indoors, older hardware),
+    // an unconditional gate would freeze progress/arrival for the whole walk —
+    // so after a streak of rejects the coarse fix drives the trip anyway.
+    if (geo.state.accuracy > NAV_ACCURACY_MAX_M && coarseFixStreakRef.current < 3) {
+      coarseFixStreakRef.current += 1;
+      return;
+    }
+    coarseFixStreakRef.current = 0;
+    recordNavFix(geo.state.coords, routeModel);
+  }, [geo.state, routeModel]);
+  // A newly fetched route (identity change on `routeQ.data`) resolves any
+  // in-flight reroute — the authoritative clear for the "Rerouting…" state, so it
+  // can't stick even if the fresh route lands slightly off the current fix.
   React.useEffect(() => {
-    if (arrived && !arrivedToastRef.current) {
-      arrivedToastRef.current = true;
-      const name = navStore.state.trip?.to.name;
-      toast.success("You’ve completed your navigation!", {
-        description: name ? `You’ve arrived at ${name}.` : "You’ve arrived at your destination.",
+    if (routeQ.data) clearRerouting();
+  }, [routeQ.data]);
+  // Nav funnel (§6): nav_previewed → nav_started → nav_arrived | nav_abandoned,
+  // with trip distance/duration and reroute count. Mid-trip abandonment rate is
+  // the metric that says which of the nav improvements actually land. We snapshot
+  // the live trip stats into a ref each render so the abandon event (which fires
+  // as the store resets to idle) can still report them.
+  const tripStatsRef = React.useRef<{
+    dest: string;
+    distanceMeters: number | null;
+    durationSeconds: number | null;
+    rerouteCount: number;
+  } | null>(null);
+  if (trip)
+    tripStatsRef.current = {
+      dest: trip.to.name,
+      distanceMeters: routeQ.data?.distanceMeters ?? null,
+      durationSeconds,
+      rerouteCount,
+    };
+  const navPhaseRef = React.useRef({ hadTrip: false, started: false, arrived: false });
+  React.useEffect(() => {
+    const prev = navPhaseRef.current;
+    const hasTrip = trip != null;
+    const stats = tripStatsRef.current;
+    if (hasTrip && !prev.hadTrip) posthog.capture("nav_previewed", { dest: trip?.to.name });
+    if (started && !prev.started)
+      posthog.capture("nav_started", {
+        dest: stats?.dest,
+        distanceMeters: stats?.distanceMeters,
+        durationSeconds: stats?.durationSeconds,
       });
+    if (arrived && !prev.arrived)
+      posthog.capture("nav_arrived", {
+        dest: stats?.dest,
+        walkedMeters: summary?.walkedMeters,
+        elapsedSeconds: summary?.elapsedSeconds,
+        rerouteCount: stats?.rerouteCount,
+      });
+    // Abandoned — an *active* trip cleared before arrival (a preview cancelled
+    // before Start doesn't count as abandoning a walk).
+    if (!hasTrip && prev.hadTrip && prev.started && !prev.arrived)
+      posthog.capture("nav_abandoned", {
+        dest: stats?.dest,
+        distanceMeters: stats?.distanceMeters,
+        rerouteCount: stats?.rerouteCount,
+      });
+    navPhaseRef.current = { hadTrip: hasTrip, started, arrived };
+  }, [trip, started, arrived, summary]);
+
+  // Keep the screen awake for the whole active walk (§3.1) — a phone that sleeps
+  // 30 s into a 10-minute route is the biggest real-world flow killer.
+  useWakeLock(started && !arrived);
+  // Mark the finish with a haptic buzz once arrival latches. The completion card
+  // (in the overlay) is the visible confirmation — no toast, which would be a
+  // duplicate of the card firing at the same moment (§5). Reset on a fresh trip.
+  const arrivedBuzzRef = React.useRef(false);
+  React.useEffect(() => {
+    if (arrived && !arrivedBuzzRef.current) {
+      arrivedBuzzRef.current = true;
+      vibrateArrival();
     } else if (!arrived) {
-      arrivedToastRef.current = false;
+      arrivedBuzzRef.current = false;
     }
   }, [arrived]);
   // While navigating (a resolved trip, or waiting on a location fix for a
@@ -380,6 +481,9 @@ export function MapStageProvider({
     mapRef.current?.flyToLocation(geo.state.coords, {
       zoom: 17.5,
       bearing: fusedHeadingRef.current ?? geo.state.heading ?? 0,
+      // Engage the tilted walking-nav framing (puck low, pitched) — follow +
+      // heading-up are engaged together, so the close-up is always heading-up.
+      tilt: true,
     });
   }, [geo, compass.requestPermission]);
   const handleStart = React.useCallback(() => {
@@ -398,9 +502,29 @@ export function MapStageProvider({
     const next = !navStore.state.headingUp;
     const h =
       fusedHeadingRef.current ?? (geo.state.status === "granted" ? geo.state.heading : null);
-    mapRef.current?.setBearing(next ? (h ?? 0) : 0);
+    // Tilt with heading-up; flatten back on north-lock (§3.3). While following,
+    // re-frame around the puck via flyToLocation so the tilt lands with the same
+    // lower-third offset the per-fix follow easeTo applies — a bare setBearing
+    // would pitch with the puck still centered, then hitch to the offset framing
+    // on the next fix.
+    if (navStore.state.following && geo.state.status === "granted") {
+      mapRef.current?.flyToLocation(geo.state.coords, {
+        bearing: next ? (h ?? 0) : 0,
+        tilt: next,
+        duration: 400,
+      });
+    } else {
+      mapRef.current?.setBearing(next ? (h ?? 0) : 0, { tilt: next });
+    }
     setHeadingUp(next);
   }, [geo]);
+  // Route overview (§3.4): drop the follow-cam so it doesn't immediately snap
+  // back, then frame the whole remaining route. The recenter/locate button (shown
+  // while navigating) re-engages follow.
+  const showRouteOverview = React.useCallback(() => {
+    dropFollow();
+    mapRef.current?.fitRoute(routeCoordsRef.current);
+  }, []);
 
   // Park the host in its off-screen home on mount, unless a <MapSlot>'s layout
   // effect (which fires first, child-before-parent) already claimed it.
@@ -675,16 +799,20 @@ export function MapStageProvider({
                 error={routeQ.isError && !routeQ.data}
                 arrived={arrived}
                 summary={summary}
+                walkedMeters={walkedM}
                 distanceMeters={routeQ.data?.distanceMeters ?? null}
                 durationSeconds={durationSeconds}
                 maneuvers={routeQ.data?.maneuvers ?? null}
+                progress={progress}
+                rerouting={rerouting}
+                unitSystem={unitSystem}
                 started={started}
                 canRotate={engine === "gl"}
                 headingUp={headingUp}
-                bearing={mapBearing}
                 onStart={handleStart}
                 onRetry={() => void routeQ.refetch()}
                 onToggleHeadingUp={toggleHeadingUp}
+                onOverview={showRouteOverview}
                 onSwap={swapNavEnds}
                 onClear={clearNavTrip}
               />

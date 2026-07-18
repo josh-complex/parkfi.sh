@@ -64,14 +64,25 @@ interface ValhallaResponse {
   trip?: { legs?: Array<ValhallaLeg>; summary?: { length?: number; time?: number } };
 }
 
+/** Distance units for the *narrative* instructions (and the units Valhalla
+ *  reports maneuver/summary `length` in — we convert back to metres below). */
+export type RouteUnits = "miles" | "kilometers";
+
+// Metres per reported length unit, so the km-vs-miles `length` values Valhalla
+// returns land back in metres regardless of which units we asked for.
+const M_PER_UNIT: Record<RouteUnits, number> = { kilometers: 1000, miles: 1609.344 };
+
 /**
  * Walking route from `from` to `to` (both [lng, lat]). Valhalla wants `lat`/`lon`
  * keys with lat first, so we swap; the leg `shape` comes back as a precision-6
- * encoded polyline which we decode back to [lng, lat].
+ * encoded polyline which we decode back to [lng, lat]. `units` sets the language
+ * of the turn narrative ("300 feet" vs "100 metres"); we always return distances
+ * in metres for the map/chrome to format however the guest's locale prefers.
  */
 export async function fetchRoute(
   from: [number, number],
   to: [number, number],
+  units: RouteUnits = "kilometers",
   signal?: AbortSignal,
 ): Promise<RouteResult> {
   const body = {
@@ -80,8 +91,9 @@ export async function fetchRoute(
       { lat: to[1], lon: to[0] },
     ],
     costing: "pedestrian",
-    directions_options: { units: "kilometers" },
+    directions_options: { units },
   };
+  const perUnit = M_PER_UNIT[units];
   const res = await fetch(`${VALHALLA_URL}/route`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -101,7 +113,7 @@ export async function fetchRoute(
     for (const m of leg.maneuvers ?? []) {
       maneuvers.push({
         instruction: m.instruction ?? "",
-        distanceMeters: (m.length ?? 0) * 1000,
+        distanceMeters: (m.length ?? 0) * perUnit,
         timeSeconds: m.time ?? 0,
         type: m.type ?? 0,
         beginShapeIndex: offset + (m.begin_shape_index ?? 0),
@@ -111,7 +123,7 @@ export async function fetchRoute(
   const summary = data.trip?.summary;
   return {
     coordinates,
-    distanceMeters: (summary?.length ?? 0) * 1000,
+    distanceMeters: (summary?.length ?? 0) * perUnit,
     durationSeconds: summary?.time ?? 0,
     maneuvers,
   };

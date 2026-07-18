@@ -1,11 +1,13 @@
 import { distanceMeters } from "#/server/living/geofence.ts";
+import type { RouteManeuver, RouteResult } from "#/server/routing/valhalla.ts";
 
 /**
- * Pure geometry for walking navigation: compass/bearing math and snapping the
- * traveled breadcrumb onto the routed path. Everything works on the project's
- * [lng, lat] coordinate order and uses a local equirectangular approximation —
- * plenty accurate at park scale (hundreds of metres), where the earth is flat
- * for our purposes.
+ * Pure geometry for walking navigation: compass/bearing math, snapping the
+ * traveled breadcrumb onto the routed path, and projecting the live fix onto the
+ * route to derive progress (next-turn distance, remaining distance/ETA,
+ * off-route). Everything works on the project's [lng, lat] coordinate order and
+ * uses a local equirectangular approximation — plenty accurate at park scale
+ * (hundreds of metres), where the earth is flat for our purposes.
  */
 
 /** Shortest signed delta from `a` to `b` on the 0–360 compass circle, in
@@ -109,15 +111,22 @@ const MIN_PT_SPACING_M = 1;
  * fixes do. A fix beyond the threshold is recorded raw (the user left the
  * routed path, and the trail should show where they actually went).
  *
+ * `fixProj` (the fix's projection, when the caller already computed one for
+ * progress) and `cumM` (the route's prefix sums from the RouteModel) are
+ * optional fast paths — they skip re-projecting the fix and re-summing segment
+ * lengths on every trail extension.
+ *
  * Returns a new array when anything was appended, or `trail` unchanged.
  */
 export function extendSnappedTrail(
   trail: ReadonlyArray<[number, number]>,
   route: ReadonlyArray<[number, number]> | null,
   fix: [number, number],
+  fixProj?: RouteProjection | null,
+  cumM?: ReadonlyArray<number>,
 ): Array<[number, number]> {
   const append: Array<[number, number]> = [];
-  const proj = route ? projectOntoRoute(fix, route) : null;
+  const proj = fixProj !== undefined ? fixProj : route ? projectOntoRoute(fix, route) : null;
   if (!proj || proj.distM > SNAP_OFF_ROUTE_M) {
     append.push(fix);
   } else {
@@ -134,7 +143,7 @@ export function extendSnappedTrail(
         const between: Array<[number, number]> = [];
         let acc = 0;
         for (let i = 1; i < route.length; i++) {
-          acc += distanceMeters(route[i - 1], route[i]);
+          acc = cumM ? cumM[i] : acc + distanceMeters(route[i - 1], route[i]);
           if (acc > lo && acc < hi) between.push(route[i]);
           if (acc >= hi) break;
         }
@@ -150,4 +159,108 @@ export function extendSnappedTrail(
     if (!prev || distanceMeters(prev, pt) >= MIN_PT_SPACING_M) out.push(pt);
   }
   return out.length === trail.length ? (trail as Array<[number, number]>) : out;
+}
+
+/** Valhalla start maneuvers (1 start, 2 start right, 3 start left) are just
+ *  "walk east on the pathway" preambles — never an actionable turn — so we skip
+ *  them when picking the live headline during an active trip (§1.1). */
+export function isStartManeuver(type: number): boolean {
+  return type === 1 || type === 2 || type === 3;
+}
+
+/**
+ * A route pre-processed for per-fix progress tracking: the geometry plus a
+ * cumulative-distance prefix sum and each maneuver's distance-along-route, so a
+ * live fix can be turned into "distance to next turn / remaining / ETA" with one
+ * projection instead of re-hitting Valhalla every few metres (§2).
+ */
+export type RouteModel = {
+  coordinates: ReadonlyArray<[number, number]>;
+  /** Cumulative metres from the route start to each vertex (cumM[0] = 0). */
+  cumM: number[];
+  totalM: number;
+  totalSeconds: number;
+  maneuvers: ReadonlyArray<RouteManeuver>;
+  /** Distance-along-route of each maneuver's begin vertex, index-aligned with
+   *  `maneuvers`. */
+  maneuverAlongM: number[];
+};
+
+/** Pre-compute a {@link RouteModel} from a routing result. Returns null for a
+ *  degenerate route (fewer than 2 points) — nothing to track along. */
+export function buildRouteModel(route: RouteResult): RouteModel | null {
+  const { coordinates } = route;
+  if (coordinates.length < 2) return null;
+  const cumM: number[] = [0];
+  for (let i = 1; i < coordinates.length; i++) {
+    cumM.push(cumM[i - 1] + distanceMeters(coordinates[i - 1], coordinates[i]));
+  }
+  const totalM = cumM[cumM.length - 1];
+  const maneuverAlongM = route.maneuvers.map((m) => {
+    const idx = Math.min(Math.max(m.beginShapeIndex, 0), cumM.length - 1);
+    return cumM[idx];
+  });
+  return {
+    coordinates,
+    cumM,
+    totalM,
+    totalSeconds: route.durationSeconds,
+    maneuvers: route.maneuvers,
+    maneuverAlongM,
+  };
+}
+
+/** Live projection-derived trip progress for one GPS fix. */
+export type NavProgress = {
+  /** Distance travelled along the route to the fix's projection, metres. */
+  alongM: number;
+  /** Perpendicular distance from the fix to the route, metres (off-route gate). */
+  offRouteM: number;
+  /** Remaining route distance to the destination, metres. */
+  remainingM: number;
+  /** Remaining time to the destination, seconds (route ETA scaled by fraction
+   *  remaining). */
+  etaSeconds: number;
+  /** Index into `maneuvers` of the next actionable turn, or null when the only
+   *  thing left is arrival. */
+  nextManeuverIndex: number | null;
+  /** Live distance to that turn, metres (null when there's no next turn). */
+  distToNextM: number | null;
+};
+
+// Slack (metres) so a maneuver we're standing right on stops counting as "ahead"
+// — prevents the headline flickering between a turn and the next one at the
+// vertex.
+const MANEUVER_REACHED_M = 6;
+
+/** Project `fix` onto `model` and derive the live trip numbers. Returns null for
+ *  a fix that can't be projected (degenerate route). Pass `proj` when the fix's
+ *  projection is already in hand (recordNavFix shares one projection between
+ *  progress and the trail) to skip the O(n) scan. */
+export function computeProgress(
+  model: RouteModel,
+  fix: [number, number],
+  proj: RouteProjection | null = projectOntoRoute(fix, model.coordinates),
+): NavProgress | null {
+  if (!proj) return null;
+  const alongM = proj.alongM;
+  const remainingM = Math.max(0, model.totalM - alongM);
+  const etaSeconds =
+    model.totalM > 0 ? Math.round((model.totalSeconds * remainingM) / model.totalM) : 0;
+  // Next actionable maneuver: the first non-start maneuver whose begin lies
+  // ahead of us on the route. The destination maneuver (type 4/5/6) qualifies,
+  // so the headline flows into "arrive at…" as the route runs out.
+  let nextManeuverIndex: number | null = null;
+  for (let i = 0; i < model.maneuvers.length; i++) {
+    if (isStartManeuver(model.maneuvers[i].type)) continue;
+    if (model.maneuverAlongM[i] > alongM + MANEUVER_REACHED_M) {
+      nextManeuverIndex = i;
+      break;
+    }
+  }
+  const distToNextM =
+    nextManeuverIndex != null
+      ? Math.max(0, model.maneuverAlongM[nextManeuverIndex] - alongM)
+      : null;
+  return { alongM, offRouteM: proj.distM, remainingM, etaSeconds, nextManeuverIndex, distToNextM };
 }

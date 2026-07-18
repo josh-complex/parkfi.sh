@@ -48,13 +48,19 @@ export type MapHandle = {
   zoomOut: () => void;
   flyToPark: (slug: string) => void;
   /** Fly the camera to a point at a zoom (and, on GL, a bearing) — the nav
-   *  "Start"/"recenter" close-up. Leaflet ignores `bearing` (it can't rotate). */
+   *  "Start"/"recenter" close-up. `tilt` engages the walking-nav framing (pitched
+   *  camera, puck dropped to the lower third). Leaflet ignores `bearing`/`tilt`
+   *  (it can't rotate or pitch). */
   flyToLocation: (
     coords: [number, number],
-    opts?: { zoom?: number; bearing?: number; duration?: number },
+    opts?: { zoom?: number; bearing?: number; duration?: number; tilt?: boolean },
   ) => void;
-  /** Rotate the map to a compass bearing (degrees). No-op on Leaflet. */
-  setBearing: (bearing: number, opts?: { duration?: number }) => void;
+  /** Rotate the map to a compass bearing (degrees), optionally pitching for the
+   *  nav view (`tilt`). No-op on Leaflet. */
+  setBearing: (bearing: number, opts?: { duration?: number; tilt?: boolean }) => void;
+  /** Frame the whole route flat + north-up — the nav "overview" peek. Returns to
+   *  follow via the recenter button. No-op for a degenerate route. */
+  fitRoute: (coords: Array<[number, number]> | null) => void;
 };
 
 /**

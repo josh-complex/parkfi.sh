@@ -407,6 +407,16 @@ export function ParkMapLeaflet({
       },
       // Leaflet can't rotate — bearing is meaningless here.
       setBearing: () => {},
+      fitRoute: (coords) => {
+        if (!coords || coords.length < 2) return;
+        const pad = chromePadding(containerRef.current);
+        map.flyToBounds(L.latLngBounds(coords.map((c) => [c[1], c[0]] as [number, number])), {
+          paddingTopLeft: L.point(pad.left, pad.top),
+          paddingBottomRight: L.point(pad.right, pad.bottom),
+          maxZoom: 17,
+          duration: FLY_SECONDS,
+        });
+      },
     });
     return () => {
       map.remove();

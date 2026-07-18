@@ -15,6 +15,15 @@ export const routingRouter = {
    * other read-only routers.
    */
   route: publicProcedure
-    .input(z.object({ from: coord, to: coord }))
-    .query(async ({ input }) => fetchRoute(input.from, input.to)),
+    .input(
+      z.object({
+        from: coord,
+        to: coord,
+        // Units for the turn narrative; distances always come back in metres. The
+        // client picks this from the guest's locale so "300 feet" matches the
+        // chrome (see lib/units.ts).
+        units: z.enum(["miles", "kilometers"]).default("kilometers"),
+      }),
+    )
+    .query(async ({ input }) => fetchRoute(input.from, input.to, input.units)),
 } satisfies TRPCRouterRecord;

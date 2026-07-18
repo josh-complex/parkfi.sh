@@ -22,6 +22,16 @@ const GEO_OPTS: PositionOptions = {
   maximumAge: 15_000,
 };
 
+// While turn-by-turn is running we want near-live fixes: a 15 s-stale puck lags
+// ~20 m at walking speed, enough to blow through a turn cue or delay arrival. So
+// nav mode drops `maximumAge` to ~1.5 s (the ambient app watch keeps the relaxed
+// default for battery). See `navActive`.
+const NAV_MAX_AGE_MS = 1_500;
+
+function geoOpts(navActive: boolean): PositionOptions {
+  return navActive ? { ...GEO_OPTS, maximumAge: NAV_MAX_AGE_MS } : GEO_OPTS;
+}
+
 // Remembers that the user turned the locate feature on, so it can re-engage
 // across sessions (see `rememberActive`). Only ever set once we're actually
 // `granted`, and cleared on `denied`, so a stale flag can't outlive a revoked
@@ -68,11 +78,20 @@ function writeActiveFlag(active: boolean) {
  * still never surface a prompt without a gesture. A revoked permission clears
  * the flag, so it won't keep retrying.
  */
-export function useGeolocation(opts?: { watch?: boolean; rememberActive?: boolean }) {
+export function useGeolocation(opts?: {
+  watch?: boolean;
+  rememberActive?: boolean;
+  navActive?: boolean;
+}) {
   const watch = opts?.watch ?? false;
   const rememberActive = opts?.rememberActive ?? false;
+  const navActive = opts?.navActive ?? false;
   const [state, setState] = React.useState<GeoState>({ status: "idle" });
   const watchIdRef = React.useRef<number | null>(null);
+  // Read the current nav-mode flag from a ref inside `locate` so toggling it
+  // doesn't recreate the callback; the watch is re-armed by the effect below.
+  const navActiveRef = React.useRef(navActive);
+  navActiveRef.current = navActive;
 
   const stop = React.useCallback(() => {
     if (watchIdRef.current != null && typeof navigator !== "undefined") {
@@ -91,18 +110,8 @@ export function useGeolocation(opts?: { watch?: boolean; rememberActive?: boolea
     setState({ status: "idle" });
   }, [stop, rememberActive]);
 
-  const locate = React.useCallback(() => {
-    if (
-      typeof navigator === "undefined" ||
-      !navigator.geolocation ||
-      typeof window === "undefined" ||
-      !window.isSecureContext
-    ) {
-      setState({ status: "unavailable" });
-      return;
-    }
-    setState((s) => (s.status === "granted" ? s : { status: "prompting" }));
-    const onSuccess = (pos: GeolocationPosition) => {
+  const onSuccess = React.useCallback(
+    (pos: GeolocationPosition) => {
       // Reaching `granted` means the feature is on — remember it so a later
       // session can silently re-engage (no-op when `rememberActive` is off).
       if (rememberActive) writeActiveFlag(true);
@@ -112,8 +121,11 @@ export function useGeolocation(opts?: { watch?: boolean; rememberActive?: boolea
         accuracy: pos.coords.accuracy,
         heading: pos.coords.heading,
       });
-    };
-    const onError = (err: GeolocationPositionError) => {
+    },
+    [rememberActive],
+  );
+  const onError = React.useCallback(
+    (err: GeolocationPositionError) => {
       if (err.code === err.PERMISSION_DENIED) {
         // Expected user choice — an event (never an exception). Living Layer
         // depends on this funnel to see how many users grant location.
@@ -125,14 +137,42 @@ export function useGeolocation(opts?: { watch?: boolean; rememberActive?: boolea
         posthog.capture("geolocation_error", { code: err.code, message: err.message });
         setState({ status: "error", message: err.message });
       }
-    };
+    },
+    [rememberActive],
+  );
+
+  const locate = React.useCallback(() => {
+    if (
+      typeof navigator === "undefined" ||
+      !navigator.geolocation ||
+      typeof window === "undefined" ||
+      !window.isSecureContext
+    ) {
+      setState({ status: "unavailable" });
+      return;
+    }
+    setState((s) => (s.status === "granted" ? s : { status: "prompting" }));
+    const options = geoOpts(navActiveRef.current);
     if (watch) {
       stop();
-      watchIdRef.current = navigator.geolocation.watchPosition(onSuccess, onError, GEO_OPTS);
+      watchIdRef.current = navigator.geolocation.watchPosition(onSuccess, onError, options);
     } else {
-      navigator.geolocation.getCurrentPosition(onSuccess, onError, GEO_OPTS);
+      navigator.geolocation.getCurrentPosition(onSuccess, onError, options);
     }
-  }, [watch, stop]);
+  }, [watch, stop, onSuccess, onError]);
+
+  // Re-arm a live watch when nav mode toggles, so the tighter/looser
+  // `maximumAge` profile takes effect mid-session. Only touches an already-
+  // running watch — it never starts one on its own (that needs a gesture).
+  React.useEffect(() => {
+    if (!watch || watchIdRef.current == null || typeof navigator === "undefined") return;
+    navigator.geolocation.clearWatch(watchIdRef.current);
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      onSuccess,
+      onError,
+      geoOpts(navActive),
+    );
+  }, [navActive, watch, onSuccess, onError]);
 
   React.useEffect(() => stop, [stop]);
 
