@@ -32,7 +32,7 @@ import {
   SCENARIO_PRESETS,
   setSyntheticWeather,
 } from "#/server/achievements/scenarios.ts";
-import { adminProcedure, protectedProcedure } from "../init.ts";
+import { adminProcedure, isAdminEmail, protectedProcedure } from "../init.ts";
 
 const TRACK_EVENT_KEYS = Object.keys(TRACK_EVENTS) as [TrackEvent, ...TrackEvent[]];
 
@@ -46,7 +46,12 @@ export const achievementsRouter = {
         accuracy: z.number().nonnegative().max(100_000),
       }),
     )
-    .mutation(({ ctx, input }) => ingestPing(ctx.userId, input.lng, input.lat, input.accuracy)),
+    .mutation(({ ctx, input }) =>
+      // Seeded ("Make it rain") weather counts only for owner pings — see ingestPing.
+      ingestPing(ctx.userId, input.lng, input.lat, input.accuracy, new Date(), {
+        seededWeather: isAdminEmail(ctx.userEmail),
+      }),
+    ),
 
   /** Allowlisted client event (pin scan, alert created, …). */
   track: protectedProcedure

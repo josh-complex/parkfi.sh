@@ -317,7 +317,8 @@ export interface ScenarioResult {
 export async function runScenario(userId: string, script: ScriptPing[]): Promise<ScenarioResult> {
   const unlocked = new Map<string, UnlockDTO>();
   for (const p of script) {
-    const r = await ingestPing(userId, p.lng, p.lat, p.accuracy, p.at);
+    // Scenario runner is adminProcedure-only, so seeded weather may count here.
+    const r = await ingestPing(userId, p.lng, p.lat, p.accuracy, p.at, { seededWeather: true });
     for (const u of r.newlyUnlocked) unlocked.set(u.id, u);
   }
   // The final evaluation also sweeps up anything credited by a path that skips
@@ -338,7 +339,9 @@ export async function runScenario(userId: string, script: ScriptPing[]): Promise
  * Insert a synthetic "it's raining right now" observation for a park so
  * `isRainyNow` flips on the next ping. Stamped at `now`, it self-expires via the
  * engine's 2 h window — no cleanup needed. Uses the MANUAL_SEED source and an
- * ACTUAL kind so it never collides with the OpenWeather cron's rows.
+ * ACTUAL kind so it never collides with the OpenWeather cron's rows — and so
+ * `isRainyNow` can hide it from non-admin pings (real users in the park must
+ * not earn rainy credit off a seeded test row).
  */
 export async function setSyntheticWeather(parkId: number, now = new Date()): Promise<void> {
   await db

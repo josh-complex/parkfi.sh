@@ -7,7 +7,7 @@
  * (`src/lib/achievements.ts`) against the user's aggregated stats. Deliberately
  * independent of the Living Layer — no imports from `src/server/living/**`.
  */
-import { and, count, desc, eq, gt, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNotNull, ne, sql } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
 import {
@@ -35,6 +35,7 @@ import {
   type StatKey,
   type TrackEvent,
 } from "#/lib/achievements.ts";
+import { Source } from "#/server/parks/codes.ts";
 import { distanceMeters, pointInPolygon, type LngLat } from "./geo.ts";
 
 const PING_MAX_ACCURACY_M = 150; // drop noisy fixes
@@ -200,8 +201,10 @@ function localParts(now: Date, timeZone: string): { day: string; hour: number; m
 /** Latest weather_obs for the park within the 2h before `now` — FORECAST or
  *  ACTUAL, latest wins. `now` is explicit (not `now()`) so a time-warped
  *  scenario ping evaluates rain against the *injected* clock, not the DB wall
- *  clock — see `adminSimulateScenario`. */
-async function isRainyNow(parkId: number, now: Date): Promise<boolean> {
+ *  clock — see `adminSimulateScenario`. MANUAL_SEED rows (the dev panel's
+ *  "Make it rain") are visible only when `seededWeather` — real users in the
+ *  park must not inherit an admin's synthetic rain. */
+async function isRainyNow(parkId: number, now: Date, seededWeather: boolean): Promise<boolean> {
   const [row] = await db
     .select({ precipMm: weatherObs.precipMm, condition: weatherObs.condition })
     .from(weatherObs)
@@ -209,6 +212,7 @@ async function isRainyNow(parkId: number, now: Date): Promise<boolean> {
       and(
         eq(weatherObs.parkId, parkId),
         gt(weatherObs.observedAt, new Date(now.getTime() - 2 * 60 * 60 * 1000)),
+        seededWeather ? undefined : ne(weatherObs.source, Source.MANUAL_SEED),
       ),
     )
     .orderBy(desc(weatherObs.observedAt))
@@ -258,6 +262,11 @@ async function settleAnchorRow(
  * The `now` parameter exists solely for the admin time-warp scenario runner
  * (`adminSimulateScenario`), which replays a scripted day through the real
  * pipeline with an injected clock. Keep the injectable path admin-only.
+ *
+ * `seededWeather` lets MANUAL_SEED weather rows (the dev panel's "Make it
+ * rain") count as rain for this ping. Only admin pings may set it — a seeded
+ * row lives in the shared per-park table, so without the gate every real user
+ * in the park would earn rainy credit off an admin's test.
  */
 export async function ingestPing(
   userId: string,
@@ -265,6 +274,7 @@ export async function ingestPing(
   lat: number,
   accuracyM: number,
   now: Date = new Date(),
+  opts: { seededWeather?: boolean } = {},
 ): Promise<IngestResult> {
   if (accuracyM > PING_MAX_ACCURACY_M) {
     return { inPark: false, newlyUnlocked: [] };
@@ -335,7 +345,7 @@ export async function ingestPing(
   const ropeDrop =
     hour < ROPE_DROP_BEFORE.h || (hour === ROPE_DROP_BEFORE.h && minute < ROPE_DROP_BEFORE.m);
   const nightOwl = hour >= NIGHT_OWL_AFTER_H;
-  const rainy = await isRainyNow(park.id, now);
+  const rainy = await isRainyNow(park.id, now, opts.seededWeather ?? false);
 
   await db
     .insert(userParkDay)
