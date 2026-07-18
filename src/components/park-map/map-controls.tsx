@@ -53,9 +53,11 @@ const MAP_CTRL_3D =
 const CLUSTER_BOTTOM =
   "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+1.4rem)] md:bottom-3";
 // While navigating, the right column rises to clear the green nav ETA card —
-// tuned so the gap above the card matches the card's own gap to the nav island.
+// tuned so the gap above the card matches the card's own gap to the nav island
+// (the card runs three lines while navigating: walk time, arrival clock,
+// destination — keep these offsets in step with the bar in nav-overlay.tsx).
 const CLUSTER_BOTTOM_LIFTED =
-  "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+5.75rem)] md:bottom-[5.25rem]";
+  "bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+7rem)] md:bottom-[6.5rem]";
 
 /**
  * Shared positioning shell for the two floating bottom map-control clusters

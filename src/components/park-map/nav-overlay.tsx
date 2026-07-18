@@ -170,9 +170,10 @@ function HeadingCompassButton({
         "pointer-events-auto inline-flex size-11 items-center justify-center rounded-full ring-1 ring-white/15 dark:ring-transparent transition",
         CIRCLE_3D,
         northLocked
-          ? // North-lock: white face, black outline/rose (red north stays), with
-            // a neutral gray shelf so the emboss reads on the white face.
-            "bg-white text-black [--btn-3d:oklch(0.72_0_0)] [--btn-glare:oklch(1_0_0_/_0.9)]"
+          ? // North-lock: white face with the rose in a mid gray — full black
+            // reads far too heavy at this size (red north stays) — and a
+            // neutral gray shelf so the emboss reads on the white face.
+            "bg-white text-gray-600 [--btn-3d:oklch(0.72_0_0)] [--btn-glare:oklch(1_0_0_/_0.9)]"
           : "bg-green-700 text-white",
       )}
     >
@@ -595,7 +596,7 @@ export function NavOverlay({
           edge is pinned; buttons stack upward — the compass sits lowest (where it
           always has), the route-overview peek above it. */}
       {started && (
-        <div className="pointer-events-none absolute left-4 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+5.75rem)] z-10 flex flex-col gap-2 md:bottom-[5rem]">
+        <div className="pointer-events-none absolute left-4 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+7rem)] z-10 flex flex-col gap-2 md:bottom-[6.25rem]">
           {/* Route overview — frame the whole remaining route, then the recenter
               button returns to follow (§3.4). */}
           <button
@@ -635,12 +636,15 @@ export function NavOverlay({
               {geoBlocked ? "Location off" : error ? "Route unavailable" : "Routing…"}
             </div>
           )}
+          {/* Arrival clock on its own line — guests plan around showtimes and
+              return windows, so it earns more size than the detail row. */}
+          {arrivalClock && (
+            <div className="truncate text-sm font-medium text-white/90">Arrive {arrivalClock}</div>
+          )}
           {/* Destination line, with the live wait when heading to an attraction
               (§3.5) — a mid-walk spike is a "keep going or bail" decision. */}
           <div className="truncate text-xs text-white/70">
-            {[arrivalClock ? `Arrive ${arrivalClock}` : null, `to ${destName}`]
-              .filter(Boolean)
-              .join(" · ")}
+            to {destName}
             {destWait != null && (
               <span className="font-semibold text-white/90"> · {destWait} min wait</span>
             )}
