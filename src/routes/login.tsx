@@ -361,7 +361,7 @@ function LoginPage() {
     <div className="relative flex min-h-screen items-center justify-center bg-background p-4">
       <Link
         to="/"
-        className="absolute top-4 left-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        className="absolute top-[calc(var(--safe-top)+1rem)] left-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
         <ArrowLeftIcon className="size-4" />
         Back
