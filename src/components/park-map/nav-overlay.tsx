@@ -53,6 +53,12 @@ import type { RouteManeuver } from "#/server/routing/valhalla.ts";
 // Nav-green 3D chrome — the same emboss system as the app's popovers/buttons
 // (see the "3D surface system" in styles.css), tinted for the solid green
 // panels: shelf/border in a darker green, glare a faint white top highlight.
+//
+// The subtle white ring on these panels is dropped in dark mode (where it reads
+// as a stray light outline against the dark basemap) via `dark:ring-transparent`
+// — NOT `dark:ring-0`: width utilities re-declare the composed `box-shadow`
+// chain after `shadow-3d` in the cascade, which wipes the 3D shelf; the color
+// utility only flips the ring's color variable.
 // The full treatment (border + shelf shadow) is the top turn sign's; the bottom
 // bar and arrival card take the border-only variant — their bottom edge sits
 // against the nav island, where a 3D shelf reads as clutter.
@@ -60,10 +66,13 @@ const GREEN_PANEL_3D =
   "border-3d shadow-3d [--btn-3d:color-mix(in_oklch,var(--color-green-700),black_32%)] [--btn-glare:oklch(1_0_0_/_25%)]";
 const GREEN_PANEL_BORDER =
   "border-3d [--btn-3d:color-mix(in_oklch,var(--color-green-700),black_32%)]";
-// White action pills (Start / Retry / Exit) get the standard outline emboss +
-// the press-down active state used by the app's other 3D buttons.
+// White action pills (Start / Retry / Exit) get the outline emboss + the
+// press-down active state used by the app's other 3D buttons. The shelf is a
+// fixed neutral gray rather than btn-3d-outline: these pills stay white-on-green
+// in both themes, and the outline preset's dark-mode shelf (--border lightened)
+// is *lighter* than the face — a faintly blue rim under a white button.
 const PILL_3D =
-  "border-3d btn-3d-outline shadow-3d active:translate-y-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active";
+  "border-3d shadow-3d [--btn-3d:oklch(0.72_0_0)] [--btn-glare:oklch(1_0_0_/_0.55)] [--btn-glare-hover:oklch(1_0_0_/_0.8)] active:translate-y-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active";
 // Translucent circle buttons (swap / close) — dark-green shelf so the emboss
 // still reads against the green panel behind them.
 const CIRCLE_3D =
@@ -131,10 +140,12 @@ function maneuverIcon(type: number): LucideIcon {
 }
 
 /**
- * Heading-lock compass (GL only). The needle counter-rotates with the map
- * bearing so it always points to true north. Tap toggles heading-up (map
- * rotates to your facing) vs north-lock; the icon fills in when north-lock is
- * engaged so the current mode reads at a glance.
+ * Heading-lock compass (GL only). A two-tone rose needle — red half pointing
+ * true north (hand-drawn SVG; the Lucide icon is a single-path glyph that can't
+ * split colors) — counter-rotates with the map bearing. Tap toggles route-up
+ * (map rotates to the walking direction) vs north-lock. The button restyles per
+ * mode so it reads at a glance: nav green while following the walking
+ * direction, white with a black rose (red north kept) while locked due north.
  *
  * Reads the live bearing straight from the nav store: it changes on every
  * animation frame of a rotate, so subscribing here keeps those per-frame writes
@@ -148,24 +159,34 @@ function HeadingCompassButton({
   onToggle: () => void;
 }) {
   const bearing = useStore(navStore, (s) => s.mapBearing);
+  const northLocked = !headingUp;
   return (
     <button
       type="button"
       onClick={onToggle}
-      aria-label={headingUp ? "Lock map to north" : "Rotate map to my heading"}
-      aria-pressed={!headingUp}
+      aria-label={headingUp ? "Lock map to north" : "Rotate map to the walking direction"}
+      aria-pressed={northLocked}
       className={cn(
-        "pointer-events-auto inline-flex size-11 items-center justify-center rounded-full bg-green-700 text-white ring-1 ring-white/15 transition",
+        "pointer-events-auto inline-flex size-11 items-center justify-center rounded-full ring-1 ring-white/15 dark:ring-transparent transition",
         CIRCLE_3D,
+        northLocked
+          ? // North-lock: white face, black outline/rose (red north stays), with
+            // a neutral gray shelf so the emboss reads on the white face.
+            "bg-white text-black [--btn-3d:oklch(0.72_0_0)] [--btn-glare:oklch(1_0_0_/_0.9)]"
+          : "bg-green-700 text-white",
       )}
     >
-      <CompassIcon
-        // North-lock engaged → fill just the needle (the icon's polygon),
-        // not the whole circle, so it reads as an active/pressed state.
-        className={cn("size-6 transition-transform", !headingUp && "[&>polygon]:fill-current")}
-        style={{ transform: `rotate(${-bearing}deg)` }}
-        aria-hidden
-      />
+      {/* Sized to nearly fill the button (unlike the stock size-6 glyphs, the
+          rose carries its own circular frame, so at glyph size it reads tiny),
+          with clear air between the frame and the needle tips. */}
+      <svg viewBox="0 0 24 24" className="size-8" aria-hidden>
+        <circle cx="12" cy="12" r="10.25" fill="none" stroke="currentColor" strokeWidth="1.5" />
+        {/* The needle counter-rotates so its red tip always points true north. */}
+        <g transform={`rotate(${-bearing} 12 12)`}>
+          <polygon points="12,4.5 14.8,12 9.2,12" fill="#ef4444" />
+          <polygon points="12,19.5 9.2,12 14.8,12" fill="currentColor" />
+        </g>
+      </svg>
     </button>
   );
 }
@@ -184,7 +205,7 @@ function VoiceMuteButton() {
       aria-label={muted ? "Unmute spoken directions" : "Mute spoken directions"}
       aria-pressed={muted}
       className={cn(
-        "pointer-events-auto inline-flex size-11 items-center justify-center rounded-full bg-green-700 text-white ring-1 ring-white/15 transition",
+        "pointer-events-auto inline-flex size-11 items-center justify-center rounded-full bg-green-700 text-white ring-1 ring-white/15 dark:ring-transparent transition",
         CIRCLE_3D,
       )}
     >
@@ -218,6 +239,7 @@ export function NavOverlay({
   durationSeconds,
   maneuvers,
   progress,
+  toRouteM,
   rerouting,
   unitSystem,
   destWait,
@@ -259,6 +281,10 @@ export function NavOverlay({
   /** Live per-fix progress while navigating — next-turn distance, remaining
    *  distance/ETA. Null in preview / before the first fix. */
   progress: NavProgress | null;
+  /** Distance (metres) to the routed path while live tracking hasn't engaged
+   *  yet (the user started nav away from the route — still inside a building,
+   *  say). Non-null flips the top sign to "Walk to the route". */
+  toRouteM: number | null;
   /** A wrong turn was detected and a fresh route is being computed. */
   rerouting: boolean;
   /** Distance units (feet/miles vs metres/km) inferred from the guest's locale. */
@@ -333,15 +359,22 @@ export function NavOverlay({
           distM: distanceMeters(userCoords, destCoords),
         }
       : null;
+  // Live tracking hasn't engaged: the user tapped Start away from the routed
+  // path (GPS wandering inside a building, a hotel room above the walkway) —
+  // the sign says to walk to the route instead of counting down a turn they
+  // haven't started toward (§1).
+  const walkToRoute = started && toRouteM != null;
   const HeadIcon = geoBlocked
     ? LocateFixedIcon
     : locating || loading || rerouting
       ? LoaderCircleIcon
       : crowFlies
         ? CompassIcon
-        : routed && headManeuver
-          ? maneuverIcon(headManeuver.type)
-          : ArrowUpIcon;
+        : walkToRoute
+          ? FootprintsIcon
+          : routed && headManeuver
+            ? maneuverIcon(headManeuver.type)
+            : ArrowUpIcon;
   let headline: React.ReactNode;
   // Denied is a user choice a settings toggle can undo; unavailable is the
   // device/context — different dead ends, different copy (§4.3).
@@ -352,6 +385,7 @@ export function NavOverlay({
   else if (crowFlies) headline = `Head ${crowFlies.direction} about ${fmtDist(crowFlies.distM)}`;
   else if (error || !routed) headline = `No walking route found to ${destName}`;
   else if (rerouting) headline = "Rerouting…";
+  else if (walkToRoute) headline = "Walk to the route";
   else headline = headManeuver ? headManeuver.instruction : `Heading to ${destName}`;
   // Sub-line: the live ticking distance to the next turn while navigating, else
   // the maneuver's own (static) length in preview. Blocked/fallback states carry
@@ -368,11 +402,13 @@ export function NavOverlay({
           ? `No walking route — straight line to ${destName}`
           : rerouting || !routed
             ? null
-            : liveDistToTurn != null
-              ? fmtDist(liveDistToTurn)
-              : headManeuver && headManeuver.distanceMeters > 0
-                ? fmtDist(headManeuver.distanceMeters)
-                : null;
+            : started && toRouteM != null
+              ? `${fmtDist(toRouteM)} away`
+              : liveDistToTurn != null
+                ? fmtDist(liveDistToTurn)
+                : headManeuver && headManeuver.distanceMeters > 0
+                  ? fmtDist(headManeuver.distanceMeters)
+                  : null;
   // Bottom-bar figures: the live remaining distance/ETA while navigating (ticking
   // between reroutes), the whole-route totals in preview.
   const barDistanceMeters = started && progress ? progress.remainingM : routeDistanceMeters;
@@ -429,7 +465,7 @@ export function NavOverlay({
       <div
         data-map-chrome="bottom"
         className={cn(
-          "pointer-events-auto absolute inset-x-4 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+1.4rem)] z-10 mx-auto flex max-w-md flex-col gap-3 rounded-3xl border-t-3 bg-green-700 px-4 py-4 text-white ring-1 ring-white/15 md:bottom-3",
+          "pointer-events-auto absolute inset-x-4 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+1.4rem)] z-10 mx-auto flex max-w-md flex-col gap-3 rounded-3xl border-t-3 bg-green-700 px-4 py-4 text-white ring-1 ring-white/15 dark:ring-transparent md:bottom-3",
           GREEN_PANEL_BORDER,
         )}
       >
@@ -502,7 +538,7 @@ export function NavOverlay({
       <div
         data-map-chrome="top"
         className={cn(
-          "pointer-events-auto absolute inset-x-4 top-[calc(var(--safe-top)+4.5rem)] z-10 mx-auto max-w-md overflow-hidden rounded-3xl bg-green-700 text-white ring-1 ring-white/15 md:top-3",
+          "pointer-events-auto absolute inset-x-4 top-[calc(var(--safe-top)+4.5rem)] z-10 mx-auto max-w-md overflow-hidden rounded-3xl bg-green-700 text-white ring-1 ring-white/15 dark:ring-transparent md:top-3",
           GREEN_PANEL_3D,
         )}
       >
@@ -528,7 +564,12 @@ export function NavOverlay({
             )}
           >
             <div className="overflow-hidden">
-              <ol className="max-h-64 divide-y divide-white/15 overflow-y-auto border-t border-white/15">
+              {/* The scroll thumb is re-themed to the panel's own dark-green
+                  shelf tone — the app-wide gray (light) / blue (dark) thumb
+                  looks foreign on the solid green sign. Both the standard
+                  inherited property and the --scrollbar-thumb var (the WebKit
+                  fallback path in styles.css) need the override. */}
+              <ol className="max-h-64 divide-y divide-white/15 overflow-y-auto border-t border-white/15 [--scrollbar-thumb:color-mix(in_oklch,var(--color-green-700),black_35%)] [--scrollbar-thumb-hover:color-mix(in_oklch,var(--color-green-700),black_50%)] [scrollbar-color:color-mix(in_oklch,var(--color-green-700),black_35%)_transparent]">
                 {steps.map((m, i) => {
                   const Icon = maneuverIcon(m.type);
                   return (
@@ -562,7 +603,7 @@ export function NavOverlay({
             onClick={onOverview}
             aria-label="Show the whole route"
             className={cn(
-              "pointer-events-auto inline-flex size-11 items-center justify-center rounded-full bg-green-700 text-white ring-1 ring-white/15 transition",
+              "pointer-events-auto inline-flex size-11 items-center justify-center rounded-full bg-green-700 text-white ring-1 ring-white/15 dark:ring-transparent transition",
               CIRCLE_3D,
             )}
           >
@@ -579,7 +620,7 @@ export function NavOverlay({
       <div
         data-map-chrome="bottom"
         className={cn(
-          "pointer-events-auto absolute inset-x-4 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+1.4rem)] z-10 mx-auto flex max-w-md items-center gap-3 overflow-hidden rounded-3xl border-t-3 bg-green-700 px-4 py-2.5 text-white ring-1 ring-white/15 md:bottom-3",
+          "pointer-events-auto absolute inset-x-4 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+1.4rem)] z-10 mx-auto flex max-w-md items-center gap-3 overflow-hidden rounded-3xl border-t-3 bg-green-700 px-4 py-2.5 text-white ring-1 ring-white/15 dark:ring-transparent md:bottom-3",
           GREEN_PANEL_BORDER,
         )}
       >

@@ -44,8 +44,19 @@ const OFF_ROUTE_FIXES = 3;
 
 // Minimum move (metres) between the raw fixes that extend the traveled
 // breadcrumb. Keeps the "where you've been" trail from densifying with jittery
-// near-duplicate points while standing still.
+// near-duplicate points while standing still. Scaled up with the fix's reported
+// accuracy (see recordNavFix) — displacement smaller than half the accuracy
+// radius is indistinguishable from GPS wander, not walking.
 const TRAIL_MIN_MOVE_M = 4;
+
+// Live trip tracking only engages once a fix lands within this many metres of
+// the routed path. Until then the user hasn't reached the route (still inside
+// the hotel/show building where GPS wanders), so fixes must not extend the
+// trail, tick the turn distance, or trigger a reroute — the overlay shows
+// "Walk to the route" instead, like a car unit's "proceed to the highlighted
+// route". A hair above SNAP_OFF_ROUTE_M so a fix that latches tracking also
+// reads as on-route to the reroute logic.
+const TRACK_GATE_M = 20;
 
 // Fixes worse than this (metres of reported accuracy) don't drive the trip —
 // trail, arrival, and rerouting ignore them (§1.6) — and don't get snapshotted
@@ -81,6 +92,14 @@ interface NavState {
    *  distance) — stops re-routing / following and swaps the nav UI for the
    *  completion card. */
   arrived: boolean;
+  /** Live tracking engaged — the first fix within TRACK_GATE_M of the routed
+   *  path latches it. False from Start until the user actually reaches the
+   *  route, during which fixes drive nothing but `toRouteM`. */
+  tracking: boolean;
+  /** Distance (metres) from the latest fix to the routed path while tracking
+   *  hasn't latched — the "Walk to the route" headline's number. Null once
+   *  tracking (or before any fix has been judged). */
+  toRouteM: number | null;
   /** Wall-clock (ms) that Start was tapped, for the completion card's elapsed
    *  time. Null until navigating. */
   startedAt: number | null;
@@ -118,6 +137,8 @@ const IDLE: NavState = {
   following: false,
   headingUp: false,
   arrived: false,
+  tracking: false,
+  toRouteM: null,
   startedAt: null,
   summary: null,
   traveled: [],
@@ -139,6 +160,8 @@ export const navStore = new Store<NavState>(IDLE);
 const freshProgress: Pick<
   NavState,
   | "arrived"
+  | "tracking"
+  | "toRouteM"
   | "startedAt"
   | "summary"
   | "traveled"
@@ -150,6 +173,8 @@ const freshProgress: Pick<
   | "rerouteCount"
 > = {
   arrived: false,
+  tracking: false,
+  toRouteM: null,
   startedAt: null,
   summary: null,
   traveled: [],
@@ -278,14 +303,36 @@ export function swapNavEnds() {
  *  - re-routing: after OFF_ROUTE_FIXES consecutive fixes off the path, re-key the
  *    trip origin so the route query refetches from here, and flag `rerouting`
  *    until the fresh route lands (a fix back on-route clears it).
+ *
+ * None of that engages until the tracking gate opens: the first fix within
+ * TRACK_GATE_M of the routed path. Before then (Start tapped from inside a
+ * hotel room / show building, where GPS wanders freely) the only thing a fix
+ * updates is `toRouteM` — the "Walk to the route" distance.
+ *
+ * `accuracyM` is the fix's reported accuracy: displacement below half of it is
+ * GPS wander, not walking, so it scales the trail's min-move gate.
  */
-export function recordNavFix(fix: [number, number], model: RouteModel | null) {
+export function recordNavFix(fix: [number, number], model: RouteModel | null, accuracyM = 0) {
   navStore.setState((s) => {
     if (!s.started || s.arrived || !s.trip) return s;
+    // Captured before the gate can reassign `s` (which would reset narrowing).
+    const trip = s.trip;
     const route = model?.coordinates ?? null;
-    // Project the fix onto the route once — progress, arrival, and the trail
-    // extension all share it instead of each re-running the O(n) scan.
+    // Project the fix onto the route once — the gate, progress, arrival, and
+    // the trail extension all share it instead of each re-running the O(n) scan.
     const proj = route ? projectOntoRoute(fix, route) : null;
+
+    // Tracking gate. Only judgeable with a route in hand (proj) — and Start is
+    // only tappable once routed, so in practice every trip is gated. A fix
+    // still beyond the gate updates the walk-to-the-route distance and nothing
+    // else; one inside it latches tracking and falls through to the full
+    // per-fix pipeline below.
+    if (!s.tracking && proj != null) {
+      if (proj.distM > TRACK_GATE_M) {
+        return { ...s, toRouteM: proj.distM };
+      }
+      s = { ...s, tracking: true, toRouteM: null };
+    }
     const progress = model ? computeProgress(model, fix, proj) : null;
 
     // Arrival — remaining route distance to the end when we have a model, else
@@ -296,7 +343,7 @@ export function recordNavFix(fix: [number, number], model: RouteModel | null) {
     const arrived =
       progress != null
         ? progress.remainingM <= ARRIVE_RADIUS_M
-        : distanceMeters(fix, s.trip.to.coords) <= ARRIVE_RADIUS_M;
+        : distanceMeters(fix, trip.to.coords) <= ARRIVE_RADIUS_M;
     if (arrived) {
       // Fold this final fix into the trail before measuring, so the walked
       // distance covers the whole approach.
@@ -318,7 +365,10 @@ export function recordNavFix(fix: [number, number], model: RouteModel | null) {
     // (route still loading) can skip the state clone.
     let next: NavState = progress == null && s.progress == null ? s : { ...s, progress };
 
-    if (!s.trailAnchor || distanceMeters(fix, s.trailAnchor) >= TRAIL_MIN_MOVE_M) {
+    if (
+      !s.trailAnchor ||
+      distanceMeters(fix, s.trailAnchor) >= Math.max(TRAIL_MIN_MOVE_M, accuracyM / 2)
+    ) {
       const traveled = extendSnappedTrail(s.traveled, route, fix, proj, model?.cumM);
       next = {
         ...next,
@@ -346,7 +396,7 @@ export function recordNavFix(fix: [number, number], model: RouteModel | null) {
                 offRouteStreak: 0,
                 rerouting: true,
                 rerouteCount: s.rerouteCount + 1,
-                trip: { ...s.trip, from: { ...s.trip.from, coords: fix } },
+                trip: { ...trip, from: { ...trip.from, coords: fix } },
               }
             : { ...next, offRouteStreak: streak };
       }

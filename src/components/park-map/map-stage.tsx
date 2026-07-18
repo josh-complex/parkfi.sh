@@ -38,7 +38,7 @@ import {
 } from "./map-controls.tsx";
 import { morph, settleMorph } from "./map-morph.ts";
 import { useTurnCues } from "./nav-cues.ts";
-import { buildRouteModel, roundCoord } from "./nav-geometry.ts";
+import { buildRouteModel, roundCoord, routeBearingAt } from "./nav-geometry.ts";
 import { NavOverlay } from "./nav-overlay.tsx";
 import {
   clearNavTrip,
@@ -291,6 +291,7 @@ export function MapStageProvider({
   const traveled = useStore(navStore, (s) => s.traveled);
   const walkedM = useStore(navStore, (s) => s.walkedM);
   const progress = useStore(navStore, (s) => s.progress);
+  const toRouteM = useStore(navStore, (s) => s.toRouteM);
   const rerouting = useStore(navStore, (s) => s.rerouting);
   const rerouteCount = useStore(navStore, (s) => s.rerouteCount);
   // A "Directions" tap snapshots the user's location as the trip origin (so the
@@ -392,7 +393,7 @@ export function MapStageProvider({
       return;
     }
     coarseFixStreakRef.current = 0;
-    recordNavFix(geo.state.coords, routeModel);
+    recordNavFix(geo.state.coords, routeModel, geo.state.accuracy);
   }, [geo.state, routeModel]);
   // A newly fetched route (identity change on `routeQ.data`) resolves any
   // in-flight reroute — the authoritative clear for the "Rerouting…" state, so it
@@ -527,7 +528,15 @@ export function MapStageProvider({
     engageFollow();
     mapRef.current?.flyToLocation(geo.state.coords, {
       zoom: 17.5,
-      bearing: fusedHeadingStore.state ?? geo.state.heading ?? 0,
+      // Heading-up means *route*-up while navigating: point the camera the way
+      // the route goes (stable), not wherever the device compass happens to
+      // swing. The fused heading is only the fallback when there's no route
+      // geometry yet (crow-flies nav).
+      bearing:
+        routeBearingAt(routeCoordsRef.current, geo.state.coords) ??
+        fusedHeadingStore.state ??
+        geo.state.heading ??
+        0,
       // Engage the tilted walking-nav framing (puck low, pitched) — follow +
       // heading-up are engaged together, so the close-up is always heading-up.
       tilt: true,
@@ -547,8 +556,14 @@ export function MapStageProvider({
   // back to north). GL only — Leaflet's `setBearing` is a no-op.
   const toggleHeadingUp = React.useCallback(() => {
     const next = !navStore.state.headingUp;
+    // Route direction first (heading-up is route-up while navigating), fused
+    // device heading only as the no-route fallback.
     const h =
-      fusedHeadingStore.state ?? (geo.state.status === "granted" ? geo.state.heading : null);
+      (geo.state.status === "granted"
+        ? routeBearingAt(routeCoordsRef.current, geo.state.coords)
+        : null) ??
+      fusedHeadingStore.state ??
+      (geo.state.status === "granted" ? geo.state.heading : null);
     // Tilt with heading-up; flatten back on north-lock (§3.3). While following,
     // re-frame around the puck via flyToLocation so the tilt lands with the same
     // lower-third offset the per-fix follow easeTo applies — a bare setBearing
@@ -854,6 +869,7 @@ export function MapStageProvider({
                 durationSeconds={durationSeconds}
                 maneuvers={routeQ.data?.maneuvers ?? null}
                 progress={progress}
+                toRouteM={toRouteM}
                 rerouting={rerouting}
                 unitSystem={unitSystem}
                 destWait={destWait}

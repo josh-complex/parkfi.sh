@@ -12,6 +12,7 @@ import {
   isStartManeuver,
   projectOntoRoute,
   roundCoord,
+  routeBearingAt,
   SNAP_OFF_ROUTE_M,
 } from "./nav-geometry.ts";
 
@@ -65,6 +66,33 @@ describe("projectOntoRoute", () => {
 
   it("returns null for a degenerate route", () => {
     expect(projectOntoRoute(at(0, 0), [at(1, 1)])).toBeNull();
+  });
+});
+
+describe("routeBearingAt", () => {
+  // A 200m eastward path with a corner turning 100m north.
+  const route: Array<[number, number]> = [at(0, 0), at(200, 0), at(200, 100)];
+
+  it("points along the route's direction of travel, not toward the fix", () => {
+    // Standing 10m north of the eastbound leg: the bearing is still east.
+    expect(routeBearingAt(route, at(50, 10))!).toBeCloseTo(90, 0);
+  });
+
+  it("blends into the next leg as the look-ahead crosses a corner", () => {
+    // 10m before the corner, the 20m look-ahead lands 10m up the north leg —
+    // the bearing swings between east (90°) and north (0°/360°).
+    const b = routeBearingAt(route, at(190, 0))!;
+    expect(b).toBeGreaterThan(20);
+    expect(b).toBeLessThan(90);
+  });
+
+  it("holds the final segment's direction at the route end", () => {
+    expect(routeBearingAt(route, at(200, 95))!).toBeCloseTo(0, 0);
+  });
+
+  it("returns null without a usable route", () => {
+    expect(routeBearingAt(null, at(0, 0))).toBeNull();
+    expect(routeBearingAt([at(1, 1)], at(0, 0))).toBeNull();
   });
 });
 

@@ -185,6 +185,49 @@ export function extendSnappedTrail(
   return out.length === trail.length ? (trail as Array<[number, number]>) : out;
 }
 
+// How far ahead along the route the camera bearing looks. Far enough to smooth
+// out vertex-to-vertex zigzags in the geometry, short enough that the map still
+// turns with the path rather than cutting corners.
+const BEARING_LOOKAHEAD_M = 20;
+
+/**
+ * The route's direction of travel at `fix`, degrees clockwise from north — the
+ * bearing from the fix's projection to a point BEARING_LOOKAHEAD_M further along
+ * the path. This is what the heading-up camera follows while navigating: the
+ * way you're *supposed* to go, which is stable, instead of the device compass,
+ * which wanders with every hand wobble and magnetometer hiccup (the puck's
+ * facing cone still shows the device heading). Near the destination it holds
+ * the final segment's direction. Null for no/degenerate route.
+ */
+export function routeBearingAt(
+  route: ReadonlyArray<[number, number]> | null,
+  fix: [number, number],
+): number | null {
+  if (!route || route.length < 2) return null;
+  const proj = projectOntoRoute(fix, route);
+  if (!proj) return null;
+  const targetAlong = proj.alongM + BEARING_LOOKAHEAD_M;
+  let acc = 0;
+  let ahead: [number, number] | null = null;
+  for (let i = 1; i < route.length && !ahead; i++) {
+    const a = route[i - 1];
+    const b = route[i];
+    const segLen = distanceMeters(a, b);
+    if (segLen > 0 && acc + segLen >= targetAlong) {
+      const t = (targetAlong - acc) / segLen;
+      ahead = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    }
+    acc += segLen;
+  }
+  // Look-ahead ran off the end (or lands on top of the projection): the route's
+  // closing direction is the steadiest thing left to point at.
+  const to = ahead ?? route[route.length - 1];
+  if (distanceMeters(proj.point, to) < 1) {
+    return bearingBetween(route[route.length - 2], route[route.length - 1]);
+  }
+  return bearingBetween(proj.point, to);
+}
+
 /** Valhalla start maneuvers (1 start, 2 start right, 3 start left) are just
  *  "walk east on the pathway" preambles — never an actionable turn — so we skip
  *  them when picking the live headline during an active trip (§1.1). */

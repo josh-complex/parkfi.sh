@@ -20,7 +20,7 @@ import { reportError } from "#/lib/report-error.ts";
 
 import { MarkerCluster, type DeclutterItem } from "./declutter.ts";
 import { fusedHeadingStore } from "./heading-store.ts";
-import { roundCoord } from "./nav-geometry.ts";
+import { roundCoord, routeBearingAt } from "./nav-geometry.ts";
 import {
   applySelected,
   attractionCardBodyHtml,
@@ -1447,7 +1447,10 @@ export function ParkMap({
   // the recenter effect below only fires on GPS fixes, which don't arrive when
   // standing still. A store subscription, not props/state, so compass ticks
   // never re-render this component. Skips the rotation while an engage fly is
-  // animating so it can't fight the initial zoom-in.
+  // animating so it can't fight the initial zoom-in — and while a route is
+  // being navigated, where the camera points along the *route* (per-fix, in
+  // the recenter effect) and a wobbling magnetometer must not jerk the map
+  // around; only the puck's cone tracks the device there.
   React.useEffect(() => {
     if (!ready) return;
     const sub = fusedHeadingStore.subscribe(() => {
@@ -1456,6 +1459,7 @@ export function ParkMap({
       const heading = fusedHeadingStore.state;
       if (!map || !followRef.current || !headingUpRef.current) return;
       if (heading == null || engagingRef.current) return;
+      if (dotAnimateRef.current && (routeCoordsRef.current?.length ?? 0) > 1) return;
       map.easeTo({ bearing: heading, duration: 300 });
     });
     return () => sub.unsubscribe();
@@ -1470,10 +1474,17 @@ export function ParkMap({
     const map = mapRef.current;
     if (!map || !ready || !followRef.current || !userLocation || engagingRef.current) return;
     // Heading-up → tilted walking-nav framing (puck low, pitched, rotated to
-    // facing); north-lock → flat and centered.
+    // the direction of travel); north-lock → flat and centered, due north. The
+    // rotation follows the *route's* bearing at the projected position while a
+    // route is up — the way you're supposed to go, which is stable — and only
+    // falls back to the fused device heading (then GPS course) when there's no
+    // route geometry to follow (crow-flies nav).
     const tilt = headingUpRef.current;
     const bearing = tilt
-      ? (fusedHeadingStore.state ??
+      ? ((dotAnimateRef.current
+          ? routeBearingAt(routeCoordsRef.current, userLocation.coords)
+          : null) ??
+        fusedHeadingStore.state ??
         userLocation.heading ??
         lastHeadingRef.current ??
         map.getBearing())
