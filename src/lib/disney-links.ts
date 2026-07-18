@@ -61,3 +61,27 @@ export function buyTicketsHref(resort: Resort, isNative: boolean): string {
 export function ticketStoreLabel(resort: Resort): string {
   return resort === "UOR" ? "universalorlando.com" : "disneyworld.com";
 }
+
+/**
+ * The operator's "make a park reservation" (Disney Park Pass) booking page —
+ * the availability calendar where a guest who *already holds* a ticket or pass
+ * picks a park + date. Distinct from `ticketStoreUrl` (which sells admission).
+ *
+ * Disney only: park reservations are a Walt Disney World / Disneyland concept,
+ * and Universal has no equivalent system → null. Post-2024 only some admission
+ * types (annual passes, non-date-based tickets) still require a reservation, so
+ * this is a secondary affordance, not the primary CTA.
+ *
+ * There is **no native `mdx://` deep link** for this flow — the My Disney
+ * Experience app's own "Make a Park Reservation" button opens a plain web URL,
+ * not a custom-scheme route (verified by decompiling MDE v8.0:
+ * `MakeParkReservationDelegate` fires an `ACTION_VIEW` intent at a
+ * server-configured `makeParkReservationUrl`; the only `magicaccess/parkpass/*`
+ * route is a detail view of an existing reservation). So this is a plain https
+ * URL, safe on every platform — on the native shell OS App Links hands it off
+ * to the installed MDE app, same as `ticketStoreUrl`.
+ */
+export function parkReservationUrl(resort: Resort): string | null {
+  if (resort === "UOR") return null;
+  return `${WDW_SITE}/park-reservations/`;
+}
