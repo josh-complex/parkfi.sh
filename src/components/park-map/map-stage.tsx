@@ -22,7 +22,7 @@ import { useNavTestToolsEnabled } from "#/integrations/posthog/feature-flags.ts"
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { DEV_SPOTS } from "#/lib/dev-location.ts";
 import { lazyWithReload } from "#/lib/lazy-with-reload.tsx";
-import { preferredUnitSystem, valhallaUnits } from "#/lib/units.ts";
+import { preferredRouteLanguage, preferredUnitSystem, valhallaUnits } from "#/lib/units.ts";
 import { distanceMeters, pointInPolygon } from "#/server/living/geofence.ts";
 
 import {
@@ -37,13 +37,15 @@ import {
   ZoomControl,
 } from "./map-controls.tsx";
 import { morph, settleMorph } from "./map-morph.ts";
-import { buildRouteModel } from "./nav-geometry.ts";
+import { useTurnCues } from "./nav-cues.ts";
+import { buildRouteModel, roundCoord } from "./nav-geometry.ts";
 import { NavOverlay } from "./nav-overlay.tsx";
 import {
   clearNavTrip,
   clearRerouting,
   dropFollow,
   engageFollow,
+  NAV_ACCURACY_MAX_M,
   navStore,
   recordNavFix,
   requestNavDirections,
@@ -51,11 +53,10 @@ import {
   setHeadingUp,
   setMapBearing,
   startNav,
-  swapNavEnds,
   type NavDest,
 } from "./nav-store.ts";
+import { fusedHeadingStore, recordCompassHeading, recordHeadingFix } from "./heading-store.ts";
 import { type MapHandle } from "./shared.tsx";
-import { useFusedHeading } from "./use-fused-heading.ts";
 import { hasWebGl } from "./webgl.ts";
 
 // Lazy-loaded so the heavy map libraries (maplibre-gl, leaflet) are never
@@ -92,11 +93,6 @@ function useMapStage() {
 // Stable empty list for the dev-destination pins when the nav QA tools are off,
 // so the renderer's dev-marker effect sees an unchanging identity (no churn).
 const EMPTY_DEV_SPOTS: typeof DEV_SPOTS = [];
-
-// Fixes worse than this (metres of reported accuracy) don't drive the trip —
-// trail, arrival, and rerouting ignore them (§1.6). Generous enough that a
-// typical urban fix still counts, tight enough to reject just-woke/canyon spikes.
-const NAV_ACCURACY_MAX_M = 35;
 
 /**
  * The last map-bearing route the user viewed, so a ride page's "back" affordances
@@ -200,25 +196,39 @@ export function MapStageProvider({
     setHudExpanded(playActive && (battleMarkId != null || dropAt != null));
     return () => setHudExpanded(false);
   }, [playActive, battleMarkId, dropAt]);
+  // Walking directions — the trip itself lives in the shared nav store (see
+  // nav-store.ts for the state shape + transition rules). Per-field selectors
+  // (the default compare is `===`), so writes to fields this provider doesn't
+  // render — above all `mapBearing`, which changes every animation frame of a
+  // rotate — never re-render the whole stage tree. The compass needle subscribes
+  // to the bearing itself, inside the overlay. Selected up here because the
+  // geolocation watch's power profile hangs off the trip phase.
+  const pendingDest = useStore(navStore, (s) => s.pendingDest);
+  const trip = useStore(navStore, (s) => s.trip);
+  const started = useStore(navStore, (s) => s.started);
   // One geolocation watch for the whole app, owned here so it survives the map
   // moving between routes. Never auto-prompts — the locate button calls locate().
-  // While a trip is `started` the watch tightens its `maximumAge` (see
-  // `navActive`) so turn-by-turn runs off near-live fixes instead of a puck that
-  // can lag ~20 m behind at walking speed (§1.5).
-  const navStarted = useStore(navStore, (s) => s.started);
-  const geo = useGeolocation({ watch: true, rememberActive: true, navActive: navStarted });
-  // Live compass heading from the device magnetometer, only while location is on.
-  // iOS needs a permission grant from a gesture — hung off the locate tap below.
-  const compass = useDeviceHeading(geo.state.status === "granted");
-  // The heading handed to the renderers (facing cone + heading-up rotation):
-  // the compass fused with the GPS movement course — while walking, the
-  // direction you're actually moving is weighted over the (orientation-
-  // sensitive) magnetometer unless the compass says you're actively turning.
-  const fusedHeading = useFusedHeading(geo.state, compass.heading);
-  // Read the fused heading inside callbacks via a ref, so they aren't recreated
-  // on every sensor tick (they'd otherwise churn effects that list them as deps).
-  const fusedHeadingRef = React.useRef<number | null>(null);
-  fusedHeadingRef.current = fusedHeading;
+  // Power profile (§1.5): a started trip runs on near-live fixes (a 15 s-stale
+  // puck lags ~20 m at walking speed — enough to blow through a turn cue); a
+  // pending/previewing trip and play mode need GPS-grade accuracy at the relaxed
+  // cadence; plain browsing drops to the low-power profile for battery.
+  const geo = useGeolocation({
+    watch: true,
+    rememberActive: true,
+    profile: started ? "nav" : trip != null || pendingDest != null || playActive ? "high" : "low",
+  });
+  // Live compass heading from the device magnetometer, only while location is
+  // on. iOS needs a permission grant from a gesture — hung off the locate tap
+  // below. Readings flow straight into the fused-heading store (compass ⊕ GPS
+  // movement course, see heading-store.ts) without touching React state, so
+  // sensor-rate ticks never re-render this tree — the renderers' cone/rotation
+  // consumers subscribe to the store imperatively.
+  const compass = useDeviceHeading(geo.state.status === "granted", recordCompassHeading);
+  // Feed each fix (and location on/off flips) into the heading fusion — the
+  // movement course is what keeps the heading honest while actually walking.
+  React.useEffect(() => {
+    recordHeadingFix(geo.state);
+  }, [geo.state]);
   // Nav QA tools (the local-routing destination picker): always on in dev, and
   // in prod for accounts with the `nav-test-tools` PostHog flag — so it can be
   // dogfooded on a phone without shipping it to everyone.
@@ -228,15 +238,15 @@ export function MapStageProvider({
   // temporary pins for them while navigating (they aren't real attractions, so
   // they'd otherwise have no marker). Empty for normal users, so nothing extra
   // renders in prod. Memoized to a stable identity so it doesn't churn the
-  // renderer's dev-marker effect on every compass tick.
+  // renderer's dev-marker effect.
   const devDestinations = React.useMemo(
     () => (showNavTest ? DEV_SPOTS : EMPTY_DEV_SPOTS),
     [showNavTest],
   );
-  // Memoized so its identity only changes on a new GPS fix — not on every compass
-  // tick — keeping the renderers' `userLocation`-keyed effects (follow-cam, marker
-  // create) from re-running at sensor rate. The live fused heading rides down
-  // separately as `deviceHeading`.
+  // Memoized so its identity only changes on a new GPS fix, keeping the
+  // renderers' `userLocation`-keyed effects (follow-cam, marker create) from
+  // re-running on unrelated renders. The live fused heading doesn't ride along
+  // — the renderers read it from `fusedHeadingStore` imperatively.
   const userLocation = React.useMemo(
     () =>
       geo.state.status === "granted"
@@ -274,19 +284,6 @@ export function MapStageProvider({
     }
   }, [geo.state, activeSlug, parksQ.data, navigate]);
 
-  // Walking directions — the trip itself lives in the shared nav store (see
-  // nav-store.ts for the state shape + transition rules). A "Directions" tap
-  // snapshots the user's location as the trip origin (so the route doesn't
-  // re-fetch/re-frame on every GPS tick) and routes to the destination via the
-  // `routing.route` query. If location isn't granted yet, the store parks the
-  // destination and the effect below fulfills it once a fix arrives.
-  // Per-field selectors (the default compare is `===`), so writes to fields this
-  // provider doesn't render — above all `mapBearing`, which changes every
-  // animation frame of a rotate — never re-render the whole stage tree. The
-  // compass needle subscribes to the bearing itself, inside the overlay.
-  const pendingDest = useStore(navStore, (s) => s.pendingDest);
-  const trip = useStore(navStore, (s) => s.trip);
-  const started = useStore(navStore, (s) => s.started);
   const following = useStore(navStore, (s) => s.following);
   const headingUp = useStore(navStore, (s) => s.headingUp);
   const arrived = useStore(navStore, (s) => s.arrived);
@@ -296,9 +293,19 @@ export function MapStageProvider({
   const progress = useStore(navStore, (s) => s.progress);
   const rerouting = useStore(navStore, (s) => s.rerouting);
   const rerouteCount = useStore(navStore, (s) => s.rerouteCount);
+  // A "Directions" tap snapshots the user's location as the trip origin (so the
+  // route doesn't re-fetch/re-frame on every GPS tick) and routes to the
+  // destination via the `routing.route` query. A coarse fix — likely under the
+  // low-power browse profile — makes a bad origin, so it parks the destination
+  // instead: pending flips the watch to the high-accuracy profile, and the next
+  // fix resolves it. No fix at all additionally kicks `locate()`.
   const requestDirections = React.useCallback(
     (d: NavDest) => {
-      requestNavDirections(d, geo.state.status === "granted" ? geo.state.coords : null);
+      const origin =
+        geo.state.status === "granted" && geo.state.accuracy <= NAV_ACCURACY_MAX_M
+          ? geo.state.coords
+          : null;
+      requestNavDirections(d, origin);
       if (geo.state.status !== "granted") geo.locate();
     },
     [geo],
@@ -306,15 +313,29 @@ export function MapStageProvider({
   React.useEffect(() => {
     if (geo.state.status === "granted") resolvePendingDest(geo.state.coords);
   }, [geo.state]);
-  // Feet/miles vs metres/km, from the guest's locale. Drives both the chrome
-  // formatting and the Valhalla narrative units so "300 feet" agrees with the
-  // bar (§1.4). Stable per session, so computed once.
+  // A pending destination that arrived from outside the map — a ride page's
+  // "Walk there", a /map?nav= deep link — has no locate() gesture behind it, so
+  // kick the watch here. Browsers that insist on a gesture for the permission
+  // prompt leave the overlay on "Getting your location…", where the locate
+  // button is the manual fallback.
+  React.useEffect(() => {
+    if (pendingDest != null && (geo.state.status === "idle" || geo.state.status === "error"))
+      geo.locate();
+  }, [pendingDest, geo]);
+  // Feet/miles vs metres/km and the narrative language, from the guest's
+  // locale. Units drive both the chrome formatting and the Valhalla narrative so
+  // "300 feet" agrees with the bar (§1.4); language localizes the instructions
+  // themselves (§5). Stable per session, so computed once.
   const unitSystem = React.useMemo(() => preferredUnitSystem(), []);
+  const routeLanguage = React.useMemo(() => preferredRouteLanguage(), []);
   const routeQ = useQuery({
     ...trpc.routing.route.queryOptions({
-      from: trip?.from.coords ?? [0, 0],
-      to: trip?.to.coords ?? [0, 0],
+      // Rounded to ~11 cm so the query key (and any warm cache from a card's
+      // walk-time prefetch) is shareable — raw GPS floats never collide (§6).
+      from: trip ? roundCoord(trip.from.coords) : [0, 0],
+      to: trip ? roundCoord(trip.to.coords) : [0, 0],
       units: valhallaUnits(unitSystem),
+      language: routeLanguage,
     }),
     enabled: trip != null,
     // A mid-trip re-route re-keys the origin, which would normally blank the
@@ -379,6 +400,32 @@ export function MapStageProvider({
   React.useEffect(() => {
     if (routeQ.data) clearRerouting();
   }, [routeQ.data]);
+  // Live wait at the destination (§3.5): while heading to an *attraction* the
+  // one number that matters is its current wait — a mid-walk spike is a decision
+  // the guest wants to make now, so it refreshes on a timer. POI destinations
+  // (id absent / non-positive) skip the query and show just the name.
+  const destId = trip?.to.id ?? pendingDest?.id ?? null;
+  const destWaitQ = useQuery({
+    ...trpc.parks.attractionById.queryOptions({ id: destId != null && destId > 0 ? destId : 0 }),
+    enabled: (trip != null || pendingDest != null) && destId != null && destId > 0,
+    refetchInterval: 60_000,
+    meta: { errorToast: false },
+  });
+  const destWait =
+    destWaitQ.data?.status === "OPERATING" ? (destWaitQ.data.standbyWait ?? null) : null;
+  // Haptic + spoken cues at each approaching turn (§3.2), driven by the same
+  // live projection as the headline. The voice respects the overlay's mute.
+  const voiceMuted = useStore(navStore, (s) => s.voiceMuted);
+  useTurnCues({
+    started,
+    arrived,
+    muted: voiceMuted,
+    progress,
+    maneuvers: routeQ.data?.maneuvers ?? null,
+    routeModel,
+    destName: trip?.to.name ?? "",
+    language: routeLanguage,
+  });
   // Nav funnel (§6): nav_previewed → nav_started → nav_arrived | nav_abandoned,
   // with trip distance/duration and reroute count. Mid-trip abandonment rate is
   // the metric that says which of the nav improvements actually land. We snapshot
@@ -480,7 +527,7 @@ export function MapStageProvider({
     engageFollow();
     mapRef.current?.flyToLocation(geo.state.coords, {
       zoom: 17.5,
-      bearing: fusedHeadingRef.current ?? geo.state.heading ?? 0,
+      bearing: fusedHeadingStore.state ?? geo.state.heading ?? 0,
       // Engage the tilted walking-nav framing (puck low, pitched) — follow +
       // heading-up are engaged together, so the close-up is always heading-up.
       tilt: true,
@@ -501,7 +548,7 @@ export function MapStageProvider({
   const toggleHeadingUp = React.useCallback(() => {
     const next = !navStore.state.headingUp;
     const h =
-      fusedHeadingRef.current ?? (geo.state.status === "granted" ? geo.state.heading : null);
+      fusedHeadingStore.state ?? (geo.state.status === "granted" ? geo.state.heading : null);
     // Tilt with heading-up; flatten back on north-lock (§3.3). While following,
     // re-frame around the puck via flyToLocation so the tilt lands with the same
     // lower-third offset the per-fix follow easeTo applies — a bare setBearing
@@ -645,7 +692,6 @@ export function MapStageProvider({
                   onMapRef={onMapRef}
                   attached={attached}
                   userLocation={userLocation}
-                  deviceHeading={fusedHeading}
                   route={routeCoords}
                   traveled={started && traveled.length > 1 ? traveled : null}
                   animateRoute={started && !arrived}
@@ -679,7 +725,6 @@ export function MapStageProvider({
                   onMapRef={onMapRef}
                   attached={attached}
                   userLocation={userLocation}
-                  deviceHeading={fusedHeading}
                   route={routeCoords}
                   traveled={started && traveled.length > 1 ? traveled : null}
                   animateRoute={started && !arrived}
@@ -787,7 +832,12 @@ export function MapStageProvider({
             {attached && navigating && (
               <NavOverlay
                 destName={trip?.to.name ?? pendingDest?.name ?? ""}
-                geoBlocked={geo.state.status === "denied" || geo.state.status === "unavailable"}
+                geoStatus={
+                  geo.state.status === "denied" || geo.state.status === "unavailable"
+                    ? geo.state.status
+                    : null
+                }
+                onRetryLocation={activateLocate}
                 locating={trip == null}
                 // Only the very first fetch is a "loading" state — mid-trip
                 // recalcs keep the previous route (keepPreviousData), so
@@ -806,6 +856,9 @@ export function MapStageProvider({
                 progress={progress}
                 rerouting={rerouting}
                 unitSystem={unitSystem}
+                destWait={destWait}
+                userCoords={geo.state.status === "granted" ? geo.state.coords : null}
+                destCoords={trip?.to.coords ?? pendingDest?.coords ?? null}
                 started={started}
                 canRotate={engine === "gl"}
                 headingUp={headingUp}
@@ -813,7 +866,6 @@ export function MapStageProvider({
                 onRetry={() => void routeQ.refetch()}
                 onToggleHeadingUp={toggleHeadingUp}
                 onOverview={showRouteOverview}
-                onSwap={swapNavEnds}
                 onClear={clearNavTrip}
               />
             )}

@@ -21,7 +21,9 @@ import {
  */
 
 export type NavDest = { id: number; name: string; coords: [number, number] };
-export type NavPlace = { name: string; coords: [number, number] };
+/** `id` is the attraction id when the place is one (drives the live
+ *  "wait at your destination" chip); absent for POIs / "Your location". */
+export type NavPlace = { name: string; coords: [number, number]; id?: number };
 export type NavTrip = { from: NavPlace; to: NavPlace };
 /** Snapshot of the finished trip, frozen at arrival for the completion card. */
 export type NavSummary = { walkedMeters: number; elapsedSeconds: number };
@@ -44,6 +46,25 @@ const OFF_ROUTE_FIXES = 3;
 // breadcrumb. Keeps the "where you've been" trail from densifying with jittery
 // near-duplicate points while standing still.
 const TRAIL_MIN_MOVE_M = 4;
+
+// Fixes worse than this (metres of reported accuracy) don't drive the trip —
+// trail, arrival, and rerouting ignore them (§1.6) — and don't get snapshotted
+// as a trip origin. Generous enough that a typical urban fix still counts,
+// tight enough to reject just-woke/canyon spikes and low-power ambient fixes.
+export const NAV_ACCURACY_MAX_M = 35;
+
+// The voice-cue mute survives across trips and sessions — a guest who muted the
+// robot voice yesterday didn't change their mind overnight.
+const VOICE_MUTED_KEY = "parkfi:nav:voiceMuted";
+
+function readVoiceMuted(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(VOICE_MUTED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 interface NavState {
   /** A Directions request waiting on the first location fix. */
@@ -86,6 +107,8 @@ interface NavState {
   offRouteStreak: number;
   /** Number of off-route reroutes this trip, for the arrival/abandon telemetry. */
   rerouteCount: number;
+  /** Spoken turn cues muted (§3.2). Persisted; haptic cues are unaffected. */
+  voiceMuted: boolean;
 }
 
 const IDLE: NavState = {
@@ -105,6 +128,7 @@ const IDLE: NavState = {
   rerouting: false,
   offRouteStreak: 0,
   rerouteCount: 0,
+  voiceMuted: readVoiceMuted(),
 };
 
 export const navStore = new Store<NavState>(IDLE);
@@ -152,7 +176,7 @@ function addedLength(
 /** A "Directions" tap: snapshot the user's location as the trip origin, or park
  *  the destination until a fix arrives (the caller triggers `locate()`). */
 export function requestNavDirections(d: NavDest, origin: [number, number] | null) {
-  const to: NavPlace = { name: d.name, coords: d.coords };
+  const to: NavPlace = { name: d.name, coords: d.coords, id: d.id };
   navStore.setState((s) => ({
     ...s,
     ...freshProgress,
@@ -171,7 +195,7 @@ export function resolvePendingDest(origin: [number, number]) {
       pendingDest: null,
       trip: {
         from: { name: "Your location", coords: origin },
-        to: { name: s.pendingDest.name, coords: s.pendingDest.coords },
+        to: { name: s.pendingDest.name, coords: s.pendingDest.coords, id: s.pendingDest.id },
       },
     };
   });
@@ -216,7 +240,23 @@ export function clearRerouting() {
 
 /** End navigation entirely — back to the plain map UI. */
 export function clearNavTrip() {
-  navStore.setState((s) => ({ ...IDLE, mapBearing: s.mapBearing }));
+  // The bearing mirrors the live camera and the mute is a persistent preference —
+  // both outlive any one trip.
+  navStore.setState((s) => ({ ...IDLE, mapBearing: s.mapBearing, voiceMuted: s.voiceMuted }));
+}
+
+/** Toggle the spoken turn cues (§3.2) — persisted across trips and sessions. */
+export function toggleVoiceMuted() {
+  navStore.setState((s) => {
+    const voiceMuted = !s.voiceMuted;
+    try {
+      if (voiceMuted) window.localStorage.setItem(VOICE_MUTED_KEY, "1");
+      else window.localStorage.removeItem(VOICE_MUTED_KEY);
+    } catch {
+      /* private mode — the session still tracks it in memory */
+    }
+    return { ...s, voiceMuted };
+  });
 }
 
 /** Reverse origin/destination (preview only — re-keys the route query). */

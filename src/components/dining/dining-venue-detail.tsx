@@ -25,6 +25,7 @@ import {
   useMenuState,
 } from "#/components/dining/menu-content.tsx";
 import { LocationMap } from "#/components/maps/location-map.tsx";
+import { WalkThereButton } from "#/components/park-map/walk-there-button.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Image } from "#/components/ui/image.tsx";
@@ -523,7 +524,15 @@ export function DiningVenueDetail({
       {/* Location map — Disney venues carry finder coordinates (UOR may not). */}
       {venue?.latitude != null && venue.longitude != null && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-semibold tracking-tight">Location</h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-lg font-semibold tracking-tight">Location</h2>
+            {/* Walking-nav entry point (§4.2) — routes to the venue on the map. */}
+            <WalkThereButton
+              name={venue.name}
+              latitude={venue.latitude}
+              longitude={venue.longitude}
+            />
+          </div>
           <LocationMap
             latitude={venue.latitude}
             longitude={venue.longitude}

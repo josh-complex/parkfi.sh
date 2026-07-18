@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowLeftIcon, ExternalLinkIcon } from "lucide-react";
 
 import { getLastMapView } from "#/components/park-map/map-stage.tsx";
+import { WalkThereButton } from "#/components/park-map/walk-there-button.tsx";
 import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
@@ -251,6 +252,14 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
               </Badge>
             ))}
           </div>
+          {/* Walking-nav entry point (§4.2) — routes to this ride on the map. */}
+          <WalkThereButton
+            id={ride.id}
+            name={ride.name}
+            latitude={ride.latitude}
+            longitude={ride.longitude}
+            className="mt-1 w-fit"
+          />
           {ride.meta?.detailUrl && (
             <a
               href={ride.meta.detailUrl}

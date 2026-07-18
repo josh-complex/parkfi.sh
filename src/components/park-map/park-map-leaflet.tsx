@@ -16,9 +16,12 @@ import {
   maptilerFallbackRasterTileUrl,
 } from "#/components/maps/maptiler-style.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
+import { preferredRouteLanguage, preferredUnitSystem, valhallaUnits } from "#/lib/units.ts";
 import { pointInPolygon } from "#/server/living/geofence.ts";
 
 import { MarkerCluster, type DeclutterItem } from "./declutter.ts";
+import { fusedHeadingStore } from "./heading-store.ts";
+import { roundCoord } from "./nav-geometry.ts";
 import {
   applySelected,
   attractionCardBodyHtml,
@@ -30,6 +33,7 @@ import {
   buildParkBadgeEl,
   buildPoiEl,
   buildUserLocationEl,
+  isRestroomPoi,
   poiCardBodyHtml,
   poiKind,
   sameCoords,
@@ -46,6 +50,7 @@ import {
   saveRoamCamera,
   SPREAD_ZOOM,
   waitLabelFor,
+  wireCardWalkTime,
   wireHoverLabelFlip,
 } from "./shared.tsx";
 
@@ -154,7 +159,6 @@ export function ParkMapLeaflet({
   onMapRef,
   attached = true,
   userLocation,
-  deviceHeading = null,
   route,
   traveled = null,
   animateRoute = false,
@@ -179,10 +183,6 @@ export function ParkMapLeaflet({
   /** The user's live position ([lng,lat] + accuracy + GPS heading), drawn as a
    *  "you are here" dot with a facing cone. Null when location is off/denied. */
   userLocation?: { coords: [number, number]; accuracy: number; heading: number | null } | null;
-  /** Live device-compass heading (degrees clockwise from north), preferred over
-   *  GPS course-over-ground for the facing cone since it works standing still.
-   *  Null when unavailable. */
-  deviceHeading?: number | null;
   /** Active walking route geometry ([lng,lat] points) to draw, or null. */
   route?: Array<[number, number]> | null;
   /** Breadcrumb of where the user has already walked ([lng,lat]) — a grayed trail
@@ -232,6 +232,31 @@ export function ParkMapLeaflet({
   // Stable dep for the marker effect — rebuilds when navigation starts/ends or
   // the destination changes, but not on every re-route/GPS tick (see GL renderer).
   const navDestKey = navDest ? `${navDest[0]},${navDest[1]}` : "";
+  // Latest fix, read inside marker activate handlers (which outlive any render)
+  // without re-running the marker effect per GPS tick.
+  const userLocationRef = React.useRef(userLocation);
+  userLocationRef.current = userLocation;
+  // Walk-time estimate for an opening card (§4.1) — the exact query the
+  // Directions preview would run, so the tap that follows hits a warm cache.
+  // Null when there's no fix to route from. Mirrors the GL renderer.
+  const fetchWalkEstimate = React.useCallback(
+    (to: [number, number]) => {
+      const loc = userLocationRef.current;
+      if (!loc) return null;
+      return queryClient
+        .fetchQuery({
+          ...trpc.routing.route.queryOptions({
+            from: roundCoord(loc.coords),
+            to: roundCoord(to),
+            units: valhallaUnits(preferredUnitSystem()),
+            language: preferredRouteLanguage(),
+          }),
+          staleTime: 60_000,
+        })
+        .catch(() => null);
+    },
+    [queryClient, trpc],
+  );
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<L.Map | null>(null);
   const tileRef = React.useRef<L.TileLayer | null>(null);
@@ -262,10 +287,6 @@ export function ParkMapLeaflet({
   // interrupt that fly and drop the zoom). It fires on new fixes instead.
   const followRef = React.useRef(follow);
   followRef.current = follow;
-  // Live compass heading, read inside the marker effect without re-running it at
-  // sensor rate; a dedicated repaint effect keys off `deviceHeading` instead.
-  const deviceHeadingRef = React.useRef(deviceHeading);
-  deviceHeadingRef.current = deviceHeading;
   // True while an engage fly (flyToLocation) animates — a GPS fix landing mid-fly
   // must not fire the zoom-less panTo and interrupt the zoom-in. Cleared on the
   // fly's moveend.
@@ -624,6 +645,9 @@ export function ParkMapLeaflet({
               onClose: () => raise(false),
             });
             cardRef.current = { close };
+            // Walk time from here (§4.1), warming the Directions cache.
+            const estimate = fetchWalkEstimate([latLng[1], latLng[0]]);
+            if (estimate) wireCardWalkTime(card, estimate);
             card.querySelector<HTMLAnchorElement>("[data-spa]")?.addEventListener("click", (e) => {
               e.preventDefault();
               void navigate({
@@ -658,35 +682,62 @@ export function ParkMapLeaflet({
       // boundary (the resort-wide feed scoped to this park); no boundary → plot
       // nothing. Negative ids keep them clear of the attraction/park id space.
       const boundary = parks?.find((p) => p.slug === effectiveSlug)?.boundary ?? null;
-      if (boundary && layers && anyMapLayerActive(layers)) {
+      if (boundary) {
         // The park_poi feed carries all three overlay categories; pick the ones
         // whose layer is lit (Live folds entertainment + character meets).
         const overlayPoi = (poiQ.data ?? []).filter(
           (p) =>
-            (layers.services && p.category === "info") ||
-            (layers.entertainment &&
+            (layers?.services && p.category === "info") ||
+            (layers?.entertainment &&
               (p.category === "entertainment" || p.category === "character")) ||
-            (layers.tours && p.category === "tour"),
+            (layers?.tours && p.category === "tour"),
         );
         // The dining feed carries both reservable table-service venues and
         // non-bookable quick service/carts (tagged 'quick-service' — see
         // `parks.dining`); split it across the two layers so each toggles
         // independently instead of lumping carts in with sit-down dining.
         const diningData = diningQ.data ?? [];
-        const pois = [
-          ...(layers.dining ? diningData.filter((p) => p.category !== "quick-service") : []),
-          ...(layers.quickService ? diningData.filter((p) => p.category === "quick-service") : []),
-          ...(layers.shops ? (shopsQ.data ?? []) : []),
-          ...overlayPoi,
-        ];
+        const layerPois =
+          layers && anyMapLayerActive(layers)
+            ? [
+                ...(layers.dining ? diningData.filter((p) => p.category !== "quick-service") : []),
+                ...(layers.quickService
+                  ? diningData.filter((p) => p.category === "quick-service")
+                  : []),
+                ...(layers.shops ? (shopsQ.data ?? []) : []),
+                ...overlayPoi,
+              ]
+            : [];
+        // Actively navigating: the overlay collapses to the destination pin (if
+        // it's a POI from a lit layer) plus restrooms — dimmed, regardless of
+        // toggles — the one thing guests actually divert for mid-walk (§5).
+        const pois = navDest
+          ? [
+              ...layerPois.filter(
+                (p) =>
+                  p.latitude != null &&
+                  p.longitude != null &&
+                  sameCoords([p.longitude, p.latitude], navDest),
+              ),
+              ...(poiQ.data ?? []).filter(
+                (p) =>
+                  isRestroomPoi(p) &&
+                  !(
+                    p.latitude != null &&
+                    p.longitude != null &&
+                    sameCoords([p.longitude, p.latitude], navDest)
+                  ),
+              ),
+            ]
+          : layerPois;
         pois.forEach((poi, i) => {
           if (poi.latitude == null || poi.longitude == null) return;
           const lngLat: [number, number] = [poi.longitude, poi.latitude];
           if (!pointInPolygon(lngLat, boundary)) return;
-          // Actively navigating: show only the destination, hide every other POI.
-          if (navDest && !sameCoords(lngLat, navDest)) return;
           const latLng: [number, number] = [poi.latitude, poi.longitude];
           const { el, detail } = buildPoiEl(poi);
+          // The mid-walk restrooms read as background context, not destinations.
+          if (navDest && !sameCoords(lngLat, navDest)) el.style.opacity = "0.6";
           const marker = L.marker(latLng, { icon: pointIcon(el) }).addTo(map);
           const raise = makeRaise(el, marker);
           if (containerRef.current) wireHoverLabelFlip(el, containerRef.current);
@@ -708,6 +759,9 @@ export function ParkMapLeaflet({
                 onClose: () => raise(false),
               });
               cardRef.current = { close };
+              // Walk time from here (§4.1), warming the Directions cache.
+              const estimate = fetchWalkEstimate(lngLat);
+              if (estimate) wireCardWalkTime(card, estimate);
               // Internal shop/dining links carry data-spa; overlay POIs link out
               // to the operator (a plain target=_blank anchor the browser handles).
               card
@@ -784,6 +838,7 @@ export function ParkMapLeaflet({
     queryClient,
     trpc,
     navDestKey,
+    fetchWalkEstimate,
   ]);
 
   // Dev-destination pins — the nav QA tools' test spots, drawn as temporary
@@ -889,7 +944,7 @@ export function ParkMapLeaflet({
     // doesn't rotate, so there's no map bearing to subtract — screen degrees ==
     // heading.
     const el = userMarkerRef.current.getElement();
-    if (el) setUserHeading(el, deviceHeadingRef.current ?? userLocation.heading);
+    if (el) setUserHeading(el, fusedHeadingStore.state ?? userLocation.heading);
 
     // Follow-cam: recenter on the user as their fix updates (no rotation). A
     // manual pan clears `follow` upstream; panTo fires `movestart`, not
@@ -900,12 +955,19 @@ export function ParkMapLeaflet({
     }
   }, [userLocation, ready]);
 
-  // Re-point the facing cone on each new compass reading — cheap DOM write, no
-  // marker rebuild — so it tracks a turn-in-place even without a new GPS fix.
+  // Re-point the facing cone on each new fused-heading reading (already
+  // smoothed + ~1°-thresholded in the store) — cheap DOM write, no marker
+  // rebuild — so it tracks a turn-in-place even without a new GPS fix. A store
+  // subscription, not props/state, so compass ticks never re-render this
+  // component.
   React.useEffect(() => {
-    const el = userMarkerRef.current?.getElement();
-    if (el) setUserHeading(el, deviceHeading ?? userLocation?.heading ?? null);
-  }, [deviceHeading, userLocation]);
+    const sub = fusedHeadingStore.subscribe(() => {
+      const el = userMarkerRef.current?.getElement();
+      if (el)
+        setUserHeading(el, fusedHeadingStore.state ?? userLocationRef.current?.heading ?? null);
+    });
+    return () => sub.unsubscribe();
+  }, []);
 
   // Draw / update / clear the active walking route (+ grayed traveled trail), and
   // frame it when it appears.

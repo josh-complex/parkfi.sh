@@ -1,4 +1,5 @@
 import * as React from "react";
+import { Store } from "@tanstack/store";
 import posthog from "posthog-js";
 
 import { useGeoSim } from "#/lib/dev-geo-sim.ts";
@@ -16,21 +17,32 @@ export type GeoState =
   | { status: "unavailable" }
   | { status: "error"; message: string };
 
-const GEO_OPTS: PositionOptions = {
-  enableHighAccuracy: true,
-  timeout: 10_000,
-  maximumAge: 15_000,
+/**
+ * Watch power profiles (§1.5). `high` is the historical default — every
+ * consumer that doesn't say otherwise keeps it.
+ *  - `nav`: turn-by-turn wants near-live fixes — a 15 s-stale puck lags ~20 m at
+ *    walking speed, enough to blow through a turn cue or delay arrival.
+ *  - `high`: GPS-grade fixes at a relaxed cadence — play-mode geofencing, a
+ *    pending trip waiting on a good origin.
+ *  - `low`: the ambient browse watch. Drops `enableHighAccuracy` — the only real
+ *    battery lever, since a high-accuracy watch holds the GPS radio on — trading
+ *    puck precision (wifi/cell fixes, tens of metres, ring shown) for battery
+ *    while nothing that needs GPS accuracy is running.
+ */
+export type GeoProfile = "nav" | "high" | "low";
+
+const GEO_PROFILES: Record<GeoProfile, PositionOptions> = {
+  nav: { enableHighAccuracy: true, timeout: 10_000, maximumAge: 1_500 },
+  high: { enableHighAccuracy: true, timeout: 10_000, maximumAge: 15_000 },
+  low: { enableHighAccuracy: false, timeout: 20_000, maximumAge: 30_000 },
 };
 
-// While turn-by-turn is running we want near-live fixes: a 15 s-stale puck lags
-// ~20 m at walking speed, enough to blow through a turn cue or delay arrival. So
-// nav mode drops `maximumAge` to ~1.5 s (the ambient app watch keeps the relaxed
-// default for battery). See `navActive`.
-const NAV_MAX_AGE_MS = 1_500;
-
-function geoOpts(navActive: boolean): PositionOptions {
-  return navActive ? { ...GEO_OPTS, maximumAge: NAV_MAX_AGE_MS } : GEO_OPTS;
-}
+/**
+ * Last known fix from any consumer this session, [lng, lat] + accuracy. Lets
+ * far-away UI (a ride page's "Walk there · 6 min" CTA) estimate a walk without
+ * owning a watch — reading it never prompts. Null until something locates.
+ */
+export const lastFixStore = new Store<{ coords: [number, number]; accuracy: number } | null>(null);
 
 // Remembers that the user turned the locate feature on, so it can re-engage
 // across sessions (see `rememberActive`). Only ever set once we're actually
@@ -81,17 +93,23 @@ function writeActiveFlag(active: boolean) {
 export function useGeolocation(opts?: {
   watch?: boolean;
   rememberActive?: boolean;
-  navActive?: boolean;
+  /** Power/accuracy profile for the watch (see {@link GeoProfile}); defaults to
+   *  the historical `high`. Changing it re-arms a running watch in place. */
+  profile?: GeoProfile;
 }) {
   const watch = opts?.watch ?? false;
   const rememberActive = opts?.rememberActive ?? false;
-  const navActive = opts?.navActive ?? false;
+  const profile = opts?.profile ?? "high";
   const [state, setState] = React.useState<GeoState>({ status: "idle" });
   const watchIdRef = React.useRef<number | null>(null);
-  // Read the current nav-mode flag from a ref inside `locate` so toggling it
-  // doesn't recreate the callback; the watch is re-armed by the effect below.
-  const navActiveRef = React.useRef(navActive);
-  navActiveRef.current = navActive;
+  // Whether the "feature is on" flag has been persisted for the current
+  // activation — so reaching `granted` writes localStorage once, not on every
+  // fix the watch delivers.
+  const activeWrittenRef = React.useRef(false);
+  // Read the current profile from a ref inside `locate` so switching it doesn't
+  // recreate the callback; the watch is re-armed by the effect below.
+  const profileRef = React.useRef(profile);
+  profileRef.current = profile;
 
   const stop = React.useCallback(() => {
     if (watchIdRef.current != null && typeof navigator !== "undefined") {
@@ -107,6 +125,7 @@ export function useGeolocation(opts?: {
   const deactivate = React.useCallback(() => {
     stop();
     if (rememberActive) writeActiveFlag(false);
+    activeWrittenRef.current = false;
     setState({ status: "idle" });
   }, [stop, rememberActive]);
 
@@ -114,13 +133,30 @@ export function useGeolocation(opts?: {
     (pos: GeolocationPosition) => {
       // Reaching `granted` means the feature is on — remember it so a later
       // session can silently re-engage (no-op when `rememberActive` is off).
-      if (rememberActive) writeActiveFlag(true);
-      setState({
-        status: "granted",
-        coords: [pos.coords.longitude, pos.coords.latitude],
-        accuracy: pos.coords.accuracy,
-        heading: pos.coords.heading,
-      });
+      if (rememberActive && !activeWrittenRef.current) {
+        activeWrittenRef.current = true;
+        writeActiveFlag(true);
+      }
+      const coords: [number, number] = [pos.coords.longitude, pos.coords.latitude];
+      const { accuracy, heading } = pos.coords;
+      lastFixStore.setState((f) =>
+        f && f.coords[0] === coords[0] && f.coords[1] === coords[1] && f.accuracy === accuracy
+          ? f
+          : { coords, accuracy },
+      );
+      // A fix identical to the last one (common while stationary: cached
+      // `maximumAge` re-delivery, wifi positioning) bails the update — the map
+      // stage and every other subscriber would otherwise re-render ~1×/s off a
+      // fresh-but-equal state object while the user stands still.
+      setState((s) =>
+        s.status === "granted" &&
+        s.coords[0] === coords[0] &&
+        s.coords[1] === coords[1] &&
+        s.accuracy === accuracy &&
+        s.heading === heading
+          ? s
+          : { status: "granted", coords, accuracy, heading },
+      );
     },
     [rememberActive],
   );
@@ -132,6 +168,7 @@ export function useGeolocation(opts?: {
         posthog.capture("geolocation_denied");
         // Permission is gone — drop the flag so we don't keep trying to resume.
         if (rememberActive) writeActiveFlag(false);
+        activeWrittenRef.current = false;
         setState({ status: "denied" });
       } else {
         posthog.capture("geolocation_error", { code: err.code, message: err.message });
@@ -152,7 +189,7 @@ export function useGeolocation(opts?: {
       return;
     }
     setState((s) => (s.status === "granted" ? s : { status: "prompting" }));
-    const options = geoOpts(navActiveRef.current);
+    const options = GEO_PROFILES[profileRef.current];
     if (watch) {
       stop();
       watchIdRef.current = navigator.geolocation.watchPosition(onSuccess, onError, options);
@@ -161,18 +198,18 @@ export function useGeolocation(opts?: {
     }
   }, [watch, stop, onSuccess, onError]);
 
-  // Re-arm a live watch when nav mode toggles, so the tighter/looser
-  // `maximumAge` profile takes effect mid-session. Only touches an already-
-  // running watch — it never starts one on its own (that needs a gesture).
+  // Re-arm a live watch when the profile changes (browse → trip pending → nav),
+  // so the accuracy/staleness trade-off takes effect mid-session. Only touches
+  // an already-running watch — it never starts one on its own (needs a gesture).
   React.useEffect(() => {
     if (!watch || watchIdRef.current == null || typeof navigator === "undefined") return;
     navigator.geolocation.clearWatch(watchIdRef.current);
     watchIdRef.current = navigator.geolocation.watchPosition(
       onSuccess,
       onError,
-      geoOpts(navActive),
+      GEO_PROFILES[profile],
     );
-  }, [navActive, watch, onSuccess, onError]);
+  }, [profile, watch, onSuccess, onError]);
 
   React.useEffect(() => stop, [stop]);
 
@@ -181,6 +218,16 @@ export function useGeolocation(opts?: {
   // in-park UI, ride-recorder arm/disarm — runs for real off simulated
   // positions. Disarmed for everyone else, so this is inert in normal use.
   const sim = useGeoSim();
+  // Keep the shared last-fix in step with the simulator too, so location-fed UI
+  // outside the map (walk-time CTAs) is testable from the dev panel.
+  const simCoords = sim.armed ? sim.coords : null;
+  React.useEffect(() => {
+    if (simCoords)
+      lastFixStore.setState(() => ({
+        coords: [simCoords.lng, simCoords.lat],
+        accuracy: simCoords.accuracy,
+      }));
+  }, [simCoords]);
   const effectiveState: GeoState =
     sim.armed && sim.coords
       ? {
@@ -216,5 +263,10 @@ export function useGeolocation(opts?: {
     };
   }, [rememberActive]);
 
-  return { state: effectiveState, locate, stop, deactivate };
+  // Stable object identity while nothing changed, so consumer effects that
+  // depend on the hook's return don't re-run on every render of the consumer.
+  return React.useMemo(
+    () => ({ state: effectiveState, locate, stop, deactivate }),
+    [effectiveState, locate, stop, deactivate],
+  );
 }

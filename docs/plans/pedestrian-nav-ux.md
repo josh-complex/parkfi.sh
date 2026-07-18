@@ -1,5 +1,17 @@
 # Pedestrian navigation — UI/UX/flow improvements
 
+> **Status (2026-07-18): implemented.** Everything below is built — the §2
+> route-tracking core, the §1 defects, §3 walk-experience (wake lock, haptic +
+> voice cues behind a mute toggle, tilted follow-cam, route overview,
+> destination wait), §4 adoption (card walk-time prefetch, "Walk there" CTAs on
+> ride/shop/dining pages, `/map?nav=<attractionId>` deep link, denied-vs-
+> unavailable copy with a retry), §5 polish (arrival clock, progress bar,
+> aria-live, dimmed mid-walk restrooms, crow-flies fallback, narrative
+> language), and the §6 telemetry funnel + query-key rounding + low-power
+> ambient GPS profile. Still open: the pin-vs-entrance **data audit** (§6, a
+> curation task, not code) and per-row wait-board CTAs (§4.2 — deliberately
+> skipped; the ride page's CTA is one tap deeper).
+
 > **Theme:** The nav stack's bones are genuinely good — snapped breadcrumb trail,
 > fused compass/course heading, follow-cam, silent reroutes via
 > `keepPreviousData`, arrival card. The gaps cluster in three places: (1) the

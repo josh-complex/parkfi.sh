@@ -25,7 +25,30 @@ import { cn } from "#/lib/utils.ts";
  * (notably the fullscreen `/map`) without consuming layout.
  */
 const SEG_BASE =
-  "relative top-0 -ml-px flex flex-1 flex-col items-center justify-center gap-1 border-3d btn-3d-outline shadow-3d bg-background dark:bg-background px-2 py-2.5 text-sm font-medium transition-[top,box-shadow,background-color,color] duration-150 ease-out first:ml-0 active:top-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)] [&>svg]:size-5";
+  "relative top-0 -ml-px flex flex-1 flex-col items-center justify-center gap-1 border-3d btn-3d-outline shadow-3d bg-background dark:bg-background px-2 py-2.5 text-sm font-medium transition-[top,box-shadow,background-color,color,border-radius] duration-150 ease-out first:ml-0 active:top-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)] [&>svg]:size-5 " +
+  // The selected/pressed key sits 3px lower, so its neighbors curve down toward
+  // it on the side they share. Sibling selectors (`:has(+ …)` for the segment
+  // before the key, `… + &` for the one after) keep this stateless, and cover
+  // both the routed key (aria-current) and a transient finger-down (:active).
+  //
+  // Top corners: an elliptical border radius — 20px sweep, 3px deep (the press
+  // depth) — so the top edge dives into the key and bottoms out exactly at its
+  // top corner. border-radius is in the transition list so it eases with the
+  // press.
+  "[&:has(+[aria-current=page])]:rounded-tr-[14px_4px] [[aria-current=page]+&]:rounded-tl-[14px_4px] [&:has(+:active)]:rounded-tr-[14px_4px] [:active+&]:rounded-tl-[14px_4px] " +
+  // Bottom corners can't use border-radius (any corner rounding bows the curve
+  // the wrong way — concave — and curls the shelf up over the corner). Each
+  // segment instead carries two hidden 14×4px body-colored patches spanning its
+  // bottom border + 3px shelf band (`::after` bottom-right, `::before`
+  // bottom-left), clip-pathed to a convex arc that mirrors the top curve: flush
+  // with the body's straight bottom edge at the far end, diving to the key's
+  // base at the junction. Border and shelf share --btn-3d, so the un-clipped
+  // remnant of that 4px band tapers into the 1px line that continues as the
+  // key's own bottom border. The facing patch fades in when the adjacent key
+  // is down.
+  "before:pointer-events-none before:absolute before:-bottom-1 before:left-0 before:h-1 before:w-[14px] before:bg-background before:[clip-path:path('M14_0_A14_3_0_0_0_0_3_L0_0_Z')] before:opacity-0 before:transition-opacity before:duration-150 before:ease-out before:content-[''] " +
+  "after:pointer-events-none after:absolute after:-bottom-1 after:right-0 after:h-1 after:w-[14px] after:bg-background after:[clip-path:path('M0_0_A14_3_0_0_1_14_3_L14_0_Z')] after:opacity-0 after:transition-opacity after:duration-150 after:ease-out after:content-[''] " +
+  "[&:has(+[aria-current=page])]:after:opacity-100 [[aria-current=page]+&]:before:opacity-100 [&:has(+:active)]:after:opacity-100 [:active+&]:before:opacity-100";
 const SEG_ACTIVE =
   "z-10 top-[3px] bg-primary dark:bg-primary text-primary-foreground [--btn-3d:color-mix(in_oklch,var(--primary),black_32%)] [--btn-glare:var(--btn-3d)] shadow-3d-active hover:top-[3px] hover:shadow-3d-active";
 const SEG_IDLE = "text-foreground";

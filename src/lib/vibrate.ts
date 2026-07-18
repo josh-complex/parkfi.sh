@@ -74,6 +74,22 @@ export function vibrateUnlock(tierIndex: number): void {
   webVibrate([...pulses, 35, 60, 35, 60, finale]);
 }
 
+/** Approaching-turn cue for walking navigation (§3.2): one firm pulse ~20 m
+ *  before the maneuver — enough to pull eyes to the phone at someone's side
+ *  without the arrival fanfare. Best-effort, silent where unavailable. */
+export function vibrateTurnCue(): void {
+  if (isNative()) {
+    void (async () => {
+      const { Haptics, ImpactStyle } = await import("@capacitor/haptics");
+      await Haptics.impact({ style: ImpactStyle.Medium });
+    })().catch(() => {
+      /* haptics unavailable — best-effort */
+    });
+    return;
+  }
+  webVibrate([90]);
+}
+
 /** Arrival buzz for walking navigation: a short double-pulse capped by a Success
  *  notification on native — a distinct "you're here" that reads apart from the
  *  celebratory unlock ladder. Best-effort; silent where haptics are unavailable. */

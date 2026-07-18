@@ -37,6 +37,65 @@ export function valhallaUnits(units: UnitSystem): "miles" | "kilometers" {
 }
 
 /**
+ * The narrative languages Valhalla ships (`directions_options.language`) — the
+ * routing router validates against this list, and the client picks the closest
+ * match to the guest's locale so "Turn right onto…" reads in their language.
+ * Client-safe module (no server imports), so both sides share one source.
+ */
+export const VALHALLA_LANGUAGES = [
+  "bg",
+  "ca",
+  "cs",
+  "da",
+  "de",
+  "el",
+  "en-GB",
+  "en-US",
+  "es",
+  "et",
+  "fi",
+  "fr",
+  "hi",
+  "hu",
+  "it",
+  "ja",
+  "nb",
+  "nl",
+  "pl",
+  "pt-BR",
+  "pt-PT",
+  "ro",
+  "ru",
+  "sk",
+  "sl",
+  "sv",
+  "tr",
+  "uk",
+] as const;
+export type RouteLanguage = (typeof VALHALLA_LANGUAGES)[number];
+
+/** Closest Valhalla narrative language to the guest's locale: exact tag match
+ *  first (en-GB stays en-GB), else the first supported variant of the base
+ *  language (a bare "en" or "en-AU" lands on en-US; "pt" on pt-BR). Defaults to
+ *  en-US off SSR or an unsupported locale. */
+export function preferredRouteLanguage(): RouteLanguage {
+  if (typeof navigator === "undefined") return "en-US";
+  const byLower = new Map(VALHALLA_LANGUAGES.map((l) => [l.toLowerCase(), l] as const));
+  const tags = navigator.languages?.length ? navigator.languages : [navigator.language];
+  for (const tag of tags) {
+    if (!tag) continue;
+    const lower = tag.toLowerCase();
+    const exact = byLower.get(lower);
+    if (exact) return exact;
+    const base = lower.split("-")[0];
+    if (base === "en") return "en-US";
+    const variant = VALHALLA_LANGUAGES.find((l) => l.toLowerCase().split("-")[0] === base);
+    if (variant) return variant;
+  }
+  return "en-US";
+}
+
+/**
  * Format a metre distance for display in the chosen units. Short distances read
  * in feet/metres (rounded to a walkable increment); longer ones in miles/km to
  * one decimal — the same shape nav apps use so "120 ft" / "0.3 mi" feel native.

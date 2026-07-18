@@ -363,6 +363,37 @@ export function directionsButtonHtml(lng: number | null, lat: number | null): st
   return `<button type="button" data-directions data-lng="${lng}" data-lat="${lat}" class="relative top-0 inline-flex shrink-0 items-center justify-center gap-1 rounded-full border-3d shadow-3d h-8 px-3.5 text-[12px] font-semibold whitespace-nowrap text-white outline-none select-none bg-blue-600 hover:bg-blue-500 [--btn-3d:var(--color-blue-800)] [--btn-glare:oklch(1_0_0_/_0.28)] transition-[box-shadow,top,background-color] duration-150 ease-out hover:-top-px hover:shadow-3d-hover active:top-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active">Directions</button>`;
 }
 
+/** The card's walk-time slot ("6 min walk"), hidden until an estimate lands —
+ *  see {@link wireCardWalkTime}. Rendered next to the Directions button so the
+ *  cost of the trip is visible before committing to it (§4.1). */
+function walkTimeSlotHtml(): string {
+  return `<span data-walk-time class="hidden whitespace-nowrap text-[12px] font-medium text-muted-foreground"></span>`;
+}
+
+/**
+ * Fill a card's walk-time slot once the route estimate resolves (§4.1). The
+ * fetch is fired as the card opens — the same query the Directions preview runs,
+ * so the tap that follows hits a warm cache. Best-effort: on failure (or a card
+ * closed before the estimate lands) the slot simply stays hidden.
+ */
+export function wireCardWalkTime(
+  card: HTMLElement,
+  estimate: Promise<{ durationSeconds: number } | null>,
+): void {
+  const slot = card.querySelector<HTMLElement>("[data-walk-time]");
+  if (!slot) return;
+  void estimate
+    .then((r) => {
+      if (!r || r.durationSeconds <= 0 || !slot.isConnected) return;
+      const mins = Math.max(1, Math.round(r.durationSeconds / 60));
+      slot.textContent = `${mins} min walk`;
+      slot.classList.remove("hidden");
+    })
+    .catch(() => {
+      /* no estimate — the slot stays hidden */
+    });
+}
+
 /**
  * The paid-line row for the attraction card — Disney Lightning Lane (Multi /
  * Single) or Universal's Express/Virtual Line. Renders the product label, the
@@ -423,7 +454,7 @@ export function attractionCardBodyHtml(
   const moreInfo = `<a href="${escapeHtml(
     rideHref,
   )}" data-spa class="text-[13px] font-medium text-blue-600 hover:underline">More info →</a>`;
-  const actions = `<div class="mt-2.5 flex items-center gap-2">${directions}${moreInfo}</div>`;
+  const actions = `<div class="mt-2.5 flex items-center gap-2">${directions}${walkTimeSlotHtml()}${moreInfo}</div>`;
   // The wait line. When a live wait exists it renders as the very chip the marker
   // carries — the marker's chip physically flies onto this one on expand (see
   // openAttractionCard), growing to reveal the "standby" subtext held inside it.
@@ -923,6 +954,16 @@ export function buildUserLocationEl(): HTMLDivElement {
   return el;
 }
 
+/**
+ * The guest-service POIs that stay on the map (dimmed) during active navigation
+ * — restrooms are the one thing guests genuinely divert for mid-walk (§5). The
+ * feed folds them into the `info` category with ATMs/lockers/first aid, so the
+ * name is the only discriminator.
+ */
+export function isRestroomPoi(poi: { category: string; name: string }): boolean {
+  return poi.category === "info" && /restroom/i.test(poi.name);
+}
+
 /** Two [lng,lat] points are the "same" destination — a tiny epsilon (~0.1 m)
  *  absorbs float round-trips between a trip's destination and a marker's coords,
  *  so the navigating-marker gate matches even if the values took different paths. */
@@ -1074,7 +1115,7 @@ export function poiCardBodyHtml(poi: PoiItem): string {
   const directions = directionsButtonHtml(poi.longitude, poi.latitude);
   const actions =
     directions || link
-      ? `<div class="mt-3 flex items-center gap-2">${directions}${link}</div>`
+      ? `<div class="mt-3 flex items-center gap-2">${directions}${directions ? walkTimeSlotHtml() : ""}${link}</div>`
       : "";
   return `<div class="text-[15px] font-semibold leading-tight text-card-foreground">${escapeHtml(
     poi.name,

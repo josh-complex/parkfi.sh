@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { formatDistance, valhallaUnits } from "./units.ts";
+import { formatDistance, preferredRouteLanguage, valhallaUnits } from "./units.ts";
 
 describe("formatDistance", () => {
   it("shows metres then kilometres for metric", () => {
@@ -30,5 +30,38 @@ describe("valhallaUnits", () => {
   it("maps the unit system to Valhalla's narrative units", () => {
     expect(valhallaUnits("imperial")).toBe("miles");
     expect(valhallaUnits("metric")).toBe("kilometers");
+  });
+});
+
+describe("preferredRouteLanguage", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const withLanguages = (langs: Array<string>) =>
+    vi.stubGlobal("navigator", { languages: langs, language: langs[0] });
+
+  it("keeps an exact supported tag", () => {
+    withLanguages(["en-GB"]);
+    expect(preferredRouteLanguage()).toBe("en-GB");
+    withLanguages(["pt-BR"]);
+    expect(preferredRouteLanguage()).toBe("pt-BR");
+  });
+
+  it("maps other-region tags to a supported variant of the base language", () => {
+    withLanguages(["en-AU"]);
+    expect(preferredRouteLanguage()).toBe("en-US");
+    withLanguages(["fr-CA"]);
+    expect(preferredRouteLanguage()).toBe("fr");
+    withLanguages(["de-AT"]);
+    expect(preferredRouteLanguage()).toBe("de");
+  });
+
+  it("walks the preference list past unsupported languages", () => {
+    withLanguages(["zh-CN", "ja"]);
+    expect(preferredRouteLanguage()).toBe("ja");
+  });
+
+  it("defaults to en-US when nothing matches", () => {
+    withLanguages(["zh-CN"]);
+    expect(preferredRouteLanguage()).toBe("en-US");
   });
 });

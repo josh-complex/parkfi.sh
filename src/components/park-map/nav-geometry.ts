@@ -20,6 +20,30 @@ export function angleDelta(a: number, b: number): number {
   return d;
 }
 
+/** Compass name for a bearing (degrees clockwise from north), 8-way — the
+ *  crow-flies fallback's "head northwest" copy when routing is down (§5). */
+export function compassDirection(bearing: number): string {
+  const names = [
+    "north",
+    "northeast",
+    "east",
+    "southeast",
+    "south",
+    "southwest",
+    "west",
+    "northwest",
+  ];
+  return names[Math.round((((bearing % 360) + 360) % 360) / 45) % 8];
+}
+
+/** Round a [lng, lat] to 6 decimals (~11 cm). Query-key hygiene (§6): raw GPS
+ *  floats never collide, so without this no two `routing.route` requests can
+ *  ever share a cache entry — not even a card's walk-time prefetch and the
+ *  Directions tap that follows it from the same fix. */
+export function roundCoord(c: [number, number]): [number, number] {
+  return [Math.round(c[0] * 1e6) / 1e6, Math.round(c[1] * 1e6) / 1e6];
+}
+
 /** Initial bearing from `a` to `b` in degrees clockwise from north (0–360). */
 export function bearingBetween(a: [number, number], b: [number, number]): number {
   const lat = ((a[1] + b[1]) / 2) * (Math.PI / 180);

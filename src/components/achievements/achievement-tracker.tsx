@@ -54,7 +54,13 @@ export function AchievementTracker() {
   const { data: session } = authClient.useSession();
   const loggedIn = !!session?.user;
   const trpc = useTRPC();
-  const { state, locate } = useGeolocation({ watch: true, rememberActive: true });
+  // Low-power watch: the 30 s ping only needs park-level presence (parks are
+  // hundreds of metres across), which wifi/cell fixes deliver. The default
+  // high-accuracy profile would hold the GPS radio on for the whole session —
+  // and this watch auto-resumes every session, all day. When something needs
+  // GPS-grade fixes (a nav trip, play mode), the map stage's own watch
+  // escalates and the OS serves the most demanding active request.
+  const { state, locate } = useGeolocation({ watch: true, rememberActive: true, profile: "low" });
   const sim = useGeoSim();
   // Faster cadence while the location sim is armed (Layer A) so dwell state
   // transitions show up in seconds, not 30-s multiples. No-op in normal use.

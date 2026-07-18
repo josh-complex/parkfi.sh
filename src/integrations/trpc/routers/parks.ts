@@ -709,6 +709,48 @@ export const parksRouter = {
    * unique only within a park, so both keys are required. Returns null when the
    * (park, ride) pair is unknown.
    */
+  /**
+   * One attraction by numeric id, deliberately light: name + coords for the nav
+   * deep link (`/map?nav=<id>`), plus the current standby/status for the live
+   * "wait at your destination" chip while navigating (§3.5). No schedule gating
+   * — the chip only renders for OPERATING, so an overnight carry-forward wait
+   * never shows.
+   */
+  attractionById: publicProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const result = await db.execute<{
+        id: string;
+        name: string;
+        latitude: number | null;
+        longitude: number | null;
+        status: number | null;
+        standby_wait: number | null;
+      }>(sql`
+        SELECT a.id, a.name, a.latitude, a.longitude,
+               (SELECT s.status FROM attraction_status_obs s
+                 WHERE s.attraction_id = a.id
+                 ORDER BY s.observed_at DESC LIMIT 1) AS status,
+               (SELECT q.wait_min FROM queue_obs q
+                 WHERE q.attraction_id = a.id AND q.queue_type = 1
+                   AND q.observed_at >= now() - INTERVAL '24 hours'
+                 ORDER BY q.observed_at DESC LIMIT 1) AS standby_wait
+        FROM attractions a
+        WHERE a.id = ${input.id} AND a.active = true
+        LIMIT 1
+      `);
+      const r = result.rows[0];
+      if (!r) return null;
+      return {
+        id: Number(r.id),
+        name: r.name,
+        latitude: r.latitude,
+        longitude: r.longitude,
+        status: code(STATUS_CODE, r.status),
+        standbyWait: r.standby_wait,
+      };
+    }),
+
   attraction: publicProcedure
     .input(z.object({ parkSlug: z.string(), rideSlug: z.string() }))
     .query(async ({ input }) => {

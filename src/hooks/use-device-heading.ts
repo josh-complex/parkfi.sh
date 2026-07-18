@@ -25,15 +25,22 @@ type PermissionCapable = { requestPermission?: () => Promise<PermissionState> };
  * Only listens while `enabled` (it's a battery cost, so gate it on location
  * being active). iOS 13+ needs a one-time permission grant from a user gesture —
  * call `requestPermission()` from a tap (we hang it off the locate button). The
- * reading is circularly smoothed and rAF-throttled so the arrow glides instead
- * of jittering and React doesn't re-render at the raw sensor rate. Returns null
- * until a heading is available (no support, permission not granted, or off).
+ * reading is circularly smoothed, rAF-throttled, and ≥1°-thresholded, then
+ * handed to `onHeading` — deliberately a callback, not React state, so sensor
+ * ticks never re-render the consumer tree (the map stage pipes it into the
+ * fused-heading store, whose consumers are all imperative). `onHeading(null)`
+ * fires when the listener turns off (no support, permission revoked, disabled).
  */
-export function useDeviceHeading(enabled: boolean): {
-  heading: number | null;
+export function useDeviceHeading(
+  enabled: boolean,
+  onHeading: (heading: number | null) => void,
+): {
   requestPermission: () => void;
 } {
-  const [heading, setHeading] = React.useState<number | null>(null);
+  // Read via a ref so a consumer passing an inline closure doesn't re-arm the
+  // listeners every render.
+  const onHeadingRef = React.useRef(onHeading);
+  onHeadingRef.current = onHeading;
 
   const requestPermission = React.useCallback(() => {
     if (typeof window === "undefined") return;
@@ -51,8 +58,8 @@ export function useDeviceHeading(enabled: boolean): {
   React.useEffect(() => {
     if (!enabled || typeof window === "undefined") return;
 
-    // Smoothed heading carried across events; rAF batches the React update and a
-    // 1° threshold keeps re-renders down while still tracking a turn.
+    // Smoothed heading carried across events; rAF batches the emit and a 1°
+    // threshold keeps downstream work down while still tracking a turn.
     let smoothed: number | null = null;
     let pending: number | null = null;
     let emitted: number | null = null;
@@ -62,7 +69,7 @@ export function useDeviceHeading(enabled: boolean): {
       if (pending == null) return;
       if (emitted == null || Math.abs(angleDelta(emitted, pending)) >= 1) {
         emitted = pending;
-        setHeading(pending);
+        onHeadingRef.current(pending);
       }
     };
 
@@ -108,9 +115,9 @@ export function useDeviceHeading(enabled: boolean): {
       window.removeEventListener("deviceorientationabsolute", onOrient, true);
       window.removeEventListener("deviceorientation", onOrient, true);
       if (raf) cancelAnimationFrame(raf);
-      setHeading(null);
+      onHeadingRef.current(null);
     };
   }, [enabled]);
 
-  return { heading, requestPermission };
+  return { requestPermission };
 }

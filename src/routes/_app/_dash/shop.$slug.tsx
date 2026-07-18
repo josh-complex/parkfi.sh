@@ -2,6 +2,7 @@ import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { isServer, useQuery } from "@tanstack/react-query";
 import { ArrowLeftIcon, ExternalLinkIcon, MapPinIcon, ShoppingBagIcon } from "lucide-react";
 
+import { WalkThereButton } from "#/components/park-map/walk-there-button.tsx";
 import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
 import { Image } from "#/components/ui/image.tsx";
 import { disneyResizeUrl } from "#/lib/image.ts";
@@ -131,17 +132,27 @@ function ShopPage() {
             </div>
           )}
 
-          {shop?.detailUrl && (
-            <a
-              href={shop.detailUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-3d-outline border-3d shadow-3d inline-flex items-center gap-2 rounded-full bg-background px-4 py-2.5 text-sm font-medium transition active:scale-95 dark:border-[color-mix(in_oklch,var(--border),white_25%)]"
-            >
-              <ExternalLinkIcon className="size-4" />
-              View on the official site
-            </a>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Walking-nav entry point (§4.2) — routes to this shop on the map. */}
+            {shop && (
+              <WalkThereButton
+                name={shop.name}
+                latitude={shop.latitude}
+                longitude={shop.longitude}
+              />
+            )}
+            {shop?.detailUrl && (
+              <a
+                href={shop.detailUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-3d-outline border-3d shadow-3d inline-flex items-center gap-2 rounded-full bg-background px-4 py-2.5 text-sm font-medium transition active:scale-95 dark:border-[color-mix(in_oklch,var(--border),white_25%)]"
+              >
+                <ExternalLinkIcon className="size-4" />
+                View on the official site
+              </a>
+            )}
+          </div>
         </div>
       </article>
     </div>

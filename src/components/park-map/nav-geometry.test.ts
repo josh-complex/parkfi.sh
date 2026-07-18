@@ -6,10 +6,12 @@ import {
   angleDelta,
   bearingBetween,
   buildRouteModel,
+  compassDirection,
   computeProgress,
   extendSnappedTrail,
   isStartManeuver,
   projectOntoRoute,
+  roundCoord,
   SNAP_OFF_ROUTE_M,
 } from "./nav-geometry.ts";
 
@@ -197,5 +199,32 @@ describe("computeProgress", () => {
   it("reports a genuine off-route fix beyond the snap threshold", () => {
     const p = computeProgress(model, at(100, 60))!; // 60m off the path
     expect(p.offRouteM).toBeGreaterThan(SNAP_OFF_ROUTE_M);
+  });
+});
+
+describe("roundCoord", () => {
+  it("rounds to 6 decimals (~11 cm) so equivalent fixes share a query key", () => {
+    expect(roundCoord([-81.123456789, 28.7654321004])).toEqual([-81.123457, 28.765432]);
+  });
+
+  it("leaves already-round coords untouched", () => {
+    expect(roundCoord([-81.51, 28.43])).toEqual([-81.51, 28.43]);
+  });
+});
+
+describe("compassDirection", () => {
+  it("names the eight compass points", () => {
+    expect(compassDirection(0)).toBe("north");
+    expect(compassDirection(45)).toBe("northeast");
+    expect(compassDirection(90)).toBe("east");
+    expect(compassDirection(180)).toBe("south");
+    expect(compassDirection(270)).toBe("west");
+  });
+
+  it("wraps across the 0/360 seam and normalizes negatives", () => {
+    expect(compassDirection(350)).toBe("north");
+    expect(compassDirection(337.5)).toBe("north"); // rounds up across the seam
+    expect(compassDirection(-45)).toBe("northwest");
+    expect(compassDirection(405)).toBe("northeast");
   });
 });

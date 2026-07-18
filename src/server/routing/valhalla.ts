@@ -68,6 +68,10 @@ interface ValhallaResponse {
  *  reports maneuver/summary `length` in — we convert back to metres below). */
 export type RouteUnits = "miles" | "kilometers";
 
+/** Narrative language tag (see VALHALLA_LANGUAGES in lib/units.ts — the router
+ *  validates against that list, so this is just the wire type). */
+export type RouteLanguageTag = string;
+
 // Metres per reported length unit, so the km-vs-miles `length` values Valhalla
 // returns land back in metres regardless of which units we asked for.
 const M_PER_UNIT: Record<RouteUnits, number> = { kilometers: 1000, miles: 1609.344 };
@@ -83,6 +87,7 @@ export async function fetchRoute(
   from: [number, number],
   to: [number, number],
   units: RouteUnits = "kilometers",
+  language: RouteLanguageTag = "en-US",
   signal?: AbortSignal,
 ): Promise<RouteResult> {
   const body = {
@@ -91,7 +96,7 @@ export async function fetchRoute(
       { lat: to[1], lon: to[0] },
     ],
     costing: "pedestrian",
-    directions_options: { units },
+    directions_options: { units, language },
   };
   const perUnit = M_PER_UNIT[units];
   const res = await fetch(`${VALHALLA_URL}/route`, {

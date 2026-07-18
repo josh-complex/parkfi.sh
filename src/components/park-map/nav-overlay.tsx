@@ -4,7 +4,6 @@ import * as React from "react";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
-  ArrowUpDownIcon,
   ArrowUpIcon,
   ArrowUpLeftIcon,
   ArrowUpRightIcon,
@@ -21,6 +20,8 @@ import {
   NavigationIcon,
   RotateCwIcon,
   RouteIcon,
+  Volume2Icon,
+  VolumeXIcon,
   XIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -37,10 +38,16 @@ import {
 } from "#/components/ui/alert-dialog.tsx";
 import { useStore } from "@tanstack/react-store";
 
+import { useIsNative } from "#/hooks/use-is-native.ts";
 import { cn } from "#/lib/utils.ts";
 import { formatDistance, type UnitSystem } from "#/lib/units.ts";
-import type { NavProgress } from "#/components/park-map/nav-geometry.ts";
-import { navStore, type NavSummary } from "#/components/park-map/nav-store.ts";
+import {
+  bearingBetween,
+  compassDirection,
+  type NavProgress,
+} from "#/components/park-map/nav-geometry.ts";
+import { navStore, toggleVoiceMuted, type NavSummary } from "#/components/park-map/nav-store.ts";
+import { distanceMeters } from "#/server/living/geofence.ts";
 import type { RouteManeuver } from "#/server/routing/valhalla.ts";
 
 // Nav-green 3D chrome — the same emboss system as the app's popovers/buttons
@@ -164,6 +171,33 @@ function HeadingCompassButton({
 }
 
 /**
+ * Voice-cue mute toggle (§3.2) — spoken turn instructions on/off; the haptic
+ * pulse stays either way. Reads/writes the persisted flag straight from the nav
+ * store, so the overlay tree doesn't need the state threaded through it.
+ */
+function VoiceMuteButton() {
+  const muted = useStore(navStore, (s) => s.voiceMuted);
+  return (
+    <button
+      type="button"
+      onClick={toggleVoiceMuted}
+      aria-label={muted ? "Unmute spoken directions" : "Mute spoken directions"}
+      aria-pressed={muted}
+      className={cn(
+        "pointer-events-auto inline-flex size-11 items-center justify-center rounded-full bg-green-700 text-white ring-1 ring-white/15 transition",
+        CIRCLE_3D,
+      )}
+    >
+      {muted ? (
+        <VolumeXIcon className="size-6" aria-hidden />
+      ) : (
+        <Volume2Icon className="size-6" aria-hidden />
+      )}
+    </button>
+  );
+}
+
+/**
  * Google-style walking-nav UI, overlaid on the map while a trip is active (it
  * travels in the portal with the map, and the filter chrome hides beneath it).
  * Two parts, deliberately solid highway-sign green to read as "actively
@@ -175,16 +209,20 @@ function HeadingCompassButton({
  */
 export function NavOverlay({
   destName,
-  geoBlocked,
+  geoStatus,
+  onRetryLocation,
   locating,
   loading,
   error,
-  distanceMeters,
+  distanceMeters: routeDistanceMeters,
   durationSeconds,
   maneuvers,
   progress,
   rerouting,
   unitSystem,
+  destWait,
+  userCoords,
+  destCoords,
   started,
   arrived,
   summary,
@@ -195,11 +233,14 @@ export function NavOverlay({
   onRetry,
   onToggleHeadingUp,
   onOverview,
-  onSwap,
   onClear,
 }: {
   destName: string;
-  geoBlocked: boolean;
+  /** Why location is blocked: `denied` (user said no — settings can fix it) vs
+   *  `unavailable` (no hardware / insecure context). Null when location works. */
+  geoStatus: "denied" | "unavailable" | null;
+  /** Re-attempt the location grant (the "Try again" action when denied). */
+  onRetryLocation: () => void;
   /** Waiting on a location fix — trip not resolved yet, so no route to show. */
   locating: boolean;
   loading: boolean;
@@ -222,6 +263,12 @@ export function NavOverlay({
   rerouting: boolean;
   /** Distance units (feet/miles vs metres/km) inferred from the guest's locale. */
   unitSystem: UnitSystem;
+  /** Live standby wait (minutes) at an attraction destination, or null (§3.5). */
+  destWait: number | null;
+  /** Latest fix + destination pin, for the crow-flies fallback when routing is
+   *  down — a straight-line bearing beats a dead error in a park (§5). */
+  userCoords: [number, number] | null;
+  destCoords: [number, number] | null;
   /** Preview (route framed) vs navigating (follow-cam). */
   started: boolean;
   /** Whether the map can rotate (GL) — gates the compass. */
@@ -234,11 +281,12 @@ export function NavOverlay({
   onToggleHeadingUp: () => void;
   /** Frame the whole remaining route (overview peek); recenter returns to follow. */
   onOverview: () => void;
-  onSwap: () => void;
   onClear: () => void;
 }) {
   const [expanded, setExpanded] = React.useState(false);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
+  const native = useIsNative();
+  const geoBlocked = geoStatus != null;
   // Steps only make sense on a resolved route; keep the ones with real copy
   // (Valhalla sometimes emits an empty final maneuver).
   const steps = (maneuvers ?? []).filter((m) => m.instruction.trim().length > 0);
@@ -248,7 +296,7 @@ export function NavOverlay({
     !locating &&
     !loading &&
     !error &&
-    distanceMeters != null &&
+    routeDistanceMeters != null &&
     durationSeconds != null;
   const canExpand = routed && steps.length > 0;
   // Collapse whenever the route goes away (new fetch, cleared, errored) so a
@@ -275,35 +323,69 @@ export function NavOverlay({
         ? liveManeuver
         : null
       : first;
+  // Crow-flies fallback (§5): with routing down but a fix + a destination in
+  // hand, a straight-line bearing is genuinely walkable inside a park — far
+  // better than a dead "no route found".
+  const crowFlies =
+    error && userCoords && destCoords
+      ? {
+          direction: compassDirection(bearingBetween(userCoords, destCoords)),
+          distM: distanceMeters(userCoords, destCoords),
+        }
+      : null;
   const HeadIcon = geoBlocked
     ? LocateFixedIcon
     : locating || loading || rerouting
       ? LoaderCircleIcon
-      : routed && headManeuver
-        ? maneuverIcon(headManeuver.type)
-        : ArrowUpIcon;
+      : crowFlies
+        ? CompassIcon
+        : routed && headManeuver
+          ? maneuverIcon(headManeuver.type)
+          : ArrowUpIcon;
   let headline: React.ReactNode;
-  if (geoBlocked) headline = "Enable location to navigate";
+  // Denied is a user choice a settings toggle can undo; unavailable is the
+  // device/context — different dead ends, different copy (§4.3).
+  if (geoStatus === "denied") headline = "Location permission needed";
+  else if (geoStatus === "unavailable") headline = "Location isn’t available here";
   else if (locating) headline = "Getting your location…";
   else if (loading) headline = "Finding route…";
+  else if (crowFlies) headline = `Head ${crowFlies.direction} about ${fmtDist(crowFlies.distM)}`;
   else if (error || !routed) headline = `No walking route found to ${destName}`;
   else if (rerouting) headline = "Rerouting…";
   else headline = headManeuver ? headManeuver.instruction : `Heading to ${destName}`;
   // Sub-line: the live ticking distance to the next turn while navigating, else
-  // the maneuver's own (static) length in preview.
+  // the maneuver's own (static) length in preview. Blocked/fallback states carry
+  // their own explanatory sub-copy instead.
   const liveDistToTurn = started && progress ? progress.distToNextM : null;
   const headSub =
-    rerouting || !routed
-      ? null
-      : liveDistToTurn != null
-        ? fmtDist(liveDistToTurn)
-        : headManeuver && headManeuver.distanceMeters > 0
-          ? fmtDist(headManeuver.distanceMeters)
-          : null;
+    geoStatus === "denied"
+      ? native
+        ? "Turn on location for ParkFi in your device settings, then try again."
+        : "Allow location for this site in your browser settings, then try again."
+      : geoStatus === "unavailable"
+        ? "This device or browser can’t share a location."
+        : crowFlies
+          ? `No walking route — straight line to ${destName}`
+          : rerouting || !routed
+            ? null
+            : liveDistToTurn != null
+              ? fmtDist(liveDistToTurn)
+              : headManeuver && headManeuver.distanceMeters > 0
+                ? fmtDist(headManeuver.distanceMeters)
+                : null;
   // Bottom-bar figures: the live remaining distance/ETA while navigating (ticking
   // between reroutes), the whole-route totals in preview.
-  const barDistanceMeters = started && progress ? progress.remainingM : distanceMeters;
+  const barDistanceMeters = started && progress ? progress.remainingM : routeDistanceMeters;
   const barDurationSeconds = started && progress ? progress.etaSeconds : durationSeconds;
+  // In preview nothing re-renders on its own, so the wall-clock arrival estimate
+  // would silently go stale while the user reads the route — tick it along.
+  // While navigating every GPS fix re-renders anyway.
+  const [, tickClock] = React.useReducer((n: number) => n + 1, 0);
+  React.useEffect(() => {
+    if (!routed || started) return;
+    const id = window.setInterval(tickClock, 30_000);
+    return () => window.clearInterval(id);
+  }, [routed, started]);
   // Estimated wall-clock arrival, and how far along the route we are (0–1) for
   // the progress bar — both only meaningful once actually navigating. The
   // fraction is walked / (walked + remaining), both live model-space metres, so
@@ -486,6 +568,7 @@ export function NavOverlay({
           >
             <RouteIcon className="size-6" aria-hidden />
           </button>
+          <VoiceMuteButton />
           {showCompass && (
             <HeadingCompassButton headingUp={headingUp} onToggle={onToggleHeadingUp} />
           )}
@@ -502,7 +585,7 @@ export function NavOverlay({
       >
         <div className="min-w-0 flex-1">
           {routed && barDurationSeconds != null && barDistanceMeters != null ? (
-            <div className="leading-tight">
+            <div className="truncate leading-tight">
               <span className="font-semibold">{formatWalk(barDurationSeconds)}</span>
               <span className="text-white/70"> · {fmtDist(barDistanceMeters)}</span>
             </div>
@@ -511,8 +594,15 @@ export function NavOverlay({
               {geoBlocked ? "Location off" : error ? "Route unavailable" : "Routing…"}
             </div>
           )}
+          {/* Destination line, with the live wait when heading to an attraction
+              (§3.5) — a mid-walk spike is a "keep going or bail" decision. */}
           <div className="truncate text-xs text-white/70">
-            {arrivalClock ? `Arrive ${arrivalClock} · to ${destName}` : `to ${destName}`}
+            {[arrivalClock ? `Arrive ${arrivalClock}` : null, `to ${destName}`]
+              .filter(Boolean)
+              .join(" · ")}
+            {destWait != null && (
+              <span className="font-semibold text-white/90"> · {destWait} min wait</span>
+            )}
           </div>
         </div>
         {/* Progress bar hugging the bar's bottom edge — fraction of the route
@@ -540,6 +630,21 @@ export function NavOverlay({
             Start
           </button>
         )}
+        {/* Try again — after a denial, the user may have just re-enabled the
+            permission in settings; give them a way back that isn't a reload. */}
+        {geoStatus === "denied" && (
+          <button
+            type="button"
+            onClick={onRetryLocation}
+            className={cn(
+              "inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-semibold text-green-700 transition hover:bg-white/90",
+              PILL_3D,
+            )}
+          >
+            <LocateFixedIcon className="size-4" />
+            Try again
+          </button>
+        )}
         {/* Retry — the recovery action after a full routing failure (React
             Query's retries already exhausted, no route to fall back on). */}
         {error && (
@@ -553,22 +658,6 @@ export function NavOverlay({
           >
             <RotateCwIcon className="size-4" />
             Retry
-          </button>
-        )}
-        {/* Swap only in preview — once navigating, the origin tracks your live
-            position (and re-keys on a reroute), so a reversed origin wouldn't
-            stick. */}
-        {!locating && !geoBlocked && !started && (
-          <button
-            type="button"
-            onClick={onSwap}
-            aria-label="Reverse route"
-            className={cn(
-              "inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-white/15 transition hover:bg-white/25",
-              CIRCLE_3D,
-            )}
-          >
-            <ArrowUpDownIcon className="size-4" />
           </button>
         )}
         {/* In preview (route not yet started) the X just cancels — nothing is
