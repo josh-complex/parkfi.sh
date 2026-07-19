@@ -55,6 +55,23 @@ export interface RideRecorderPlugin {
   /** Stop a manual recording and return its trace (null if too short). */
   stopRecording(): Promise<RideTrace | null>;
 
+  /**
+   * Cumulative steps since the current monitoring session was armed (F-steps),
+   * plus the session's start time (epoch ms) as its identity — the server keys
+   * its dedupe cursor on it. Both `null` when the device lacks a step counter,
+   * the permission was denied, or monitoring was never armed. Counting runs on
+   * the hardware step coprocessor, so backgrounded/locked stretches are
+   * included.
+   */
+  getStepSample(): Promise<{ steps: number | null; sessionStartMs: number | null }>;
+
+  /**
+   * Historical step total over an absolute window (reconciliation). iOS only —
+   * served from CMPedometer's ~7-day buffer, so it survives app kills. Android
+   * and web resolve `steps: null` (no system step store without Health Connect).
+   */
+  queryStepSpan(opts: { fromMs: number; toMs: number }): Promise<{ steps: number | null }>;
+
   addListener(event: "rideStarted", cb: () => void): Promise<PluginListenerHandle>;
   addListener(event: "rideDetected", cb: (trace: RideTrace) => void): Promise<PluginListenerHandle>;
   removeAllListeners(): Promise<void>;

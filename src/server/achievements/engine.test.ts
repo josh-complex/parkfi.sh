@@ -2,10 +2,14 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   aggregateDayRows,
+  clampStepsDelta,
+  creditedDistance,
   geofenceBounds,
   parkForPoint,
   presenceDelta,
   settleDay,
+  stepDeltaFromCursor,
+  stepsWindowSpansRollover,
   type CachedPark,
   type DayStatRow,
 } from "./engine.ts";
@@ -19,6 +23,7 @@ function dayRow(overrides: Partial<DayStatRow>): DayStatRow {
     parkId: 1,
     day: "2026-07-06", // a Monday
     distanceM: 0,
+    steps: 0,
     presentSeconds: 0,
     queueSeconds: 0,
     rides: 0,
@@ -53,6 +58,141 @@ describe("presenceDelta", () => {
   it("contributes nothing for a zero or negative delta (clock skew / dup ping)", () => {
     expect(presenceDelta(true, 0, MAX_GAP_S)).toBe(0);
     expect(presenceDelta(true, -5, MAX_GAP_S)).toBe(0);
+  });
+});
+
+describe("stepDeltaFromCursor", () => {
+  const empty = { sessionMs: null, cum: null };
+
+  it("no report → no delta, cursor untouched", () => {
+    const stored = { sessionMs: 100, cum: 500 };
+    expect(stepDeltaFromCursor(stored, null)).toEqual({ delta: 0, cursor: stored });
+  });
+
+  it("first report of a session credits the full cumulative", () => {
+    expect(stepDeltaFromCursor(empty, { sessionMs: 100, cum: 40 })).toEqual({
+      delta: 40,
+      cursor: { sessionMs: 100, cum: 40 },
+    });
+  });
+
+  it("same session credits only the growth", () => {
+    expect(stepDeltaFromCursor({ sessionMs: 100, cum: 500 }, { sessionMs: 100, cum: 560 })).toEqual(
+      { delta: 60, cursor: { sessionMs: 100, cum: 560 } },
+    );
+  });
+
+  it("is idempotent: a retried (unchanged) report diffs to zero", () => {
+    const first = stepDeltaFromCursor(empty, { sessionMs: 100, cum: 500 });
+    const retry = stepDeltaFromCursor(first.cursor, { sessionMs: 100, cum: 500 });
+    expect(retry.delta).toBe(0);
+    expect(retry.cursor).toEqual(first.cursor);
+  });
+
+  it("a new session (re-arm) restarts from zero and credits its cumulative", () => {
+    expect(
+      stepDeltaFromCursor({ sessionMs: 100, cum: 9_000 }, { sessionMs: 200, cum: 30 }),
+    ).toEqual({ delta: 30, cursor: { sessionMs: 200, cum: 30 } });
+  });
+
+  it("an older session (second device flapping) is stale: no credit, cursor kept", () => {
+    const stored = { sessionMs: 200, cum: 50 };
+    expect(stepDeltaFromCursor(stored, { sessionMs: 100, cum: 9_999 })).toEqual({
+      delta: 0,
+      cursor: stored,
+    });
+  });
+
+  it("a shrinking cumulative within a session resyncs downward without credit", () => {
+    expect(stepDeltaFromCursor({ sessionMs: 100, cum: 500 }, { sessionMs: 100, cum: 400 })).toEqual(
+      { delta: 0, cursor: { sessionMs: 100, cum: 400 } },
+    );
+  });
+});
+
+describe("stepsWindowSpansRollover", () => {
+  const TZ = "America/New_York"; // EDT (UTC-4) in July
+
+  it("no prior ping → no rollover (first-ever ping credits normally)", () => {
+    expect(stepsWindowSpansRollover(null, "2026-07-19", TZ)).toBe(false);
+    expect(stepsWindowSpansRollover(undefined, "2026-07-19", TZ)).toBe(false);
+  });
+
+  it("same park-local day → no rollover (pocketed same-day stretch credits)", () => {
+    // 09:00 EDT on the 19th = 13:00Z.
+    expect(stepsWindowSpansRollover(new Date("2026-07-19T13:00:00Z"), "2026-07-19", TZ)).toBe(
+      false,
+    );
+  });
+
+  it("overnight stale-armed session → rollover (resort steps absorbed)", () => {
+    // Last ping 22:00 EDT on the 18th (= 02:00Z on the 19th — UTC day already
+    // flipped, local day hadn't): a next-morning in-park ping must not credit
+    // the overnight backlog.
+    expect(stepsWindowSpansRollover(new Date("2026-07-19T02:00:00Z"), "2026-07-19", TZ)).toBe(true);
+  });
+
+  it("cross-midnight in-park visit → rollover (the in-flight delta is absorbed)", () => {
+    // 23:58 EDT on the 18th, next ping lands on the 19th.
+    expect(stepsWindowSpansRollover(new Date("2026-07-19T03:58:00Z"), "2026-07-19", TZ)).toBe(true);
+  });
+});
+
+describe("clampStepsDelta", () => {
+  it("passes a plausible delta through, rounded", () => {
+    expect(clampStepsDelta(45.6, 30)).toBe(46);
+  });
+
+  it("treats missing pedometer data as zero", () => {
+    expect(clampStepsDelta(null, 30)).toBe(0);
+    expect(clampStepsDelta(undefined, 30)).toBe(0);
+  });
+
+  it("rejects zero/negative/non-finite deltas", () => {
+    expect(clampStepsDelta(0, 30)).toBe(0);
+    expect(clampStepsDelta(-10, 30)).toBe(0);
+    expect(clampStepsDelta(Number.NaN, 30)).toBe(0);
+  });
+
+  it("rate-caps a spoofed delta against elapsed time", () => {
+    // 10k steps claimed over 30 s → capped at 30 × 4.5.
+    expect(clampStepsDelta(10_000, 30)).toBe(135);
+  });
+
+  it("is NOT gap-bounded: a long backgrounded stretch keeps its steps", () => {
+    // 2 h backgrounded, 8 000 real steps — well under 7200 × 4.5, all credited.
+    expect(clampStepsDelta(8_000, 7_200)).toBe(8_000);
+  });
+
+  it("allows one interval's worth on the very first ping (elapsed null)", () => {
+    expect(clampStepsDelta(100, null)).toBe(100);
+    expect(clampStepsDelta(10_000, null)).toBe(270); // 60 s × 4.5
+  });
+});
+
+describe("creditedDistance", () => {
+  it("passes GPS distance through when there is no pedometer reading", () => {
+    expect(creditedDistance(70, null)).toBe(70);
+  });
+
+  it("zeroes vehicle/jitter meters when the pedometer saw no steps", () => {
+    // Parking tram: GPS says 70 m in an interval, feet say 0 steps.
+    expect(creditedDistance(70, 0)).toBe(0);
+  });
+
+  it("clips queue-drift phantom meters to the shuffled steps", () => {
+    // Standing in a switchback: 15 m of GPS drift, 5 shuffle steps → ≤ 6.5 m.
+    expect(creditedDistance(15, 5)).toBeCloseTo(6.5);
+  });
+
+  it("never credits more than GPS moved (pedometer corrects downward only)", () => {
+    // Pacing in place: 60 steps but only 20 m of net GPS movement.
+    expect(creditedDistance(20, 60)).toBe(20);
+  });
+
+  it("leaves an ordinary walking interval untouched", () => {
+    // 60 steps × 1.3 m ceiling = 78 m ≥ the 65 m GPS says — GPS wins.
+    expect(creditedDistance(65, 60)).toBe(65);
   });
 });
 
@@ -99,6 +239,7 @@ describe("aggregateDayRows", () => {
       dayRow({
         day: "2026-07-04",
         distanceM: 8_000,
+        steps: 11_000,
         queueSeconds: 600,
         presentSeconds: 3_600,
         rides: 2,
@@ -106,16 +247,19 @@ describe("aggregateDayRows", () => {
       dayRow({
         day: "2026-07-05",
         distanceM: 12_000,
+        steps: 17_500,
         queueSeconds: 900,
         presentSeconds: 5_400,
         rides: 3,
       }),
     ]);
     expect(s.distance_m).toBe(20_000);
+    expect(s.steps).toBe(28_500);
     expect(s.queue_seconds).toBe(1_500);
     expect(s.park_seconds).toBe(9_000);
     expect(s.rides).toBe(5);
     expect(s.best_day_distance_m).toBe(12_000);
+    expect(s.best_day_steps).toBe(17_500);
     expect(s.best_day_queue_seconds).toBe(900);
     expect(s.park_days).toBe(2);
   });

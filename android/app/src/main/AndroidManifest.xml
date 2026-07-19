@@ -53,4 +53,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Step counter (TYPE_STEP_COUNTER) for in-park step achievements, API 29+.
+         Also declared in the ride-recorder plugin manifest; mirrored here for
+         review clarity. Requires the Play Console physical-activity/health
+         declaration — see docs/plans/capacitor-native/FOLLOWUP.md. -->
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
 </manifest>

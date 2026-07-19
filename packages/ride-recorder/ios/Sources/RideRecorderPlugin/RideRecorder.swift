@@ -16,6 +16,7 @@ final class RideRecorder {
 
     private let motion = CMMotionManager()
     private let altimeter = CMAltimeter()
+    private let pedometer = CMPedometer()
     private let queue = OperationQueue()
     // Background keep-alive so capture survives screen-lock (W9-B). Owned by the
     // monitoring lifecycle — started on arm, stopped on disarm.
@@ -38,6 +39,20 @@ final class RideRecorder {
     private var relAltitude: Double? = nil
     private var baroAvailable = false
     private var gyroAvailable = false
+
+    // Session step counter (F-steps): cumulative steps since the current
+    // monitoring session was armed, nil when step counting is unavailable or
+    // never armed. `sessionStartMs` identifies the session — the server keys its
+    // dedupe cursor on it, so it must change exactly when the counter resets.
+    // Written on the pedometer's callback thread, read from the Capacitor call
+    // thread — guarded by stepsLock. Frozen (not cleared) on disarm so the JS
+    // layer's last read before/after park exit still resolves.
+    private let stepsLock = NSLock()
+    private var sessionStepsValue: Int? = nil
+    private var sessionStartMsValue: Double? = nil
+    // Dedicated instance for historical queries (reconciliation) — kept separate
+    // from the live-updates instance to avoid interleaving update/query state.
+    private let pedometerHistory = CMPedometer()
 
     // MARK: - Permissions
 
@@ -68,6 +83,11 @@ final class RideRecorder {
         // relAltitude continuity across rides in one arming session is fine: all
         // metrics use relative deltas/drawdowns within a single capture.
         startAltimeter()
+        // Steps ride the same arm/disarm lifecycle, which is what scopes them to
+        // in-park time: the JS tracker arms only inside a geofence. CMPedometer
+        // counts on the motion coprocessor, so backgrounded stretches (locked
+        // phone in a pocket) are included when the next update lands.
+        startPedometer()
     }
 
     func stopMonitoring() {
@@ -77,11 +97,38 @@ final class RideRecorder {
         keepAlive.stop()
         motion.stopDeviceMotionUpdates()
         altimeter.stopRelativeAltitudeUpdates()
+        pedometer.stopUpdates()
         ring.removeAll()
         capture.removeAll()
         varWindow.removeAll()
         highVarSince = nil
         lowVarSince = nil
+    }
+
+    /// Cumulative steps since the current monitoring session armed, with the
+    /// session's start time as its identity; nil when step counting is
+    /// unavailable (no coprocessor, permission denied) or never armed. The
+    /// server diffs successive cumulative reports against a per-session cursor.
+    func stepSample() -> (steps: Int, sessionStartMs: Double)? {
+        stepsLock.lock()
+        defer { stepsLock.unlock() }
+        guard let steps = sessionStepsValue, let start = sessionStartMsValue else { return nil }
+        return (steps, start)
+    }
+
+    /// Historical step count over an absolute window (reconciliation). Served
+    /// from the OS's ~7-day pedometer buffer, so it survives app kills and
+    /// repairs anything the live session lost. Nil when unavailable.
+    func queryStepSpan(fromMs: Double, toMs: Double, completion: @escaping (Int?) -> Void) {
+        guard CMPedometer.isStepCountingAvailable(), toMs > fromMs else {
+            completion(nil)
+            return
+        }
+        let from = Date(timeIntervalSince1970: fromMs / 1000)
+        let to = Date(timeIntervalSince1970: toMs / 1000)
+        pedometerHistory.queryPedometerData(from: from, to: to) { data, _ in
+            completion(data?.numberOfSteps.intValue)
+        }
     }
 
     func startRecording() {
@@ -117,6 +164,46 @@ final class RideRecorder {
         altimeter.startRelativeAltitudeUpdates(to: queue) { [weak self] data, _ in
             guard let self = self, let data = data else { return }
             self.relAltitude = data.relativeAltitude.doubleValue
+        }
+    }
+
+    private func startPedometer() {
+        // isStepCountingAvailable() is true even when Motion & Fitness was
+        // denied — gate on authorization too. Without this a denied device
+        // freezes the sample at (0, start), every ping ships cum 0, and the
+        // server's distance cap (creditedDistance) reads "moved but took zero
+        // steps" — zeroing distance_m for that user forever. Denied ⇒ nil
+        // sample ⇒ the server treats the device as pedometer-less and GPS
+        // distance passes through unclamped.
+        let auth = CMPedometer.authorizationStatus()
+        guard CMPedometer.isStepCountingAvailable(), auth != .denied, auth != .restricted else {
+            stepsLock.lock()
+            sessionStepsValue = nil
+            sessionStartMsValue = nil
+            stepsLock.unlock()
+            return
+        }
+        stepsLock.lock()
+        sessionStepsValue = 0
+        sessionStartMsValue = Date().timeIntervalSince1970 * 1000
+        stepsLock.unlock()
+        pedometer.startUpdates(from: Date()) { [weak self] data, error in
+            guard let self = self else { return }
+            guard let data = data else {
+                // .notDetermined resolves at this first use — a denial at the
+                // prompt lands here as an error. Nil the whole sample: a dead
+                // pedometer must read as "absent", never as "0 steps".
+                if error != nil {
+                    self.stepsLock.lock()
+                    self.sessionStepsValue = nil
+                    self.sessionStartMsValue = nil
+                    self.stepsLock.unlock()
+                }
+                return
+            }
+            self.stepsLock.lock()
+            self.sessionStepsValue = data.numberOfSteps.intValue
+            self.stepsLock.unlock()
         }
     }
 

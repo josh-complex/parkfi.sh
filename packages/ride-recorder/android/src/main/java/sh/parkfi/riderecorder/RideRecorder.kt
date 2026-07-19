@@ -1,12 +1,16 @@
 package sh.parkfi.riderecorder
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
+import androidx.core.content.ContextCompat
 import kotlin.math.max
 import kotlin.math.sqrt
 
@@ -29,6 +33,16 @@ class RideRecorder(context: Context) : SensorEventListener {
     private val gravity = sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY)
     private val gyro = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
     private val pressure = sensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE)
+    // TYPE_STEP_COUNTER is hardware-batched on a low-power hub; it keeps counting
+    // through Doze / screen-off, so deltas read on the next foreground ping carry
+    // the pocketed stretches too. Gated on ACTIVITY_RECOGNITION (API 29+) — see
+    // stepsPermitted; without the grant we never register and stepSample() stays
+    // null (the JS layer treats null as "no step sensor").
+    private val stepCounter = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
+    private val stepsPermitted =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACTIVITY_RECOGNITION) ==
+            PackageManager.PERMISSION_GRANTED
 
     private var thread: HandlerThread? = null
     private var handler: Handler? = null
@@ -47,6 +61,19 @@ class RideRecorder(context: Context) : SensorEventListener {
     private var basePressure: Double? = null
     private var relAltitude: Double? = null
 
+    // Session step counter (F-steps). TYPE_STEP_COUNTER reports a cumulative
+    // since-boot value; the first event after arming becomes the baseline and
+    // sessionSteps is the delta since then. `sessionStartMs` identifies the
+    // session — the server keys its dedupe cursor on it, so it must change
+    // exactly when the baseline resets. @Volatile: written on the sensor thread,
+    // read from the plugin's call thread. Frozen (not cleared) on disarm,
+    // mirroring iOS.
+    @Volatile private var stepBaseline: Float? = null
+    @Volatile private var sessionSteps: Int? = null
+    @Volatile private var sessionStartMs: Long? = null
+
+    data class StepSample(val steps: Int, val sessionStartMs: Long)
+
     private val varWindow = ArrayList<DoublePair>()
     private var highVarSince: Double? = null
     private var lowVarSince: Double? = null
@@ -57,11 +84,25 @@ class RideRecorder(context: Context) : SensorEventListener {
 
     private data class DoublePair(val t: Double, val v: Double)
 
-    fun permissionState(): String = "granted" // Android motion sensors need no runtime grant
+    // IMU/baro sensors need no runtime grant; the step counter's
+    // ACTIVITY_RECOGNITION gate is handled by the plugin (see RideRecorderPlugin).
+
+    /** Cumulative steps since this monitoring session armed, with the session's
+     *  start time as its identity; null when the device lacks a step counter,
+     *  permission was denied, or never armed. */
+    fun stepSample(): StepSample? {
+        val steps = sessionSteps ?: return null
+        val start = sessionStartMs ?: return null
+        return StepSample(steps, start)
+    }
 
     fun startMonitoring() {
         if (monitoring || linear == null) return
         monitoring = true
+        stepBaseline = null
+        val stepsSupported = stepCounter != null && stepsPermitted
+        sessionSteps = if (stepsSupported) 0 else null
+        sessionStartMs = if (stepsSupported) System.currentTimeMillis() else null
         thread = HandlerThread("ride-recorder").also { it.start() }
         handler = Handler(thread!!.looper)
         registerSensors(SensorManager.SENSOR_DELAY_UI)
@@ -101,6 +142,12 @@ class RideRecorder(context: Context) : SensorEventListener {
         gyro?.let { sensorManager.registerListener(this, it, delay, handler) }
         // pressure is inherently slow; SENSOR_DELAY_NORMAL is plenty
         pressure?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL, handler) }
+        // Step counter: one event per step (or a hardware batch); NORMAL delay.
+        // Re-registering across the UI↔GAME escalation is harmless — the value
+        // is since-boot cumulative, so the baseline survives.
+        if (stepsPermitted) {
+            stepCounter?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL, handler) }
+        }
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
@@ -117,6 +164,14 @@ class RideRecorder(context: Context) : SensorEventListener {
                 val y = event.values[1].toDouble()
                 val z = event.values[2].toDouble()
                 gyroDegS = sqrt(x * x + y * y + z * z) * 180 / Math.PI
+            }
+            Sensor.TYPE_STEP_COUNTER -> {
+                val cum = event.values[0]
+                // First event of the session (or a since-boot reset after a
+                // reboot mid-session) establishes the baseline.
+                val base = stepBaseline
+                if (base == null || cum < base) stepBaseline = cum
+                sessionSteps = (cum - (stepBaseline ?: cum)).toInt()
             }
             Sensor.TYPE_PRESSURE -> {
                 val hpa = event.values[0].toDouble()

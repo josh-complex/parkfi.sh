@@ -16,6 +16,8 @@ public class RideRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "stopMonitoring", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startRecording", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopRecording", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getStepSample", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "queryStepSpan", returnType: CAPPluginReturnPromise),
     ]
 
     private lazy var recorder: RideRecorder = {
@@ -105,6 +107,28 @@ public class RideRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func startRecording(_ call: CAPPluginCall) {
         recorder.startRecording()
         call.resolve()
+    }
+
+    @objc func getStepSample(_ call: CAPPluginCall) {
+        if let sample = recorder.stepSample() {
+            call.resolve(["steps": sample.steps, "sessionStartMs": sample.sessionStartMs])
+        } else {
+            call.resolve(["steps": NSNull(), "sessionStartMs": NSNull()])
+        }
+    }
+
+    @objc func queryStepSpan(_ call: CAPPluginCall) {
+        guard let fromMs = call.getDouble("fromMs"), let toMs = call.getDouble("toMs") else {
+            call.reject("fromMs/toMs required")
+            return
+        }
+        recorder.queryStepSpan(fromMs: fromMs, toMs: toMs) { steps in
+            if let steps = steps {
+                call.resolve(["steps": steps])
+            } else {
+                call.resolve(["steps": NSNull()])
+            }
+        }
     }
 
     @objc func stopRecording(_ call: CAPPluginCall) {

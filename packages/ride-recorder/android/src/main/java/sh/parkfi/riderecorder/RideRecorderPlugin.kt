@@ -1,13 +1,18 @@
 package sh.parkfi.riderecorder
 
+import android.Manifest
 import android.content.Intent
+import android.os.Build
 import androidx.core.content.ContextCompat
 import com.getcapacitor.JSArray
 import com.getcapacitor.JSObject
+import com.getcapacitor.PermissionState
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
+import com.getcapacitor.annotation.Permission
+import com.getcapacitor.annotation.PermissionCallback
 
 /**
  * Capacitor bridge for the on-device ride recorder. Monitoring runs inside
@@ -19,7 +24,15 @@ import com.getcapacitor.annotation.CapacitorPlugin
  * detected while the WebView is suspended is still delivered to JS on resume
  * (paired with the service's local recap notification, W11).
  */
-@CapacitorPlugin(name = "RideRecorder")
+@CapacitorPlugin(
+    name = "RideRecorder",
+    permissions = [
+        // Step counting only (F-steps): TYPE_STEP_COUNTER needs
+        // ACTIVITY_RECOGNITION on API 29+. IMU/baro capture needs no grant, so a
+        // denial degrades to steps-less monitoring — never block arming on this.
+        Permission(alias = "motion", strings = [Manifest.permission.ACTIVITY_RECOGNITION])
+    ]
+)
 class RideRecorderPlugin : Plugin() {
 
     override fun load() {
@@ -41,14 +54,35 @@ class RideRecorderPlugin : Plugin() {
         RideMonitorService.appActive = false
     }
 
-    // Motion sensors need no runtime grant on Android; override the base
-    // permission methods to report "granted" in the shape the JS layer expects.
+    // IMU/baro sensors need no runtime grant; "motion" here maps to
+    // ACTIVITY_RECOGNITION, which gates only the step counter (API 29+; earlier
+    // releases have no such runtime permission and report granted).
     override fun requestPermissions(call: PluginCall) {
-        call.resolve(JSObject().put("motion", "granted"))
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+            getPermissionState("motion") == PermissionState.GRANTED
+        ) {
+            call.resolve(JSObject().put("motion", "granted"))
+        } else {
+            requestPermissionForAlias("motion", call, "motionPermissionCallback")
+        }
+    }
+
+    @PermissionCallback
+    fun motionPermissionCallback(call: PluginCall) {
+        call.resolve(JSObject().put("motion", motionState()))
     }
 
     override fun checkPermissions(call: PluginCall) {
-        call.resolve(JSObject().put("motion", "granted"))
+        call.resolve(JSObject().put("motion", motionState()))
+    }
+
+    private fun motionState(): String {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return "granted"
+        return when (getPermissionState("motion")) {
+            PermissionState.GRANTED -> "granted"
+            PermissionState.DENIED -> "denied"
+            else -> "prompt"
+        }
     }
 
     @PluginMethod
@@ -74,6 +108,23 @@ class RideRecorderPlugin : Plugin() {
     fun stopRecording(call: PluginCall) {
         val result = RideMonitorService.instance?.stopRecording()
         if (result != null) call.resolve(resultToJs(result)) else call.resolve()
+    }
+
+    @PluginMethod
+    fun getStepSample(call: PluginCall) {
+        val sample = RideMonitorService.instance?.stepSample()
+        call.resolve(
+            JSObject()
+                .put("steps", sample?.steps ?: org.json.JSONObject.NULL)
+                .put("sessionStartMs", sample?.sessionStartMs ?: org.json.JSONObject.NULL)
+        )
+    }
+
+    // Historical step queries are iOS-only (CMPedometer's 7-day buffer); Android
+    // has no system store without Health Connect, so reconciliation no-ops here.
+    @PluginMethod
+    fun queryStepSpan(call: PluginCall) {
+        call.resolve(JSObject().put("steps", org.json.JSONObject.NULL))
     }
 
     private fun resultToJs(result: RideResult): JSObject {

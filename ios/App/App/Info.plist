@@ -29,7 +29,7 @@
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>ParkFi keeps a background location session while you're in the park so it can keep detecting coaster rides even with your phone locked in your pocket. Grant "Always" for automatic ride tracking.</string>
 	<key>NSMotionUsageDescription</key>
-	<string>ParkFi uses motion data to detect coaster rides and unlock ride-based achievements — drops, airtime, g-force, and inversions.</string>
+	<string>ParkFi uses motion data to detect coaster rides and count your steps while you're in the park, unlocking ride and walking achievements — drops, airtime, g-force, inversions, and park steps.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

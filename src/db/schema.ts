@@ -1945,6 +1945,9 @@ export const userParkDay = pgTable(
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
     pings: integer("pings").notNull().default(0),
     distanceM: doublePrecision("distance_m").notNull().default(0),
+    // Pedometer-verified steps (native only): Σ of clamped per-ping deltas from
+    // the ride-recorder plugin's session counter. 0 on web / denied permission.
+    steps: integer("steps").notNull().default(0),
     // Presence time (`park_seconds`): Σ of gap-bounded inter-ping deltas while in
     // this park, NOT last_seen−first_seen (which counts hotel naps / closed-app
     // gaps as "inside the park"). Accrued incrementally in ingestPing.
@@ -1973,6 +1976,12 @@ export const userGeoState = pgTable("user_geo_state", {
   anchorAttractionId: bigint("anchor_attraction_id", { mode: "number" }),
   anchorSince: timestamp("anchor_since", { withTimezone: true }),
   anchorSeconds: integer("anchor_seconds").notNull().default(0),
+  // Pedometer cursor: the last session-cumulative step count consumed, keyed by
+  // the native session's start time. The server diffs each ping's cumulative
+  // report against this — retries and replays are idempotent by construction
+  // (same cumulative ⇒ zero delta). Null until a native session reports.
+  stepSessionMs: bigint("step_session_ms", { mode: "number" }),
+  stepsCum: integer("steps_cum"),
 });
 
 /** Event counters with no day/park dimension (pin scans, alert creations, …). */

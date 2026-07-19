@@ -36,4 +36,12 @@ export class RideRecorderWeb extends WebPlugin implements RideRecorderPlugin {
   async stopRecording(): Promise<RideTrace | null> {
     return null;
   }
+
+  async getStepSample(): Promise<{ steps: number | null; sessionStartMs: number | null }> {
+    return { steps: null, sessionStartMs: null };
+  }
+
+  async queryStepSpan(): Promise<{ steps: number | null }> {
+    return { steps: null };
+  }
 }

@@ -17,6 +17,8 @@ import {
   addRideDetectedListener,
   armRideMonitoring,
   disarmRideMonitoring,
+  queryStepSpan,
+  readStepSample,
 } from "#/lib/ride-recorder-client.ts";
 
 import type { PluginListenerHandle } from "@capacitor/core";
@@ -115,52 +117,62 @@ export function AchievementTracker() {
 
   React.useEffect(() => {
     if (!loggedIn || !locationOn) return;
-    const tick = () => {
+    const tick = async () => {
       if (pingRef.current.isPending) return;
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
       const coords = coordsRef.current;
       if (!coords) return;
-      pingRef.current.mutate(coords, {
-        onSuccess: (r) => {
-          // Echo the response to the dev sim panel (no-op when disarmed).
-          reportSimPing({
-            inPark: r.inPark === true,
-            parkId: r.parkId,
-            distanceM: r.today?.distanceM,
-            queueSeconds: r.today?.queueSeconds,
-            rides: r.today?.rides,
-          });
-          // Arm/disarm the native ride recorder on park entry/exit (no-op on
-          // web). Only sensor-monitor while actually in a park — that's what
-          // bounds battery. Arm on the first in-park response; disarm only
-          // after DISARM_AFTER_MISSES consecutive out-of-park ones. A dropped
-          // ping (inPark null — the fix was too inaccurate for the server to
-          // trust) is evidence of nothing and moves neither edge.
-          if (r.inPark === true) {
-            disarmMissesRef.current = 0;
-            if (!inParkRef.current) {
-              inParkRef.current = true;
-              void armRideMonitoring();
-            }
-          } else if (r.inPark === false && inParkRef.current) {
-            disarmMissesRef.current += 1;
-            if (disarmMissesRef.current >= DISARM_AFTER_MISSES) {
+      // Steps ride along with the ping (native only; null on web/no sensor) as
+      // the RAW session-cumulative count + session identity — the server diffs
+      // against its own cursor, so retries/reloads are idempotent and the
+      // client keeps no baseline. The counter accrues on the hardware
+      // coprocessor even while the WebView was backgrounded, so the first
+      // foreground ping after a pocketed stretch carries the whole backlog.
+      const stepSample = await readStepSample();
+      pingRef.current.mutate(
+        { ...coords, stepsCum: stepSample?.cum, stepsSessionMs: stepSample?.sessionMs },
+        {
+          onSuccess: (r) => {
+            // Echo the response to the dev sim panel (no-op when disarmed).
+            reportSimPing({
+              inPark: r.inPark === true,
+              parkId: r.parkId,
+              distanceM: r.today?.distanceM,
+              queueSeconds: r.today?.queueSeconds,
+              rides: r.today?.rides,
+            });
+            // Arm/disarm the native ride recorder on park entry/exit (no-op on
+            // web). Only sensor-monitor while actually in a park — that's what
+            // bounds battery. Arm on the first in-park response; disarm only
+            // after DISARM_AFTER_MISSES consecutive out-of-park ones. A dropped
+            // ping (inPark null — the fix was too inaccurate for the server to
+            // trust) is evidence of nothing and moves neither edge.
+            if (r.inPark === true) {
               disarmMissesRef.current = 0;
-              inParkRef.current = false;
-              void disarmRideMonitoring();
+              if (!inParkRef.current) {
+                inParkRef.current = true;
+                void armRideMonitoring();
+              }
+            } else if (r.inPark === false && inParkRef.current) {
+              disarmMissesRef.current += 1;
+              if (disarmMissesRef.current >= DISARM_AFTER_MISSES) {
+                disarmMissesRef.current = 0;
+                inParkRef.current = false;
+                void disarmRideMonitoring();
+              }
             }
-          }
-          if (r.newlyUnlocked.length > 0 && r.xp != null && r.level != null) {
-            celebrate(
-              r.newlyUnlocked.map((u) => u.id),
-              r.xp,
-              r.level,
-            );
-          }
+            if (r.newlyUnlocked.length > 0 && r.xp != null && r.level != null) {
+              celebrate(
+                r.newlyUnlocked.map((u) => u.id),
+                r.xp,
+                r.level,
+              );
+            }
+          },
         },
-      });
+      );
     };
-    const id = setInterval(tick, pingIntervalMs);
+    const id = setInterval(() => void tick(), pingIntervalMs);
     return () => clearInterval(id);
   }, [loggedIn, locationOn, celebrate, pingIntervalMs]);
 
@@ -188,6 +200,52 @@ export function AchievementTracker() {
       void disarmRideMonitoring();
     };
   }, [loggedIn]);
+
+  // --- Pedometer reconciliation (iOS) ----------------------------------------
+  // Once per app session: for each recent park-day, ask the OS pedometer buffer
+  // (CMPedometer, ~7 days) how many steps actually happened in the day's
+  // in-park window, and max-repair the server total. This recovers whatever the
+  // live cumulative stream lost — process death mid-visit, the tail after the
+  // last ping. queryStepSpan resolves null on Android/web, so the whole pass
+  // no-ops there.
+  const reconcile = useMutation(
+    trpc.achievements.reconcileSteps.mutationOptions({ meta: { errorToast: false } }),
+  );
+  const reconcileRef = React.useRef(reconcile);
+  reconcileRef.current = reconcile;
+  const stepWindowsQ = useQuery({
+    ...trpc.achievements.myStepWindows.queryOptions(),
+    enabled: loggedIn && isNative(),
+    staleTime: Infinity,
+  });
+  const reconciledRef = React.useRef(false);
+  React.useEffect(() => {
+    if (reconciledRef.current || !stepWindowsQ.data || stepWindowsQ.data.length === 0) return;
+    reconciledRef.current = true;
+    void (async () => {
+      // CMPedometer keeps ~7 days; stay inside it with margin.
+      const cutoffMs = Date.now() - 6.5 * 24 * 60 * 60 * 1000;
+      for (const w of stepWindowsQ.data) {
+        if (w.fromMs < cutoffMs || w.toMs <= w.fromMs) continue;
+        const measured = await queryStepSpan(w.fromMs, w.toMs);
+        if (measured == null || measured <= w.steps) continue;
+        reconcileRef.current.mutate(
+          { parkId: w.parkId, day: w.day, steps: measured },
+          {
+            onSuccess: (r) => {
+              if (r.newlyUnlocked.length > 0) {
+                celebrate(
+                  r.newlyUnlocked.map((u) => u.id),
+                  r.xp,
+                  r.level,
+                );
+              }
+            },
+          },
+        );
+      }
+    })();
+  }, [stepWindowsQ.data, celebrate]);
 
   // --- Pending replay --------------------------------------------------------
   // Anything still un-acked (app closed mid-toast, etc.) — replayed once.

@@ -4,6 +4,12 @@
     <!-- 50 Hz IMU sampling on API 31+; below that SENSOR_DELAY_GAME is already allowed. -->
     <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
 
+    <!-- TYPE_STEP_COUNTER on API 29+ (F-steps: in-park step achievements).
+         Runtime-requested via the plugin's "motion" alias; a denial only
+         disables step counting, never IMU ride detection. Play Console: this
+         triggers the Health apps / physical-activity declaration. -->
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+
     <!-- Foreground service keeps capture alive with the screen off (W8). The
          `specialUse` type is the honest fit for continuous novel sensor sampling
          (not location/health/dataSync) and requires a Play Console declaration —

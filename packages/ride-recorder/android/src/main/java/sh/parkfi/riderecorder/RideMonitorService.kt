@@ -82,6 +82,9 @@ class RideMonitorService : Service() {
 
     fun stopRecording(): RideResult? = recorder?.stopRecording()
 
+    /** Session step sample passthrough for the plugin's getStepSample. */
+    fun stepSample(): RideRecorder.StepSample? = recorder?.stepSample()
+
     private fun startForegroundCompat() {
         ensureChannels(this)
         val notif = ongoingNotification(this)

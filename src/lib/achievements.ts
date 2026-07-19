@@ -16,6 +16,7 @@ export type StatKey =
   | "park_days" // distinct (park, local-day) visits
   | "parks_unique" // distinct parks ever visited
   | "distance_m" // lifetime in-park meters walked
+  | "steps" // lifetime pedometer-verified in-park steps (native only)
   | "queue_seconds" // lifetime seconds spent in detected queue dwells
   | "rides" // completed queue dwells (≈ attractions ridden)
   | "rope_drops" // days flagged: in park before 09:30 local
@@ -24,6 +25,7 @@ export type StatKey =
   | "park_hop_days" // local days with ≥2 distinct parks
   | "streak_best" // longest consecutive-day visit streak
   | "best_day_distance_m" // most meters walked in one park-day
+  | "best_day_steps" // most pedometer steps in one park-day (native only)
   | "best_day_queue_seconds" // most queue time in one park-day
   | "park_seconds" // lifetime seconds inside parks (Σ gap-bounded presence)
   | "weekend_days" // park days landing on Sat/Sun (local)
@@ -101,7 +103,7 @@ function fam(
   };
 }
 
-/** 28 families, 97 tiers. Order is the display order on the achievements page. */
+/** 30 families, 105 tiers. Order is the display order on the achievements page. */
 export const ACHIEVEMENTS: AchievementFamily[] = [
   fam("gate", "Through the Turnstiles", "park_days", "count", "🎟️", [
     [
@@ -127,6 +129,20 @@ export const ACHIEVEMENTS: AchievementFamily[] = [
     [100_000, 200, "Blister Pack", "100 km. Moleskin is a food group now."],
     [250_000, 400, "Marathon, Eventually", "250 km, a few hundred meters at a time."],
     [1_000_000, 800, "Walk Around the World", "1,000 km on park pavement. Your shoes fear you."],
+  ]),
+  // Pedometer-verified (native pedometer via the ride-recorder plugin). Ships
+  // dark on web — no step sensor, stats stay 0, tiers stay locked.
+  fam("stepper", "Step Machine", "steps", "count", "🚶", [
+    [10_000, 50, "Ten Thousand, Actually", "The step goal apps lie about, verified on pavement."],
+    [100_000, 100, "Six Figures on Foot", "100,000 park steps. Your podiatrist sighs."],
+    [500_000, 200, "Half a Million Club", "500k steps between gate and gate."],
+    [1_000_000, 400, "Millionaire (Steps Only)", "One million steps. Net worth: blisters."],
+    [
+      5_000_000,
+      800,
+      "The Odometer Rolls Over",
+      "Five million steps. The pavement knows your tread.",
+    ],
   ]),
   fam("queue", "The Waiting Game", "queue_seconds", "seconds", "⏳", [
     [3_600, 50, "Line Cook", "One hour in queues. Everyone starts somewhere."],
@@ -188,6 +204,16 @@ export const ACHIEVEMENTS: AchievementFamily[] = [
       "21.1 km in one day. You didn't even get a medal. Here's this instead.",
     ],
     [30_000, 400, "Cast Members Are Getting Worried", "30 km in one day. Please hydrate."],
+  ]),
+  fam("bigsteps", "Personal Best Feet", "best_day_steps", "count", "🐾", [
+    [10_000, 100, "Goal, Met, Ignored", "10k steps in one park day, most before lunch."],
+    [20_000, 200, "The Twenty-K Club", "20,000 steps in a day. Standard park issue, still heroic."],
+    [
+      35_000,
+      400,
+      "Feet Have Filed a Grievance",
+      "35,000 steps in a single day. The union is involved.",
+    ],
   ]),
   fam("queueday", "Committed to the Line", "best_day_queue_seconds", "seconds", "🧍", [
     [7_200, 100, "Time Well Spent?", "Two hours queued in one day."],

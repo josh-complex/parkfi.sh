@@ -56,6 +56,18 @@ const QUEUE_EXIT_RADIUS_M = 60; // hysteresis: keep anchor until beyond this
 // resets the queue-dwell anchor and counts toward the ride-recorder disarm.
 const GEOFENCE_BUFFER_M = 30;
 const QUEUE_MIN_DWELL_S = 480; // ≥8 min anchored ⇒ it was a queue ⇒ +1 ride
+// Steps-per-second plausibility ceiling for a client-reported pedometer delta —
+// a flat-out run is ~3/s; anything past this is a spoofed or corrupt counter.
+// Deliberately NOT gap-bounded like presence/distance: the whole point of the
+// pedometer is that a backgrounded stretch (no pings) still walked real steps,
+// so a long-elapsed delta is legitimate as long as the rate is human.
+const MAX_STEPS_PER_S = 4.5;
+// Generous meters-per-step ceiling (tall stride at a brisk walk). When a ping
+// carries pedometer data, GPS distance is credited at most steps × this — which
+// zeroes phantom meters from GPS jitter while standing in a queue, and from
+// sub-walking-speed vehicle travel (trams, boats, slow monorail segments) that
+// the WALK_SPEED_CAP_MS clamp lets through.
+const STRIDE_MAX_M = 1.3;
 const ROPE_DROP_BEFORE = { h: 9, m: 30 }; // local
 const NIGHT_OWL_AFTER_H = 22; // local
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -75,7 +87,7 @@ export interface IngestResult {
   newlyUnlocked: UnlockDTO[];
   xp?: number;
   level?: LevelInfo;
-  today?: { distanceM: number; queueSeconds: number; rides: number };
+  today?: { distanceM: number; queueSeconds: number; rides: number; steps: number };
 }
 
 // ---------------------------------------------------------------------------
@@ -228,6 +240,93 @@ export function presenceDelta(
   return elapsed;
 }
 
+/** One ping's pedometer report: the native session's cumulative step count and
+ *  the session's start time (its identity). */
+export interface StepReport {
+  cum: number;
+  sessionMs: number;
+}
+
+/** The stored pedometer cursor (user_geo_state) — last consumed cumulative,
+ *  keyed by session. Both null until a native session first reports. */
+export interface StepCursor {
+  sessionMs: number | null;
+  cum: number | null;
+}
+
+/**
+ * Diff a ping's cumulative step report against the stored cursor. This is what
+ * makes step credit idempotent: a retried ping re-sends the same cumulative,
+ * which diffs to zero — the client keeps no baseline at all.
+ *
+ * - Same session: delta is the cumulative growth since the cursor. A shrinking
+ *   cumulative (shouldn't happen within one session) resyncs downward with no
+ *   credit.
+ * - Newer session (start time advanced): the counter restarted from zero at
+ *   arm, so the whole cumulative is new — credit it and move the cursor.
+ * - Older session (a second device flapping against the same account): stale;
+ *   no credit, cursor unchanged — the newest session wins rather than letting
+ *   two pedometers on one account double-count the same human.
+ *
+ * Returns the delta plus the cursor to persist. Pure.
+ */
+export function stepDeltaFromCursor(
+  stored: StepCursor,
+  report: StepReport | null,
+): { delta: number; cursor: StepCursor } {
+  if (report == null) return { delta: 0, cursor: stored };
+  if (stored.sessionMs != null && report.sessionMs < stored.sessionMs) {
+    return { delta: 0, cursor: stored };
+  }
+  if (stored.sessionMs === report.sessionMs) {
+    const prev = stored.cum ?? 0;
+    const delta = report.cum >= prev ? report.cum - prev : 0;
+    return { delta, cursor: { sessionMs: report.sessionMs, cum: report.cum } };
+  }
+  // New session — counter restarted at arm; the full cumulative is unconsumed.
+  return { delta: report.cum, cursor: { sessionMs: report.sessionMs, cum: report.cum } };
+}
+
+/**
+ * Steps credited by one ping's pedometer delta: non-negative, and rate-capped
+ * against the elapsed time since the previous cursor. Unlike presenceDelta this
+ * is NOT gap-bounded: a 2 h backgrounded stretch legitimately carries thousands
+ * of steps, and the rate cap alone keeps a spoofed counter humanly plausible.
+ * `elapsed` null (first ping ever) allows one interval's worth. Pure.
+ *
+ * The in-park scoping is best-effort, not by construction: arming tracks the
+ * app-OBSERVED geofence state, so a session goes stale when the app closes
+ * before park exit (the disarm pings never happen) and keeps counting overnight.
+ * ingestPing bounds that leak by absorbing any delta whose window spans a
+ * park-local day rollover — see stepsWindowSpansRollover.
+ */
+export function clampStepsDelta(
+  stepsDelta: number | null | undefined,
+  elapsed: number | null,
+  maxPerS = MAX_STEPS_PER_S,
+): number {
+  if (stepsDelta == null || !Number.isFinite(stepsDelta) || stepsDelta <= 0) return 0;
+  const windowS = elapsed != null && elapsed > 0 ? elapsed : 60;
+  return Math.min(Math.round(stepsDelta), Math.round(windowS * maxPerS));
+}
+
+/**
+ * GPS distance credited for one ping, given pedometer evidence. Without a
+ * pedometer reading (web, no sensor, permission denied) GPS distance passes
+ * through unchanged. With one, credit is capped at steps × STRIDE_MAX_M —
+ * near-zero steps means the meters were a vehicle or queue-jitter drift, not
+ * walking, so `distance_m` keeps meaning "meters walked". Never credits MORE
+ * than GPS moved: the pedometer corrects false positives only. Pure.
+ */
+export function creditedDistance(
+  gpsMovedM: number,
+  clampedSteps: number | null,
+  strideM = STRIDE_MAX_M,
+): number {
+  if (clampedSteps == null) return gpsMovedM;
+  return Math.min(gpsMovedM, clampedSteps * strideM);
+}
+
 /**
  * The park-local day a queue dwell settles to: the day of the last confirmed
  * anchored ping (`anchorAt`), NOT `now`. A dwell that ends after a local-day
@@ -238,6 +337,26 @@ export function presenceDelta(
  */
 export function settleDay(anchorAt: Date | null | undefined, now: Date, timeZone: string): string {
   return localParts(anchorAt ?? now, timeZone).day;
+}
+
+/**
+ * Whether a pedometer delta's window (previous ping → this ping) crosses a
+ * park-local day rollover. Such a delta is absorbed, never credited: the
+ * dominant case is a stale-armed session — the app was closed before park exit,
+ * the disarm pings never happened, and the native counter ran all night — so
+ * the backlog is resort/overnight walking that must not land on the next
+ * morning's park day. The cost is a few real minutes at midnight for a genuine
+ * cross-midnight visit (the delta in flight when the day flips), which the iOS
+ * reconciliation pass largely repairs from the OS buffer. Pure; exported for
+ * tests.
+ */
+export function stepsWindowSpansRollover(
+  prevAt: Date | null | undefined,
+  day: string,
+  timeZone: string,
+): boolean {
+  if (prevAt == null) return false;
+  return localParts(prevAt, timeZone).day !== day;
 }
 
 /** Park-local calendar day + clock time, via Intl (en-CA gives YYYY-MM-DD). */
@@ -327,6 +446,13 @@ async function settleAnchorRow(
  * rain") count as rain for this ping. Only admin pings may set it — a seeded
  * row lives in the shared per-park table, so without the gate every real user
  * in the park would earn rainy credit off an admin's test.
+ *
+ * `steps` is the client's raw pedometer report — the native session's
+ * cumulative count plus session identity (native only; absent on web). The
+ * server diffs it against the cursor persisted in user_geo_state
+ * (stepDeltaFromCursor — idempotent under retries), rate-clamps the delta
+ * (clampStepsDelta), and lets it cap the GPS distance credit
+ * (creditedDistance).
  */
 export async function ingestPing(
   userId: string,
@@ -334,7 +460,7 @@ export async function ingestPing(
   lat: number,
   accuracyM: number,
   now: Date = new Date(),
-  opts: { seededWeather?: boolean } = {},
+  opts: { seededWeather?: boolean; steps?: StepReport | null } = {},
 ): Promise<IngestResult> {
   if (accuracyM > PING_MAX_ACCURACY_M) {
     return { inPark: null, newlyUnlocked: [] };
@@ -346,6 +472,15 @@ export async function ingestPing(
 
   const [state] = await db.select().from(userGeoState).where(eq(userGeoState.userId, userId));
   const elapsed = state?.at ? (now.getTime() - state.at.getTime()) / 1000 : null;
+
+  // Consume the pedometer report against the stored cursor up front — BOTH the
+  // in-park and out-of-park paths persist the advanced cursor, so out-of-park
+  // steps are absorbed (never credited, never carried into the next park entry).
+  const stepReport = opts.steps ?? null;
+  const { delta: stepDeltaRaw, cursor: stepCursor } = stepDeltaFromCursor(
+    { sessionMs: state?.stepSessionMs ?? null, cum: state?.stepsCum ?? null },
+    stepReport,
+  );
 
   // Left-park / cross-park anchor settlement, against the OLD park's current
   // local day, before we switch state to the new park (or none).
@@ -375,6 +510,8 @@ export async function ingestPing(
         anchorAttractionId: null,
         anchorSince: null,
         anchorSeconds: 0,
+        stepSessionMs: stepCursor.sessionMs,
+        stepsCum: stepCursor.cum,
       })
       .onConflictDoUpdate({
         target: userGeoState.userId,
@@ -386,6 +523,8 @@ export async function ingestPing(
           anchorAttractionId: null,
           anchorSince: null,
           anchorSeconds: 0,
+          stepSessionMs: stepCursor.sessionMs,
+          stepsCum: stepCursor.cum,
         },
       });
     return { inPark: false, newlyUnlocked: [] };
@@ -393,7 +532,7 @@ export async function ingestPing(
 
   const { day, hour, minute } = localParts(now, park.timezone);
   const sameParkAsState = state?.parkId === park.id;
-  const moved =
+  const gpsMoved =
     sameParkAsState &&
     elapsed != null &&
     elapsed <= PING_MAX_GAP_S &&
@@ -401,6 +540,15 @@ export async function ingestPing(
     state?.lat != null
       ? Math.min(distanceMeters([state.lng, state.lat], point), WALK_SPEED_CAP_MS * elapsed)
       : 0;
+  // A delta spanning the local-day rollover is absorbed (cursor advances, no
+  // credit) — see stepsWindowSpansRollover. For the distance cap it counts as
+  // "no pedometer evidence" (null), not "zero steps": GPS still measured real
+  // movement in this interval, and zero-clamping it would punish the genuine
+  // cross-midnight visitor. (In the stale-overnight case gpsMoved is already 0
+  // via the PING_MAX_GAP_S bound, so nothing leaks through this path either.)
+  const rollover = stepsWindowSpansRollover(state?.at, day, park.timezone);
+  const steps = rollover ? 0 : clampStepsDelta(stepDeltaRaw, elapsed);
+  const moved = creditedDistance(gpsMoved, stepReport == null || rollover ? null : steps);
   const present = presenceDelta(sameParkAsState, elapsed, PING_MAX_GAP_S);
   const ropeDrop =
     hour < ROPE_DROP_BEFORE.h || (hour === ROPE_DROP_BEFORE.h && minute < ROPE_DROP_BEFORE.m);
@@ -415,6 +563,7 @@ export async function ingestPing(
       day,
       pings: 1,
       distanceM: moved,
+      steps,
       presentSeconds: Math.round(present),
       ropeDrop,
       nightOwl,
@@ -426,6 +575,7 @@ export async function ingestPing(
         lastSeenAt: now,
         pings: sql`${userParkDay.pings} + 1`,
         distanceM: sql`${userParkDay.distanceM} + ${moved}`,
+        steps: sql`${userParkDay.steps} + ${steps}`,
         presentSeconds: sql`${userParkDay.presentSeconds} + ${Math.round(present)}`,
         ropeDrop: sql`${userParkDay.ropeDrop} OR ${ropeDrop}`,
         nightOwl: sql`${userParkDay.nightOwl} OR ${nightOwl}`,
@@ -484,10 +634,22 @@ export async function ingestPing(
       anchorAttractionId,
       anchorSince,
       anchorSeconds,
+      stepSessionMs: stepCursor.sessionMs,
+      stepsCum: stepCursor.cum,
     })
     .onConflictDoUpdate({
       target: userGeoState.userId,
-      set: { parkId: park.id, lng, lat, at: now, anchorAttractionId, anchorSince, anchorSeconds },
+      set: {
+        parkId: park.id,
+        lng,
+        lat,
+        at: now,
+        anchorAttractionId,
+        anchorSince,
+        anchorSeconds,
+        stepSessionMs: stepCursor.sessionMs,
+        stepsCum: stepCursor.cum,
+      },
     });
 
   const [todayRow] = await db
@@ -495,6 +657,7 @@ export async function ingestPing(
       distanceM: userParkDay.distanceM,
       queueSeconds: userParkDay.queueSeconds,
       rides: userParkDay.rides,
+      steps: userParkDay.steps,
     })
     .from(userParkDay)
     .where(
@@ -513,7 +676,7 @@ export async function ingestPing(
     newlyUnlocked,
     xp,
     level,
-    today: todayRow ?? { distanceM: moved, queueSeconds: 0, rides: 0 },
+    today: todayRow ?? { distanceM: moved, queueSeconds: 0, rides: 0, steps },
   };
 }
 
@@ -522,6 +685,7 @@ export interface DayStatRow {
   parkId: number;
   day: string; // park-local YYYY-MM-DD
   distanceM: number;
+  steps: number;
   presentSeconds: number;
   queueSeconds: number;
   rides: number;
@@ -548,12 +712,14 @@ export function aggregateDayRows(dayRows: DayStatRow[]): Stats {
     park_days: dayRows.length,
     parks_unique: new Set(dayRows.map((r) => r.parkId)).size,
     distance_m: dayRows.reduce((s, r) => s + r.distanceM, 0),
+    steps: dayRows.reduce((s, r) => s + r.steps, 0),
     queue_seconds: dayRows.reduce((s, r) => s + r.queueSeconds, 0),
     rides: dayRows.reduce((s, r) => s + r.rides, 0),
     rope_drops: dayRows.filter((r) => r.ropeDrop).length,
     night_owls: dayRows.filter((r) => r.nightOwl).length,
     rain_days: dayRows.filter((r) => r.rainy).length,
     best_day_distance_m: dayRows.reduce((m, r) => Math.max(m, r.distanceM), 0),
+    best_day_steps: dayRows.reduce((m, r) => Math.max(m, r.steps), 0),
     best_day_queue_seconds: dayRows.reduce((m, r) => Math.max(m, r.queueSeconds), 0),
     park_seconds: dayRows.reduce((s, r) => s + r.presentSeconds, 0),
     full_days: dayRows.filter((r) => r.ropeDrop && r.nightOwl).length,
@@ -593,6 +759,7 @@ export async function computeStats(userId: string): Promise<Stats> {
       parkId: userParkDay.parkId,
       day: userParkDay.day,
       distanceM: userParkDay.distanceM,
+      steps: userParkDay.steps,
       presentSeconds: userParkDay.presentSeconds,
       queueSeconds: userParkDay.queueSeconds,
       rides: userParkDay.rides,
@@ -662,6 +829,50 @@ export async function evaluateAndUnlock(
   const xp = xpForTierIds(unlockedRows.map((u) => u.achievementId));
 
   return { newlyUnlocked, xp, level: levelForXp(xp) };
+}
+
+/**
+ * Reconciliation (iOS): repair a park-day's step total from the OS pedometer's
+ * ~7-day historical buffer. The client queries CMPedometer over the day's
+ * firstSeen→lastSeen window and reports the total; steps the live session lost
+ * (process death, missed pings) come back here. Max-repair only — the
+ * accumulated live count never goes down — and capped by the window's duration
+ * at the same human rate bound as live deltas, so a spoofed report can't
+ * exceed plausibility. Returns null when there's nothing to repair.
+ *
+ * Live pings race this benignly: a delta that lands between the client's
+ * window fetch and this UPDATE covers steps *after* the window's end, and the
+ * overwrite drops it — a bounded undercount, not a double count, and the next
+ * app-session's reconcile pass (with a later lastSeen) recovers it.
+ */
+export async function reconcileDaySteps(
+  userId: string,
+  parkId: number,
+  day: string,
+  reportedSteps: number,
+): Promise<{ newlyUnlocked: UnlockDTO[]; xp: number; level: LevelInfo; steps: number } | null> {
+  const [row] = await db
+    .select({
+      steps: userParkDay.steps,
+      firstSeenAt: userParkDay.firstSeenAt,
+      lastSeenAt: userParkDay.lastSeenAt,
+    })
+    .from(userParkDay)
+    .where(
+      and(eq(userParkDay.userId, userId), eq(userParkDay.parkId, parkId), eq(userParkDay.day, day)),
+    );
+  if (!row) return null;
+  const windowS = Math.max(0, (row.lastSeenAt.getTime() - row.firstSeenAt.getTime()) / 1000);
+  const capped = Math.min(Math.round(reportedSteps), Math.round(windowS * MAX_STEPS_PER_S));
+  if (capped <= row.steps) return null;
+  await db
+    .update(userParkDay)
+    .set({ steps: capped })
+    .where(
+      and(eq(userParkDay.userId, userId), eq(userParkDay.parkId, parkId), eq(userParkDay.day, day)),
+    );
+  const result = await evaluateAndUnlock(userId);
+  return { ...result, steps: capped };
 }
 
 /** Upsert a client-reported event counter, then re-evaluate. */

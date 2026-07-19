@@ -21,6 +21,8 @@ interface RideRecorderPlugin {
   stopMonitoring(): Promise<void>;
   startRecording(): Promise<void>;
   stopRecording(): Promise<RideTrace | null>;
+  getStepSample(): Promise<{ steps: number | null; sessionStartMs: number | null }>;
+  queryStepSpan(opts: { fromMs: number; toMs: number }): Promise<{ steps: number | null }>;
   addListener(event: "rideDetected", cb: (trace: RideTrace) => void): Promise<PluginListenerHandle>;
   addListener(event: "rideStarted", cb: () => void): Promise<PluginListenerHandle>;
 }
@@ -55,6 +57,47 @@ export async function disarmRideMonitoring(): Promise<void> {
     await RideRecorder.stopMonitoring();
   } catch {
     /* already stopped */
+  }
+}
+
+/**
+ * Session-cumulative step count from the native pedometer — steps since ride
+ * monitoring was last armed (i.e. since park entry), with the session's start
+ * time as its identity. `null` on web, when the device has no step hardware, or
+ * when the permission was denied. The raw cumulative + session id is what ships
+ * to the server, which diffs it against a stored cursor — the client keeps no
+ * baseline, so retries and reloads can't double-credit.
+ */
+export async function readStepSample(): Promise<{ cum: number; sessionMs: number } | null> {
+  if (!isNative()) return null;
+  try {
+    const { steps, sessionStartMs } = await RideRecorder.getStepSample();
+    if (
+      typeof steps !== "number" ||
+      !Number.isFinite(steps) ||
+      typeof sessionStartMs !== "number" ||
+      !Number.isFinite(sessionStartMs)
+    ) {
+      return null;
+    }
+    return { cum: steps, sessionMs: Math.round(sessionStartMs) };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Historical step total over an absolute window, from the OS pedometer buffer.
+ * iOS only — Android/web resolve null. Powers the day-window reconciliation
+ * pass that repairs steps lost to process death or missed pings.
+ */
+export async function queryStepSpan(fromMs: number, toMs: number): Promise<number | null> {
+  if (!isNative()) return null;
+  try {
+    const { steps } = await RideRecorder.queryStepSpan({ fromMs, toMs });
+    return typeof steps === "number" && Number.isFinite(steps) ? steps : null;
+  } catch {
+    return null;
   }
 }
 

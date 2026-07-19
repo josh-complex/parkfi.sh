@@ -14,13 +14,13 @@ import {
 describe("catalog invariants", () => {
   const allTiers = ACHIEVEMENTS.flatMap((f) => f.tiers);
 
-  it("has at least 36 tiers total (it's 97)", () => {
+  it("has at least 36 tiers total (it's 105)", () => {
     expect(allTiers.length).toBeGreaterThanOrEqual(36);
-    expect(allTiers.length).toBe(97);
+    expect(allTiers.length).toBe(105);
   });
 
-  it("has 28 families", () => {
-    expect(ACHIEVEMENTS.length).toBe(28);
+  it("has 30 families", () => {
+    expect(ACHIEVEMENTS.length).toBe(30);
   });
 
   it("has unique tier ids", () => {

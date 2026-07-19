@@ -23,6 +23,7 @@ import {
   devUnlockNext,
   evaluateAndUnlock,
   ingestPing,
+  reconcileDaySteps,
 } from "#/server/achievements/engine.ts";
 import { ingestRideTrace, rideTraceSchema } from "#/server/achievements/rides.ts";
 import {
@@ -44,14 +45,67 @@ export const achievementsRouter = {
         lng: z.number().gte(-180).lte(180),
         lat: z.number().gte(-90).lte(90),
         accuracy: z.number().nonnegative().max(100_000),
+        // Raw pedometer report (native only): the session-cumulative step count
+        // plus the session's start time. The server diffs against its stored
+        // cursor (idempotent under retries); the hard ceilings only bound
+        // payload abuse — the real plausibility clamp is rate-based in
+        // ingestPing.
+        stepsCum: z.number().int().min(0).max(500_000).optional(),
+        stepsSessionMs: z.number().int().positive().optional(),
       }),
     )
     .mutation(({ ctx, input }) =>
       // Seeded ("Make it rain") weather counts only for owner pings — see ingestPing.
       ingestPing(ctx.userId, input.lng, input.lat, input.accuracy, new Date(), {
         seededWeather: isAdminEmail(ctx.userEmail),
+        steps:
+          input.stepsCum != null && input.stepsSessionMs != null
+            ? { cum: input.stepsCum, sessionMs: input.stepsSessionMs }
+            : null,
       }),
     ),
+
+  /** Recent park-day windows for the pedometer reconciliation pass (iOS): the
+   *  absolute in-park time span + currently credited steps per day. The client
+   *  queries the OS pedometer buffer over each window and reports back any
+   *  higher total via reconcileSteps. */
+  myStepWindows: protectedProcedure.query(async ({ ctx }) => {
+    const rows = await db
+      .select({
+        parkId: userParkDay.parkId,
+        day: userParkDay.day,
+        firstSeenAt: userParkDay.firstSeenAt,
+        lastSeenAt: userParkDay.lastSeenAt,
+        steps: userParkDay.steps,
+      })
+      .from(userParkDay)
+      .where(eq(userParkDay.userId, ctx.userId))
+      .orderBy(desc(userParkDay.day))
+      .limit(6); // covers a week incl. hop days; older windows outlive the OS buffer anyway
+    return rows.map((r) => ({
+      parkId: r.parkId,
+      day: r.day,
+      fromMs: r.firstSeenAt.getTime(),
+      toMs: r.lastSeenAt.getTime(),
+      steps: r.steps,
+    }));
+  }),
+
+  /** Max-repair a park-day's steps from the OS pedometer's historical buffer —
+   *  capped server-side by the window duration (see reconcileDaySteps). Returns
+   *  the usual unlock/xp/level shape so repairs can fire the toast funnel. */
+  reconcileSteps: protectedProcedure
+    .input(
+      z.object({
+        parkId: z.number().int().positive(),
+        day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        steps: z.number().int().min(0).max(200_000),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const result = await reconcileDaySteps(ctx.userId, input.parkId, input.day, input.steps);
+      return result ?? { newlyUnlocked: [], xp: 0, level: levelForXp(0), steps: null };
+    }),
 
   /** Allowlisted client event (pin scan, alert created, …). */
   track: protectedProcedure
@@ -445,6 +499,7 @@ export const achievementsRouter = {
           day: userParkDay.day,
           parkName: parks.name,
           distanceM: userParkDay.distanceM,
+          steps: userParkDay.steps,
           presentSeconds: userParkDay.presentSeconds,
           queueSeconds: userParkDay.queueSeconds,
           rides: userParkDay.rides,
