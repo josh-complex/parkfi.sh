@@ -143,6 +143,19 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
   },
+  session: {
+    // Cache the resolved session+user in a signed cookie so web requests skip the
+    // per-request DB session lookup (createTRPCContext → getSession) for up to 5
+    // min. Two caveats:
+    //  (i)  sign-out / revocation propagates to *other* devices only after the
+    //       cookie expires (≤ 5 min) — acceptable for this app's threat model;
+    //  (ii) native (Capacitor) clients authenticate via bearer token, which the
+    //       cookie cache does not cover — they keep the per-request DB read until
+    //       Phase 3 shrinks the query cost around it.
+    // The cached payload includes the org-role additional fields; it stays well
+    // under cookie/header size limits.
+    cookieCache: { enabled: true, maxAge: 300 },
+  },
   account: {
     // Native (Capacitor) OAuth runs in the system browser (Custom Tabs / Safari
     // VC), a different cookie jar than the WebView that called signIn.social. The
