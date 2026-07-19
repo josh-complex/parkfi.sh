@@ -30,9 +30,26 @@ export type StatKey =
   | "park_seconds" // lifetime seconds inside parks (Σ gap-bounded presence)
   | "weekend_days" // park days landing on Sat/Sun (local)
   | "full_days" // park days flagged both rope_drop AND night_owl
+  | "shows_watched" // settled SHOW-entity dwells (theater shows, parades)
+  // Disney-scoped, day-derived (park identity resolved by slug server-side —
+  // see src/server/achievements/disney.ts)
+  | "four_park_days" // local days visiting all four WDW theme parks
+  | "wdw_parks_unique" // distinct WDW theme parks ever visited (0–4)
+  | "epcot_steps" // lifetime pedometer steps inside EPCOT (native only)
+  | "epcot_best_day_distance_m" // most meters walked in one EPCOT day
+  | "home_park_days" // most park-days at any single park
   // cross-table (aggregated from other user tables, not day-rows/counters)
   | "attractions_unique" // distinct attractions with a ≥8-min dwell (≈ ridden)
   | "pins_owned" // distinct pins in the user's collection (pin_have)
+  | "mk_mountains_ridden" // WDW mountain set completion (0–4, slug-matched)
+  | "mk_classics_ridden" // MK opening-day-1971 set completion (0–12)
+  | "same_ride_max" // highest lifetime ride count on a single attraction
+  // resort-transit counters (server-written by the out-of-park zone machine)
+  | "ttc_visits" // entries into the Transportation & Ticket Center
+  | "monorail_rides" // monorail trips (station-pair transitions, low steps)
+  | "ferry_rides" // Seven Seas Lagoon ferry crossings (via mid-lagoon waypoint)
+  | "skyliner_rides" // Disney Skyliner trips (gondola station pairs)
+  | "crescent_walks" // walked EPCOT ↔ Hollywood Studios (high steps)
   // event counters (client-reported via achievements.track)
   | "pin_scans"
   | "alerts_created"
@@ -103,7 +120,7 @@ function fam(
   };
 }
 
-/** 30 families, 105 tiers. Order is the display order on the achievements page. */
+/** 44 families, 142 tiers. Order is the display order on the achievements page. */
 export const ACHIEVEMENTS: AchievementFamily[] = [
   fam("gate", "Through the Turnstiles", "park_days", "count", "🎟️", [
     [
@@ -319,6 +336,123 @@ export const ACHIEVEMENTS: AchievementFamily[] = [
     [25_000, 100, "Commuter Rail", "25 km of coaster track under your seat."],
     [100_000, 200, "Main Line", "100 km. Officially a rail network."],
     [500_000, 400, "Transcontinental", "500 km of track. The railroad barons salute you."],
+  ]),
+  // -------------------------------------------------------------------------
+  // Disney-scoped families. Park/attraction identity resolves by slug on the
+  // server (src/server/achievements/disney.ts); like the sensor families these
+  // ship visible-at-zero for users who never touch WDW.
+  // -------------------------------------------------------------------------
+  fam("parkfecta", "The Parkfecta", "four_park_days", "count", "🏰", [
+    [
+      1,
+      400,
+      "Four Parks, One Day",
+      "Magic Kingdom, EPCOT, Hollywood Studios, and Animal Kingdom before midnight. Legendary.",
+    ],
+    [3, 800, "Serial Parkfecta", "Three four-park days. Your park hopper begs for mercy."],
+  ]),
+  fam("wdwset", "Vacation Kingdom", "wdw_parks_unique", "count", "🎠", [
+    [
+      4,
+      300,
+      "The Full World",
+      "All four Walt Disney World theme parks visited. The whole world, checked off.",
+    ],
+  ]),
+  fam("worldsteps", "Steps Around the World", "epcot_steps", "count", "🌐", [
+    [15_000, 75, "Pavilion Hopper", "15,000 steps inside EPCOT. Mostly between snacks."],
+    [60_000, 150, "World Showcase Regular", "60,000 EPCOT steps. Eleven countries know your gait."],
+    [
+      250_000,
+      300,
+      "Walked the World",
+      "A quarter-million steps around the world. Passport not required, blisters included.",
+    ],
+  ]),
+  fam("wslap", "Lap of the World", "epcot_best_day_distance_m", "meters", "🥐", [
+    [2_000, 75, "One Lap", "A full World Showcase loop's worth of walking in one EPCOT day."],
+    [6_000, 150, "Three Laps Deep", "6 km in one EPCOT day. The lagoon is your track."],
+    [
+      12_000,
+      300,
+      "Around the World in a Day",
+      "12 km in a single EPCOT day. Phileas Fogg did it with a hot-air balloon. You had churros.",
+    ],
+  ]),
+  fam("mountains", "The Mountain Range", "mk_mountains_ridden", "count", "🗻", [
+    [2, 150, "Foothills", "Two of the four WDW mountains conquered."],
+    [
+      4,
+      400,
+      "Mountain Grand Slam",
+      "Space, Big Thunder, Tiana's Bayou, and Everest. The whole range, summited from a seated position.",
+    ],
+  ]),
+  fam("classics", "Class of '71", "mk_classics_ridden", "count", "🗝️", [
+    [4, 100, "History Buff", "Four opening-day-1971 Magic Kingdom attractions ridden."],
+    [8, 200, "Charter Member", "Eight of the class of '71. Walt would nod approvingly."],
+    [
+      12,
+      400,
+      "Opening Day Historian",
+      "All twelve surviving opening-day attractions. October 1, 1971 lives on in you.",
+    ],
+  ]),
+  fam("again", "Again! Again!", "same_ride_max", "count", "🔁", [
+    [5, 100, "Favorite Found", "The same attraction, five times. It's not a phase."],
+    [15, 200, "On a First-Name Basis", "Fifteen rides on one attraction. The cast knows your row."],
+    [
+      50,
+      400,
+      "Season Ticket Holder",
+      "Fifty rides on a single attraction. At this point you're staff.",
+    ],
+  ]),
+  fam("homepark", "Home Park", "home_park_days", "count", "🏠", [
+    [10, 100, "Local", "Ten days at one park. You have opinions about the bathrooms."],
+    [30, 200, "Homestead", "Thirty days at your park. Your park."],
+    [75, 400, "Deed Pending", "Seventy-five days at one park. Legally it's still theirs. Legally."],
+  ]),
+  fam("showgoer", "Showstopper", "shows_watched", "count", "🎭", [
+    [1, 50, "Curtain Up", "First show watched, detected by the seat of your pants."],
+    [10, 100, "Matinee Regular", "Ten shows. You clap when the animatronics bow."],
+    [50, 200, "Patron of the Arts", "Fifty shows. The preshow spiel is your ASMR."],
+  ]),
+  // Resort-transit families (the out-of-park zone machine; native pedometer
+  // sharpens ride-vs-walked calls, so some credits are native-leaning).
+  fam("ttc", "Grand Central of the South", "ttc_visits", "count", "🚏", [
+    [1, 50, "Transfer Student", "First pass through the Transportation & Ticket Center."],
+    [10, 100, "Hub Life", "Ten TTC transits. Monorail or ferry? You no longer hesitate."],
+    [
+      50,
+      200,
+      "Commuter Emeritus",
+      "Fifty times through the TTC. You give directions to cast members.",
+    ],
+  ]),
+  fam("monorail", "Highway in the Sky", "monorail_rides", "count", "🚝", [
+    [1, 75, "Please Stand Clear", "First monorail ride. Doors closing — por favor manténganse…"],
+    [10, 150, "Beam Commuter", "Ten monorail trips. You have a favorite car."],
+    [50, 300, "Highway Patrol", "Fifty rides on the highway in the sky. The beam hums your name."],
+  ]),
+  fam("ferry", "Seven Seas Sailor", "ferry_rides", "count", "⛴️", [
+    [1, 75, "Maiden Voyage", "First ferry crossing of the Seven Seas Lagoon."],
+    [10, 150, "Deck Regular", "Ten crossings. You move to the center of the vessel unprompted."],
+    [25, 300, "Admiral of the Lagoon", "Twenty-five crossings. The captain waves back now."],
+  ]),
+  fam("skyliner", "State of the Air", "skyliner_rides", "count", "🚡", [
+    [1, 75, "Gondolier", "First Disney Skyliner flight. Most magical clothesline on Earth."],
+    [10, 150, "Frequent Floater", "Ten Skyliner trips. You know which cabins have Mickey ears."],
+    [50, 300, "Air Rights", "Fifty gondola rides. You live up there now."],
+  ]),
+  fam("crescent", "The Scenic Route", "crescent_walks", "count", "🌉", [
+    [
+      1,
+      75,
+      "Took the Long Way",
+      "Walked between EPCOT and Hollywood Studios. The Friendship boats watched, confused.",
+    ],
+    [10, 150, "BoardWalk Regular", "Ten Crescent Lake walks. The gondolas overhead salute you."],
   ]),
 ];
 

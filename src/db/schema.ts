@@ -1948,6 +1948,11 @@ export const userParkDay = pgTable(
     // Pedometer-verified steps (native only): Σ of clamped per-ping deltas from
     // the ride-recorder plugin's session counter. 0 on web / denied permission.
     steps: integer("steps").notNull().default(0),
+    // Settled SHOW-entity dwells (≥8 min anchored at a geocoded SHOW — theater
+    // shows, parades). Deliberately separate from `rides`: shows never touch
+    // `user_attraction` or `queue_seconds`, so `attractions_unique` and the
+    // queue families keep meaning "rides".
+    shows: integer("shows").notNull().default(0),
     // Presence time (`park_seconds`): Σ of gap-bounded inter-ping deltas while in
     // this park, NOT last_seen−first_seen (which counts hotel naps / closed-app
     // gaps as "inside the park"). Accrued incrementally in ingestPing.
@@ -1982,6 +1987,19 @@ export const userGeoState = pgTable("user_geo_state", {
   // (same cumulative ⇒ zero delta). Null until a native session reports.
   stepSessionMs: bigint("step_session_ms", { mode: "number" }),
   stepsCum: integer("steps_cum"),
+  // Resort-transit state machine (out-of-park pings only — see
+  // src/server/achievements/disney.ts). `zoneSlug` is the last RESORT_ZONE the
+  // user was seen inside; `zoneAt` the last instant they were seen there (frozen
+  // while between zones); `zoneSteps` the pedometer steps accumulated since
+  // leaving it (the ride-vs-walked discriminator). `transitKind`/`transitAt`
+  // dedupe multi-leg journeys: the last credited trip kind and when, so a
+  // resort-loop monorail ride settling at three stations credits once. All
+  // cleared on park entry — a park visit ends any trip.
+  zoneSlug: text("zone_slug"),
+  zoneAt: timestamp("zone_at", { withTimezone: true }),
+  zoneSteps: integer("zone_steps").notNull().default(0),
+  transitKind: text("transit_kind"),
+  transitAt: timestamp("transit_at", { withTimezone: true }),
 });
 
 /** Event counters with no day/park dimension (pin scans, alert creations, …). */

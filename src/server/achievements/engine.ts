@@ -43,6 +43,17 @@ import {
   polygonBbox,
   type LngLat,
 } from "./geo.ts";
+import {
+  advanceTransitState,
+  aggregateDisneyDayStats,
+  CLASSICS_1971_SET,
+  countSetMatches,
+  EPCOT_SLUG,
+  MOUNTAIN_SET,
+  WDW_PARK_SLUGS,
+  zoneForPoint,
+  type TransitState,
+} from "./disney.ts";
 
 const PING_MAX_ACCURACY_M = 150; // drop noisy fixes
 const PING_MAX_GAP_S = 300; // deltas older than this don't accrue distance/queue
@@ -98,6 +109,7 @@ export interface IngestResult {
 
 export interface CachedPark {
   id: number;
+  slug: string;
   timezone: string;
   latMin: number;
   latMax: number;
@@ -113,6 +125,7 @@ async function getParks(): Promise<CachedPark[]> {
   const rows = await db
     .select({
       id: parks.id,
+      slug: parks.slug,
       timezone: parks.timezone,
       latMin: parks.latMin,
       latMax: parks.latMax,
@@ -162,6 +175,8 @@ interface CachedAttraction {
   id: number;
   lng: number;
   lat: number;
+  /** ATTRACTION | SHOW — settle dispatch: shows bump `shows`, not rides. */
+  entityType: string;
 }
 
 const attractionsCache = new Map<number, { at: number; data: CachedAttraction[] }>();
@@ -174,12 +189,15 @@ async function getAttractions(parkId: number): Promise<CachedAttraction[]> {
       id: attractions.id,
       latitude: attractions.latitude,
       longitude: attractions.longitude,
+      entityType: attractions.entityType,
     })
     .from(attractions)
     .where(
       and(
         eq(attractions.parkId, parkId),
-        eq(attractions.entityType, "ATTRACTION"),
+        // SHOW entities anchor dwells too (show-goer detection) — settle
+        // dispatches on entityType so shows never count as rides.
+        inArray(attractions.entityType, ["ATTRACTION", "SHOW"]),
         eq(attractions.active, true),
         isNotNull(attractions.latitude),
         isNotNull(attractions.longitude),
@@ -190,7 +208,7 @@ async function getAttractions(parkId: number): Promise<CachedAttraction[]> {
       (r): r is typeof r & { latitude: number; longitude: number } =>
         r.latitude != null && r.longitude != null,
     )
-    .map((r) => ({ id: r.id, lng: r.longitude, lat: r.latitude }));
+    .map((r) => ({ id: r.id, lng: r.longitude, lat: r.latitude, entityType: r.entityType }));
   attractionsCache.set(parkId, { at: Date.now(), data });
   return data;
 }
@@ -403,17 +421,33 @@ async function isRainyNow(parkId: number, now: Date, seededWeather: boolean): Pr
   );
 }
 
-/** Bump today's queue_seconds/rides on settle — shared by the same-park exit
- *  case and the cross-park/left-park case (§ ingestPing steps 4 & 7). Also
- *  records the distinct attraction (powers `attractions_unique`). */
+/** Settle a dwell into today's rollup — shared by the same-park exit case and
+ *  the cross-park/left-park case (§ ingestPing steps 4 & 7). ATTRACTION dwells
+ *  bump queue_seconds/rides and record the distinct attraction (powers
+ *  `attractions_unique`); SHOW dwells bump only `shows` — sitting through a
+ *  performance is not queueing, and shows must not pollute the ride stats. */
 async function settleAnchorRow(
   userId: string,
   parkId: number,
   day: string,
   anchorSeconds: number,
   attractionId: number,
+  entityType: string,
 ): Promise<void> {
   if (anchorSeconds < QUEUE_MIN_DWELL_S) return;
+  if (entityType === "SHOW") {
+    await db
+      .update(userParkDay)
+      .set({ shows: sql`${userParkDay.shows} + 1` })
+      .where(
+        and(
+          eq(userParkDay.userId, userId),
+          eq(userParkDay.parkId, parkId),
+          eq(userParkDay.day, day),
+        ),
+      );
+    return;
+  }
   await db
     .update(userParkDay)
     .set({
@@ -430,6 +464,12 @@ async function settleAnchorRow(
       target: [userAttraction.userId, userAttraction.attractionId],
       set: { rideCount: sql`${userAttraction.rideCount} + 1`, lastRiddenAt: new Date() },
     });
+}
+
+/** Entity type of a cached attraction id — ATTRACTION when unknown (cache
+ *  rotation between anchor and settle; the pre-shows behavior). */
+function anchorEntityType(list: CachedAttraction[], id: number): string {
+  return list.find((a) => a.id === id)?.entityType ?? "ATTRACTION";
 }
 
 /**
@@ -494,39 +534,57 @@ export async function ingestPing(
         oldDay,
         state.anchorSeconds,
         state.anchorAttractionId,
+        anchorEntityType(await getAttractions(oldPark.id), state.anchorAttractionId),
       );
     }
   }
 
   if (!park) {
+    // Resort-transit machine (Disney wave 2): out-of-park pings walk the WDW
+    // zone graph (TTC, monorail/Skyliner stations, the mid-lagoon ferry
+    // waypoint). Steps reuse the same clamped-delta discipline as in-park
+    // credit; the cursor above consumed the report either way, so absorbed
+    // and credited pings stay equally idempotent.
+    const zone = zoneForPoint(point);
+    const prevTransit: TransitState = {
+      zoneSlug: state?.zoneSlug ?? null,
+      zoneAt: state?.zoneAt ?? null,
+      zoneSteps: state?.zoneSteps ?? 0,
+      transitKind: state?.transitKind ?? null,
+      transitAt: state?.transitAt ?? null,
+    };
+    const { next, credits } = advanceTransitState(
+      prevTransit,
+      zone?.slug ?? null,
+      now,
+      clampStepsDelta(stepDeltaRaw, elapsed),
+      stepReport != null,
+    );
+    const cleared = {
+      parkId: null,
+      lng,
+      lat,
+      at: now,
+      anchorAttractionId: null,
+      anchorSince: null,
+      anchorSeconds: 0,
+      stepSessionMs: stepCursor.sessionMs,
+      stepsCum: stepCursor.cum,
+      zoneSlug: next.zoneSlug,
+      zoneAt: next.zoneAt,
+      zoneSteps: next.zoneSteps,
+      transitKind: next.transitKind,
+      transitAt: next.transitAt,
+    };
     await db
       .insert(userGeoState)
-      .values({
-        userId,
-        parkId: null,
-        lng,
-        lat,
-        at: now,
-        anchorAttractionId: null,
-        anchorSince: null,
-        anchorSeconds: 0,
-        stepSessionMs: stepCursor.sessionMs,
-        stepsCum: stepCursor.cum,
-      })
-      .onConflictDoUpdate({
-        target: userGeoState.userId,
-        set: {
-          parkId: null,
-          lng,
-          lat,
-          at: now,
-          anchorAttractionId: null,
-          anchorSince: null,
-          anchorSeconds: 0,
-          stepSessionMs: stepCursor.sessionMs,
-          stepsCum: stepCursor.cum,
-        },
-      });
+      .values({ userId, ...cleared })
+      .onConflictDoUpdate({ target: userGeoState.userId, set: cleared });
+    if (credits.length > 0) {
+      for (const c of credits) await addStat(userId, c, 1);
+      const { newlyUnlocked, xp, level } = await evaluateAndUnlock(userId);
+      return { inPark: false, newlyUnlocked, xp, level };
+    }
     return { inPark: false, newlyUnlocked: [] };
   }
 
@@ -611,7 +669,14 @@ export async function ingestPing(
   } else {
     // Settle a dwell we just walked away from, then see if we entered a new one.
     if (priorAnchorId != null)
-      await settleAnchorRow(userId, park.id, day, priorAnchorSeconds, priorAnchorId);
+      await settleAnchorRow(
+        userId,
+        park.id,
+        day,
+        priorAnchorSeconds,
+        priorAnchorId,
+        anchorEntityType(attractionsForPark, priorAnchorId),
+      );
     if (nearest && nearest.d <= QUEUE_ENTER_RADIUS_M) {
       anchorAttractionId = nearest.id;
       anchorSince = now;
@@ -623,34 +688,28 @@ export async function ingestPing(
     }
   }
 
+  // A park visit ends any resort-transit journey: zone + dedupe state clears
+  // so the next out-of-park leg starts fresh.
+  const inParkGeoState = {
+    parkId: park.id,
+    lng,
+    lat,
+    at: now,
+    anchorAttractionId,
+    anchorSince,
+    anchorSeconds,
+    stepSessionMs: stepCursor.sessionMs,
+    stepsCum: stepCursor.cum,
+    zoneSlug: null,
+    zoneAt: null,
+    zoneSteps: 0,
+    transitKind: null,
+    transitAt: null,
+  };
   await db
     .insert(userGeoState)
-    .values({
-      userId,
-      parkId: park.id,
-      lng,
-      lat,
-      at: now,
-      anchorAttractionId,
-      anchorSince,
-      anchorSeconds,
-      stepSessionMs: stepCursor.sessionMs,
-      stepsCum: stepCursor.cum,
-    })
-    .onConflictDoUpdate({
-      target: userGeoState.userId,
-      set: {
-        parkId: park.id,
-        lng,
-        lat,
-        at: now,
-        anchorAttractionId,
-        anchorSince,
-        anchorSeconds,
-        stepSessionMs: stepCursor.sessionMs,
-        stepsCum: stepCursor.cum,
-      },
-    });
+    .values({ userId, ...inParkGeoState })
+    .onConflictDoUpdate({ target: userGeoState.userId, set: inParkGeoState });
 
   const [todayRow] = await db
     .select({
@@ -689,6 +748,7 @@ export interface DayStatRow {
   presentSeconds: number;
   queueSeconds: number;
   rides: number;
+  shows: number;
   ropeDrop: boolean;
   nightOwl: boolean;
   rainy: boolean;
@@ -715,6 +775,7 @@ export function aggregateDayRows(dayRows: DayStatRow[]): Stats {
     steps: dayRows.reduce((s, r) => s + r.steps, 0),
     queue_seconds: dayRows.reduce((s, r) => s + r.queueSeconds, 0),
     rides: dayRows.reduce((s, r) => s + r.rides, 0),
+    shows_watched: dayRows.reduce((s, r) => s + r.shows, 0),
     rope_drops: dayRows.filter((r) => r.ropeDrop).length,
     night_owls: dayRows.filter((r) => r.nightOwl).length,
     rain_days: dayRows.filter((r) => r.rainy).length,
@@ -763,6 +824,7 @@ export async function computeStats(userId: string): Promise<Stats> {
       presentSeconds: userParkDay.presentSeconds,
       queueSeconds: userParkDay.queueSeconds,
       rides: userParkDay.rides,
+      shows: userParkDay.shows,
       ropeDrop: userParkDay.ropeDrop,
       nightOwl: userParkDay.nightOwl,
       rainy: userParkDay.rainy,
@@ -771,6 +833,16 @@ export async function computeStats(userId: string): Promise<Stats> {
     .where(eq(userParkDay.userId, userId));
 
   const stats = aggregateDayRows(dayRows);
+
+  // Disney-scoped day stats. Park identity resolves by slug at runtime (ids
+  // differ per environment); a deployment without the WDW catalog just folds
+  // to zeros. Reuses the geofence park cache — the four gates all carry geo.
+  const allParks = await getParks();
+  const wdwIds = new Set(
+    allParks.filter((p) => (WDW_PARK_SLUGS as readonly string[]).includes(p.slug)).map((p) => p.id),
+  );
+  const epcotId = allParks.find((p) => p.slug === EPCOT_SLUG)?.id ?? null;
+  Object.assign(stats, aggregateDisneyDayStats(dayRows, { wdwIds, epcotId }));
 
   // Cross-table counts (not day-rows, not event counters).
   const [attractionRow] = await db
@@ -794,7 +866,27 @@ export async function computeStats(userId: string): Promise<Stats> {
     .where(eq(userAttraction.userId, userId));
   stats.track_distance_m = trackRow?.m ?? 0;
 
-  // Client-reported event counters.
+  // Curated-set completion + biggest single-attraction habit — cross-table
+  // like track distance, so both are retroactively correct for rides logged
+  // before these stats existed. Identity is (park slug, attraction slug); an
+  // unmatched slug (Disney rename) fails soft and simply never counts.
+  const riddenPairs = await db
+    .select({ park: parks.slug, slug: attractions.slug })
+    .from(userAttraction)
+    .innerJoin(attractions, eq(attractions.id, userAttraction.attractionId))
+    .innerJoin(parks, eq(parks.id, attractions.parkId))
+    .where(eq(userAttraction.userId, userId));
+  stats.mk_mountains_ridden = countSetMatches(riddenPairs, MOUNTAIN_SET);
+  stats.mk_classics_ridden = countSetMatches(riddenPairs, CLASSICS_1971_SET);
+
+  const [maxRideRow] = await db
+    .select({ m: sql<number>`coalesce(max(${userAttraction.rideCount}), 0)` })
+    .from(userAttraction)
+    .where(eq(userAttraction.userId, userId));
+  stats.same_ride_max = maxRideRow?.m ?? 0;
+
+  // Client-reported event counters (plus the server-written transit counters —
+  // ttc_visits, monorail_rides, … live in user_stat like the sensor stats).
   const statRows = await db.select().from(userStat).where(eq(userStat.userId, userId));
   for (const row of statRows) {
     stats[row.stat as StatKey] = row.value;
@@ -873,6 +965,30 @@ export async function reconcileDaySteps(
     );
   const result = await evaluateAndUnlock(userId);
   return { ...result, steps: capped };
+}
+
+/** Additive `user_stat` upsert — server-written counters (sensor metrics from
+ *  the ride-trace path, transit credits from the zone machine). */
+export async function addStat(userId: string, stat: StatKey, by: number): Promise<void> {
+  if (by === 0) return;
+  await db
+    .insert(userStat)
+    .values({ userId, stat, value: by })
+    .onConflictDoUpdate({
+      target: [userStat.userId, userStat.stat],
+      set: { value: sql`${userStat.value} + ${by}`, updatedAt: new Date() },
+    });
+}
+
+/** High-water-mark `user_stat` upsert (e.g. `max_g_best`). */
+export async function raiseStat(userId: string, stat: StatKey, to: number): Promise<void> {
+  await db
+    .insert(userStat)
+    .values({ userId, stat, value: to })
+    .onConflictDoUpdate({
+      target: [userStat.userId, userStat.stat],
+      set: { value: sql`GREATEST(${userStat.value}, ${to})`, updatedAt: new Date() },
+    });
 }
 
 /** Upsert a client-reported event counter, then re-evaluate. */

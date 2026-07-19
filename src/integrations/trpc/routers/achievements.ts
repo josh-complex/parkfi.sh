@@ -503,6 +503,7 @@ export const achievementsRouter = {
           presentSeconds: userParkDay.presentSeconds,
           queueSeconds: userParkDay.queueSeconds,
           rides: userParkDay.rides,
+          shows: userParkDay.shows,
           ropeDrop: userParkDay.ropeDrop,
           nightOwl: userParkDay.nightOwl,
           rainy: userParkDay.rainy,

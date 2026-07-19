@@ -27,6 +27,7 @@ function dayRow(overrides: Partial<DayStatRow>): DayStatRow {
     presentSeconds: 0,
     queueSeconds: 0,
     rides: 0,
+    shows: 0,
     ropeDrop: false,
     nightOwl: false,
     rainy: false,
@@ -339,6 +340,7 @@ const storedHull = { latMin: 0.003, latMax: 0.007, lngMin: 0.003, lngMax: 0.007 
 function cachedPark(boundary: GeoPolygon | null): CachedPark {
   return {
     id: 1,
+    slug: "test-park",
     timezone: "America/New_York",
     ...geofenceBounds(storedHull, boundary),
     boundary,
@@ -403,7 +405,13 @@ describe("parkForPoint adjacency", () => {
     };
     const parks: CachedPark[] = [
       cachedPark(squareBoundary),
-      { id: 2, timezone: "America/New_York", ...geofenceBounds(storedHull, east), boundary: east },
+      {
+        id: 2,
+        slug: "east-park",
+        timezone: "America/New_York",
+        ...geofenceBounds(storedHull, east),
+        boundary: east,
+      },
     ];
     const justInsideEast: [number, number] = [0.0101, 0.005]; // ~11m past the shared edge
     expect(parkForPoint(justInsideEast, parks)?.id).toBe(2);

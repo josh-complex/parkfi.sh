@@ -23,12 +23,10 @@ import {
   userGeoState,
   userParkDay,
   userRideEvent,
-  userStat,
 } from "#/db/schema.ts";
-import type { StatKey } from "#/lib/achievements.ts";
 import { hasRideSignature } from "#/lib/ride-metrics.ts";
 import { distanceMeters } from "./geo.ts";
-import { evaluateAndUnlock, settleDay, type UnlockDTO } from "./engine.ts";
+import { addStat, evaluateAndUnlock, raiseStat, settleDay, type UnlockDTO } from "./engine.ts";
 import type { LevelInfo } from "#/lib/achievements.ts";
 
 // A sensor submit must be backed by a location ping this recent, else there's
@@ -185,34 +183,8 @@ export function creditDecision(
 }
 
 // ---------------------------------------------------------------------------
-// Stat writers.
-// ---------------------------------------------------------------------------
-
-/** Additive `user_stat` upsert (server-written sensor counters). */
-async function addStat(userId: string, stat: StatKey, by: number): Promise<void> {
-  if (by === 0) return;
-  await db
-    .insert(userStat)
-    .values({ userId, stat, value: by })
-    .onConflictDoUpdate({
-      target: [userStat.userId, userStat.stat],
-      set: { value: sql`${userStat.value} + ${by}`, updatedAt: new Date() },
-    });
-}
-
-/** High-water-mark `user_stat` upsert (e.g. `max_g_best`). */
-async function raiseStat(userId: string, stat: StatKey, to: number): Promise<void> {
-  await db
-    .insert(userStat)
-    .values({ userId, stat, value: to })
-    .onConflictDoUpdate({
-      target: [userStat.userId, userStat.stat],
-      set: { value: sql`GREATEST(${userStat.value}, ${to})`, updatedAt: new Date() },
-    });
-}
-
-// ---------------------------------------------------------------------------
-// Orchestration.
+// Orchestration. (Stat writers — addStat/raiseStat — live in engine.ts, shared
+// with the resort-transit machine.)
 // ---------------------------------------------------------------------------
 
 export async function ingestRideTrace(
@@ -252,6 +224,16 @@ export async function ingestRideTrace(
   // Resolve the attraction: prefer the live dwell anchor, else nearest active
   // non-ghost attraction within range of the last ping.
   let resolvedId = state.anchorAttractionId ?? null;
+  // The dwell machine also anchors SHOW entities now (show-goer detection); a
+  // sensor ride trace must never attach to a theater — fall through to
+  // nearest-ATTRACTION resolution instead.
+  if (resolvedId != null) {
+    const [anchorRow] = await db
+      .select({ entityType: attractions.entityType })
+      .from(attractions)
+      .where(eq(attractions.id, resolvedId));
+    if (anchorRow?.entityType !== "ATTRACTION") resolvedId = null;
+  }
   if (resolvedId == null && state.lng != null && state.lat != null) {
     const nearby = await db
       .select({ id: attractions.id, lat: attractions.latitude, lng: attractions.longitude })
