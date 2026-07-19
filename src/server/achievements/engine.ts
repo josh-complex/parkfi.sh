@@ -36,13 +36,25 @@ import {
   type TrackEvent,
 } from "#/lib/achievements.ts";
 import { Source } from "#/server/parks/codes.ts";
-import { distanceMeters, pointInPolygon, type LngLat } from "./geo.ts";
+import {
+  distanceMeters,
+  distanceToBoundary,
+  pointInPolygon,
+  polygonBbox,
+  type LngLat,
+} from "./geo.ts";
 
 const PING_MAX_ACCURACY_M = 150; // drop noisy fixes
 const PING_MAX_GAP_S = 300; // deltas older than this don't accrue distance/queue
 const WALK_SPEED_CAP_MS = 2.5; // m/s — clamps GPS jumps & vehicle travel
 const QUEUE_ENTER_RADIUS_M = 40; // anchor to an attraction within this
 const QUEUE_EXIT_RADIUS_M = 60; // hysteresis: keep anchor until beyond this
+// Grace ring outside a park's boundary polygon that still counts as in-park.
+// The OSM outlines are tight to the fence line, and several parks queue rides
+// within ~20–45 m of it (all of Volcano Bay's slides, EPCOT's France pavilion)
+// — without the buffer, ordinary GPS drift there reads as a park exit, which
+// resets the queue-dwell anchor and counts toward the ride-recorder disarm.
+const GEOFENCE_BUFFER_M = 30;
 const QUEUE_MIN_DWELL_S = 480; // ≥8 min anchored ⇒ it was a queue ⇒ +1 ride
 const ROPE_DROP_BEFORE = { h: 9, m: 30 }; // local
 const NIGHT_OWL_AFTER_H = 22; // local
@@ -54,7 +66,11 @@ export interface UnlockDTO {
 }
 
 export interface IngestResult {
-  inPark: boolean;
+  /** True/false when the fix was usable; null when the ping was dropped
+   *  (accuracy worse than PING_MAX_ACCURACY_M). A dropped ping says nothing
+   *  about where the user is — the client must not treat it as a park exit
+   *  (the ride-recorder disarm trigger keys off this distinction). */
+  inPark: boolean | null;
   parkId?: number;
   newlyUnlocked: UnlockDTO[];
   xp?: number;
@@ -68,7 +84,7 @@ export interface IngestResult {
 // few minutes of staleness is a non-issue.
 // ---------------------------------------------------------------------------
 
-interface CachedPark {
+export interface CachedPark {
   id: number;
   timezone: string;
   latMin: number;
@@ -99,9 +115,35 @@ async function getParks(): Promise<CachedPark[]> {
       (r): r is typeof r & { latMin: number; latMax: number; lngMin: number; lngMax: number } =>
         r.latMin != null && r.latMax != null && r.lngMin != null && r.lngMax != null,
     )
-    .map((r) => ({ ...r, boundary: r.boundary ?? null }));
+    .map((r) => ({ ...r, ...geofenceBounds(r, r.boundary ?? null), boundary: r.boundary ?? null }));
   parksCache = { at: Date.now(), data };
   return data;
+}
+
+/**
+ * The bbox prefilter for one park's geofence. The stored lat/lng min/max are
+ * the min/max hull of the park's *attraction* coordinates (services/geo
+ * `computeBounds` over the children feed) — far tighter than the park itself,
+ * and requiring them alongside the boundary polygon dead-zoned 30–70% of every
+ * park's walkable area (entrances, rim paths). The OSM boundary is the
+ * authoritative outline, so when a park has one the prefilter derives from it;
+ * the stored hull is only the fallback for a park the OSM outline step hasn't
+ * covered yet. Either box is padded by GEOFENCE_BUFFER_M so it never clips the
+ * buffered polygon test in parkForPoint. Exported for tests.
+ */
+export function geofenceBounds(
+  stored: { latMin: number; latMax: number; lngMin: number; lngMax: number },
+  boundary: GeoPolygon | null,
+): { latMin: number; latMax: number; lngMin: number; lngMax: number } {
+  const box = polygonBbox(boundary) ?? stored;
+  const latPad = GEOFENCE_BUFFER_M / 111_320;
+  const lngPad = latPad / Math.cos((box.latMin * Math.PI) / 180);
+  return {
+    latMin: box.latMin - latPad,
+    latMax: box.latMax + latPad,
+    lngMin: box.lngMin - lngPad,
+    lngMax: box.lngMax + lngPad,
+  };
 }
 
 interface CachedAttraction {
@@ -141,12 +183,30 @@ async function getAttractions(parkId: number): Promise<CachedAttraction[]> {
   return data;
 }
 
-/** Bounds prefilter, then a true polygon test when a boundary is present. */
-function parkForPoint(p: LngLat, allParks: CachedPark[]): { id: number; timezone: string } | null {
+/**
+ * Bounds prefilter (see geofenceBounds), then the authoritative test in two
+ * tiers: strict polygon containment first, then the GEOFENCE_BUFFER_M grace
+ * ring (with a park lacking a polygon gated by its padded bbox on that same
+ * weaker tier). Containment must be its own pass: USF and Islands of
+ * Adventure's polygons touch along the Hogwarts Express corridor, and in a
+ * single pass whichever park lists first would claim the inside of its
+ * neighbour via the buffer. Exported for tests.
+ */
+export function parkForPoint(
+  p: LngLat,
+  allParks: CachedPark[],
+): { id: number; timezone: string } | null {
   const [lng, lat] = p;
+  const inBounds = (park: CachedPark) =>
+    lat >= park.latMin && lat <= park.latMax && lng >= park.lngMin && lng <= park.lngMax;
   for (const park of allParks) {
-    if (lat < park.latMin || lat > park.latMax || lng < park.lngMin || lng > park.lngMax) continue;
-    if (park.boundary && !pointInPolygon(p, park.boundary)) continue;
+    if (inBounds(park) && park.boundary && pointInPolygon(p, park.boundary)) {
+      return { id: park.id, timezone: park.timezone };
+    }
+  }
+  for (const park of allParks) {
+    if (!inBounds(park)) continue;
+    if (park.boundary && distanceToBoundary(p, park.boundary) > GEOFENCE_BUFFER_M) continue;
     return { id: park.id, timezone: park.timezone };
   }
   return null;
@@ -277,7 +337,7 @@ export async function ingestPing(
   opts: { seededWeather?: boolean } = {},
 ): Promise<IngestResult> {
   if (accuracyM > PING_MAX_ACCURACY_M) {
-    return { inPark: false, newlyUnlocked: [] };
+    return { inPark: null, newlyUnlocked: [] };
   }
 
   const point: LngLat = [lng, lat];

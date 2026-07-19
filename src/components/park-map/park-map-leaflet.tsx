@@ -1008,9 +1008,11 @@ export function ParkMapLeaflet({
       className: animateRoute ? "route-antpath" : undefined,
       interactive: false,
     }).addTo(map);
-    // Frame the whole route in preview only — while following, a mid-trip
-    // re-route redraws the line without yanking the camera off the user.
-    if (followRef.current) return;
+    // Frame the whole route in preview only. While navigating the camera is
+    // never auto-framed from here: the follow-cam owns the viewport, and with
+    // follow dropped the route shrinks on every fix (trimmed to the remaining
+    // path) — re-fitting each time would yank the map out of the user's hands.
+    if (followRef.current || animateRoute) return;
     // Reserve space for the nav overlays (green turn sign + bottom ETA bar,
     // tagged `data-map-chrome`) so the route's endpoints land in the visible
     // band instead of under the UI.

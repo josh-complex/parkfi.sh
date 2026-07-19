@@ -4,9 +4,11 @@ import * as React from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { useStore } from "@tanstack/react-store";
+
 import { useDetectedRideHandler } from "#/components/achievements/use-detected-ride.ts";
 import { LOCNUDGE_TOAST_IDS, showUnlockToasts } from "#/components/achievements/unlock-toasts.tsx";
-import { useGeolocation } from "#/hooks/use-geolocation.ts";
+import { activeWatchesStore, lastFixStore, useGeolocation } from "#/hooks/use-geolocation.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
 import { reportSimPing, useGeoSim } from "#/lib/dev-geo-sim.ts";
@@ -21,6 +23,12 @@ import type { PluginListenerHandle } from "@capacitor/core";
 import type { LevelInfo } from "#/lib/achievements.ts";
 
 const PING_INTERVAL_MS = 30_000;
+// Consecutive out-of-park ping responses before the native ride recorder is
+// disarmed (~2 min at the normal cadence). Arming is instant; disarming is
+// debounced so a single noisy GPS fix near a park edge (or a brief geofence
+// miss) can't kill sensor monitoring mid-visit — the battery cost of a couple
+// extra minutes of monitoring is trivial next to a missed coaster.
+const DISARM_AFTER_MISSES = 4;
 const NUDGE_DELAY_MS = 8_000;
 const NUDGE_STAGGER_MS = 300;
 const NUDGE_SNOOZE_MS = 14 * 24 * 60 * 60 * 1000;
@@ -77,12 +85,28 @@ export function AchievementTracker() {
   );
 
   // --- Ping loop -----------------------------------------------------------
+  // The loop runs whenever *any* location signal is live — this instance's own
+  // watch (nudge tap, cross-session auto-resume) or any other instance's (the
+  // map's locate button). The instances are isolated, so without the shared
+  // watch count a user who turned location on via the map would go a whole
+  // session with the tracker's instance stuck `idle` and zero pings sent —
+  // which also meant the ride recorder never armed (it's edge-triggered off
+  // ping responses below).
+  const activeWatches = useStore(activeWatchesStore);
+  const lastFix = useStore(lastFixStore);
+  const locationOn = state.status === "granted" || activeWatches > 0;
   // Coords + the mutation object are kept in refs so the interval callback
   // always sees the latest values without tearing down/recreating the timer
   // on every render (useMutation returns a fresh object each render).
   const coordsRef = React.useRef<{ lng: number; lat: number; accuracy: number } | null>(null);
   if (state.status === "granted") {
     coordsRef.current = { lng: state.coords[0], lat: state.coords[1], accuracy: state.accuracy };
+  } else if (activeWatches > 0 && lastFix) {
+    coordsRef.current = {
+      lng: lastFix.coords[0],
+      lat: lastFix.coords[1],
+      accuracy: lastFix.accuracy,
+    };
   }
 
   const ping = useMutation(trpc.achievements.ping.mutationOptions({ meta: { errorToast: false } }));
@@ -90,7 +114,7 @@ export function AchievementTracker() {
   pingRef.current = ping;
 
   React.useEffect(() => {
-    if (!loggedIn || state.status !== "granted") return;
+    if (!loggedIn || !locationOn) return;
     const tick = () => {
       if (pingRef.current.isPending) return;
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
@@ -100,7 +124,7 @@ export function AchievementTracker() {
         onSuccess: (r) => {
           // Echo the response to the dev sim panel (no-op when disarmed).
           reportSimPing({
-            inPark: r.inPark,
+            inPark: r.inPark === true,
             parkId: r.parkId,
             distanceM: r.today?.distanceM,
             queueSeconds: r.today?.queueSeconds,
@@ -108,11 +132,23 @@ export function AchievementTracker() {
           });
           // Arm/disarm the native ride recorder on park entry/exit (no-op on
           // web). Only sensor-monitor while actually in a park — that's what
-          // bounds battery. Edge-triggered off the ping's inPark flag.
-          if (r.inPark !== inParkRef.current) {
-            inParkRef.current = r.inPark;
-            if (r.inPark) void armRideMonitoring();
-            else void disarmRideMonitoring();
+          // bounds battery. Arm on the first in-park response; disarm only
+          // after DISARM_AFTER_MISSES consecutive out-of-park ones. A dropped
+          // ping (inPark null — the fix was too inaccurate for the server to
+          // trust) is evidence of nothing and moves neither edge.
+          if (r.inPark === true) {
+            disarmMissesRef.current = 0;
+            if (!inParkRef.current) {
+              inParkRef.current = true;
+              void armRideMonitoring();
+            }
+          } else if (r.inPark === false && inParkRef.current) {
+            disarmMissesRef.current += 1;
+            if (disarmMissesRef.current >= DISARM_AFTER_MISSES) {
+              disarmMissesRef.current = 0;
+              inParkRef.current = false;
+              void disarmRideMonitoring();
+            }
           }
           if (r.newlyUnlocked.length > 0 && r.xp != null && r.level != null) {
             celebrate(
@@ -126,13 +162,14 @@ export function AchievementTracker() {
     };
     const id = setInterval(tick, pingIntervalMs);
     return () => clearInterval(id);
-  }, [loggedIn, state.status, celebrate, pingIntervalMs]);
+  }, [loggedIn, locationOn, celebrate, pingIntervalMs]);
 
   // --- Native ride detection -------------------------------------------------
   // On device only: a sensor-detected coaster ride flows through the shared
   // detected-ride funnel (signature gate → submit → recap toast + unlocks +
   // debug ring) — the exact path the synthetic-trace dev panel drives too.
   const inParkRef = React.useRef(false);
+  const disarmMissesRef = React.useRef(0);
   const handleDetectedRide = useDetectedRideHandler();
   const handleRideRef = React.useRef(handleDetectedRide);
   handleRideRef.current = handleDetectedRide;

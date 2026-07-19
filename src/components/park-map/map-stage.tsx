@@ -38,7 +38,12 @@ import {
 } from "./map-controls.tsx";
 import { morph, settleMorph } from "./map-morph.ts";
 import { useTurnCues } from "./nav-cues.ts";
-import { buildRouteModel, roundCoord, routeBearingAt } from "./nav-geometry.ts";
+import {
+  buildRouteModel,
+  remainingRouteCoords,
+  roundCoord,
+  routeBearingAt,
+} from "./nav-geometry.ts";
 import { NavOverlay } from "./nav-overlay.tsx";
 import {
   clearNavTrip,
@@ -370,9 +375,24 @@ export function MapStageProvider({
     [trip, routeQ.data],
   );
   const routeCoords = trip ? (routeQ.data?.coordinates ?? null) : null;
-  // Latest route geometry read inside the stable overview callback.
-  const routeCoordsRef = React.useRef(routeCoords);
-  routeCoordsRef.current = routeCoords;
+  // While actively walking, the drawn line is trimmed to what's left to walk —
+  // the grayed traveled trail behind it covers where you've been (the old
+  // per-10 m refetch redrew the route from the current position and got this
+  // for free; the client-side projection has to trim explicitly). Preview and
+  // arrival draw the whole route; the full geometry always stays in
+  // `routeModel` for the projection/progress math.
+  const progressAlongM = started && !arrived ? (progress?.alongM ?? null) : null;
+  const drawnRoute = React.useMemo(() => {
+    if (!routeCoords) return null;
+    if (routeModel && progressAlongM != null)
+      return remainingRouteCoords(routeModel, progressAlongM) ?? routeCoords;
+    return routeCoords;
+  }, [routeCoords, routeModel, progressAlongM]);
+  // Latest drawn geometry, read inside the stable overview/bearing callbacks —
+  // trimmed while walking, so the route overview frames the *remaining* route
+  // and the route-up bearing projects onto the part still ahead.
+  const routeCoordsRef = React.useRef(drawnRoute);
+  routeCoordsRef.current = drawnRoute;
   // Live fixes drive the trip: progress (next-turn/remaining/ETA), arrival
   // detection, the traveled breadcrumb (snapped to the routed path), and
   // off-route rerouting — all in one store transition per fix (see recordNavFix),
@@ -707,7 +727,7 @@ export function MapStageProvider({
                   onMapRef={onMapRef}
                   attached={attached}
                   userLocation={userLocation}
-                  route={routeCoords}
+                  route={drawnRoute}
                   traveled={started && traveled.length > 1 ? traveled : null}
                   animateRoute={started && !arrived}
                   onRequestDirections={requestDirections}
@@ -740,7 +760,7 @@ export function MapStageProvider({
                   onMapRef={onMapRef}
                   attached={attached}
                   userLocation={userLocation}
-                  route={routeCoords}
+                  route={drawnRoute}
                   traveled={started && traveled.length > 1 ? traveled : null}
                   animateRoute={started && !arrived}
                   onRequestDirections={requestDirections}

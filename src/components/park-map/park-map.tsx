@@ -908,10 +908,11 @@ export function ParkMap({
     dotAnimateRef.current = animateRoute;
     if (!ready) return;
     ensureRoute();
-    // Frame the whole route in *preview* only. While following (navigating), a
-    // mid-trip re-route must redraw the line without yanking the camera off the
-    // user — the follow-cam owns the viewport then.
-    if (route && route.length > 1 && mapRef.current && !followRef.current) {
+    // Frame the whole route in *preview* only. While navigating the camera is
+    // never auto-framed from here: the follow-cam owns the viewport, and with
+    // follow dropped the route shrinks on every fix (trimmed to the remaining
+    // path) — re-fitting each time would yank the map out of the user's hands.
+    if (route && route.length > 1 && mapRef.current && !followRef.current && !animateRoute) {
       const b = new maplibregl.LngLatBounds();
       for (const c of route) b.extend(c);
       // Reserve space for the nav overlays (green turn sign + bottom ETA bar,

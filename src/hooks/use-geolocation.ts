@@ -44,6 +44,16 @@ const GEO_PROFILES: Record<GeoProfile, PositionOptions> = {
  */
 export const lastFixStore = new Store<{ coords: [number, number]; accuracy: number } | null>(null);
 
+/**
+ * Count of live, granted geolocation watches across every hook instance. Lets a
+ * consumer without its own active watch (the achievement tracker's ping loop)
+ * know that fresh fixes are flowing into {@link lastFixStore} — the instances
+ * are otherwise isolated, so one instance reaching `granted` (the map's locate
+ * tap) is invisible to the others. Watches only; one-shot `getCurrentPosition`
+ * calls don't keep delivering and never count.
+ */
+export const activeWatchesStore = new Store(0);
+
 // Remembers that the user turned the locate feature on, so it can re-engage
 // across sessions (see `rememberActive`). Only ever set once we're actually
 // `granted`, and cleared on `denied`, so a stale flag can't outlive a revoked
@@ -110,13 +120,23 @@ export function useGeolocation(opts?: {
   // recreate the callback; the watch is re-armed by the effect below.
   const profileRef = React.useRef(profile);
   profileRef.current = profile;
+  // Whether this instance is currently counted in `activeWatchesStore`.
+  const countedRef = React.useRef(false);
+
+  const uncountWatch = React.useCallback(() => {
+    if (countedRef.current) {
+      countedRef.current = false;
+      activeWatchesStore.setState((n) => n - 1);
+    }
+  }, []);
 
   const stop = React.useCallback(() => {
+    uncountWatch();
     if (watchIdRef.current != null && typeof navigator !== "undefined") {
       navigator.geolocation.clearWatch(watchIdRef.current);
       watchIdRef.current = null;
     }
-  }, []);
+  }, [uncountWatch]);
 
   // Turn the feature back off: drop the watch, return to `idle` (so the locate
   // button reads as inactive again), and forget the remembered flag so it won't
@@ -136,6 +156,11 @@ export function useGeolocation(opts?: {
       if (rememberActive && !activeWrittenRef.current) {
         activeWrittenRef.current = true;
         writeActiveFlag(true);
+      }
+      // First fix from a live watch: announce it to the shared count.
+      if (watchIdRef.current != null && !countedRef.current) {
+        countedRef.current = true;
+        activeWatchesStore.setState((n) => n + 1);
       }
       const coords: [number, number] = [pos.coords.longitude, pos.coords.latitude];
       const { accuracy, heading } = pos.coords;
@@ -169,13 +194,15 @@ export function useGeolocation(opts?: {
         // Permission is gone — drop the flag so we don't keep trying to resume.
         if (rememberActive) writeActiveFlag(false);
         activeWrittenRef.current = false;
+        // The watch object survives a revocation but will never deliver again.
+        uncountWatch();
         setState({ status: "denied" });
       } else {
         posthog.capture("geolocation_error", { code: err.code, message: err.message });
         setState({ status: "error", message: err.message });
       }
     },
-    [rememberActive],
+    [rememberActive, uncountWatch],
   );
 
   const locate = React.useCallback(() => {

@@ -69,6 +69,26 @@
      collapse it to 0 there (the standalone override below). The nav's own
      `max(…, 1rem)` floor still keeps its keys off the very edge. */
   --safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  /* Physical display corner radii, published at startup by the local
+     DeviceCorners Capacitor plugin (lib/device-corners.ts) on native; no web API
+     exists (research/device-corner-radius.md). The 3.5rem web default is chosen
+     so the nav formula below resolves to the designed 2.5rem rounding. */
+  --device-corner-radius-bl: 3.5rem;
+  --device-corner-radius-br: 3.5rem;
+  /* Bottom-nav outer corners, concentric with the bezel: the bar sits 1rem in
+     from the screen edges (mx-4; --safe-bottom is 0 in the native shell and
+     standalone PWA), so concentric = device radius − 1rem. Clamped to ≥1rem so
+     square-cornered devices match the bar's 1rem top rounding, and ≤2.5rem (the
+     designed web look) so big-bezel-radius devices don't balloon the bar. */
+  --nav-corner-bl: clamp(1rem, calc(var(--device-corner-radius-bl) - 1rem), 2.5rem);
+  --nav-corner-br: clamp(1rem, calc(var(--device-corner-radius-br) - 1rem), 2.5rem);
+  /* Bottom-drawer card corners (ui/drawer.tsx), same concentric treatment: the
+     visible card (the `before:` pseudo) floats 0.5rem in from the screen edges
+     (`before:inset-2` on an `inset-x-0 bottom-0` content box), so concentric =
+     device radius − 0.5rem, with the same square-device floor and designed
+     2.5rem ceiling as the nav. */
+  --drawer-corner-bl: clamp(1rem, calc(var(--device-corner-radius-bl) - 0.5rem), 2.5rem);
+  --drawer-corner-br: clamp(1rem, calc(var(--device-corner-radius-br) - 0.5rem), 2.5rem);
 }
 
 /* Installed PWA (home-screen, no Safari chrome): drop the safe-area padding the

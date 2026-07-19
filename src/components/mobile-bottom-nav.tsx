@@ -192,7 +192,7 @@ export function MobileBottomNav() {
           active={pathname === "/"}
           icon={<ActivityIcon />}
           label="Waits"
-          className="rounded-bl-[calc(var(--radius)*4)] rounded-tl-2xl"
+          className="rounded-bl-(--nav-corner-bl) rounded-tl-2xl"
         />
         <Seg
           to="/tickets"
@@ -215,7 +215,7 @@ export function MobileBottomNav() {
           icon={<BedDoubleIcon />}
           label="Stays"
           offline={offline.has("stays")}
-          className="rounded-br-[calc(var(--radius)*4)] rounded-tr-2xl"
+          className="rounded-br-(--nav-corner-br) rounded-tr-2xl"
         />
       </div>
     </nav>

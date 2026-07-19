@@ -10,6 +10,8 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // Local plugins must be registered before the bridge boots in super.onCreate.
+        registerPlugin(DeviceCornersPlugin.class);
         super.onCreate(savedInstanceState);
 
         // The web layer hides the gesture/navigation bar (see native-system-bars.ts).

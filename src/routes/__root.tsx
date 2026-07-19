@@ -23,6 +23,7 @@ import { RouteErrorFallback } from "#/components/route-error-fallback";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
 import { seo, websiteJsonLd } from "#/lib/seo.ts";
 import { markLaunched } from "#/lib/app-launch.ts";
+import { syncDeviceCornerRadius } from "#/lib/device-corners.ts";
 import { isNative } from "#/lib/platform.ts";
 import { loadToken } from "#/lib/native-token.ts";
 import { initNativeAuthDeepLinks } from "#/lib/native-oauth.ts";
@@ -118,7 +119,12 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   // so native matches the installed PWA instead of floating above the home
   // indicator. Client-only: `isNative()` is false on SSR/web.
   useEffect(() => {
-    if (isNative()) document.documentElement.classList.add("native");
+    if (isNative()) {
+      document.documentElement.classList.add("native");
+      // Fire-and-forget: publishes --device-corner-radius-* so the bottom nav
+      // rounds concentric with the physical display corners.
+      void syncDeviceCornerRadius();
+    }
   }, []);
 
   return (

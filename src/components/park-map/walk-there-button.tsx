@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useStore } from "@tanstack/react-store";
 import { FootprintsIcon } from "lucide-react";
 
@@ -11,7 +11,7 @@ import { lastFixStore } from "#/hooks/use-geolocation.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { preferredRouteLanguage, preferredUnitSystem, valhallaUnits } from "#/lib/units.ts";
 
-import { roundCoord } from "./nav-geometry.ts";
+import { coarseCoord, roundCoord } from "./nav-geometry.ts";
 import { NAV_ACCURACY_MAX_M, requestNavDirections } from "./nav-store.ts";
 
 /**
@@ -20,10 +20,11 @@ import { NAV_ACCURACY_MAX_M, requestNavDirections } from "./nav-store.ts";
  * parks the trip in the shared nav store and lands on the map, where the stage
  * takes over (location grant, route preview, Start).
  *
- * The minutes come from the same `routing.route` query the map's preview runs
- * (same rounded coords/units/language), so the preview after the tap is served
- * from cache. They only render when a location fix already exists this session
- * (`lastFixStore`) — the button never prompts for location by itself.
+ * The minutes come from the same `routing.route` procedure the map's preview
+ * runs, but keyed on a coarse (~110 m) origin so a live location watch doesn't
+ * churn the query key fix-by-fix (the map's preview re-routes from the precise
+ * fix after the tap). They only render when a location fix already exists this
+ * session (`lastFixStore`) — the button never prompts for location by itself.
  */
 export function WalkThereButton({
   id = 0,
@@ -48,14 +49,21 @@ export function WalkThereButton({
     [latitude, longitude],
   );
   const estimateQ = useQuery({
+    // The origin is keyed coarsely (~110 m): a live watch elsewhere in the app
+    // updates the fix on a steady cadence, and a full-precision key would make
+    // every wobble a fresh query — flickering the minutes off and re-hitting
+    // the router while the user stands still.
     ...trpc.routing.route.queryOptions({
-      from: fix ? roundCoord(fix.coords) : [0, 0],
+      from: fix ? coarseCoord(fix.coords) : [0, 0],
       to: coords ? roundCoord(coords) : [0, 0],
       units: valhallaUnits(preferredUnitSystem()),
       language: preferredRouteLanguage(),
     }),
     enabled: fix != null && coords != null,
     staleTime: 5 * 60_000,
+    // When the key does move, keep showing the previous estimate until the new
+    // one lands, so the label never blinks out mid-read.
+    placeholderData: keepPreviousData,
     meta: { errorToast: false },
   });
   if (coords == null) return null;

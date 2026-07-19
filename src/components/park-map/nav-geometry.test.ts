@@ -6,11 +6,13 @@ import {
   angleDelta,
   bearingBetween,
   buildRouteModel,
+  coarseCoord,
   compassDirection,
   computeProgress,
   extendSnappedTrail,
   isStartManeuver,
   projectOntoRoute,
+  remainingRouteCoords,
   roundCoord,
   routeBearingAt,
   SNAP_OFF_ROUTE_M,
@@ -230,6 +232,39 @@ describe("computeProgress", () => {
   });
 });
 
+describe("remainingRouteCoords", () => {
+  const model = buildRouteModel(routeResult)!;
+
+  it("starts the line at the interpolated on-path point and keeps later vertices", () => {
+    const rest = remainingRouteCoords(model, 50)!; // 50m along the eastbound leg
+    expect(rest).toHaveLength(3);
+    expect(distanceMeters(rest[0], at(50, 0))).toBeLessThan(1);
+    expect(rest[1]).toEqual(at(200, 0)); // the corner survives
+    expect(rest[2]).toEqual(at(200, 100));
+  });
+
+  it("drops passed vertices once the walker is beyond them", () => {
+    const rest = remainingRouteCoords(model, 250)!; // 50m up the north leg
+    expect(rest).toHaveLength(2);
+    expect(distanceMeters(rest[0], at(200, 50))).toBeLessThan(1);
+    expect(rest[1]).toEqual(at(200, 100));
+  });
+
+  it("returns the full geometry before the start and null past the end", () => {
+    expect(remainingRouteCoords(model, 0)).toEqual(routeResult.coordinates);
+    expect(remainingRouteCoords(model, -5)).toEqual(routeResult.coordinates);
+    expect(remainingRouteCoords(model, model.totalM)).toBeNull();
+    expect(remainingRouteCoords(model, model.totalM + 10)).toBeNull();
+  });
+
+  it("lands exactly on a vertex without duplicating it", () => {
+    const rest = remainingRouteCoords(model, model.cumM[1])!; // standing on the corner
+    expect(rest).toHaveLength(2);
+    expect(distanceMeters(rest[0], at(200, 0))).toBeLessThan(1);
+    expect(rest[1]).toEqual(at(200, 100));
+  });
+});
+
 describe("roundCoord", () => {
   it("rounds to 6 decimals (~11 cm) so equivalent fixes share a query key", () => {
     expect(roundCoord([-81.123456789, 28.7654321004])).toEqual([-81.123457, 28.765432]);
@@ -237,6 +272,17 @@ describe("roundCoord", () => {
 
   it("leaves already-round coords untouched", () => {
     expect(roundCoord([-81.51, 28.43])).toEqual([-81.51, 28.43]);
+  });
+});
+
+describe("coarseCoord", () => {
+  it("rounds to 3 decimals (~110 m) so wobbling fixes share an estimate key", () => {
+    expect(coarseCoord([-81.123456789, 28.7654321004])).toEqual([-81.123, 28.765]);
+  });
+
+  it("keys GPS wobble around one spot to the same coord", () => {
+    // ~20 m apart — typical low-profile watch jitter while standing still.
+    expect(coarseCoord([-81.5101, 28.43005])).toEqual(coarseCoord([-81.51025, 28.4301]));
   });
 });
 

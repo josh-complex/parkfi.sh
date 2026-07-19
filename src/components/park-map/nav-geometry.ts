@@ -44,6 +44,15 @@ export function roundCoord(c: [number, number]): [number, number] {
   return [Math.round(c[0] * 1e6) / 1e6, Math.round(c[1] * 1e6) / 1e6];
 }
 
+/** Round a [lng, lat] to 3 decimals (~110 m) — the origin key for walk-*time*
+ *  estimates. A live watch (achievement tracker, low profile) wobbles the fix
+ *  by tens of metres even standing still; at 6 decimals every wobble is a new
+ *  query key, so an estimate CTA would flicker and re-hit Valhalla on every
+ *  fix. At ~110 m the key only moves once the walk time plausibly changed. */
+export function coarseCoord(c: [number, number]): [number, number] {
+  return [Math.round(c[0] * 1e3) / 1e3, Math.round(c[1] * 1e3) / 1e3];
+}
+
 /** Initial bearing from `a` to `b` in degrees clockwise from north (0–360). */
 export function bearingBetween(a: [number, number], b: [number, number]): number {
   const lat = ((a[1] + b[1]) / 2) * (Math.PI / 180);
@@ -275,6 +284,32 @@ export function buildRouteModel(route: RouteResult): RouteModel | null {
     maneuvers: route.maneuvers,
     maneuverAlongM,
   };
+}
+
+/**
+ * The route geometry from `alongM` (a fix's projected distance along the route)
+ * to the destination: the interpolated on-path point first, then every vertex
+ * past it. This is what keeps the drawn line shrinking behind the walker while
+ * the grayed traveled trail grows — the full geometry stays in the model for
+ * the projection/progress math. Returns the full geometry for alongM ≤ 0, and
+ * null once nothing remains (alongM at/past the end).
+ */
+export function remainingRouteCoords(
+  model: RouteModel,
+  alongM: number,
+): Array<[number, number]> | null {
+  const { coordinates, cumM, totalM } = model;
+  if (alongM <= 0) return coordinates.slice() as Array<[number, number]>;
+  if (alongM >= totalM) return null;
+  // First vertex strictly beyond the projection (exists, since alongM < totalM).
+  let i = 1;
+  while (i < cumM.length && cumM[i] <= alongM) i++;
+  const a = coordinates[i - 1];
+  const b = coordinates[i];
+  const segLen = cumM[i] - cumM[i - 1];
+  const t = segLen > 0 ? (alongM - cumM[i - 1]) / segLen : 0;
+  const start: [number, number] = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  return [start, ...coordinates.slice(i)];
 }
 
 /** Live projection-derived trip progress for one GPS fix. */

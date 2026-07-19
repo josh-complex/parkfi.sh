@@ -33,10 +33,64 @@ export function pointInRing(point: LngLat, ring: ReadonlyArray<LngLat>): boolean
  */
 export function pointInPolygon(point: LngLat, geo: GeoPolygon | null | undefined): boolean {
   if (!geo) return false;
-  if (geo.type === "Polygon") {
-    return geo.coordinates.length > 0 && pointInRing(point, geo.coordinates[0]);
+  return outerRings(geo).some((ring) => pointInRing(point, ring));
+}
+
+/** The outer boundary ring of each polygon (holes ignored, like pointInPolygon). */
+export function outerRings(geo: GeoPolygon): ReadonlyArray<ReadonlyArray<LngLat>> {
+  if (geo.type === "Polygon") return geo.coordinates.length > 0 ? [geo.coordinates[0]] : [];
+  return geo.coordinates.filter((poly) => poly.length > 0).map((poly) => poly[0]);
+}
+
+/** Tight lat/lng bounds over a polygon's outer rings; null for empty geometry. */
+export function polygonBbox(
+  geo: GeoPolygon | null | undefined,
+): { latMin: number; latMax: number; lngMin: number; lngMax: number } | null {
+  if (!geo) return null;
+  let latMin = Infinity,
+    latMax = -Infinity,
+    lngMin = Infinity,
+    lngMax = -Infinity;
+  for (const ring of outerRings(geo)) {
+    for (const [lng, lat] of ring) {
+      latMin = Math.min(latMin, lat);
+      latMax = Math.max(latMax, lat);
+      lngMin = Math.min(lngMin, lng);
+      lngMax = Math.max(lngMax, lng);
+    }
   }
-  return geo.coordinates.some((poly) => poly.length > 0 && pointInRing(point, poly[0]));
+  return Number.isFinite(latMin) ? { latMin, latMax, lngMin, lngMax } : null;
+}
+
+/**
+ * Minimum distance in meters from a point to a polygon's outer-ring edges
+ * (equirectangular around the point, like distanceMeters — fine at park scale).
+ * Infinity for empty geometry. Note this is distance to the *edge*: it's large
+ * for a point deep inside the polygon too, so pair it with pointInPolygon.
+ */
+export function distanceToBoundary(point: LngLat, geo: GeoPolygon | null | undefined): number {
+  if (!geo) return Infinity;
+  const R = 6_371_000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const [lng, lat] = point;
+  const k = Math.cos(toRad(lat)); // lng→meters shrink at this latitude
+  const px = toRad(lng) * k * R;
+  const py = toRad(lat) * R;
+  let best = Infinity;
+  for (const ring of outerRings(geo)) {
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const ax = toRad(ring[j][0]) * k * R;
+      const ay = toRad(ring[j][1]) * R;
+      const bx = toRad(ring[i][0]) * k * R;
+      const by = toRad(ring[i][1]) * R;
+      const dx = bx - ax;
+      const dy = by - ay;
+      const len2 = dx * dx + dy * dy;
+      const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
+      best = Math.min(best, Math.hypot(px - (ax + t * dx), py - (ay + t * dy)));
+    }
+  }
+  return best;
 }
 
 /** Equirectangular-approx distance in meters — fine at theme-park scale. */

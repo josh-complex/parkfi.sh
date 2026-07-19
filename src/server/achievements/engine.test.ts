@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { aggregateDayRows, presenceDelta, settleDay, type DayStatRow } from "./engine.ts";
+import {
+  aggregateDayRows,
+  geofenceBounds,
+  parkForPoint,
+  presenceDelta,
+  settleDay,
+  type CachedPark,
+  type DayStatRow,
+} from "./engine.ts";
+
+import type { GeoPolygon } from "#/db/schema.ts";
 
 const MAX_GAP_S = 300;
 
@@ -164,3 +174,95 @@ function localDayOf(d: Date, timeZone: string): string {
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
+
+// A ~1.1 km square park at the equator: polygon spans (0,0)–(0.01,0.01), while
+// the stored (attraction-hull) bbox covers only the middle — the exact shape of
+// the prod mismatch (hull ⊂ polygon).
+const squareBoundary: GeoPolygon = {
+  type: "Polygon",
+  coordinates: [
+    [
+      [0, 0],
+      [0.01, 0],
+      [0.01, 0.01],
+      [0, 0.01],
+      [0, 0],
+    ],
+  ],
+};
+const storedHull = { latMin: 0.003, latMax: 0.007, lngMin: 0.003, lngMax: 0.007 };
+
+function cachedPark(boundary: GeoPolygon | null): CachedPark {
+  return {
+    id: 1,
+    timezone: "America/New_York",
+    ...geofenceBounds(storedHull, boundary),
+    boundary,
+  };
+}
+
+describe("geofenceBounds", () => {
+  it("derives the prefilter from the boundary (padded), not the stored hull", () => {
+    const b = geofenceBounds(storedHull, squareBoundary);
+    expect(b.latMin).toBeLessThan(0);
+    expect(b.latMax).toBeGreaterThan(0.01);
+    expect(b.lngMin).toBeLessThan(0);
+    expect(b.lngMax).toBeGreaterThan(0.01);
+    // Pad is the buffer (~30 m ≈ 0.00027°), not some huge margin.
+    expect(b.latMin).toBeGreaterThan(-0.001);
+  });
+  it("falls back to the padded stored hull without a boundary", () => {
+    const b = geofenceBounds(storedHull, null);
+    expect(b.latMin).toBeLessThan(0.003);
+    expect(b.latMin).toBeGreaterThan(0.002);
+    expect(b.latMax).toBeGreaterThan(0.007);
+  });
+});
+
+describe("parkForPoint", () => {
+  const parks = [cachedPark(squareBoundary)];
+  it("matches a point inside the polygon but outside the stored hull", () => {
+    // The pre-fix dead zone: near the rim, nowhere near an attraction.
+    expect(parkForPoint([0.0005, 0.0005], parks)?.id).toBe(1);
+  });
+  it("matches a point within the buffer just outside the polygon", () => {
+    // ~11 m south of the edge — GPS drift outside a tight fence line.
+    expect(parkForPoint([0.005, -0.0001], parks)?.id).toBe(1);
+  });
+  it("rejects a point beyond the buffer", () => {
+    // ~111 m south of the edge.
+    expect(parkForPoint([0.005, -0.001], parks)).toBeNull();
+  });
+  it("gates by padded bbox alone when a park has no boundary", () => {
+    const noPoly = [cachedPark(null)];
+    expect(parkForPoint([0.005, 0.005], noPoly)?.id).toBe(1);
+    expect(parkForPoint([0.001, 0.001], noPoly)).toBeNull();
+  });
+});
+
+describe("parkForPoint adjacency", () => {
+  it("strict containment beats an adjacent park's buffer regardless of order", () => {
+    // Two parks sharing the lng=0.01 edge (the USF/IOA shape). A point just
+    // inside the second park sits within the first park's buffer; listing
+    // order must not decide it.
+    const east: GeoPolygon = {
+      type: "Polygon",
+      coordinates: [
+        [
+          [0.01, 0],
+          [0.02, 0],
+          [0.02, 0.01],
+          [0.01, 0.01],
+          [0.01, 0],
+        ],
+      ],
+    };
+    const parks: CachedPark[] = [
+      cachedPark(squareBoundary),
+      { id: 2, timezone: "America/New_York", ...geofenceBounds(storedHull, east), boundary: east },
+    ];
+    const justInsideEast: [number, number] = [0.0101, 0.005]; // ~11m past the shared edge
+    expect(parkForPoint(justInsideEast, parks)?.id).toBe(2);
+    expect(parkForPoint([0.0099, 0.005], parks)?.id).toBe(1);
+  });
+});
