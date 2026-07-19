@@ -551,16 +551,15 @@ export const parksRouter = {
       is_open: boolean | null;
       has_schedule: boolean;
     }>(sql`
-      WITH latest_standby AS (
-        SELECT DISTINCT ON (q.attraction_id) q.attraction_id, q.wait_min
-        FROM queue_obs q
-        WHERE q.queue_type = 1 AND q.observed_at >= now() - INTERVAL '24 hours'
-        ORDER BY q.attraction_id, q.observed_at DESC
-      ),
-      latest_status AS (
-        SELECT DISTINCT ON (s.attraction_id) s.attraction_id, s.status
-        FROM attraction_status_obs s
-        ORDER BY s.attraction_id, s.observed_at DESC
+      WITH live AS (
+        -- Current state from the worker-maintained mirror (Phase 3), same shape
+        -- as board/overview: status carries forward unbounded; standby nulls out
+        -- once the snapshot is >24h stale (matching the old latest_standby 24h
+        -- window).
+        SELECT al.attraction_id,
+               al.status,
+               CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.standby_wait END AS wait_min
+        FROM attraction_live al
       ),
       sched AS (
         SELECT DISTINCT ON (park_id, service_date, opening_time)
@@ -578,7 +577,7 @@ export const parksRouter = {
         GROUP BY p.id
       )
       SELECT a.id, a.name, a.slug, a.category, a.latitude, a.longitude,
-             ls.status, lsb.wait_min AS standby_wait,
+             lv.status, lv.wait_min AS standby_wait,
              p.slug AS park_slug, p.name AS park_name,
              o.slug AS operator_slug, o.name AS operator_name,
              m.land AS meta_land, m.height_requirement AS meta_height_requirement,
@@ -590,8 +589,7 @@ export const parksRouter = {
       FROM attractions a
       JOIN parks p ON p.id = a.park_id AND p.active = true
       LEFT JOIN operators o ON o.id = p.operator_id
-      LEFT JOIN latest_status ls ON ls.attraction_id = a.id
-      LEFT JOIN latest_standby lsb ON lsb.attraction_id = a.id
+      LEFT JOIN live lv ON lv.attraction_id = a.id
       LEFT JOIN attraction_meta m ON m.attraction_id = a.id
       LEFT JOIN park_open po ON po.park_id = p.id
       WHERE a.active = true AND a.entity_type = 'ATTRACTION' AND a.category IS NOT NULL

@@ -41,6 +41,14 @@ export const CACHE = {
    * 30 s. The long stale window keeps the edge serving through origin blips.
    */
   TRPC_LIVE: "public, s-maxage=30, stale-while-revalidate=300",
+  /**
+   * Pedestrian route geometry (`routing.route`): pure `[from, to] → path`, no
+   * per-user variation, and footpaths don't move — so a long edge TTL is safe.
+   * Endpoints are quantized client-side to ~11 m (`roundCoord`) so nearby fixes
+   * and repeated POI→POI pairs share a key and actually hit this cache; a live
+   * walker's shifting position still mostly misses, which is expected.
+   */
+  ROUTE: "public, s-maxage=3600, stale-while-revalidate=86400",
 } as const;
 
 /**
@@ -55,6 +63,9 @@ export const CACHEABLE_TRPC_PATHS: ReadonlyMap<string, string> = new Map([
   ["parks.board", CACHE.TRPC_LIVE],
   ["parks.overview", CACHE.TRPC_LIVE],
   ["parks.ticker", CACHE.TRPC_LIVE],
+  ["parks.allRides", CACHE.TRPC_LIVE],
+  // Pedestrian routing — long TTL, quantized endpoints (see CACHE.ROUTE).
+  ["routing.route", CACHE.ROUTE],
   // Catalog / menu / hours / availability — slow-moving, longer edge TTL.
   ["dining.venue", CACHE.TRPC_DATA],
   ["dining.menu", CACHE.TRPC_DATA],

@@ -36,12 +36,15 @@ export function compassDirection(bearing: number): string {
   return names[Math.round((((bearing % 360) + 360) % 360) / 45) % 8];
 }
 
-/** Round a [lng, lat] to 6 decimals (~11 cm). Query-key hygiene (§6): raw GPS
- *  floats never collide, so without this no two `routing.route` requests can
- *  ever share a cache entry — not even a card's walk-time prefetch and the
- *  Directions tap that follows it from the same fix. */
+/** Round a [lng, lat] to 4 decimals (~11 m). Query-key hygiene (§6) plus edge-
+ *  cache reach: raw GPS floats never collide, so without quantizing, no two
+ *  `routing.route` requests can ever share a cache entry. 4 decimals is below
+ *  pedestrian-GPS noise and irrelevant to footpath routing (Valhalla snaps the
+ *  endpoints onto the network anyway), so nearby fixes and repeated POI→POI
+ *  pairs collapse onto the same key — which is what lets the shared edge cache
+ *  (`CACHE.ROUTE`) actually hit instead of every request being unique. */
 export function roundCoord(c: [number, number]): [number, number] {
-  return [Math.round(c[0] * 1e6) / 1e6, Math.round(c[1] * 1e6) / 1e6];
+  return [Math.round(c[0] * 1e4) / 1e4, Math.round(c[1] * 1e4) / 1e4];
 }
 
 /** Round a [lng, lat] to 3 decimals (~110 m) — the origin key for walk-*time*

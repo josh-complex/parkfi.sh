@@ -266,8 +266,8 @@ describe("remainingRouteCoords", () => {
 });
 
 describe("roundCoord", () => {
-  it("rounds to 6 decimals (~11 cm) so equivalent fixes share a query key", () => {
-    expect(roundCoord([-81.123456789, 28.7654321004])).toEqual([-81.123457, 28.765432]);
+  it("rounds to 4 decimals (~11 m) so nearby fixes share a query/cache key", () => {
+    expect(roundCoord([-81.123456789, 28.7654321004])).toEqual([-81.1235, 28.7654]);
   });
 
   it("leaves already-round coords untouched", () => {
