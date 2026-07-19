@@ -33,6 +33,7 @@ import { Route as AppDashIndexRouteImport } from './routes/_app/_dash/index'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
 import { Route as ApiPushSubscribeRouteImport } from './routes/api/push/subscribe'
 import { Route as ApiMapStyleThemeRouteImport } from './routes/api/map-style/$theme'
+import { Route as ApiAvatarSeedRouteImport } from './routes/api/avatar/$seed'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AppStaysAlertsRouteImport } from './routes/_app/stays_.alerts'
 import { Route as AppResortSlugRouteImport } from './routes/_app/resort.$slug'
@@ -181,6 +182,11 @@ const ApiPushSubscribeRoute = ApiPushSubscribeRouteImport.update({
 const ApiMapStyleThemeRoute = ApiMapStyleThemeRouteImport.update({
   id: '/api/map-style/$theme',
   path: '/api/map-style/$theme',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAvatarSeedRoute = ApiAvatarSeedRouteImport.update({
+  id: '/api/avatar/$seed',
+  path: '/api/avatar/$seed',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -379,6 +385,7 @@ export interface FileRoutesByFullPath {
   '/resort/$slug': typeof AppResortSlugRoute
   '/stays/alerts': typeof AppStaysAlertsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/avatar/$seed': typeof ApiAvatarSeedRoute
   '/api/map-style/$theme': typeof ApiMapStyleThemeRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
@@ -432,6 +439,7 @@ export interface FileRoutesByTo {
   '/resort/$slug': typeof AppResortSlugRoute
   '/stays/alerts': typeof AppStaysAlertsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/avatar/$seed': typeof ApiAvatarSeedRoute
   '/api/map-style/$theme': typeof ApiMapStyleThemeRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
@@ -489,6 +497,7 @@ export interface FileRoutesById {
   '/_app/resort/$slug': typeof AppResortSlugRoute
   '/_app/stays_/alerts': typeof AppStaysAlertsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/avatar/$seed': typeof ApiAvatarSeedRoute
   '/api/map-style/$theme': typeof ApiMapStyleThemeRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
@@ -547,6 +556,7 @@ export interface FileRouteTypes {
     | '/resort/$slug'
     | '/stays/alerts'
     | '/api/auth/$'
+    | '/api/avatar/$seed'
     | '/api/map-style/$theme'
     | '/api/push/subscribe'
     | '/api/trpc/$'
@@ -600,6 +610,7 @@ export interface FileRouteTypes {
     | '/resort/$slug'
     | '/stays/alerts'
     | '/api/auth/$'
+    | '/api/avatar/$seed'
     | '/api/map-style/$theme'
     | '/api/push/subscribe'
     | '/api/trpc/$'
@@ -656,6 +667,7 @@ export interface FileRouteTypes {
     | '/_app/resort/$slug'
     | '/_app/stays_/alerts'
     | '/api/auth/$'
+    | '/api/avatar/$seed'
     | '/api/map-style/$theme'
     | '/api/push/subscribe'
     | '/api/trpc/$'
@@ -692,6 +704,7 @@ export interface RootRouteChildren {
   BlogRssDotxmlRoute: typeof BlogRssDotxmlRoute
   BlogIndexRoute: typeof BlogIndexRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiAvatarSeedRoute: typeof ApiAvatarSeedRoute
   ApiMapStyleThemeRoute: typeof ApiMapStyleThemeRoute
   ApiPushSubscribeRoute: typeof ApiPushSubscribeRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
@@ -869,6 +882,13 @@ declare module '@tanstack/react-router' {
       path: '/api/map-style/$theme'
       fullPath: '/api/map-style/$theme'
       preLoaderRoute: typeof ApiMapStyleThemeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/avatar/$seed': {
+      id: '/api/avatar/$seed'
+      path: '/api/avatar/$seed'
+      fullPath: '/api/avatar/$seed'
+      preLoaderRoute: typeof ApiAvatarSeedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
@@ -1214,6 +1234,7 @@ const rootRouteChildren: RootRouteChildren = {
   BlogRssDotxmlRoute: BlogRssDotxmlRoute,
   BlogIndexRoute: BlogIndexRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiAvatarSeedRoute: ApiAvatarSeedRoute,
   ApiMapStyleThemeRoute: ApiMapStyleThemeRoute,
   ApiPushSubscribeRoute: ApiPushSubscribeRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,

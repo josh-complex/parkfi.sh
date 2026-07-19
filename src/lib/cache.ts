@@ -20,6 +20,12 @@ export const CACHE = {
    */
   MAP_STYLE: "public, max-age=300, s-maxage=3600, stale-while-revalidate=604800",
   /**
+   * Bot avatar SVGs (`/api/avatar/:seed`). A pure, deterministic function of the
+   * seed — the same seed always yields the same bytes — so it's safe to treat as
+   * immutable and cache for a year at the edge and a week in the browser.
+   */
+  AVATAR: "public, max-age=604800, s-maxage=31536000, immutable",
+  /**
    * Read-only public tRPC query data (catalog / menu / hours / availability):
    * identical for every user, and already backed by a DB-side cache, so a short
    * edge TTL with a long stale window is plenty. Only emitted for an allowlist

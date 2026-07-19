@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { authClient } from "#/lib/auth-client.ts";
-import { generateBotAvatar } from "#/lib/avatar.ts";
+import { botAvatarUrl } from "#/lib/avatar.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { seo } from "#/lib/seo.ts";
 import { ConfirmButton } from "#/components/account/confirm-button.tsx";
@@ -62,7 +62,7 @@ function ProfilePage() {
 
   const [name, setName] = useState(user?.name ?? "");
   const [saving, setSaving] = useState(false);
-  const [avatarSrc, setAvatarSrc] = useState(user?.image ?? generateBotAvatar(user?.id ?? ""));
+  const [avatarSrc, setAvatarSrc] = useState(user?.image ?? botAvatarUrl(user?.id ?? ""));
   const [pending, setPending] = useState<PendingAvatar | null>(null);
   const [confirmSaving, setConfirmSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -79,8 +79,7 @@ function ProfilePage() {
     else toast.success("Display name updated");
   };
 
-  const generateBot = () =>
-    setPending({ src: generateBotAvatar(crypto.randomUUID()), type: "bot" });
+  const generateBot = () => setPending({ src: botAvatarUrl(crypto.randomUUID()), type: "bot" });
 
   const handleUploadAvatar = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
