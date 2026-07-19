@@ -2,6 +2,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
 import {
+  attractionLive,
   attractionQueueSupport,
   attractionStatusObs,
   attractions,
@@ -274,6 +275,61 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
   ].map((q) => ({ attractionId: q.attractionId, queueType: q.queueType }));
   if (supportRows.length > 0) {
     await db.insert(attractionQueueSupport).values(supportRows).onConflictDoNothing();
+  }
+
+  // (D) current-state mirror — one row per attraction, upserted with this tick's
+  // full snapshot so the live board/overview reads are a plain join on
+  // `attraction_live` instead of DISTINCT ON scans over the change-logs (see the
+  // table's schema comment). Each queue type the feed reported this tick maps to
+  // its columns; types not reported land null (full-snapshot replace).
+  const liveRows = normalized.map((e) => {
+    const attractionId = idMap.get(e.externalId)!;
+    const byType = new Map(e.queues.map((q) => [q.queueType, q]));
+    const standby = byType.get(QueueType.STANDBY);
+    const ll = byType.get(QueueType.PAID_RETURN_TIME);
+    const rt = byType.get(QueueType.RETURN_TIME);
+    const bg = byType.get(QueueType.BOARDING_GROUP);
+    return {
+      attractionId,
+      status: e.status,
+      standbyWait: standby?.waitMin ?? null,
+      llState: ll?.state ?? null,
+      llPriceCents: ll?.priceCents ?? null,
+      llCurrency: ll?.currency ?? null,
+      llReturnStart: ll?.returnStart ?? null,
+      llReturnEnd: ll?.returnEnd ?? null,
+      returnState: rt?.state ?? null,
+      returnStart: rt?.returnStart ?? null,
+      returnEnd: rt?.returnEnd ?? null,
+      boardingGroup: bg?.boardingGroup ?? null,
+      source,
+      observedAt: tickNow,
+    };
+  });
+  if (liveRows.length > 0) {
+    for (let i = 0; i < liveRows.length; i += 500) {
+      await db
+        .insert(attractionLive)
+        .values(liveRows.slice(i, i + 500))
+        .onConflictDoUpdate({
+          target: attractionLive.attractionId,
+          set: {
+            status: sql`excluded.status`,
+            standbyWait: sql`excluded.standby_wait`,
+            llState: sql`excluded.ll_state`,
+            llPriceCents: sql`excluded.ll_price_cents`,
+            llCurrency: sql`excluded.ll_currency`,
+            llReturnStart: sql`excluded.ll_return_start`,
+            llReturnEnd: sql`excluded.ll_return_end`,
+            returnState: sql`excluded.return_state`,
+            returnStart: sql`excluded.return_start`,
+            returnEnd: sql`excluded.return_end`,
+            boardingGroup: sql`excluded.boarding_group`,
+            source: sql`excluded.source`,
+            observedAt: sql`excluded.observed_at`,
+          },
+        });
+    }
   }
 
   return {

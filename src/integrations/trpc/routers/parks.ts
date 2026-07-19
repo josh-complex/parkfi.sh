@@ -226,25 +226,6 @@ export const parksRouter = {
                  count(*) > 0 AS has_schedule
           FROM sched
         ),
-        latest_status AS (
-          SELECT DISTINCT ON (s.attraction_id) s.attraction_id, s.status
-          FROM attraction_status_obs s
-          JOIN attractions a ON a.id = s.attraction_id
-          WHERE a.park_id = (SELECT id FROM park)
-          ORDER BY s.attraction_id, s.observed_at DESC
-        ),
-        -- Current state only: rows older than 24h are stale, not "the board now".
-        latest_q AS (
-          SELECT DISTINCT ON (q.attraction_id, q.queue_type)
-                 q.attraction_id, q.queue_type, q.wait_min, q.state,
-                 q.price_cents, q.currency, q.return_start, q.return_end,
-                 q.observed_at
-          FROM queue_obs q
-          JOIN attractions a ON a.id = q.attraction_id
-          WHERE a.park_id = (SELECT id FROM park)
-            AND q.observed_at >= now() - INTERVAL '24 hours'
-          ORDER BY q.attraction_id, q.queue_type, q.observed_at DESC
-        ),
         -- Capability: every queue type ever seen for the ride (authoritative
         -- "does it offer a paid/virtual line?", independent of current posting).
         caps AS (
@@ -254,25 +235,51 @@ export const parksRouter = {
           WHERE a.park_id = (SELECT id FROM park)
           GROUP BY s.attraction_id
         ),
-        hist AS (
-          SELECT q.attraction_id, avg(q.wait_min)::int AS hist_standby_wait
-          FROM queue_obs q
-          JOIN attractions a ON a.id = q.attraction_id
+        -- Current state from the worker-maintained mirror (Phase 3): a plain
+        -- lookup instead of DISTINCT ON scans over the change-logs. status
+        -- carries forward unbounded (matching the old latest_status CTE); the
+        -- wait/LL/return fields null out once the snapshot is >24h stale
+        -- (matching latest_q's 24h window — only reached when an attraction drops
+        -- out of the feed, since a polled ride is re-upserted every tick).
+        live AS (
+          SELECT al.attraction_id,
+                 al.status,
+                 al.observed_at,
+                 CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.standby_wait END AS standby_wait,
+                 CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.ll_state END AS ll_state,
+                 CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.ll_price_cents END AS ll_price_cents,
+                 CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.ll_currency END AS ll_currency,
+                 CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.ll_return_start END AS ll_return_start,
+                 CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.ll_return_end END AS ll_return_end,
+                 CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.return_state END AS return_state,
+                 CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.return_start END AS return_start,
+                 CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.return_end END AS return_end
+          FROM attraction_live al
+          JOIN attractions a ON a.id = al.attraction_id
           WHERE a.park_id = (SELECT id FROM park)
-            AND q.queue_type = 1
-            AND q.observed_at >= now() - INTERVAL '48 hours'
-            AND q.observed_at < now() - INTERVAL '24 hours'
-          GROUP BY q.attraction_id
+        ),
+        -- 24–48h-ago standby baseline for the delta indicator, read from the
+        -- queue_hourly continuous aggregate (samples-weighted mean of hourly
+        -- avgs) instead of scanning raw queue_obs. The window is entirely >24h
+        -- old, so the cagg (1h refresh lag) is fully materialized for it.
+        hist AS (
+          SELECT qh.attraction_id,
+                 (sum(qh.avg_wait::numeric * qh.samples) / nullif(sum(qh.samples), 0))::int AS hist_standby_wait
+          FROM queue_hourly qh
+          JOIN attractions a ON a.id = qh.attraction_id
+          WHERE a.park_id = (SELECT id FROM park)
+            AND qh.queue_type = 1
+            AND qh.bucket >= now() - INTERVAL '48 hours'
+            AND qh.bucket < now() - INTERVAL '24 hours'
+          GROUP BY qh.attraction_id
         )
         SELECT a.id, a.name, a.slug, a.entity_type,
-               ls.status,
-               sb.wait_min AS standby_wait,
-               sb.observed_at,
-               prt.state AS ll_state, prt.price_cents AS ll_price_cents,
-               prt.currency AS ll_currency,
-               prt.return_start AS ll_return_start, prt.return_end AS ll_return_end,
-               rt.state AS return_state,
-               rt.return_start AS return_start, rt.return_end AS return_end,
+               lv.status,
+               lv.standby_wait AS standby_wait,
+               lv.observed_at,
+               lv.ll_state, lv.ll_price_cents, lv.ll_currency,
+               lv.ll_return_start, lv.ll_return_end,
+               lv.return_state, lv.return_start, lv.return_end,
                caps.qtypes AS support_types,
                hist.hist_standby_wait,
                a.latitude, a.longitude, a.category,
@@ -287,10 +294,7 @@ export const parksRouter = {
                (SELECT is_open FROM park_open) AS is_open,
                (SELECT has_schedule FROM park_open) AS has_schedule
         FROM attractions a
-        LEFT JOIN latest_status ls ON ls.attraction_id = a.id
-        LEFT JOIN latest_q sb ON sb.attraction_id = a.id AND sb.queue_type = 1
-        LEFT JOIN latest_q prt ON prt.attraction_id = a.id AND prt.queue_type = 4
-        LEFT JOIN latest_q rt ON rt.attraction_id = a.id AND rt.queue_type = 3
+        LEFT JOIN live lv ON lv.attraction_id = a.id
         LEFT JOIN caps ON caps.attraction_id = a.id
         LEFT JOIN hist ON hist.attraction_id = a.id
         LEFT JOIN attraction_meta m ON m.attraction_id = a.id
@@ -997,28 +1001,24 @@ export const parksRouter = {
       has_schedule: boolean;
       opens_at: string | null;
     }>(sql`
-      WITH latest_standby AS (
-        SELECT DISTINCT ON (q.attraction_id) q.attraction_id, q.wait_min
-        FROM queue_obs q
-        WHERE q.queue_type = 1 AND q.observed_at >= now() - INTERVAL '24 hours'
-        ORDER BY q.attraction_id, q.observed_at DESC
-      ),
-      -- Carry-forward latest status (no staleness bound): attraction_status_obs is
-      -- a change-log, so a steadily-open ride may not have re-emitted OPERATING for
-      -- hours/days (the WDW feed leaves some rides OPERATING indefinitely). Bounding
-      -- this by observation age wrongly drops genuinely-open rides. Overnight "still
-      -- shows operating" is instead handled by gating on the park's schedule below.
-      latest_status AS (
-        SELECT DISTINCT ON (s.attraction_id) s.attraction_id, s.status
-        FROM attraction_status_obs s
-        ORDER BY s.attraction_id, s.observed_at DESC
+      -- Current state from the worker-maintained mirror (Phase 3): one row per
+      -- attraction instead of DISTINCT ON scans over the change-logs. status
+      -- carries forward unbounded (the WDW feed leaves some rides marked
+      -- OPERATING for hours/days; bounding by age would wrongly drop genuinely-
+      -- open rides — overnight "still shows operating" is handled by the schedule
+      -- gate below). Standby nulls out once the snapshot is >24h stale, matching
+      -- the old latest_standby 24h window.
+      WITH live AS (
+        SELECT al.attraction_id,
+               al.status,
+               CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.standby_wait END AS wait_min
+        FROM attraction_live al
       ),
       ride AS (
         SELECT a.id, a.park_id, a.name,
-               lst.status AS status, lsb.wait_min AS wait_min
+               lv.status AS status, lv.wait_min AS wait_min
         FROM attractions a
-        LEFT JOIN latest_status lst ON lst.attraction_id = a.id
-        LEFT JOIN latest_standby lsb ON lsb.attraction_id = a.id
+        LEFT JOIN live lv ON lv.attraction_id = a.id
         WHERE a.active = true AND a.entity_type = 'ATTRACTION'
       ),
       park_agg AS (

@@ -8,10 +8,17 @@
 --
 -- Only bot avatars are data URIs here: uploaded photos already go through the
 -- avatar upload mutation and land as R2 URLs, and OAuth avatars are remote URLs.
--- So `LIKE 'data:%'` targets exactly the generated bot avatars. The seed is the
--- user id, which better-auth generates as URL-safe alphanumerics (no encoding
--- needed). Idempotent: rows already rewritten no longer match.
+-- We match `data:image/svg+xml%` specifically (what the bot generator emits) —
+-- not a broad `data:%` — so a stray raster data URI from any old code path could
+-- never be mistaken for a bot avatar and clobbered. The seed is the user id,
+-- which better-auth generates as URL-safe alphanumerics (no encoding needed).
+-- Idempotent: rows already rewritten no longer match.
+--
+-- NOTE: users who picked a *randomized* bot in profile settings had their avatar
+-- seeded by a random UUID (stored only in the data URI); this reseeds them to
+-- their user id, so their bot changes appearance. Default (never-customized)
+-- avatars were already seeded by the user id, so they look identical.
 
 UPDATE "user"
 SET image = 'https://parkfi.sh/api/avatar/' || id
-WHERE image LIKE 'data:%';
+WHERE image LIKE 'data:image/svg+xml%';

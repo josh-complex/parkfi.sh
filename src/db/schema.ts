@@ -369,6 +369,44 @@ export const queueObs = pgTable(
   (t) => [primaryKey({ columns: [t.attractionId, t.queueType, t.observedAt] })],
 );
 
+/**
+ * (B2) Current-state mirror: exactly one row per attraction holding the latest
+ * tick's snapshot, upserted by the worker in `ingestPark`. This exists so the
+ * live board/overview reads are O(rides) plain joins instead of `DISTINCT ON`
+ * scans over the append-only `attraction_status_obs` / `queue_obs` change-logs
+ * (see the load-bottlenecks plan, Phase 3). The change-logs stay authoritative
+ * for history; this is a denormalized read cache the worker keeps fresh.
+ *
+ * Semantics mirror the queries it replaces: `observed_at` is the tick that wrote
+ * the row, and readers treat wait/LL/return fields as stale (→ null) once it's
+ * older than 24h — while `status` carries forward unbounded, matching the old
+ * `latest_status` CTE. Fields are a full snapshot of the current tick: a queue
+ * type the feed didn't report this tick lands null (the common case — an
+ * operating ride reports STANDBY every tick — is identical to the old
+ * latest-within-24h behavior).
+ */
+export const attractionLive = pgTable("attraction_live", {
+  attractionId: bigint("attraction_id", { mode: "number" }).primaryKey(),
+  status: smallint("status").references(() => refAttractionStatus.id),
+  // STANDBY (queue_type 1)
+  standbyWait: integer("standby_wait"),
+  // PAID_RETURN_TIME (queue_type 4) — attraction-grain Lightning Lane.
+  llState: smallint("ll_state").references(() => refQueueState.id),
+  llPriceCents: integer("ll_price_cents"),
+  llCurrency: char("ll_currency", { length: 3 }),
+  llReturnStart: timestamp("ll_return_start", { withTimezone: true }),
+  llReturnEnd: timestamp("ll_return_end", { withTimezone: true }),
+  // RETURN_TIME (queue_type 3) — free virtual queue / return window.
+  returnState: smallint("return_state").references(() => refQueueState.id),
+  returnStart: timestamp("return_start", { withTimezone: true }),
+  returnEnd: timestamp("return_end", { withTimezone: true }),
+  // BOARDING_GROUP (queue_type 6) — current group being called.
+  boardingGroup: integer("boarding_group"),
+  source: smallint("source").references(() => refSource.id),
+  // The poll tick that wrote this snapshot (staleness clock for readers).
+  observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
+});
+
 /** (C) Park-date bundle pricing/availability: LL Multi, Express tiers, Flash Pass… */
 export const productPriceObs = pgTable(
   "product_price_obs",
