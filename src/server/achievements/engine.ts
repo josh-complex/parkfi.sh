@@ -7,7 +7,7 @@
  * (`src/lib/achievements.ts`) against the user's aggregated stats. Deliberately
  * independent of the Living Layer — no imports from `src/server/living/**`.
  */
-import { and, count, desc, eq, gt, inArray, isNotNull, ne, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, gte, inArray, isNotNull, ne, sql } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
 import {
@@ -35,6 +35,7 @@ import {
   type StatKey,
   type TrackEvent,
 } from "#/lib/achievements.ts";
+import { HEADLINERS } from "#/lib/headliners.ts";
 import { Source } from "#/server/parks/codes.ts";
 import {
   distanceMeters,
@@ -377,8 +378,12 @@ export function stepsWindowSpansRollover(
   return localParts(prevAt, timeZone).day !== day;
 }
 
-/** Park-local calendar day + clock time, via Intl (en-CA gives YYYY-MM-DD). */
-function localParts(now: Date, timeZone: string): { day: string; hour: number; minute: number } {
+/** Park-local calendar day + clock time, via Intl (en-CA gives YYYY-MM-DD).
+ *  Exported for the activity router's local-day windowing. */
+export function localParts(
+  now: Date,
+  timeZone: string,
+): { day: string; hour: number; minute: number } {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone,
     year: "numeric",
@@ -421,16 +426,36 @@ async function isRainyNow(parkId: number, now: Date, seededWeather: boolean): Pr
   );
 }
 
+// Mirrors DEDUPE_WINDOW_MS in rides.ts (which imports this module — keeping
+// the constant local avoids an import cycle): a sensor event this close to the
+// dwell window is the same physical ride.
+const DWELL_EVENT_DEDUPE_MS = 5 * 60 * 1000;
+
+/**
+ * The earliest `user_ride_event.riddenAt` that counts as "this dwell's ride":
+ * the dwell's start (settle instant minus accrued anchor seconds) minus the
+ * dedupe slop. A sensor event at/after this floor means the plugin already
+ * wrote the row for this physical ride (`'sensor+dwell'` — see
+ * `creditDecision` in rides.ts), so the settle path must not write a second
+ * one. Pure; exported for tests.
+ */
+export function dwellEventFloor(riddenAt: Date, anchorSeconds: number): Date {
+  return new Date(riddenAt.getTime() - Math.round(anchorSeconds) * 1000 - DWELL_EVENT_DEDUPE_MS);
+}
+
 /** Settle a dwell into today's rollup — shared by the same-park exit case and
  *  the cross-park/left-park case (§ ingestPing steps 4 & 7). ATTRACTION dwells
- *  bump queue_seconds/rides and record the distinct attraction (powers
- *  `attractions_unique`); SHOW dwells bump only `shows` — sitting through a
- *  performance is not queueing, and shows must not pollute the ride stats. */
+ *  bump queue_seconds/rides, record the distinct attraction (powers
+ *  `attractions_unique`), and log a per-ride `user_ride_event` (source
+ *  'dwell') unless a sensor event already covers this ride; SHOW dwells bump
+ *  only `shows` — sitting through a performance is not queueing, and shows
+ *  must not pollute the ride stats. */
 async function settleAnchorRow(
   userId: string,
   parkId: number,
   day: string,
   anchorSeconds: number,
+  anchorAt: Date | null,
   attractionId: number,
   entityType: string,
 ): Promise<void> {
@@ -464,6 +489,28 @@ async function settleAnchorRow(
       target: [userAttraction.userId, userAttraction.attractionId],
       set: { rideCount: sql`${userAttraction.rideCount} + 1`, lastRiddenAt: new Date() },
     });
+
+  // Per-ride fact row for the dwell (metrics-less). `riddenAt` is the last
+  // confirmed anchored ping — when the dwell actually ended — consistent with
+  // `settleDay` crediting that instant's local day. Skipped when a sensor
+  // event already logged this ride during the dwell window.
+  const riddenAt = anchorAt ?? new Date();
+  const [sensorRow] = await db
+    .select({ id: userRideEvent.id })
+    .from(userRideEvent)
+    .where(
+      and(
+        eq(userRideEvent.userId, userId),
+        eq(userRideEvent.attractionId, attractionId),
+        gte(userRideEvent.riddenAt, dwellEventFloor(riddenAt, anchorSeconds)),
+      ),
+    )
+    .limit(1);
+  if (!sensorRow) {
+    await db
+      .insert(userRideEvent)
+      .values({ userId, attractionId, parkId, riddenAt, source: "dwell" });
+  }
 }
 
 /** Entity type of a cached attraction id — ATTRACTION when unknown (cache
@@ -533,6 +580,7 @@ export async function ingestPing(
         oldPark.id,
         oldDay,
         state.anchorSeconds,
+        state.at,
         state.anchorAttractionId,
         anchorEntityType(await getAttractions(oldPark.id), state.anchorAttractionId),
       );
@@ -674,6 +722,7 @@ export async function ingestPing(
         park.id,
         day,
         priorAnchorSeconds,
+        state?.at ?? null,
         priorAnchorId,
         anchorEntityType(attractionsForPark, priorAnchorId),
       );
@@ -812,6 +861,28 @@ export function aggregateDayRows(dayRows: DayStatRow[]): Stats {
   return stats;
 }
 
+/**
+ * Per-headliner ride counts from (park slug, attraction slug, rideCount) rows —
+ * the cross-table stats behind the "Everest ×10" families. Same slug identity
+ * as `countSetMatches`; an unmatched slug (rename drift) yields 0, and
+ * duplicate catalog rows for one slug fold via max, never sum. Pure; exported
+ * for tests.
+ */
+export function headlinerCounts(
+  ridden: ReadonlyArray<{ park: string; slug: string; rideCount: number }>,
+): Partial<Stats> {
+  const bySlugPair = new Map<string, number>();
+  for (const r of ridden) {
+    const k = `${r.park}/${r.slug}`;
+    bySlugPair.set(k, Math.max(bySlugPair.get(k) ?? 0, r.rideCount));
+  }
+  const out: Partial<Stats> = {};
+  for (const h of HEADLINERS) {
+    out[h.key] = bySlugPair.get(`${h.parkSlug}/${h.attractionSlug}`) ?? 0;
+  }
+  return out;
+}
+
 /** Aggregate every day-row + cross-table count + event counter into the
  *  catalog's stat shape. */
 export async function computeStats(userId: string): Promise<Stats> {
@@ -871,13 +942,22 @@ export async function computeStats(userId: string): Promise<Stats> {
   // before these stats existed. Identity is (park slug, attraction slug); an
   // unmatched slug (Disney rename) fails soft and simply never counts.
   const riddenPairs = await db
-    .select({ park: parks.slug, slug: attractions.slug })
+    .select({
+      park: parks.slug,
+      slug: attractions.slug,
+      rideCount: userAttraction.rideCount,
+    })
     .from(userAttraction)
     .innerJoin(attractions, eq(attractions.id, userAttraction.attractionId))
     .innerJoin(parks, eq(parks.id, attractions.parkId))
     .where(eq(userAttraction.userId, userId));
   stats.mk_mountains_ridden = countSetMatches(riddenPairs, MOUNTAIN_SET);
   stats.mk_classics_ridden = countSetMatches(riddenPairs, CLASSICS_1971_SET);
+
+  // Per-attraction headliner counts, same (park slug, attraction slug)
+  // identity as the curated sets above. Duplicate catalog rows for one slug
+  // (ghost-attraction era) fold via max, never sum.
+  Object.assign(stats, headlinerCounts(riddenPairs));
 
   const [maxRideRow] = await db
     .select({ m: sql<number>`coalesce(max(${userAttraction.rideCount}), 0)` })

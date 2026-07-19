@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   BellIcon,
+  FootprintsIcon,
   LogInIcon,
   LogOutIcon,
   MoonIcon,
@@ -8,7 +9,6 @@ import {
   ShapesIcon,
   SunIcon,
   TrendingUpIcon,
-  TrophyIcon,
   UserRoundIcon,
 } from "lucide-react";
 import { useTheme } from "next-themes";
@@ -135,9 +135,9 @@ export function MobileUserMenu({ showDot = false }: { showDot?: boolean }) {
             </Link>
           </DrawerClose>
           <DrawerClose asChild>
-            <Link to="/achievements" className={ROW}>
-              <TrophyIcon />
-              Badges
+            <Link to="/activity" className={ROW}>
+              <FootprintsIcon />
+              Activity
             </Link>
           </DrawerClose>
           <DrawerClose asChild>

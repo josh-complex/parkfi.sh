@@ -35,6 +35,8 @@ import {
   paidLineProduct,
 } from "#/components/park-dashboard/lightning-lane.ts";
 
+import { formatParkName } from "#/lib/parks.ts";
+
 import type { BoardItem } from "#/components/park-dashboard/types.ts";
 import type { GeoPolygon } from "#/db/schema.ts";
 import type { Feature, FeatureCollection, MultiPolygon, Polygon } from "geojson";
@@ -110,6 +112,26 @@ export const DECLUTTER_SIZE = 64;
 // more annoying than the slight nudge, and the user can zoom that last bit to
 // separate them fully.
 export const SPREAD_ZOOM = 19;
+
+// Declutter radius at the tightest cluster-mode zoom. Far out, pins are jammed
+// together and want the full DECLUTTER_SIZE grouping berth; but as a park view
+// closes in on SPREAD_ZOOM, rides that are genuinely a few metres apart are
+// spread wide enough on screen to stand on their own — a wide berth there just
+// swallows a distinct ride into its neighbour. Sized under the photo disc (52px)
+// so near-but-separate discs stay separate anchors (relax still nudges any true
+// overlap apart).
+export const DECLUTTER_SIZE_MIN = 34;
+
+// Effective declutter radius for the current zoom: the full berth until the last
+// couple levels before spread mode, then a linear ramp down to DECLUTTER_SIZE_MIN
+// right at SPREAD_ZOOM. Only park-view clustering uses this; overview spread never
+// groups so its radius is immaterial.
+export function declutterSizeForZoom(zoom: number): number {
+  const rampStart = SPREAD_ZOOM - 2;
+  if (zoom <= rampStart) return DECLUTTER_SIZE;
+  const t = Math.min(1, (zoom - rampStart) / (SPREAD_ZOOM - rampStart));
+  return Math.round(DECLUTTER_SIZE + (DECLUTTER_SIZE_MIN - DECLUTTER_SIZE) * t);
+}
 
 // Ring highlight layered onto the selected attraction marker (no scale — the
 // charted ride shouldn't balloon). Applied to the inner element, not the marker
@@ -263,6 +285,32 @@ function waitChipInner(minutes: number, label: string, expanded: boolean): strin
   // "5 min standby" line reads as one consistent label; it snaps in quickly.
   return `<span data-wait-num>${num}</span><span data-wait-sub class="min-w-0 overflow-hidden whitespace-nowrap transition-all duration-200 ease-out ${subCls}">${escapeHtml(
     sub,
+  )}</span>`;
+}
+
+/** Clamp a label to `max` characters, appending an ellipsis when it's cut so a
+ *  long ride/park title stays a compact one-line chip. */
+function truncateLabel(s: string, max: number): string {
+  return s.length > max ? `${s.slice(0, max - 1).trimEnd()}…` : s;
+}
+
+/** Max characters a marker's name chip shows before it's ellipsised. */
+const NAME_CHIP_MAX = 20;
+
+/**
+ * A persistent name pill under a marker — same pill design as the wait chip
+ * (`WAIT_CHIP_CLASS`). When the marker carries a wait badge (`underWait`) the
+ * name stacks right beneath it (`top-full mt-2.5`); with no wait badge it takes
+ * the wait badge's own slot (`-bottom-2`) so the label never floats lower than a
+ * neighbour's. The title is truncated so a long name never blows the chip out to
+ * full width. `pointer-events-none` so an overhanging label never eats a map drag
+ * or a click meant for a neighbour. Lives inside the disc wrap as a badge, so the
+ * card-morph's badge-hiding (see `openAttractionCard`) tucks it away on expand.
+ */
+function nameChipMarkup(name: string, underWait: boolean): string {
+  const pos = underWait ? "top-full mt-1.5" : "-bottom-2";
+  return `<span data-name-chip class="pointer-events-none absolute ${pos} left-1/2 -translate-x-1/2 ${WAIT_CHIP_CLASS}">${escapeHtml(
+    truncateLabel(name, NAME_CHIP_MAX),
   )}</span>`;
 }
 
@@ -1044,6 +1092,7 @@ export function buildParkBadgeEl(p: {
     ring: color,
     bg: color,
     px: 64,
+    badge: nameChipMarkup(formatParkName(p.name), false),
   });
   const subtitle = `${p.operating} open · ${escapeHtml(wait)}`;
   const detail = document.createElement("div");
@@ -1179,6 +1228,7 @@ export function buildPoiEl(poi: PoiItem): { el: HTMLButtonElement; detail: HTMLD
     ring: color,
     bg: color,
     px,
+    badge: nameChipMarkup(poi.name, false),
   });
   detail.innerHTML = `${disc}${labelMarkup(poi.name, escapeHtml(poi.land ?? ""))}`;
   wireFaceFadeIn(detail);
@@ -1273,7 +1323,7 @@ export function buildAttractionEl(
     ring: color,
     bg: color,
     px: 52,
-    badge: waitBadge,
+    badge: `${waitBadge}${nameChipMarkup(a.name, Boolean(waitBadge))}`,
   });
   detail.innerHTML = `${disc}${labelMarkup(a.name, escapeHtml(waitLabelFor(a)))}`;
   wireFaceFadeIn(detail);

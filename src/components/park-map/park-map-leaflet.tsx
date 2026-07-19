@@ -40,6 +40,7 @@ import {
   setUserHeading,
   chromePadding,
   DECLUTTER_SIZE,
+  declutterSizeForZoom,
   getRoamCamera,
   type MapHandle,
   MAP_FLY_MS,
@@ -490,7 +491,11 @@ export function ParkMapLeaflet({
     // Cluster inside a park until we're zoomed in far enough, then spread so
     // markers stop grouping and just nudge apart. Overview always spreads.
     const inPark = effectiveSlugRef.current != null;
-    layer.setMode(inPark && (map?.getZoom() ?? 0) < SPREAD_ZOOM ? "cluster" : "spread");
+    const zoom = map?.getZoom() ?? 0;
+    layer.setMode(inPark && zoom < SPREAD_ZOOM ? "cluster" : "spread");
+    // Tighten the grouping berth as we close in so near-but-distinct rides stop
+    // merging (a no-op in spread mode, which never groups).
+    layer.setClusterDist(declutterSizeForZoom(zoom));
     layer.refresh();
   }, []);
 

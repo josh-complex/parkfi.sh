@@ -45,6 +45,7 @@ import { Route as AppDiningFacilityIdRouteImport } from './routes/_app/dining_.$
 import { Route as AppDashMapRouteImport } from './routes/_app/_dash/map'
 import { Route as AppDashAlertsRouteImport } from './routes/_app/_dash/alerts'
 import { Route as AppDashAdminRouteImport } from './routes/_app/_dash/admin'
+import { Route as AppDashActivityRouteImport } from './routes/_app/_dash/activity'
 import { Route as AppDashAchievementsRouteImport } from './routes/_app/_dash/achievements'
 import { Route as AppDashAccountRouteImport } from './routes/_app/_dash/account'
 import { Route as AppDashAdminIndexRouteImport } from './routes/_app/_dash/admin.index'
@@ -244,6 +245,11 @@ const AppDashAdminRoute = AppDashAdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => AppDashRoute,
 } as any)
+const AppDashActivityRoute = AppDashActivityRouteImport.update({
+  id: '/activity',
+  path: '/activity',
+  getParentRoute: () => AppDashRoute,
+} as any)
 const AppDashAchievementsRoute = AppDashAchievementsRouteImport.update({
   id: '/achievements',
   path: '/achievements',
@@ -374,6 +380,7 @@ export interface FileRoutesByFullPath {
   '/blog/': typeof BlogIndexRoute
   '/account': typeof AppDashAccountRouteWithChildren
   '/achievements': typeof AppDashAchievementsRoute
+  '/activity': typeof AppDashActivityRoute
   '/admin': typeof AppDashAdminRouteWithChildren
   '/alerts': typeof AppDashAlertsRoute
   '/map': typeof AppDashMapRoute
@@ -429,6 +436,7 @@ export interface FileRoutesByTo {
   '/blog/rss.xml': typeof BlogRssDotxmlRoute
   '/blog': typeof BlogIndexRoute
   '/achievements': typeof AppDashAchievementsRoute
+  '/activity': typeof AppDashActivityRoute
   '/alerts': typeof AppDashAlertsRoute
   '/map': typeof AppDashMapRoute
   '/dining/$facilityId': typeof AppDiningFacilityIdRoute
@@ -486,6 +494,7 @@ export interface FileRoutesById {
   '/blog/': typeof BlogIndexRoute
   '/_app/_dash/account': typeof AppDashAccountRouteWithChildren
   '/_app/_dash/achievements': typeof AppDashAchievementsRoute
+  '/_app/_dash/activity': typeof AppDashActivityRoute
   '/_app/_dash/admin': typeof AppDashAdminRouteWithChildren
   '/_app/_dash/alerts': typeof AppDashAlertsRoute
   '/_app/_dash/map': typeof AppDashMapRoute
@@ -545,6 +554,7 @@ export interface FileRouteTypes {
     | '/blog/'
     | '/account'
     | '/achievements'
+    | '/activity'
     | '/admin'
     | '/alerts'
     | '/map'
@@ -600,6 +610,7 @@ export interface FileRouteTypes {
     | '/blog/rss.xml'
     | '/blog'
     | '/achievements'
+    | '/activity'
     | '/alerts'
     | '/map'
     | '/dining/$facilityId'
@@ -656,6 +667,7 @@ export interface FileRouteTypes {
     | '/blog/'
     | '/_app/_dash/account'
     | '/_app/_dash/achievements'
+    | '/_app/_dash/activity'
     | '/_app/_dash/admin'
     | '/_app/_dash/alerts'
     | '/_app/_dash/map'
@@ -968,6 +980,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDashAdminRouteImport
       parentRoute: typeof AppDashRoute
     }
+    '/_app/_dash/activity': {
+      id: '/_app/_dash/activity'
+      path: '/activity'
+      fullPath: '/activity'
+      preLoaderRoute: typeof AppDashActivityRouteImport
+      parentRoute: typeof AppDashRoute
+    }
     '/_app/_dash/achievements': {
       id: '/_app/_dash/achievements'
       path: '/achievements'
@@ -1154,6 +1173,7 @@ const AppDashAdminRouteWithChildren = AppDashAdminRoute._addFileChildren(
 interface AppDashRouteChildren {
   AppDashAccountRoute: typeof AppDashAccountRouteWithChildren
   AppDashAchievementsRoute: typeof AppDashAchievementsRoute
+  AppDashActivityRoute: typeof AppDashActivityRoute
   AppDashAdminRoute: typeof AppDashAdminRouteWithChildren
   AppDashAlertsRoute: typeof AppDashAlertsRoute
   AppDashMapRoute: typeof AppDashMapRoute
@@ -1166,6 +1186,7 @@ interface AppDashRouteChildren {
 const AppDashRouteChildren: AppDashRouteChildren = {
   AppDashAccountRoute: AppDashAccountRouteWithChildren,
   AppDashAchievementsRoute: AppDashAchievementsRoute,
+  AppDashActivityRoute: AppDashActivityRoute,
   AppDashAdminRoute: AppDashAdminRouteWithChildren,
   AppDashAlertsRoute: AppDashAlertsRoute,
   AppDashMapRoute: AppDashMapRoute,

@@ -5,8 +5,10 @@ import {
   clampStepsDelta,
   creditedDistance,
   geofenceBounds,
+  headlinerCounts,
   parkForPoint,
   presenceDelta,
+  dwellEventFloor,
   settleDay,
   stepDeltaFromCursor,
   stepsWindowSpansRollover,
@@ -416,5 +418,61 @@ describe("parkForPoint adjacency", () => {
     const justInsideEast: [number, number] = [0.0101, 0.005]; // ~11m past the shared edge
     expect(parkForPoint(justInsideEast, parks)?.id).toBe(2);
     expect(parkForPoint([0.0099, 0.005], parks)?.id).toBe(1);
+  });
+});
+
+describe("headlinerCounts", () => {
+  it("maps slug pairs to their stat keys and zeros the rest", () => {
+    const out = headlinerCounts([
+      {
+        park: "animal-kingdom",
+        slug: "expedition-everest-legend-of-the-forbidden-mountain",
+        rideCount: 12,
+      },
+      { park: "magic-kingdom", slug: "space-mountain", rideCount: 3 },
+      { park: "magic-kingdom", slug: "haunted-mansion", rideCount: 40 }, // not a headliner
+    ]);
+    expect(out.hl_everest).toBe(12);
+    expect(out.hl_space_mountain).toBe(3);
+    expect(out.hl_tron).toBe(0);
+    expect(out.hl_veloci).toBe(0);
+  });
+
+  it("does not credit a headliner slug in the wrong park", () => {
+    const out = headlinerCounts([{ park: "epcot", slug: "space-mountain", rideCount: 9 }]);
+    expect(out.hl_space_mountain).toBe(0);
+  });
+
+  it("folds duplicate rows for one slug via max, never sum", () => {
+    const out = headlinerCounts([
+      { park: "epcot", slug: "test-track", rideCount: 4 },
+      { park: "epcot", slug: "test-track", rideCount: 7 },
+    ]);
+    expect(out.hl_test_track).toBe(7);
+  });
+});
+
+describe("dwellEventFloor", () => {
+  const settle = new Date("2026-07-15T18:00:00Z");
+
+  it("reaches back over the dwell plus the 5-minute dedupe slop", () => {
+    // 600 s dwell + 300 s slop = 15 min before the settle instant.
+    expect(dwellEventFloor(settle, 600).toISOString()).toBe("2026-07-15T17:45:00.000Z");
+  });
+
+  it("covers a sensor event fired mid-dwell (the sensor+dwell case)", () => {
+    // Ride started 8 min before settle, inside a 10-min dwell → at/after floor.
+    const sensorAt = new Date(settle.getTime() - 8 * 60 * 1000);
+    expect(sensorAt.getTime()).toBeGreaterThanOrEqual(dwellEventFloor(settle, 600).getTime());
+  });
+
+  it("excludes an earlier ride on the same attraction (a genuine re-ride)", () => {
+    // A ride 30 min before settle predates this 10-min dwell entirely.
+    const earlier = new Date(settle.getTime() - 30 * 60 * 1000);
+    expect(earlier.getTime()).toBeLessThan(dwellEventFloor(settle, 600).getTime());
+  });
+
+  it("rounds fractional anchor seconds", () => {
+    expect(dwellEventFloor(settle, 600.4).getTime()).toBe(dwellEventFloor(settle, 600).getTime());
   });
 });

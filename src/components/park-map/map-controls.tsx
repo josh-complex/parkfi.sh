@@ -274,7 +274,7 @@ export function ParkChipScroller({
   const others = focusSlug ? parks.filter((p) => p.slug !== focusSlug) : parks;
   if (others.length === 0) return null;
   return (
-    <div className="pointer-events-auto -mx-3 flex w-[calc(100%+1.5rem)] touch-pan-x items-center gap-1.5 overflow-x-auto overscroll-contain px-3 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="pointer-events-auto -mx-3 flex w-[calc(100%+1.5rem)] touch-pan-x items-center gap-1.5 overflow-x-auto overscroll-contain px-4 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {others.map((p) => (
         <button
           key={p.slug}

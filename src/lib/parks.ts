@@ -52,14 +52,28 @@ export const RESORT_DEFAULT_SLUG: Record<string, string> = {
 };
 
 /**
- * Display name for a park, trimmed of the redundant "Theme Park" / "Water Park"
- * / "Park" suffix the source feeds tack on (e.g. "Disney's Animal Kingdom Theme
- * Park", "Disney's Blizzard Beach Water Park", "Magic Kingdom Park"), which
- * otherwise reads as a redundant repeat next to the park identity.
+ * Display name for a park, trimmed of the operator prefix and the redundant
+ * "Theme Park" / "Water Park" / "Park" suffix the source feeds tack on — e.g.
+ * "Disney's Animal Kingdom Theme Park" → "Animal Kingdom", "Disney's Blizzard
+ * Beach Water Park" → "Blizzard Beach", "Magic Kingdom Park" → "Magic Kingdom",
+ * "Universal Islands of Adventure" → "Islands of Adventure", "Universal Volcano
+ * Bay" → "Volcano Bay", "Universal Studios Florida" → "Universal Studios". The
+ * operator name reads as a redundant repeat next to the park identity. Exception:
+ * a bare "Universal Studios" keeps its prefix — "Studios" alone doesn't parse as
+ * a park name. Shared by every surface that shows a park name.
  */
 export function formatParkName(name: string): string {
-  return name
-    .replace(/\s+(?:Theme|Water)\s+Park$/i, "")
-    .replace(/\s+Park$/i, "")
-    .trim();
+  return (
+    name
+      .replace(/^(?:Disney|Universal)['’]s\s+/i, "")
+      // Non-possessive "Universal " prefix (Universal's parks), but not "Universal
+      // Studios" — there "Universal" is load-bearing, not an operator tag.
+      .replace(/^Universal\s+(?!Studios\b)/i, "")
+      // "Universal Studios Florida" → "Universal Studios": the state suffix is a
+      // location tag, not part of the park identity.
+      .replace(/^(Universal Studios)\s+Florida$/i, "$1")
+      .replace(/\s+(?:Theme|Water)\s+Park$/i, "")
+      .replace(/\s+Park$/i, "")
+      .trim()
+  );
 }

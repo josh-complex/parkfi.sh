@@ -8,6 +8,7 @@
  * Living Layer: nothing here imports from `src/server/living/**` or
  * `src/components/living/**`.
  */
+import { HEADLINERS, type HeadlinerKey } from "./headliners.ts";
 
 /** Every trackable quantity. Geo-derived keys are aggregated from user_park_day;
  *  event keys are counters in user_stat. */
@@ -62,7 +63,10 @@ export type StatKey =
   | "max_g_best"
   | "inversions_ridden"
   | "vertical_m"
-  | "track_distance_m";
+  | "track_distance_m"
+  // per-attraction headliner ride counts (cross-table from user_attraction,
+  // slug-matched — see HEADLINERS in ./headliners.ts and computeStats)
+  | HeadlinerKey;
 
 /** Allowlisted client-reportable events → the stat they bump. */
 export const TRACK_EVENTS = {
@@ -120,7 +124,7 @@ function fam(
   };
 }
 
-/** 44 families, 142 tiers. Order is the display order on the achievements page. */
+/** 60 families, 206 tiers. Order is the display order on the achievements page. */
 export const ACHIEVEMENTS: AchievementFamily[] = [
   fam("gate", "Through the Turnstiles", "park_days", "count", "🎟️", [
     [
@@ -454,6 +458,27 @@ export const ACHIEVEMENTS: AchievementFamily[] = [
     ],
     [10, 150, "BoardWalk Regular", "Ten Crescent Lake walks. The gondolas overhead salute you."],
   ]),
+  // -------------------------------------------------------------------------
+  // Per-attraction headliner families ("Everest ×10"). Generated from the
+  // curated HEADLINERS list; counts come from user_attraction.rideCount
+  // (cross-table in computeStats), so they're retroactively correct for rides
+  // logged before these families existed. XP is deliberately modest — sixteen
+  // families is a lot of surface, and `again`/`mountains` stay the marquee
+  // repeat-ride payouts.
+  // -------------------------------------------------------------------------
+  ...HEADLINERS.map((h) =>
+    fam(h.key, h.name, h.key, "count", h.emoji, [
+      [1, 25, "Checked Off", h.firstRide],
+      [5, 50, "Repeat Customer", `Five rides on ${h.name}. A pattern emerges.`],
+      [10, 100, "Double Digits", `Ten laps on ${h.name}. The ride ops nod at you now.`],
+      [
+        25,
+        200,
+        "Part of the Attraction",
+        `Twenty-five rides on ${h.name}. Your seat has a depression shaped like you.`,
+      ],
+    ]),
+  ),
 ];
 
 export interface TierRef {

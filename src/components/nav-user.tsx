@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { LogInIcon, LogOutIcon, SettingsIcon, TrophyIcon } from "lucide-react";
+import { FootprintsIcon, LogInIcon, LogOutIcon, SettingsIcon } from "lucide-react";
 import { authClient } from "#/lib/auth-client.ts";
 import { signOut } from "#/lib/sign-out.ts";
 import { LevelBadge, LevelDetails } from "#/components/achievements/level-badge.tsx";
@@ -124,9 +124,9 @@ export function NavUser() {
               </>
             )}
             <DropdownMenuSeparator />
-            <DropdownMenuItem render={<Link to="/achievements" />}>
-              <TrophyIcon />
-              Badges
+            <DropdownMenuItem render={<Link to="/activity" />}>
+              <FootprintsIcon />
+              Activity
             </DropdownMenuItem>
             <DropdownMenuItem render={<Link to="/account" />}>
               <SettingsIcon />

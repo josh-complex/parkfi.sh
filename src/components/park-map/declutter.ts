@@ -122,6 +122,16 @@ function setWaitRange(detail: HTMLElement, waits: ReadonlyArray<number>): void {
   badge.classList.remove("hidden");
 }
 
+/**
+ * Show/hide a marker's persistent name chip. Hidden while the marker heads a
+ * cluster — the head's single name would misread as the whole group's label (and
+ * fights the "+N" dots for space) — and shown again when it re-forms as a lone
+ * anchor. A missing chip (POIs render one too, but guard anyway) is a no-op.
+ */
+function setNameChipVisible(detail: HTMLElement, visible: boolean): void {
+  detail.querySelector<HTMLElement>("[data-name-chip]")?.classList.toggle("hidden", !visible);
+}
+
 export class MarkerCluster {
   private items: Array<DeclutterItem> = [];
   /** anchorId -> the markers it absorbed (empty array for a lone anchor). */
@@ -135,7 +145,7 @@ export class MarkerCluster {
   private mode: "cluster" | "spread" = "cluster";
 
   constructor(
-    private readonly clusterDist: number,
+    private clusterDist: number,
     private readonly selectedId: () => number | null,
     /** Fit the camera to a cluster's footprint (its members' projected points).
      *  The renderer unprojects them in its own engine and flies/fits. */
@@ -148,6 +158,15 @@ export class MarkerCluster {
   /** Switch layout strategy (park view clusters; overview spreads). */
   setMode(mode: "cluster" | "spread"): void {
     this.mode = mode;
+  }
+
+  /**
+   * Adjust the grouping/separation radius (px). The park view shrinks this as it
+   * zooms in — a wide berth far out, a tighter one up close so genuinely-nearby
+   * rides stop folding into each other. Takes effect on the next `refresh`.
+   */
+  setClusterDist(dist: number): void {
+    this.clusterDist = dist;
   }
 
   /** Replace the marker set (after a rebuild) and wire each one's click. */
@@ -250,6 +269,9 @@ export class MarkerCluster {
         }
       }
       setClusterDots(q.item.detail, counts);
+      // A cluster head hides its name chip (its lone name isn't the group's); a
+      // re-formed lone anchor shows it again.
+      setNameChipVisible(q.item.detail, members.length === 0);
       // Head shows the group's wait range; a re-formed lone anchor reverts to its
       // own single wait (min === max).
       setWaitRange(
@@ -282,7 +304,8 @@ export class MarkerCluster {
       }
       it.detail.classList.remove("hidden");
       setClusterDots(it.detail, EMPTY_COUNTS);
-      // No grouping in spread mode — each marker shows only its own wait.
+      // No grouping in spread mode — every marker keeps its own name + wait.
+      setNameChipVisible(it.detail, true);
       if (it.wait != null) setWaitRange(it.detail, [it.wait]);
       nodes.push({ it, x: p.x, y: p.y, ox: 0, oy: 0 });
     }

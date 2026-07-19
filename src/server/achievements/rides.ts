@@ -274,9 +274,13 @@ export async function ingestRideTrace(
     throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Implausible metrics: ${clamp}` });
   }
 
-  // 3. Dedupe: same (user, attraction) within ±5 min of startedAt → idempotent.
+  // 3. Dedupe: same (user, attraction) within ±5 min of startedAt → the same
+  // physical ride. A metrics-bearing row makes this submit idempotent; a
+  // metrics-less row is the dwell settle's fact row (the dwell settled before
+  // this trace uploaded — an offline sync) and gets the sensor payload
+  // attached in place instead of being treated as a duplicate.
   const [dupe] = await db
-    .select({ id: userRideEvent.id })
+    .select({ id: userRideEvent.id, metrics: userRideEvent.metrics })
     .from(userRideEvent)
     .where(
       and(
@@ -288,49 +292,41 @@ export async function ingestRideTrace(
     )
     .orderBy(desc(userRideEvent.riddenAt))
     .limit(1);
-  if (dupe) {
+  if (dupe && dupe.metrics != null) {
     // Idempotent re-submit of the same physical ride — the client uses this flag
     // to skip a second "Ride recorded" recap toast.
     return { ...(await evaluateAndUnlock(userId)), duplicate: true };
   }
 
-  const decision = creditDecision(state.anchorAttractionId, resolvedId);
-
-  // 4. Write the per-ride fact row.
-  await db.insert(userRideEvent).values({
-    userId,
-    attractionId: resolvedId,
-    parkId: state.parkId,
-    riddenAt: startedAt,
-    source: decision.source,
-    metrics,
-    trace: input,
-  });
-
-  // 5. Credit the ride count — unless the dwell-settle path will (anchored to
-  // the same attraction), which would double-count.
-  if (decision.creditRideCount) {
+  if (dupe) {
+    // 4a. Upgrade the dwell row: attach metrics/trace and take the sensor's
+    // startedAt (more accurate than the dwell-exit timestamp). NO ride-count
+    // credit — the dwell settle already credited user_attraction and
+    // user_park_day; this is the offline-order mirror of creditDecision's
+    // anchored-same suppression. Sensor stats (step 6) still accrue: this is
+    // the first time the metrics exist.
     await db
-      .insert(userAttraction)
-      .values({ userId, attractionId: resolvedId, parkId: state.parkId, rideCount: 1 })
-      .onConflictDoUpdate({
-        target: [userAttraction.userId, userAttraction.attractionId],
-        set: { rideCount: sql`${userAttraction.rideCount} + 1`, lastRiddenAt: now },
-      });
+      .update(userRideEvent)
+      .set({ metrics, trace: input, source: "sensor+dwell", riddenAt: startedAt })
+      .where(eq(userRideEvent.id, dupe.id));
+  } else {
+    const decision = creditDecision(state.anchorAttractionId, resolvedId);
 
-    const [park] = await db
-      .select({ timezone: parks.timezone })
-      .from(parks)
-      .where(eq(parks.id, state.parkId));
-    if (park) {
-      const day = settleDay(startedAt, startedAt, park.timezone);
-      await db
-        .insert(userParkDay)
-        .values({ userId, parkId: state.parkId, day, rides: 1 })
-        .onConflictDoUpdate({
-          target: [userParkDay.userId, userParkDay.parkId, userParkDay.day],
-          set: { rides: sql`${userParkDay.rides} + 1`, lastSeenAt: now },
-        });
+    // 4. Write the per-ride fact row.
+    await db.insert(userRideEvent).values({
+      userId,
+      attractionId: resolvedId,
+      parkId: state.parkId,
+      riddenAt: startedAt,
+      source: decision.source,
+      metrics,
+      trace: input,
+    });
+
+    // 5. Credit the ride count — unless the dwell-settle path will (anchored to
+    // the same attraction), which would double-count.
+    if (decision.creditRideCount) {
+      await creditSensorRide(userId, resolvedId, state.parkId, startedAt, now);
     }
   }
 
@@ -347,4 +343,37 @@ export async function ingestRideTrace(
 
   // 7. Re-evaluate — same shape the ping/track toast funnel consumes.
   return { ...(await evaluateAndUnlock(userId)), duplicate: false };
+}
+
+/** The sole-crediter path's count writes: distinct-attraction upsert + the
+ *  park-day `rides` bump, credited to the ride's own local day. */
+async function creditSensorRide(
+  userId: string,
+  attractionId: number,
+  parkId: number,
+  startedAt: Date,
+  now: Date,
+): Promise<void> {
+  await db
+    .insert(userAttraction)
+    .values({ userId, attractionId, parkId, rideCount: 1 })
+    .onConflictDoUpdate({
+      target: [userAttraction.userId, userAttraction.attractionId],
+      set: { rideCount: sql`${userAttraction.rideCount} + 1`, lastRiddenAt: now },
+    });
+
+  const [park] = await db
+    .select({ timezone: parks.timezone })
+    .from(parks)
+    .where(eq(parks.id, parkId));
+  if (park) {
+    const day = settleDay(startedAt, startedAt, park.timezone);
+    await db
+      .insert(userParkDay)
+      .values({ userId, parkId, day, rides: 1 })
+      .onConflictDoUpdate({
+        target: [userParkDay.userId, userParkDay.parkId, userParkDay.day],
+        set: { rides: sql`${userParkDay.rides} + 1`, lastSeenAt: now },
+      });
+  }
 }

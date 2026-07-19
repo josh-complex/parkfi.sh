@@ -8,9 +8,10 @@ import { cn } from "#/lib/utils.ts";
 /**
  * Stable hue (0–360) per achievement family, hashed from its key. Gives each
  * shelf its own color identity so a page of 20+ families doesn't read as one
- * monotone ramp.
+ * monotone ramp. Exported for the /activity tiles and chips, which reuse the
+ * same per-family color identity.
  */
-function hueForFamily(key: string): number {
+export function hueForFamily(key: string): number {
   let h = 0;
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
   return h % 360;
@@ -18,7 +19,7 @@ function hueForFamily(key: string): number {
 
 /** Backing gradient for a tier tile: pale + near-gray at rank 0, deep and
  *  saturated at rank 1 — the "intensifies as you level up" effect. */
-function tierGradient(hue: number, rank: number): string {
+export function tierGradient(hue: number, rank: number): string {
   const l = 0.95 - 0.34 * rank;
   const c = 0.02 + 0.19 * rank;
   return `linear-gradient(155deg, oklch(${(l + 0.07).toFixed(3)} ${(c * 1.05).toFixed(3)} ${(hue + 16) % 360}) 0%, oklch(${l.toFixed(3)} ${c.toFixed(3)} ${hue}) 100%)`;
