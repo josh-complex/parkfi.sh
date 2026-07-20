@@ -18,12 +18,15 @@ import { TooltipProvider } from "#/components/ui/tooltip";
 import { Toaster } from "#/components/ui/sonner";
 import { FaviconSync } from "#/components/favicon-sync.tsx";
 import { NativeSystemBars } from "#/components/native-system-bars.tsx";
+import { NativeLifecycle } from "#/components/native-lifecycle.tsx";
 import { PWARegister } from "#/components/pwa-register";
 import { RouteErrorFallback } from "#/components/route-error-fallback";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
 import { seo, websiteJsonLd } from "#/lib/seo.ts";
 import { markLaunched } from "#/lib/app-launch.ts";
 import { syncDeviceCornerRadius } from "#/lib/device-corners.ts";
+import { armSplashFailsafe, hideSplash } from "#/lib/native-splash.ts";
+import { initNetworkWatch } from "#/lib/native-network.ts";
 import { isNative } from "#/lib/platform.ts";
 import { loadToken } from "#/lib/native-token.ts";
 import { initNativeAuthDeepLinks } from "#/lib/native-oauth.ts";
@@ -124,6 +127,12 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       // Fire-and-forget: publishes --device-corner-radius-* so the bottom nav
       // rounds concentric with the physical display corners.
       void syncDeviceCornerRadius();
+      // The launch splash is held (launchAutoHide:false) until the app has
+      // painted — dismiss it now, with a failsafe so it can never wedge.
+      void hideSplash();
+      armSplashFailsafe();
+      // Start tracking OS connectivity so offline-aware paths can back off.
+      initNetworkWatch();
     }
   }, []);
 
@@ -143,6 +152,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           >
             <FaviconSync />
             <NativeSystemBars />
+            <NativeLifecycle />
             <TooltipProvider>
               {children}
               <TanStackDevtools

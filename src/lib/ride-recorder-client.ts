@@ -13,6 +13,21 @@ import { isNative } from "#/lib/platform.ts";
 import type { RideTrace } from "#/lib/ride-metrics.ts";
 
 type MotionPermissionState = "granted" | "denied" | "prompt";
+type LocationPermissionState = "granted" | "denied" | "prompt";
+
+/** One circular park geofence for native background region monitoring. */
+export interface ParkGeofence {
+  id: string;
+  lat: number;
+  lng: number;
+  radiusM: number;
+}
+
+export type GeofenceTransition = "enter" | "exit";
+export interface ParkTransitionEvent {
+  regionId: string;
+  transition: GeofenceTransition;
+}
 
 interface RideRecorderPlugin {
   requestPermissions(): Promise<{ motion: MotionPermissionState }>;
@@ -23,8 +38,15 @@ interface RideRecorderPlugin {
   stopRecording(): Promise<RideTrace | null>;
   getStepSample(): Promise<{ steps: number | null; sessionStartMs: number | null }>;
   queryStepSpan(opts: { fromMs: number; toMs: number }): Promise<{ steps: number | null }>;
+  requestBackgroundLocation(): Promise<{ location: LocationPermissionState }>;
+  setParkGeofences(opts: { regions: ParkGeofence[] }): Promise<void>;
+  clearParkGeofences(): Promise<void>;
   addListener(event: "rideDetected", cb: (trace: RideTrace) => void): Promise<PluginListenerHandle>;
   addListener(event: "rideStarted", cb: () => void): Promise<PluginListenerHandle>;
+  addListener(
+    event: "parkTransition",
+    cb: (event: ParkTransitionEvent) => void,
+  ): Promise<PluginListenerHandle>;
 }
 
 const RideRecorder = registerPlugin<RideRecorderPlugin>("RideRecorder");
@@ -136,6 +158,65 @@ export async function addRideDetectedListener(
   if (!isNative()) return null;
   try {
     return await RideRecorder.addListener("rideDetected", cb);
+  } catch {
+    return null;
+  }
+}
+
+// --- Background park geofencing (Tier 1) -------------------------------------
+
+/**
+ * Ask for the "always/background" location grant that region monitoring needs to
+ * fire while the app is suspended (iOS: WhenInUse→Always; Android 10+: the
+ * separate ACCESS_BACKGROUND_LOCATION grant, routed to settings on API 30+).
+ * Native-only, never throws — returns the resulting state ("denied" on web).
+ */
+export async function requestBackgroundLocation(): Promise<LocationPermissionState> {
+  if (!isNative()) return "denied";
+  try {
+    const { location } = await RideRecorder.requestBackgroundLocation();
+    return location;
+  } catch {
+    return "denied";
+  }
+}
+
+/**
+ * Register (replace) the set of park geofences monitored natively. Region
+ * monitoring wakes the app on enter/exit even when suspended — the background
+ * complement to the foreground `watchPosition` loop. iOS caps at 20 regions, so
+ * callers should pass only the nearest parks. Native-only, non-throwing.
+ */
+export async function setParkGeofences(regions: ParkGeofence[]): Promise<void> {
+  if (!isNative() || regions.length === 0) return;
+  try {
+    await RideRecorder.setParkGeofences({ regions });
+  } catch {
+    /* background location not granted, or plugin unavailable — best-effort */
+  }
+}
+
+/** Stop monitoring all park geofences (native-only, non-throwing). */
+export async function clearParkGeofences(): Promise<void> {
+  if (!isNative()) return;
+  try {
+    await RideRecorder.clearParkGeofences();
+  } catch {
+    /* already cleared */
+  }
+}
+
+/**
+ * Subscribe to background park entry/exit transitions. Returns a removable
+ * handle, or `null` on web. The event is retained-until-consumed natively, so a
+ * transition delivered while the WebView was suspended still fires on resume.
+ */
+export async function addParkTransitionListener(
+  cb: (event: ParkTransitionEvent) => void,
+): Promise<PluginListenerHandle | null> {
+  if (!isNative()) return null;
+  try {
+    return await RideRecorder.addListener("parkTransition", cb);
   } catch {
     return null;
   }

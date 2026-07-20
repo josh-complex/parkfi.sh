@@ -1,6 +1,7 @@
 package sh.parkfi.riderecorder
 
 import android.Manifest
+import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
 import androidx.core.content.ContextCompat
@@ -13,6 +14,10 @@ import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
 import com.getcapacitor.annotation.Permission
 import com.getcapacitor.annotation.PermissionCallback
+import com.google.android.gms.location.Geofence
+import com.google.android.gms.location.GeofencingClient
+import com.google.android.gms.location.GeofencingRequest
+import com.google.android.gms.location.LocationServices
 
 /**
  * Capacitor bridge for the on-device ride recorder. Monitoring runs inside
@@ -30,10 +35,22 @@ import com.getcapacitor.annotation.PermissionCallback
         // Step counting only (F-steps): TYPE_STEP_COUNTER needs
         // ACTIVITY_RECOGNITION on API 29+. IMU/baro capture needs no grant, so a
         // denial degrades to steps-less monitoring — never block arming on this.
-        Permission(alias = "motion", strings = [Manifest.permission.ACTIVITY_RECOGNITION])
+        Permission(alias = "motion", strings = [Manifest.permission.ACTIVITY_RECOGNITION]),
+        // Background park geofencing needs the separate "allow all the time"
+        // grant on API 29+ (foreground fine-location is already held via the
+        // WebView geolocation prompt). On API 30+ the OS routes this to a
+        // settings screen rather than an inline dialog.
+        Permission(
+            alias = "bgLocation",
+            strings = [Manifest.permission.ACCESS_BACKGROUND_LOCATION]
+        )
     ]
 )
 class RideRecorderPlugin : Plugin() {
+
+    private val geofencingClient: GeofencingClient by lazy {
+        LocationServices.getGeofencingClient(context)
+    }
 
     override fun load() {
         // Wire the service's static callbacks to this plugin's JS bridge. Set
@@ -41,6 +58,16 @@ class RideRecorderPlugin : Plugin() {
         RideMonitorService.rideStartedCb = { notifyListeners("rideStarted", JSObject()) }
         RideMonitorService.rideDetectedCb = { result ->
             notifyListeners("rideDetected", resultToJs(result), /* retainUntilConsumed = */ true)
+        }
+        // Region transitions (fired by ParkGeofenceReceiver, possibly after a
+        // process restart) forward to JS retained so a suspended WebView still
+        // gets them on resume.
+        parkTransitionCb = { regionId, transition ->
+            notifyListeners(
+                "parkTransition",
+                JSObject().put("regionId", regionId).put("transition", transition),
+                /* retainUntilConsumed = */ true
+            )
         }
     }
 
@@ -127,6 +154,88 @@ class RideRecorderPlugin : Plugin() {
         call.resolve(JSObject().put("steps", org.json.JSONObject.NULL))
     }
 
+    // --- Background park geofencing ------------------------------------------
+
+    @PluginMethod
+    fun requestBackgroundLocation(call: PluginCall) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+            getPermissionState("bgLocation") == PermissionState.GRANTED
+        ) {
+            call.resolve(JSObject().put("location", "granted"))
+        } else {
+            requestPermissionForAlias("bgLocation", call, "bgLocationCallback")
+        }
+    }
+
+    @PermissionCallback
+    fun bgLocationCallback(call: PluginCall) {
+        val state = when (getPermissionState("bgLocation")) {
+            PermissionState.GRANTED -> "granted"
+            PermissionState.DENIED -> "denied"
+            else -> "prompt"
+        }
+        call.resolve(JSObject().put("location", state))
+    }
+
+    @PluginMethod
+    fun setParkGeofences(call: PluginCall) {
+        val regions = call.getArray("regions", JSArray()) ?: JSArray()
+        val fences = ArrayList<Geofence>()
+        for (i in 0 until regions.length()) {
+            val obj = regions.getJSONObject(i)
+            val id = obj.optString("id", "")
+            if (id.isEmpty()) continue
+            fences.add(
+                Geofence.Builder()
+                    .setRequestId(id)
+                    .setCircularRegion(
+                        obj.optDouble("lat"),
+                        obj.optDouble("lng"),
+                        obj.optDouble("radiusM").toFloat()
+                    )
+                    .setExpirationDuration(Geofence.NEVER_EXPIRE)
+                    .setTransitionTypes(
+                        Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_EXIT
+                    )
+                    .build()
+            )
+        }
+        if (fences.isEmpty()) {
+            call.resolve()
+            return
+        }
+        val request = GeofencingRequest.Builder()
+            // Fire immediately if we're *already* inside a park when registering.
+            .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER)
+            .addGeofences(fences)
+            .build()
+        try {
+            // Replace the set: drop everything, then add the new fences.
+            geofencingClient.removeGeofences(geofencePendingIntent)
+            geofencingClient.addGeofences(request, geofencePendingIntent)
+                .addOnSuccessListener { call.resolve() }
+                .addOnFailureListener { e -> call.reject("geofence add failed", e) }
+        } catch (e: SecurityException) {
+            // Background-location grant missing — geofences only run while in use.
+            call.reject("background location not granted", e)
+        }
+    }
+
+    @PluginMethod
+    fun clearParkGeofences(call: PluginCall) {
+        geofencingClient.removeGeofences(geofencePendingIntent)
+            .addOnCompleteListener { call.resolve() }
+    }
+
+    private val geofencePendingIntent: PendingIntent by lazy {
+        val intent = Intent(context, ParkGeofenceReceiver::class.java)
+        // MUTABLE: Play Services fills the geofence transition extras into it.
+        PendingIntent.getBroadcast(
+            context, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+        )
+    }
+
     private fun resultToJs(result: RideResult): JSObject {
         // JSONObject.put(k, null) REMOVES the key; emit explicit JSON nulls so
         // no-baro metrics (estTopSpeedKmh, altRel) arrive as null, not missing.
@@ -140,5 +249,13 @@ class RideRecorderPlugin : Plugin() {
             samples.put(obj)
         }
         return JSObject().put("metrics", metrics).put("samples", samples)
+    }
+
+    companion object {
+        // Wired in load(); read by ParkGeofenceReceiver, which may fire in a
+        // freshly-restarted process (so it's static, not an instance field).
+        // @Volatile so the receiver thread sees the plugin's write.
+        @Volatile
+        var parkTransitionCb: ((String, String) -> Unit)? = null
     }
 }

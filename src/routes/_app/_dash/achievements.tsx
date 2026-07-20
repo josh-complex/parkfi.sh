@@ -2,6 +2,8 @@ import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
+import { Share2 } from "lucide-react";
+
 import { Sparkle } from "#/components/achievements/achievement-toast.tsx";
 import { AllBadges } from "#/components/achievements/family-shelf.tsx";
 import { LevelBadge } from "#/components/achievements/level-badge.tsx";
@@ -12,6 +14,7 @@ import { hasGrantedLocationBefore } from "#/hooks/use-geolocation.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { ACHIEVEMENTS, type LevelInfo } from "#/lib/achievements.ts";
 import { authClient } from "#/lib/auth-client.ts";
+import { shareContent } from "#/lib/native-share.ts";
 import { rideRecapSegments } from "#/lib/ride-recap.ts";
 import { seo } from "#/lib/seo.ts";
 
@@ -39,10 +42,27 @@ function LevelHeaderCard({
   const pct = level.forNext
     ? Math.min(100, Math.round((level.intoLevel / level.forNext) * 100))
     : 100;
+  const onShare = () => {
+    void shareContent({
+      title: "ParkFi",
+      text: `I'm Level ${level.level} — "${level.title}" — on ParkFi with ${xp.toLocaleString()} XP and ${unlockedCount} achievements unlocked. 🎢`,
+      url: "https://parkfi.sh",
+      dialogTitle: "Share your progress",
+    });
+  };
   return (
-    <div className="achv-hero flex items-start gap-4 rounded-3xl p-5 sm:p-6">
+    <div className="achv-hero relative flex items-start gap-4 rounded-3xl p-5 sm:p-6">
       <Sparkle className="achv-sparkle--tl" />
       <Sparkle className="achv-sparkle--br" />
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onShare}
+        aria-label="Share your progress"
+        className="absolute top-3 right-3 h-8 w-8 opacity-70 hover:opacity-100"
+      >
+        <Share2 className="h-4 w-4" />
+      </Button>
       <LevelBadge level={level.level} size="lg" className="mt-0.5" />
       <div className="min-w-0 flex-1">
         <p className="text-xs font-bold tracking-widest uppercase opacity-70">

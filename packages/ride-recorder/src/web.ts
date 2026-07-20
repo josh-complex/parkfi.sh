@@ -1,6 +1,11 @@
 import { WebPlugin } from "@capacitor/core";
 
-import type { MotionPermissionState, RideRecorderPlugin, RideTrace } from "./definitions";
+import type {
+  LocationPermissionState,
+  MotionPermissionState,
+  RideRecorderPlugin,
+  RideTrace,
+} from "./definitions";
 
 /**
  * No-op web stub. The browser has no reliable coaster-grade IMU/barometer
@@ -43,5 +48,21 @@ export class RideRecorderWeb extends WebPlugin implements RideRecorderPlugin {
 
   async queryStepSpan(): Promise<{ steps: number | null }> {
     return { steps: null };
+  }
+
+  // Region monitoring is a native-OS capability; the browser has no equivalent
+  // that survives the tab being backgrounded, so these are inert no-ops. The web
+  // app already runs its own foreground `watchPosition` geofence, so nothing is
+  // lost by the stubs.
+  async requestBackgroundLocation(): Promise<{ location: LocationPermissionState }> {
+    return { location: "denied" };
+  }
+
+  async setParkGeofences(): Promise<void> {
+    // no-op on web
+  }
+
+  async clearParkGeofences(): Promise<void> {
+    // no-op on web
   }
 }

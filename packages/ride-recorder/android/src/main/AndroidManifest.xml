@@ -19,6 +19,14 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Background park geofencing (Tier 1): Play Services geofence transitions
+         fire even when the app is killed, but only with the "allow all the time"
+         grant on API 29+. Foreground fine-location is already held via the
+         WebView geolocation prompt; this adds the background tier, requested
+         on demand via the plugin's "bgLocation" alias. Play Console: background
+         location triggers its own prominent-disclosure review. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
     <!-- Barometer is optional — many midrange phones lack one; don't exclude them
          from the store. baroAvailable=false degrades drop/vertical metrics gracefully. -->
     <uses-feature android:name="android.hardware.sensor.barometer" android:required="false" />
@@ -34,6 +42,12 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Detects roller-coaster rides from motion sensors while the user is in a theme park, to credit ride achievements; runs only while the app has armed monitoring in-park." />
         </service>
+
+        <!-- Receives Play Services geofence transitions (park entry/exit). A plain
+             manifest receiver so the OS can deliver even after process death. -->
+        <receiver
+            android:name=".ParkGeofenceReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

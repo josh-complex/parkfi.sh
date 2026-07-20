@@ -12,13 +12,19 @@ import { activeWatchesStore, lastFixStore, useGeolocation } from "#/hooks/use-ge
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
 import { reportSimPing, useGeoSim } from "#/lib/dev-geo-sim.ts";
+import { isOnline } from "#/lib/native-network.ts";
+import { maybeRequestReview } from "#/lib/native-review.ts";
+import { parkGeofencesFromParks } from "#/lib/park-geofences.ts";
 import { isNative } from "#/lib/platform.ts";
 import {
+  addParkTransitionListener,
   addRideDetectedListener,
   armRideMonitoring,
   disarmRideMonitoring,
   queryStepSpan,
   readStepSample,
+  requestBackgroundLocation,
+  setParkGeofences,
 } from "#/lib/ride-recorder-client.ts";
 
 import type { PluginListenerHandle } from "@capacitor/core";
@@ -82,6 +88,11 @@ export function AchievementTracker() {
   const celebrate = React.useCallback(
     (ids: string[], xp: number, level: LevelInfo) => {
       showUnlockToasts(ids, { xp, level, onShown: (shown) => ack.mutate({ ids: shown }) });
+      // An unlock is the app's clearest high point — the textbook moment to ask
+      // for a store rating. `maybeRequestReview` is native-only and heavily
+      // self-throttled (min euphoria count + long cooldown + once/session), so
+      // calling it on every celebration is safe and never nags.
+      void maybeRequestReview();
     },
     [ack],
   );
@@ -120,6 +131,10 @@ export function AchievementTracker() {
     const tick = async () => {
       if (pingRef.current.isPending) return;
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      // Parks have terrible signal — don't fire (and fail) pings into a dead
+      // radio. A backgrounded pedometer backlog still uploads on the first ping
+      // once connectivity returns; nothing is lost by waiting.
+      if (!isOnline()) return;
       const coords = coordsRef.current;
       if (!coords) return;
       // Steps ride along with the ping (native only; null on web/no sensor) as
@@ -198,6 +213,70 @@ export function AchievementTracker() {
       cancelled = true;
       void handle?.remove();
       void disarmRideMonitoring();
+    };
+  }, [loggedIn]);
+
+  // --- Background park geofencing (native) -----------------------------------
+  // Region monitoring wakes the app on park entry/exit even when suspended —
+  // what makes in-park detection work with the phone pocketed, which the
+  // foreground `watchPosition` above cannot. On enter the native side arms the
+  // ride recorder itself; here we sync the JS in-park refs (so the ping loop's
+  // disarm debounce stays coherent) and let the next ping credit presence.
+  const parksQ = useQuery({
+    ...trpc.parks.list.queryOptions(),
+    enabled: loggedIn && isNative(),
+    staleTime: Infinity,
+  });
+  const geofencesSetRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!loggedIn || !isNative() || geofencesSetRef.current || !parksQ.data) return;
+    geofencesSetRef.current = true;
+    void (async () => {
+      // Background monitoring needs the "always" grant; if the user declines,
+      // setParkGeofences no-ops and we simply fall back to foreground pings.
+      await requestBackgroundLocation();
+      const from = lastFixStore.state?.coords ?? null;
+      const regions = parkGeofencesFromParks(
+        parksQ.data.map((p) => ({
+          id: p.id,
+          latitude: p.latitude,
+          longitude: p.longitude,
+          latMin: p.bounds?.latMin ?? null,
+          latMax: p.bounds?.latMax ?? null,
+          lngMin: p.bounds?.lngMin ?? null,
+          lngMax: p.bounds?.lngMax ?? null,
+        })),
+        from,
+      );
+      await setParkGeofences(regions);
+    })();
+  }, [loggedIn, parksQ.data]);
+
+  React.useEffect(() => {
+    if (!loggedIn || !isNative()) return;
+    let handle: PluginListenerHandle | null = null;
+    let cancelled = false;
+    void addParkTransitionListener(({ transition }) => {
+      if (transition === "enter") {
+        disarmMissesRef.current = 0;
+        if (!inParkRef.current) {
+          inParkRef.current = true;
+          void armRideMonitoring();
+        }
+      } else if (inParkRef.current) {
+        // A hard geofence exit is authoritative — disarm without waiting out the
+        // ping debounce (which guards against noisy single fixes, not this).
+        inParkRef.current = false;
+        disarmMissesRef.current = 0;
+        void disarmRideMonitoring();
+      }
+    }).then((h) => {
+      if (cancelled) void h?.remove();
+      else handle = h;
+    });
+    return () => {
+      cancelled = true;
+      void handle?.remove();
     };
   }, [loggedIn]);
 

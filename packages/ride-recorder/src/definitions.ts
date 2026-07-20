@@ -38,6 +38,26 @@ export interface RideTrace {
 
 export type MotionPermissionState = "granted" | "denied" | "prompt";
 
+/** One circular park geofence to monitor natively (background-capable). */
+export interface ParkGeofence {
+  /** Stable id echoed back on transition (the park id, as a string). */
+  id: string;
+  lat: number;
+  lng: number;
+  /** Trigger radius in metres. */
+  radiusM: number;
+}
+
+export type GeofenceTransition = "enter" | "exit";
+
+/** A background park entry/exit, delivered even when the WebView was suspended. */
+export interface ParkTransitionEvent {
+  regionId: string;
+  transition: GeofenceTransition;
+}
+
+export type LocationPermissionState = "granted" | "denied" | "prompt";
+
 export interface RideRecorderPlugin {
   /** iOS 13+ motion permission (Android auto-grants; resolves "granted"). */
   requestPermissions(): Promise<{ motion: MotionPermissionState }>;
@@ -72,7 +92,34 @@ export interface RideRecorderPlugin {
    */
   queryStepSpan(opts: { fromMs: number; toMs: number }): Promise<{ steps: number | null }>;
 
+  /**
+   * Request the "always/background" location grant that region monitoring needs
+   * to fire while the app is suspended. On iOS this escalates WhenInUse →
+   * Always; on Android 10+ it's the separate ACCESS_BACKGROUND_LOCATION grant
+   * (which the OS routes to a settings screen). Resolves the resulting state;
+   * never rejects. A `denied`/`prompt` result just means geofences run only
+   * while the app is in use.
+   */
+  requestBackgroundLocation(): Promise<{ location: LocationPermissionState }>;
+
+  /**
+   * Replace the set of monitored park geofences (idempotent — call again with a
+   * new set to swap). Region monitoring wakes the app on enter/exit even from a
+   * suspended/terminated state, which is what makes park-entry detection work
+   * with the phone pocketed. iOS caps simultaneous regions at 20; pass the
+   * nearest N. A no-op without the background-location grant.
+   */
+  setParkGeofences(opts: { regions: ParkGeofence[] }): Promise<void>;
+
+  /** Stop monitoring all park geofences. */
+  clearParkGeofences(): Promise<void>;
+
   addListener(event: "rideStarted", cb: () => void): Promise<PluginListenerHandle>;
   addListener(event: "rideDetected", cb: (trace: RideTrace) => void): Promise<PluginListenerHandle>;
+  /** Background park entry/exit from region monitoring (retained until consumed). */
+  addListener(
+    event: "parkTransition",
+    cb: (event: ParkTransitionEvent) => void,
+  ): Promise<PluginListenerHandle>;
   removeAllListeners(): Promise<void>;
 }

@@ -18,7 +18,33 @@ public class RideRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "stopRecording", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getStepSample", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "queryStepSpan", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "requestBackgroundLocation", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setParkGeofences", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clearParkGeofences", returnType: CAPPluginReturnPromise),
     ]
+
+    /// Background park entry/exit via region monitoring. On enter we arm the
+    /// recorder natively (so sensors run even if the app was suspended) and, when
+    /// backgrounded, post a "you're in the park" notification; the transition is
+    /// always forwarded to JS (retained) so the ping loop reconciles on resume.
+    private lazy var geofences: ParkGeofenceManager = {
+        let g = ParkGeofenceManager()
+        g.onTransition = { [weak self] regionId, transition in
+            guard let self else { return }
+            if transition == "enter" {
+                self.recorder.startMonitoring(imuHz: RideConst.monitorHz, baroHz: 1.0)
+                self.postParkEntryIfBackgrounded()
+            } else {
+                self.recorder.stopMonitoring()
+            }
+            self.notifyListeners(
+                "parkTransition",
+                data: ["regionId": regionId, "transition": transition],
+                retainUntilConsumed: true
+            )
+        }
+        return g
+    }()
 
     private lazy var recorder: RideRecorder = {
         let r = RideRecorder()
@@ -56,6 +82,25 @@ public class RideRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
             content.sound = .default
             let request = UNNotificationRequest(
                 identifier: "ride-recap-\(Date().timeIntervalSince1970)",
+                content: content,
+                trigger: nil
+            )
+            UNUserNotificationCenter.current().add(request)
+        }
+    }
+
+    /// Lock-screen "you're in the park" cue when a region-enter wakes the app in
+    /// the background. Silent when active (the in-app UI covers it). Shares the
+    /// notification grant with push/ride-recaps; no-ops if it wasn't granted.
+    private func postParkEntryIfBackgrounded() {
+        DispatchQueue.main.async {
+            guard UIApplication.shared.applicationState != .active else { return }
+            let content = UNMutableNotificationContent()
+            content.title = "You're in the park 🎢"
+            content.body = "ParkFi is counting your day — miles, queues, and rides."
+            content.sound = nil
+            let request = UNNotificationRequest(
+                identifier: "park-entry-\(Date().timeIntervalSince1970)",
                 content: content,
                 trigger: nil
             )
@@ -137,5 +182,33 @@ public class RideRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         } else {
             call.resolve()
         }
+    }
+
+    @objc func requestBackgroundLocation(_ call: CAPPluginCall) {
+        geofences.requestAlways()
+        // The authorization callback is async; report the current state. The JS
+        // layer re-checks by attempting to set geofences (a no-op if denied).
+        call.resolve(["location": geofences.authorizationState()])
+    }
+
+    @objc func setParkGeofences(_ call: CAPPluginCall) {
+        let raw = call.getArray("regions", []) ?? []
+        var regions: [(id: String, lat: Double, lng: Double, radius: Double)] = []
+        for case let obj as [String: Any] in raw {
+            guard
+                let id = obj["id"] as? String,
+                let lat = (obj["lat"] as? NSNumber)?.doubleValue,
+                let lng = (obj["lng"] as? NSNumber)?.doubleValue,
+                let radius = (obj["radiusM"] as? NSNumber)?.doubleValue
+            else { continue }
+            regions.append((id: id, lat: lat, lng: lng, radius: radius))
+        }
+        geofences.setRegions(regions)
+        call.resolve()
+    }
+
+    @objc func clearParkGeofences(_ call: CAPPluginCall) {
+        geofences.clear()
+        call.resolve()
     }
 }

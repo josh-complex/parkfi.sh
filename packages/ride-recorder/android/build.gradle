@@ -44,5 +44,8 @@ repositories {
 dependencies {
     implementation project(':capacitor-android')
     implementation "androidx.core:core-ktx:1.13.1"
+    // Geofencing (background park entry/exit) rides on Play Services location —
+    // the only Android API whose transitions fire when the app is killed.
+    implementation "com.google.android.gms:play-services-location:21.3.0"
     testImplementation "junit:junit:$junitVersion"
 }

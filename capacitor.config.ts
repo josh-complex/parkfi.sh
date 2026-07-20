@@ -12,6 +12,22 @@ const config: CapacitorConfig = {
     // native insets as `--safe-area-inset-*` CSS vars; our `--safe-*` vars in
     // styles.css read those first and fall back to `env()` on iOS/browser.
     SystemBars: { insetsHandling: "css" },
+    // Hold the OS launch image until the SPA has painted, then `SplashScreen.hide()`
+    // fires from __root (with a failsafe timeout). Auto-hiding instead flashes a
+    // blank WebView before first paint on a cold start. Background matches the
+    // brand `theme-color` so the seam is invisible.
+    SplashScreen: {
+      launchAutoHide: false,
+      backgroundColor: "#1c468e",
+      showSpinner: false,
+      androidScaleType: "CENTER_CROP",
+    },
+    // `resize: "none"` matches the app's keyboard model — Android's
+    // `windowSoftInputMode="adjustNothing"` + the viewport's
+    // `interactive-widget=resizes-visual`, so the IME shrinks only the *visual*
+    // viewport and keyboard-aware panels (omni-search) size off `visualViewport`
+    // rather than the WebView being resized out from under a fixed layout.
+    Keyboard: { resize: "none" },
   },
   // Live-reload dev: point the shell at a running `vp dev` server on the LAN:
   //   CAP_SERVER_URL=http://<mac-lan-ip>:3000 bun cap run ios
