@@ -56,6 +56,26 @@ export function thumbhashToUrl(hash: string | null | undefined): string | undefi
 }
 
 /**
+ * Split a caller's `className` for the ThumbHash wrapper path: `object-*`
+ * utilities (any variant, e.g. `sm:object-contain`) belong to the inner
+ * `<img>` — they control how the photo fills its box — while everything else
+ * (sizing, rounding, borders, hover zoom) describes the box itself and moves
+ * to the wrapper.
+ */
+function splitObjectClasses(className: string | undefined): {
+  box: string | undefined;
+  fit: string | undefined;
+} {
+  if (!className || !/(^|[\s:])object-/.test(className)) return { box: className, fit: undefined };
+  const parts = className.split(/\s+/).filter(Boolean);
+  const isFit = (c: string) => /(^|:)object-/.test(c);
+  return {
+    box: parts.filter((c) => !isFit(c)).join(" "),
+    fit: parts.filter(isFit).join(" "),
+  };
+}
+
+/**
  * The default placeholder shown when an image is missing or 404s: a muted box
  * with a dimmed icon, sized by the same `className` the `<img>` would get so it
  * occupies the exact same footprint (a hero, a 44px tile, a full-bleed fill).
@@ -114,9 +134,15 @@ type ImageProps = Omit<React.ComponentProps<"img">, "src"> & {
   /**
    * base64 ThumbHash of the image (e.g. `attraction_meta.image_thumbhash`).
    * Painted instantly — including in SSR HTML — as a blurry, color-accurate
-   * preview behind the loading image, so the tile is never a blank box. The
-   * real photo still fades/de-blurs in over it; on error the normal fallback
+   * preview behind the loading image, so the tile is never a blank box; the
+   * real photo cross-fades in over it, and on error the normal fallback
    * replaces it.
+   *
+   * Layout contract: with a placeholder (and the fade on), `<Image>` renders a
+   * wrapper `<span>` that takes the caller's box classes — `className` (and
+   * `style`) must size the box, which is already true anywhere a placeholder
+   * makes sense: the hash needs a reserved box to paint into before the photo
+   * exists. `object-*` utilities are forwarded to the inner `<img>`.
    */
   placeholder?: string | null;
 };
@@ -124,10 +150,13 @@ type ImageProps = Omit<React.ComponentProps<"img">, "src"> & {
 /**
  * Drop-in `<img>` that fades and de-blurs as the bytes arrive instead of hard
  * popping into place. Pair it with a parent box that reserves space and paints
- * a `bg-muted` (or similar) placeholder so there's something to fade over.
+ * a `bg-muted` (or similar) placeholder so there's something to fade over —
+ * or pass a ThumbHash `placeholder`, which paints a color-accurate preview the
+ * photo cross-fades in over (see the `placeholder` prop for its layout
+ * contract: the box classes move to a wrapper `<span>`).
  *
  * Notes for callers:
- * - The fade uses `transition-[opacity,filter,transform]`, so add hover zoom as
+ * - The fade uses `transition-[opacity,filter,scale]`, so add hover zoom as
  *   a plain `group-hover:scale-*` on `className` — do NOT also pass
  *   `transition-transform`, or Tailwind's last-wins merge drops the fade.
  * - Load state is keyed on `src`, so a changed source (carousel reuse, prop
@@ -184,6 +213,19 @@ export function Image({
   const instant = instantSrc === src;
   const loaded = instant || fadedSrc === src;
 
+  // `settled` — the fade-in has finished, so the ThumbHash underlay can be
+  // dropped (keeping transparent sources honest). Timer-based (600ms, just past
+  // the 500ms transition) rather than `transitionend` so motion-reduce and
+  // interrupted transitions still settle. Reset whenever `src` changes so a
+  // reused element re-arms its underlay.
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    setSettled(false);
+    if (!loaded) return;
+    const t = setTimeout(() => setSettled(true), 600);
+    return () => clearTimeout(t);
+  }, [loaded, src]);
+
   // Resolve the URLs the <img> will request. Computed above the early return so
   // the preload effect below reuses the exact same ones (a warm only helps if it
   // matches what the <img> fetches). `resolveImageUrls` no-ops on local/`data:`
@@ -211,15 +253,27 @@ export function Image({
     return fallback === undefined ? <ImageFallback className={className} /> : <>{fallback}</>;
   }
 
-  // ThumbHash underlay: painted as the <img>'s own background so it needs no
-  // wrapper (callers style the bare <img>). Only while loading — once the
-  // photo lands its pixels cover the same box, so the background is dropped to
-  // keep transparent sources honest. Because the background lives on the
-  // element, the placeholder path must keep the element visible (opacity-100)
-  // and reveal via blur/scale only.
-  const placeholderUrl = !loaded ? thumbhashToUrl(placeholder) : undefined;
+  // ThumbHash underlay. A true cross-fade needs two layers — animating the
+  // <img>'s own opacity would take an element-background placeholder down with
+  // it — so with a hash (and the fade on) the component renders a wrapper
+  // <span> that paints the hash as its background while the photo runs the
+  // normal fade on top. The wrapper takes the caller's box classes (sizing,
+  // rounding, hover zoom — see the `placeholder` prop's layout contract);
+  // `object-*` utilities forward to the inner <img>, which fills the wrapper
+  // absolutely. SSR still paints the hash pre-JS, and `overflow-hidden` clips
+  // the fade's blur/scale bleed. With `noFade` the hash stays where it was
+  // before: the bare <img>'s own background while loading.
+  const placeholderUrl = thumbhashToUrl(placeholder);
+  const underlay = placeholderUrl !== undefined && !noFade;
+  // Keep the underlay painted until the fade finishes, then drop it to keep
+  // transparent sources honest. Instant images never fade, so theirs drops on
+  // the first client paint.
+  const showUnderlay = !loaded || (!instant && !settled);
+  const { box, fit } = underlay
+    ? splitObjectClasses(className)
+    : { box: className, fit: undefined };
 
-  return (
+  const image = (
     <img
       ref={ref}
       src={resolvedSrc ?? undefined}
@@ -228,14 +282,16 @@ export function Image({
       sizes={sizes}
       alt={alt}
       style={
-        placeholderUrl
+        !underlay && placeholderUrl && !loaded
           ? {
               backgroundImage: `url(${placeholderUrl})`,
               backgroundSize: "cover",
               backgroundPosition: "center",
               ...style,
             }
-          : style
+          : underlay
+            ? undefined
+            : style
       }
       decoding="async"
       onLoad={(e) => {
@@ -255,19 +311,35 @@ export function Image({
         !noFade &&
           (!instant || armed) &&
           "transition-[opacity,filter,scale] duration-500 ease-out motion-reduce:transition-none",
-        !noFade &&
-          (loaded
-            ? "scale-100 opacity-100 blur-0"
-            : // With a ThumbHash the element stays visible (it *is* the
-              // placeholder) and un-blurred — the hash is inherently blurry,
-              // and a CSS blur on a visible element bleeds past the box edges.
-              // The photo lands over matching colors and eases via scale.
-              placeholder
-              ? "scale-105 opacity-100 blur-0"
-              : "scale-105 opacity-0 blur-md"),
-        className,
+        !noFade && (loaded ? "scale-100 opacity-100 blur-0" : "scale-105 opacity-0 blur-md"),
+        underlay ? cn("absolute inset-0 size-full", fit) : box,
       )}
       {...props}
     />
+  );
+
+  if (!underlay) return image;
+
+  return (
+    <span
+      className={cn(
+        // The caller's `group-hover:scale-*` zoom now lands on the wrapper, so
+        // it carries the scale transition the <img> used to provide.
+        "relative block overflow-hidden transition-[scale] duration-500 ease-out motion-reduce:transition-none",
+        box,
+      )}
+      style={
+        showUnderlay
+          ? {
+              backgroundImage: `url(${placeholderUrl})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              ...style,
+            }
+          : style
+      }
+    >
+      {image}
+    </span>
   );
 }

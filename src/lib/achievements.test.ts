@@ -7,6 +7,7 @@ import {
   formatStatValue,
   levelForXp,
   satisfiedTierIds,
+  tierMetal,
   xpForLevel,
   xpForTierIds,
 } from "./achievements.ts";
@@ -90,6 +91,26 @@ describe("levelForXp", () => {
     const info = levelForXp(xpForLevel(MAX_LEVEL) + 1_000_000);
     expect(info.level).toBe(MAX_LEVEL);
     expect(info.forNext).toBe(null);
+  });
+});
+
+describe("tierMetal", () => {
+  it("is null with nothing unlocked", () => {
+    expect(tierMetal(0, 5)).toBe(null);
+    expect(tierMetal(3, 0)).toBe(null);
+  });
+
+  it("matches the mockup bands on a 5-tier family", () => {
+    expect(tierMetal(1, 5)).toBe("bronze");
+    expect(tierMetal(2, 5)).toBe("bronze");
+    expect(tierMetal(3, 5)).toBe("silver");
+    expect(tierMetal(4, 5)).toBe("gold");
+    expect(tierMetal(5, 5)).toBe("platinum");
+  });
+
+  it("maxing any family is platinum", () => {
+    expect(tierMetal(2, 2)).toBe("platinum");
+    expect(tierMetal(3, 3)).toBe("platinum");
   });
 });
 

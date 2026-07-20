@@ -23,11 +23,11 @@ export function LevelBadge({
     <span
       aria-label={`Level ${level}`}
       className={cn(
-        "achv-level-coin inline-grid shrink-0 place-items-center rounded-full font-black tabular-nums",
+        "achv-level-coin font-rounded inline-grid shrink-0 place-items-center rounded-full font-bold tabular-nums",
         size === "sm"
           ? "size-4.5 text-[0.6rem]"
           : size === "lg"
-            ? "size-14 text-2xl"
+            ? "size-14 text-3xl"
             : "size-6 text-xs",
         className,
       )}

@@ -578,6 +578,22 @@ export function levelForXp(xp: number): LevelInfo {
   };
 }
 
+/** The metal band a family sits in, from how far up its tiers the player has
+ *  climbed (level = tiers unlocked, total = tiers in the family). Fraction
+ *  bands: >0 bronze, ≥½ silver, ≥¾ gold, maxed platinum. Null when nothing is
+ *  unlocked yet. Presentational — drives the "LVL 3/5 · SILVER" pills and coin
+ *  colors on /activity. */
+export type TierMetal = "bronze" | "silver" | "gold" | "platinum";
+
+export function tierMetal(level: number, total: number): TierMetal | null {
+  if (level <= 0 || total <= 0) return null;
+  const f = level / total;
+  if (f >= 1) return "platinum";
+  if (f >= 0.75) return "gold";
+  if (f >= 0.5) return "silver";
+  return "bronze";
+}
+
 /** "12.4 km", "4h 20m", "17" — for progress bars & admin table. */
 export function formatStatValue(unit: StatUnit, value: number): string {
   switch (unit) {

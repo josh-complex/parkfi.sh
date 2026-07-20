@@ -2,18 +2,19 @@ import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
+import { AllBadges } from "#/components/achievements/family-shelf.tsx";
 import {
-  DayRecapCard,
+  LifetimeCard,
+  RecapCard,
   formatDayLabel,
   type DayEntry,
-} from "#/components/activity/day-recap-card.tsx";
-import { LifetimeSection } from "#/components/activity/lifetime-section.tsx";
+} from "#/components/activity/recap-card.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
 import { seo } from "#/lib/seo.ts";
-import { formatDistance, preferredUnitSystem } from "#/lib/units.ts";
+import { formatDistance, preferredUnitSystem, type UnitSystem } from "#/lib/units.ts";
 import { cn } from "#/lib/utils.ts";
 
 export const Route = createFileRoute("/_app/_dash/activity")({
@@ -32,7 +33,7 @@ function DayRow({
   day: string;
   entries: DayEntry[];
   selected: boolean;
-  units: "imperial" | "metric";
+  units: UnitSystem;
   onSelect: () => void;
 }) {
   const steps = entries.reduce((n, e) => n + e.steps, 0);
@@ -50,12 +51,12 @@ function DayRow({
       onClick={onSelect}
       aria-pressed={selected}
       className={cn(
-        "flex w-full items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3 text-left transition-colors",
+        "flex w-full items-center justify-between gap-3 rounded-2xl border bg-card px-4 py-3 text-left transition-colors",
         selected ? "border-primary/60 ring-1 ring-primary/40" : "hover:bg-accent/50",
       )}
     >
       <div className="min-w-0">
-        <p className="text-sm font-semibold">
+        <p className="font-rounded text-sm font-semibold">
           {formatDayLabel(day)}
           {flags.length > 0 && (
             <span className="ml-1.5" aria-hidden>
@@ -84,10 +85,7 @@ function ActivityPage() {
   const feedQ = useInfiniteQuery(
     trpc.activity.myActivityDays.infiniteQueryOptions(
       { limit: 15 },
-      {
-        getNextPageParam: (last) => last.nextCursor ?? undefined,
-        enabled: signedIn,
-      },
+      { getNextPageParam: (last) => last.nextCursor ?? undefined, enabled: signedIn },
     ),
   );
   const progressQ = useQuery({
@@ -106,26 +104,23 @@ function ActivityPage() {
     enabled: signedIn && selectedDay != null,
   });
 
-  // Locale-derived, so read it once client-side; SSR renders metric either way.
-  const [units, setUnits] = React.useState<"imperial" | "metric">("metric");
+  // Locale-derived, so read once client-side; SSR renders metric either way.
+  const [units, setUnits] = React.useState<UnitSystem>("metric");
   React.useEffect(() => {
     setUnits(preferredUnitSystem());
   }, []);
 
   if (isPending) {
     return (
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6 lg:px-6">
-        <Skeleton className="h-72 w-full rounded-3xl" />
-        {[1, 2, 3].map((i) => (
-          <Skeleton key={i} className="h-16 w-full rounded-xl" />
-        ))}
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6 lg:px-6">
+        <Skeleton className="h-[40rem] w-full rounded-3xl" />
       </div>
     );
   }
 
   if (!signedIn) {
     return (
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6 lg:px-6">
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6 lg:px-6">
         <p className="text-sm text-muted-foreground">
           You must be signed in to view your park activity.
         </p>
@@ -134,70 +129,92 @@ function ActivityPage() {
   }
 
   const unlockedIds = new Set(progressQ.data?.unlocked.map((u) => u.id) ?? []);
+  const stats = progressQ.data?.stats ?? {};
+  const level = progressQ.data?.level;
+  // Any badge unlocked or any nonzero lifetime stat — a pins-only or sensor-only
+  // account has these without ever logging a park day, and we must not hide them.
+  const hasLifetime = unlockedIds.size > 0 || Object.values(stats).some((v) => (v ?? 0) > 0);
+
+  const showRecap = days.length > 0 && !!selected;
+  const showLifetimeCard = days.length === 0 && !progressQ.isLoading && hasLifetime && !!level;
+  const showEmpty = days.length === 0 && !progressQ.isLoading && !hasLifetime;
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6 lg:px-6">
-      <header>
-        <h1 className="text-xl font-semibold tracking-tight">Activity</h1>
-        <p className="text-sm text-muted-foreground">
-          Every park day, recapped — steps, rides, queues, and the badges they earned.
-        </p>
-      </header>
-
+    <div className="flex w-full flex-col">
+      {/* Full-bleed recap surface (runs to the device edges on mobile). */}
       {feedQ.isLoading ? (
-        <Skeleton className="h-72 w-full rounded-3xl" />
-      ) : days.length === 0 ? (
-        <div className="rounded-2xl border bg-card px-4 py-8 text-center">
-          <p className="text-sm font-medium">No park days yet</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Visit a park with ParkFi running and your day shows up here automatically — no check-in
-            required.
-          </p>
+        <div className="px-4 pt-[calc(var(--safe-top)_+_var(--app-header-h)_+_1.25rem)] md:px-6 md:pt-6">
+          <Skeleton className="h-[34rem] w-full rounded-2xl" />
         </div>
-      ) : (
-        <>
-          {selected && (
-            <DayRecapCard
-              day={selected.day}
-              entries={selected.entries}
-              detail={detailQ.data}
-              detailLoading={detailQ.isLoading}
-              unlockedIds={unlockedIds}
-              units={units}
-            />
-          )}
+      ) : showRecap ? (
+        <RecapCard
+          day={selected!.day}
+          entries={selected!.entries}
+          detail={detailQ.data}
+          detailLoading={detailQ.isLoading}
+          stats={stats}
+          unlockedIds={unlockedIds}
+          units={units}
+          level={level}
+        />
+      ) : showLifetimeCard ? (
+        // No park days, but there IS lifetime progress — surface it, don't hide it.
+        <LifetimeCard stats={stats} unlockedIds={unlockedIds} level={level!} />
+      ) : null}
 
-          {days.length > 1 && (
-            <section className="flex flex-col gap-2">
-              <h2 className="text-base font-semibold tracking-tight">History</h2>
-              {days.map((d) => (
-                <DayRow
-                  key={d.day}
-                  day={d.day}
-                  entries={d.entries}
-                  selected={d.day === selectedDay}
-                  units={units}
-                  onSelect={() => setPickedDay(d.day)}
-                />
-              ))}
-              {feedQ.hasNextPage && (
-                <div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void feedQ.fetchNextPage()}
-                    disabled={feedQ.isFetchingNextPage}
-                  >
-                    {feedQ.isFetchingNextPage ? "Loading…" : "Load more"}
-                  </Button>
-                </div>
-              )}
-            </section>
-          )}
-        </>
-      )}
+      {/* Everything below the hero sits in the normal padded, app-themed column. */}
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-8 px-4 py-6 lg:px-6">
+        {showEmpty && (
+          <div className="rounded-2xl border bg-card px-4 py-10 text-center">
+            <p className="font-rounded text-lg font-bold">No park days yet</p>
+            <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
+              Visit a park with ParkFi running and your day shows up here automatically — no
+              check-in required.
+            </p>
+          </div>
+        )}
 
-      <LifetimeSection stats={progressQ.data?.stats ?? {}} unlockedIds={unlockedIds} />
+        {days.length > 1 && (
+          <section className="flex flex-col gap-2">
+            <h2 className="font-rounded text-base font-bold tracking-tight">History</h2>
+            {days.map((d) => (
+              <DayRow
+                key={d.day}
+                day={d.day}
+                entries={d.entries}
+                selected={d.day === selectedDay}
+                units={units}
+                onSelect={() => setPickedDay(d.day)}
+              />
+            ))}
+            {feedQ.hasNextPage && (
+              <div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void feedQ.fetchNextPage()}
+                  disabled={feedQ.isFetchingNextPage}
+                >
+                  {feedQ.isFetchingNextPage ? "Loading…" : "Load more"}
+                </Button>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* All earnable badges — the full catalog, same shelves as the Badges page. */}
+        {progressQ.data && (
+          <section className="flex flex-col gap-5">
+            <div>
+              <h2 className="font-rounded text-lg font-bold tracking-tight">All badges</h2>
+              <p className="text-sm text-muted-foreground">
+                Every badge you can earn — {unlockedIds.size} unlocked so far.
+              </p>
+            </div>
+            <AllBadges stats={stats} unlockedIds={unlockedIds} />
+          </section>
+        )}
+      </div>
     </div>
   );
 }

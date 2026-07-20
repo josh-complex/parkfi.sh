@@ -70,10 +70,15 @@ export function SiteHeader(_props?: { title?: string; mobileTitle?: string }) {
       initial={false}
       animate={{ y: hidden ? "-100%" : "0%" }}
       transition={{ duration: 0.3, ease: "easeInOut" }}
-      className="pointer-events-none sticky top-0 z-30 shrink-0 border-b border-transparent bg-transparent text-foreground"
-      style={{ paddingTop: "var(--safe-top)" }}
+      className="pointer-events-none sticky top-0 z-30 flex shrink-0 items-center bg-transparent text-foreground"
+      // Locked to a known height so a full-bleed page (/activity) can pull its
+      // hero up by exactly `--safe-top + --app-header-h` and reach the top edge.
+      style={{
+        paddingTop: "var(--safe-top)",
+        minHeight: "calc(var(--safe-top) + var(--app-header-h))",
+      }}
     >
-      <div className="relative px-4 py-3">
+      <div className="relative w-full px-4">
         <div className="relative flex w-full items-center gap-2">
           {/* An inset search pill (thicker top border like our inputs) sitting
               inline next to the account avatar. The search owns its own pill chrome

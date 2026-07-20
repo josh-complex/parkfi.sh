@@ -9,6 +9,7 @@
 @import "shadcn/tailwind.css";
 
 @import "@fontsource-variable/instrument-sans";
+@import "@fontsource-variable/fredoka";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -61,6 +62,11 @@
      then 0. Use these `--safe-*` vars everywhere instead of bare `env()` so both
      platforms conform. `viewport-fit=cover` (root meta) enables the insets. */
   --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  /* Mobile SiteHeader content height (excluding --safe-top). The header is
+     locked to exactly `--safe-top + --app-header-h`, so a full-bleed page can
+     pull its hero up by the identical amount and provably reach the top edge on
+     every device (notched or not) with no sliver gap. */
+  --app-header-h: 4.75rem;
   --safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
   --safe-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
   /* Bottom inset for the floating mobile nav and every bit of map chrome that
@@ -210,6 +216,9 @@ html.native [data-slot="sidebar-wrapper"] {
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --font-heading: var(--font-sans);
+  /* Rounded display face — the playful heavy numerals + wordmark on the
+     /activity recap (and available app-wide as `font-rounded`). */
+  --font-rounded: "Fredoka Variable", "Instrument Sans Variable", sans-serif;
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
@@ -845,36 +854,267 @@ html.native [data-slot="sidebar-wrapper"] {
     0 1px 2px oklch(0.5 0.12 70 / 0.5);
 }
 
-/* --------------------------------------------------------------------------
-   /activity — the night-sky day-recap hero. A self-contained dark card (deep
-   indigo, white text) in both themes, matching the achievement system's oklch
-   treatment; sparkles reuse .achv-sparkle. */
-.activity-hero {
+/* ==========================================================================
+   /activity — the park-day recap card.
+
+   One self-contained surface, re-skinned by TIME OF DAY (`data-phase` set from
+   the day's representative park-local hour — live "now" for today, last-seen
+   for past days). A `dawn → day → dusk → night` arc so the card literally
+   changes with the sun. Each phase supplies a full token set; the structural
+   classes below stay phase-agnostic and read only the tokens. The recap owns
+   its palette by time of day, but when the whole app is in dark mode the two
+   light-bodied phases (day, dawn) darken their body so a cream card doesn't
+   blast out of the dark chrome (see the `.dark` override after the phases).
+   ========================================================================== */
+.recap {
   position: relative;
   isolation: isolate;
-  color: oklch(0.97 0.01 280);
-  background-image:
+  overflow: hidden;
+  /* Full-bleed surface — no card radius/shadow. It fills the content width and,
+     on mobile, runs to the top + side edges under the floating search header
+     (rounding + top corners are applied per-breakpoint by the component). */
+  /* Semantic stat-tile gradients — constant across phases (a tile's meaning,
+     not the hour, picks its color). The 4th "distance" tile flips with the
+     body tone via --recap-tile-flip. */
+  --tile-teal: linear-gradient(150deg, #1fb0aa 0%, #148e89 100%);
+  --tile-coral: linear-gradient(150deg, #f76b5c 0%, #e94f43 100%);
+  --tile-gold: linear-gradient(150deg, #e9ad1f 0%, #d5920f 100%);
+}
+
+/* --- Daytime: brand-blue hero (light→deep, our sidebar navy) over warm cream. */
+.recap[data-phase="day"] {
+  --recap-hero: linear-gradient(165deg, #3d7ad6 0%, #1c468e 58%, #12315b 100%);
+  --recap-hero-ink: #ffffff;
+  --recap-hero-soft: oklch(1 0 0 / 0.72);
+  --recap-steps: #ffffff;
+  --recap-chip: oklch(1 0 0 / 0.16);
+  --recap-body: #faf1e0;
+  --recap-ink: #1f2733;
+  --recap-ink-soft: oklch(0.28 0.02 255 / 0.62);
+  --recap-divider: repeating-linear-gradient(90deg, oklch(1 0 0 / 0.4) 0 6px, transparent 6px 12px);
+  --recap-tile-flip: linear-gradient(150deg, #2a3040 0%, #1a1f2a 100%);
+  --recap-panel: #ffffff;
+  --recap-panel-border: oklch(0.2 0.02 255 / 0.08);
+  --recap-panel-shadow: 0 1px 2px oklch(0.2 0.02 255 / 0.08);
+}
+
+/* --- Dawn: sunrise peach→coral→magenta over warm cream (rope-drop) -------- */
+.recap[data-phase="dawn"] {
+  --recap-hero:
+    radial-gradient(120% 90% at 82% 8%, oklch(1 0.12 95 / 0.55) 0%, transparent 45%),
+    linear-gradient(160deg, #ff9f6b 0%, #ff7a86 45%, #c96fae 100%);
+  --recap-hero-ink: #ffffff;
+  --recap-hero-soft: oklch(1 0 0 / 0.78);
+  --recap-steps: #fff6ee;
+  --recap-chip: oklch(1 0 0 / 0.2);
+  --recap-body: #fdf2e3;
+  --recap-ink: #33222f;
+  --recap-ink-soft: oklch(0.3 0.04 20 / 0.6);
+  --recap-divider: repeating-linear-gradient(
+    90deg,
+    oklch(1 0 0 / 0.45) 0 6px,
+    transparent 6px 12px
+  );
+  --recap-tile-flip: linear-gradient(150deg, #2f2630 0%, #201a22 100%);
+  --recap-panel: #ffffff;
+  --recap-panel-border: oklch(0.3 0.04 20 / 0.08);
+  --recap-panel-shadow: 0 1px 2px oklch(0.3 0.04 20 / 0.08);
+}
+
+/* --- Dusk: the twilight showpiece. Sunset orange→pink→violet→indigo, faint
+       first stars, over a warm-dark plum body. ------------------------------ */
+.recap[data-phase="dusk"] {
+  --recap-hero:
+    radial-gradient(1.5px 1.5px at 20% 24%, oklch(1 0 0 / 0.5) 50%, transparent 51%),
+    radial-gradient(1px 1px at 70% 16%, oklch(1 0 0 / 0.4) 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 88% 40%, oklch(1 0 0 / 0.35) 50%, transparent 51%),
+    linear-gradient(160deg, #ff8f5e 0%, #e5547f 36%, #8a4fb0 70%, #3c377f 100%);
+  --recap-hero-ink: #ffffff;
+  --recap-hero-soft: oklch(1 0 0 / 0.74);
+  --recap-steps: #ffd784;
+  --recap-chip: oklch(1 0 0 / 0.18);
+  --recap-body: #171327;
+  --recap-ink: #ece7f5;
+  --recap-ink-soft: oklch(0.9 0.02 300 / 0.6);
+  --recap-divider: repeating-linear-gradient(
+    90deg,
+    oklch(1 0 0 / 0.28) 0 6px,
+    transparent 6px 12px
+  );
+  --recap-tile-flip: linear-gradient(150deg, #3b2f5e 0%, #2a2247 100%);
+  --recap-panel: oklch(1 0 0 / 0.06);
+  --recap-panel-border: oklch(1 0 0 / 0.09);
+  --recap-panel-shadow: inset 0 1px 0 0 oklch(1 0 0 / 0.06);
+}
+
+/* --- Night: indigo night-sky hero over near-black navy (the dark mock) ---- */
+.recap[data-phase="night"] {
+  --recap-hero:
     radial-gradient(1.5px 1.5px at 18% 22%, oklch(1 0 0 / 0.5) 50%, transparent 51%),
     radial-gradient(1px 1px at 72% 14%, oklch(1 0 0 / 0.4) 50%, transparent 51%),
-    radial-gradient(1.5px 1.5px at 86% 62%, oklch(1 0 0 / 0.35) 50%, transparent 51%),
-    radial-gradient(1px 1px at 38% 78%, oklch(1 0 0 / 0.3) 50%, transparent 51%),
-    linear-gradient(
-      160deg,
-      oklch(0.28 0.07 285) 0%,
-      oklch(0.22 0.06 275) 55%,
-      oklch(0.18 0.05 265) 100%
-    );
+    radial-gradient(1.5px 1.5px at 86% 30%, oklch(1 0 0 / 0.32) 50%, transparent 51%),
+    radial-gradient(1px 1px at 40% 40%, oklch(1 0 0 / 0.28) 50%, transparent 51%),
+    linear-gradient(168deg, #2b2e63 0%, #1c1e46 55%, #141631 100%);
+  --recap-hero-ink: #eaeefb;
+  --recap-hero-soft: oklch(0.92 0.02 265 / 0.62);
+  --recap-steps: #f5b820;
+  --recap-chip: oklch(1 0 0 / 0.1);
+  --recap-body: #0b0f22;
+  --recap-ink: #e8ecf7;
+  --recap-ink-soft: oklch(0.9 0.02 265 / 0.58);
+  --recap-divider: repeating-linear-gradient(
+    90deg,
+    oklch(1 0 0 / 0.22) 0 6px,
+    transparent 6px 12px
+  );
+  --recap-tile-flip: linear-gradient(150deg, #33386e 0%, #252a55 100%);
+  --recap-panel: oklch(1 0 0 / 0.045);
+  --recap-panel-border: oklch(1 0 0 / 0.08);
+  --recap-panel-shadow: inset 0 1px 0 0 oklch(1 0 0 / 0.05);
+}
+
+/* --- App dark mode: keep each phase's hero, but the light-bodied phases (day,
+       dawn) must not blast a cream body out of the dark app chrome. Swap in the
+       same dark body treatment night/dusk already ship, and match the body to
+       the app background (#0c1a35) so the seam into the sections below it
+       disappears. dusk/night are already dark and need no override. --------- */
+.dark .recap[data-phase="day"],
+.dark .recap[data-phase="dawn"] {
+  --recap-body: #0c1a35;
+  --recap-ink: #e8ecf7;
+  --recap-ink-soft: oklch(0.9 0.02 265 / 0.58);
+  --recap-divider: repeating-linear-gradient(
+    90deg,
+    oklch(1 0 0 / 0.22) 0 6px,
+    transparent 6px 12px
+  );
+  --recap-tile-flip: linear-gradient(150deg, #33386e 0%, #252a55 100%);
+  --recap-panel: oklch(1 0 0 / 0.05);
+  --recap-panel-border: oklch(1 0 0 / 0.09);
+  --recap-panel-shadow: inset 0 1px 0 0 oklch(1 0 0 / 0.05);
+}
+
+.recap-hero {
+  position: relative;
+  isolation: isolate;
+  background-image: var(--recap-hero);
+  color: var(--recap-hero-ink);
+}
+.recap-hero .achv-sparkle {
+  color: oklch(1 0.04 95 / 0.9);
+  filter: drop-shadow(0 0 4px oklch(0.95 0.1 90 / 0.6));
+}
+/* Keep the top-left sparkle inside the visible hero — below the floating search
+   header on mobile (never up under a device status bar), near the top on
+   desktop where the header doesn't overlay the hero. */
+.recap-hero .achv-sparkle--tl {
+  top: calc(var(--safe-top) + var(--app-header-h) + 0.6rem);
+  left: 1.1rem;
+}
+@media (min-width: 768px) {
+  .recap-hero .achv-sparkle--tl {
+    top: 0.9rem;
+    left: 1rem;
+  }
+}
+.recap-divider {
+  height: 2px;
+  background-image: var(--recap-divider);
+}
+.recap-body {
+  background: var(--recap-body);
+  color: var(--recap-ink);
+}
+.recap-eyebrow {
+  font-family: var(--font-rounded);
+  color: var(--recap-hero-soft);
+}
+.recap-steps {
+  font-family: var(--font-rounded);
+  font-weight: 700;
+  color: var(--recap-steps);
+  letter-spacing: -0.02em;
+  line-height: 0.95;
+}
+.recap-chip {
+  background: var(--recap-chip);
+}
+.recap-datepill {
+  font-family: var(--font-mono, ui-monospace, "SF Mono", "Cascadia Code", monospace);
+  background: var(--recap-chip);
+  letter-spacing: 0.08em;
+}
+.recap-panel {
+  background: var(--recap-panel);
+  border: 1px solid var(--recap-panel-border);
+  box-shadow: var(--recap-panel-shadow);
+}
+.recap-tile {
+  font-family: var(--font-rounded);
+  color: #ffffff;
+  border-radius: 1.25rem;
+}
+.recap-tile--teal {
+  background-image: var(--tile-teal);
+}
+.recap-tile--coral {
+  background-image: var(--tile-coral);
+}
+.recap-tile--gold {
+  background-image: var(--tile-gold);
+}
+.recap-tile--flip {
+  background-image: var(--recap-tile-flip);
+}
+/* Monospace tier pill inside a stat tile ("LVL 3/5 · SILVER"). */
+.recap-tile-pill {
+  font-family: var(--font-mono, ui-monospace, "SF Mono", "Cascadia Code", monospace);
+  background: oklch(0 0 0 / 0.22);
+  letter-spacing: 0.06em;
+}
+
+/* --- Metal medallion coins (badges-leveled-up + lifetime rows) ------------ */
+.coin {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  font-family: var(--font-rounded);
+  font-weight: 700;
+  color: var(--coin-ink);
+  background-image: var(--coin-face);
   box-shadow:
-    0 3px 0 0 oklch(0.14 0.04 270),
-    inset 0 1px 0 0 oklch(1 0 0 / 0.14),
-    0 14px 34px -14px oklch(0.2 0.06 275 / 0.7);
+    inset 0 2px 3px oklch(1 0 0 / 0.6),
+    inset 0 -3px 7px oklch(0 0 0 / 0.28),
+    0 2px 6px oklch(0 0 0 / 0.28);
+  filter: drop-shadow(0 0 7px var(--coin-glow, transparent));
 }
-.activity-hero .achv-sparkle {
-  color: oklch(0.95 0.06 90 / 0.95);
-  filter: drop-shadow(0 0 4px oklch(0.9 0.1 90 / 0.6));
+.coin--gold {
+  --coin-face: radial-gradient(circle at 32% 27%, #ffe89a 0%, #f2b62e 52%, #c6851a 100%);
+  --coin-ink: #5a3d08;
+  --coin-glow: oklch(0.82 0.15 85 / 0.55);
 }
-/* Inner panels on the hero (unlock rows, timeline rows). */
-.activity-hero__panel {
-  background: oklch(1 0 0 / 0.07);
-  box-shadow: inset 0 1px 0 0 oklch(1 0 0 / 0.08);
+.coin--silver {
+  --coin-face: radial-gradient(circle at 32% 27%, #ffffff 0%, #d3dae3 52%, #a9b3c1 100%);
+  --coin-ink: #3c4655;
+  --coin-glow: oklch(0.9 0.02 255 / 0.45);
+}
+.coin--platinum {
+  --coin-face: radial-gradient(circle at 32% 27%, #ffffff 0%, #e2ebf8 48%, #bccce6 100%);
+  --coin-ink: #1a7a72;
+  --coin-glow: oklch(0.92 0.03 230 / 0.55);
+}
+.coin--bronze {
+  --coin-face: radial-gradient(circle at 32% 27%, #f0c08a 0%, #c67f42 52%, #97592a 100%);
+  --coin-ink: #fff2e2;
+  --coin-glow: oklch(0.66 0.11 55 / 0.5);
+}
+.coin--muted {
+  background-image: none;
+  background: var(--recap-panel);
+  border: 1px solid var(--recap-panel-border);
+  color: var(--recap-ink-soft);
+  box-shadow: none;
+  filter: none;
 }

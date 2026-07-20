@@ -3,27 +3,14 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
 import { Sparkle } from "#/components/achievements/achievement-toast.tsx";
+import { AllBadges } from "#/components/achievements/family-shelf.tsx";
 import { LevelBadge } from "#/components/achievements/level-badge.tsx";
-import { TierBadge } from "#/components/achievements/tier-badge.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
-import {
-  Carousel,
-  CarouselArrows,
-  CarouselContent,
-  CarouselItem,
-} from "#/components/ui/carousel.tsx";
-import { Progress } from "#/components/ui/progress.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { hasGrantedLocationBefore } from "#/hooks/use-geolocation.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
-import {
-  ACHIEVEMENTS,
-  formatStatValue,
-  type AchievementFamily,
-  type LevelInfo,
-  type Stats,
-} from "#/lib/achievements.ts";
+import { ACHIEVEMENTS, type LevelInfo } from "#/lib/achievements.ts";
 import { authClient } from "#/lib/auth-client.ts";
 import { rideRecapSegments } from "#/lib/ride-recap.ts";
 import { seo } from "#/lib/seo.ts";
@@ -88,75 +75,6 @@ function LevelHeaderCard({
         )}
       </div>
     </div>
-  );
-}
-
-/**
- * A family's tiers as a horizontally-scrolling shelf of color-ramped
- * medallions (grid on desktop via arrows, drag on mobile) — mirrors the
- * Eats/Stays picks shelves rather than a bordered card of flat pills.
- */
-function FamilyShelf({
-  family,
-  stats,
-  unlockedIds,
-}: {
-  family: AchievementFamily;
-  stats: Stats;
-  unlockedIds: Set<string>;
-}) {
-  const value = stats[family.stat] ?? 0;
-  const maxed = family.tiers.every((t) => unlockedIds.has(t.id));
-  const nextTier = family.tiers.find((t) => !unlockedIds.has(t.id));
-  const tierCount = family.tiers.length;
-
-  return (
-    <Carousel opts={{ align: "start", dragFree: true }} className="-mx-4 lg:-mx-6">
-      <section className="flex flex-col gap-3">
-        <div className="flex items-end justify-between gap-4 px-4 lg:px-6">
-          <div className="flex flex-col gap-0.5">
-            <h3 className="flex items-center gap-2 text-base font-semibold tracking-tight">
-              <span className="text-xl leading-none" aria-hidden>
-                {family.icon}
-              </span>
-              {family.title}
-            </h3>
-            <p className="text-muted-foreground text-sm">{formatStatValue(family.unit, value)}</p>
-          </div>
-          <CarouselArrows className="hidden md:flex" />
-        </div>
-
-        <CarouselContent viewportClassName="px-4 lg:px-6 [mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%_-_1.5rem),transparent)]">
-          {family.tiers.map((tier, i) => (
-            <CarouselItem key={tier.id} className="basis-auto">
-              <TierBadge
-                familyKey={family.key}
-                icon={family.icon}
-                name={tier.name}
-                description={tier.description}
-                rank={tierCount > 1 ? i / (tierCount - 1) : 1}
-                unlocked={unlockedIds.has(tier.id)}
-                next={tier.id === nextTier?.id}
-              />
-            </CarouselItem>
-          ))}
-        </CarouselContent>
-
-        <div className="px-4 lg:px-6">
-          {maxed ? (
-            <Badge variant="secondary">Maxed</Badge>
-          ) : nextTier ? (
-            <div className="space-y-1">
-              <Progress value={Math.min(100, (value / nextTier.threshold) * 100)} />
-              <p className="text-xs text-muted-foreground">
-                {formatStatValue(family.unit, value)} /{" "}
-                {formatStatValue(family.unit, nextTier.threshold)}
-              </p>
-            </div>
-          ) : null}
-        </div>
-      </section>
-    </Carousel>
   );
 }
 
@@ -322,16 +240,7 @@ function AchievementsPage() {
         <Skeleton className="h-32 w-full rounded-2xl" />
       )}
 
-      <div className="flex flex-col gap-8">
-        {ACHIEVEMENTS.map((family) => (
-          <FamilyShelf
-            key={family.key}
-            family={family}
-            stats={data?.stats ?? {}}
-            unlockedIds={unlockedIds}
-          />
-        ))}
-      </div>
+      <AllBadges stats={data?.stats ?? {}} unlockedIds={unlockedIds} />
 
       <RideLogSection />
 

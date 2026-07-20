@@ -72,7 +72,11 @@ export function TierBadge({
         <span
           className={cn(
             "line-clamp-2 text-[0.65rem] leading-tight font-semibold text-balance",
-            dark ? "text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]" : "text-foreground/80",
+            // The tile color is computed from hue+rank and never changes with the
+            // app theme, so the label ink must key off the tile's lightness, not
+            // `--foreground` (which flips to near-white in dark mode and vanishes
+            // on these pale low-rank tiles).
+            dark ? "text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]" : "text-black/80",
           )}
         >
           {name}
@@ -81,7 +85,7 @@ export function TierBadge({
           <LockIcon
             className={cn(
               "absolute top-1.5 right-1.5 size-3",
-              dark ? "text-white/70" : "text-foreground/40",
+              dark ? "text-white/70" : "text-black/40",
             )}
           />
         )}

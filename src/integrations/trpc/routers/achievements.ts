@@ -26,6 +26,7 @@ import {
   reconcileDaySteps,
 } from "#/server/achievements/engine.ts";
 import { ingestRideTrace, rideTraceSchema } from "#/server/achievements/rides.ts";
+import { seedActivityPhases, spoofActivityDay } from "#/server/achievements/spoof.ts";
 import {
   buildScenario,
   loadSimPark,
@@ -452,6 +453,40 @@ export const achievementsRouter = {
       }
       return runScenario(ctx.userId, script);
     }),
+
+  /** Spoof one park-day on the caller's own account (design testing). Writes
+   *  rows directly — chosen phase hour, flags, optional hop + headliners — and
+   *  re-stamps its unlocks onto the day. Owner-only; undone by devReset. */
+  adminSpoofActivityDay: adminProcedure
+    .input(
+      z.object({
+        parkId: z.number().int().positive(),
+        secondParkId: z.number().int().positive().nullish(),
+        dayOffset: z.number().int().min(0).max(60).default(1),
+        phaseHour: z.number().int().min(0).max(23).default(14),
+        steps: z.number().int().min(0).default(12000),
+        distanceM: z.number().min(0).default(8000),
+        queueSeconds: z.number().int().min(0).default(5400),
+        rides: z.number().int().min(0).default(6),
+        ropeDrop: z.boolean().default(false),
+        nightOwl: z.boolean().default(false),
+        rainy: z.boolean().default(false),
+        seedHeadliners: z.boolean().default(false),
+        seedTimeline: z.boolean().default(true),
+      }),
+    )
+    .mutation(({ ctx, input }) => spoofActivityDay(ctx.userId, input)),
+
+  /** One-click: four past days, one per phase (dawn/day/dusk/night), the most
+   *  recent a headliner hop day. Full /activity design coverage in a click. */
+  adminSeedActivityPhases: adminProcedure
+    .input(
+      z.object({
+        parkId: z.number().int().positive(),
+        secondParkId: z.number().int().positive().nullish(),
+      }),
+    )
+    .mutation(({ ctx, input }) => seedActivityPhases(ctx.userId, input.parkId, input.secondParkId)),
 
   /** Insert a synthetic "raining now" observation so the rainy-day family is
    *  testable without real weather. Self-expires via the engine's 2 h window. */

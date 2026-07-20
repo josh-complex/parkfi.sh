@@ -179,19 +179,15 @@ function ReservationsSection({
 
   const todayIso = parkToday();
   const today = React.useMemo(() => new Date(`${todayIso}T00:00:00`), [todayIso]);
-  // Disney doesn't take same-day reservations, so the search starts tomorrow.
-  const tomorrow = React.useMemo(() => {
-    const d = new Date(today);
-    d.setDate(d.getDate() + 1);
-    return d;
-  }, [today]);
+  // Same-day reservations are bookable, so the search starts today — the sweep
+  // records today's service date and `dining.availability` returns it.
   const maxDate = React.useMemo(() => {
     const d = new Date(today);
     d.setDate(d.getDate() + AVAIL_HORIZON - 1);
     return d;
   }, [today]);
-  const [date, setDate] = React.useState<Date | undefined>(tomorrow);
-  const selectedIso = date ? format(date, ISO) : format(tomorrow, ISO);
+  const [date, setDate] = React.useState<Date | undefined>(today);
+  const selectedIso = date ? format(date, ISO) : todayIso;
 
   const availabilityQ = useQuery(
     trpc.dining.availability.queryOptions({ facilityId, partySize, days: AVAIL_HORIZON }),
@@ -209,7 +205,7 @@ function ReservationsSection({
           <DatePicker
             value={date}
             onChange={setDate}
-            fromDate={tomorrow}
+            fromDate={today}
             toDate={maxDate}
             placeholder="Pick a date"
             className="h-8 flex-1 md:w-44 md:flex-none"

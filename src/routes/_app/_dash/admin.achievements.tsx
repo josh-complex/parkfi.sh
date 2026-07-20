@@ -138,6 +138,89 @@ function AdminAchievements() {
     }),
   );
 
+  // --- device-test-tooling: /activity design spoofer ------------------------
+  const secondParkId = simParksQ.data?.find((p) => p.id !== simParkId)?.id ?? null;
+  const spoofDay = useMutation(
+    trpc.achievements.adminSpoofActivityDay.mutationOptions({
+      onSuccess: (r) => {
+        invalidateObservability();
+        toast.success(`Spoofed ${r.day} — ${r.newlyUnlocked} new badge(s). Open /activity.`);
+      },
+      onError: (err) => toast.error(err.message || "Spoof failed"),
+    }),
+  );
+  const seedPhases = useMutation(
+    trpc.achievements.adminSeedActivityPhases.mutationOptions({
+      onSuccess: (r) => {
+        invalidateObservability();
+        toast.success(`Seeded ${r.days} days across every phase. Open /activity.`);
+      },
+      onError: (err) => toast.error(err.message || "Seed failed"),
+    }),
+  );
+  const resetMine = useMutation(
+    trpc.achievements.devReset.mutationOptions({
+      onSuccess: () => {
+        invalidateObservability();
+        toast.success("Your park-days, rides, and unlocks were reset.");
+      },
+      onError: (err) => toast.error(err.message || "Reset failed"),
+    }),
+  );
+
+  const PHASE_PRESETS = {
+    dawn: {
+      phaseHour: 7,
+      steps: 5200,
+      distanceM: 3800,
+      queueSeconds: 1500,
+      rides: 3,
+      ropeDrop: true,
+      nightOwl: false,
+      rainy: false,
+    },
+    day: {
+      phaseHour: 14,
+      steps: 9800,
+      distanceM: 7200,
+      queueSeconds: 4200,
+      rides: 5,
+      ropeDrop: false,
+      nightOwl: false,
+      rainy: true,
+    },
+    dusk: {
+      phaseHour: 18,
+      steps: 14200,
+      distanceM: 9800,
+      queueSeconds: 6300,
+      rides: 7,
+      ropeDrop: false,
+      nightOwl: false,
+      rainy: false,
+    },
+    night: {
+      phaseHour: 22,
+      steps: 19847,
+      distanceM: 13500,
+      queueSeconds: 10260,
+      rides: 11,
+      ropeDrop: true,
+      nightOwl: true,
+      rainy: false,
+    },
+  } as const;
+  const spoofPhase = (phase: keyof typeof PHASE_PRESETS) => {
+    if (simParkId == null) return;
+    spoofDay.mutate({
+      parkId: simParkId,
+      dayOffset: 1,
+      seedHeadliners: true,
+      seedTimeline: true,
+      ...PHASE_PRESETS[phase],
+    });
+  };
+
   const runSim = (
     preset: "fullParkDay" | "parkHopDay" | "weekendPair" | "streak" | "crossMidnightDwell",
   ) => {
@@ -245,6 +328,92 @@ function AdminAchievements() {
               Make it rain
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Spoof /activity data</CardTitle>
+          <CardDescription>
+            Writes park-day rows directly on <strong>your own</strong> account to test the{" "}
+            <strong>/activity</strong> recap design — no ping replay. Each spoofed day is stamped at
+            a chosen hour so it renders that time-of-day phase, and its badge unlocks are re-dated
+            onto the day so "Badges leveled up today" fills. Reset clears it all.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={simParkId ?? ""}
+              onChange={(e) => setSimParkId(Number(e.target.value))}
+              className="rounded-md border bg-background px-2 py-1.5 text-sm"
+            >
+              {(simParksQ.data ?? []).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <Button
+              size="sm"
+              disabled={seedPhases.isPending || simParkId == null}
+              onClick={() =>
+                simParkId != null && seedPhases.mutate({ parkId: simParkId, secondParkId })
+              }
+            >
+              Seed one day per phase
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={spoofDay.isPending || simParkId == null}
+              onClick={() => spoofPhase("dawn")}
+            >
+              🌅 Dawn
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={spoofDay.isPending || simParkId == null}
+              onClick={() => spoofPhase("day")}
+            >
+              ☀️ Day
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={spoofDay.isPending || simParkId == null}
+              onClick={() => spoofPhase("dusk")}
+            >
+              🌆 Dusk
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={spoofDay.isPending || simParkId == null}
+              onClick={() => spoofPhase("night")}
+            >
+              🌙 Night
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={resetMine.isPending}
+              onClick={() => resetMine.mutate()}
+            >
+              Reset my activity
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            The single-phase buttons overwrite yesterday's day (so the top recap card cycles through
+            phases); “Seed one day per phase” lays down four dated days —{" "}
+            {secondParkId != null ? "the newest a two-park hop" : "pick a second park for a hop"} —
+            so you can scroll the whole feed. View at{" "}
+            <a href="/activity" className="underline">
+              /activity
+            </a>
+            .
+          </p>
         </CardContent>
       </Card>
 
