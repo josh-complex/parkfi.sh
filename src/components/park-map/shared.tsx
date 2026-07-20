@@ -524,7 +524,9 @@ export function attractionCardBodyHtml(
         )}</span></div>`
       : `<div class="mt-0.5 text-[12px] text-muted-foreground">${escapeHtml(waitLabel)}</div>`;
   const paidLine = paidLineCardHtml(a, operatorSlug);
-  return `<div class="text-[15px] font-semibold leading-tight text-card-foreground">${escapeHtml(
+  // `data-name-target` is the landing slot for the marker's name pill, which flies
+  // up and restyles into this title on expand (see `openAttractionCard`).
+  return `<div data-name-target class="text-[15px] font-semibold leading-tight text-card-foreground">${escapeHtml(
     a.name,
   )}</div>${waitLine}${paidLine}${tags}${detail}${actions}`;
 }
@@ -592,6 +594,22 @@ export function openAttractionCard(opts: {
       }
     : null;
 
+  // The name pill is the *other* shared element: it flies from under the disc up to
+  // the card's title slot and restyles from the compact dark pill into the big card
+  // name (see the name-chip flight below). Snapshot it and its resting box now,
+  // before the disc mutates, plus everything needed to drop it back on close. Its
+  // truncated label is remembered so close can recollapse it from the full title.
+  const nameEl = wrap.querySelector<HTMLElement>("[data-name-chip]");
+  const nameStart = nameEl?.getBoundingClientRect() ?? null;
+  const nameChipText = nameEl?.textContent ?? "";
+  const nameRestore = nameEl
+    ? {
+        next: nameEl.nextSibling,
+        style: nameEl.getAttribute("style") ?? "",
+        cls: nameEl.className,
+      }
+    : null;
+
   // Upgrade the header to the higher-res photo, lazily — only fetched when a card
   // actually opens. The disc's low-res thumbnail is already decoded and stays put
   // as the header until the hi-res copy finishes loading, so there's no blank flash;
@@ -625,7 +643,7 @@ export function openAttractionCard(opts: {
   // hidden (this marker isn't a cluster head) must stay hidden on restore — else it
   // pops back as a phantom "+1" grouping when the card collapses.
   const badges = Array.from(wrap.children)
-    .filter((c): c is HTMLElement => c !== fill && c !== waitEl)
+    .filter((c): c is HTMLElement => c !== fill && c !== waitEl && c !== nameEl)
     .map((el) => ({ el, wasHidden: el.classList.contains("hidden") }));
   for (const b of badges) b.el.classList.add("hidden");
 
@@ -710,6 +728,124 @@ export function openAttractionCard(opts: {
       if (waitSub) waitSub.style.transition = `all ${CARD_CLOSE_FX_MS}ms ease`;
       waitSub?.classList.remove("ml-1", "max-w-[8rem]", "opacity-100");
       waitSub?.classList.add("max-w-0", "opacity-0");
+    };
+  }
+
+  // Name-chip flight. Like the wait chip, the marker's name pill is a shared
+  // element — but instead of landing on a pixel-identical placeholder, it *becomes*
+  // the card's big title: it flies from under the disc to the title slot
+  // (`data-name-target`) while its styling morphs from the compact dark pill into
+  // the card's name type, replacing the title (which is hidden behind it). Promote
+  // it out of the transforming wrap into the stable `detail` box so it travels and
+  // restyles cleanly.
+  const nameTarget = card.querySelector<HTMLElement>("[data-name-target]");
+  let flyName: (() => void) | undefined;
+  let unflyName: (() => void) | undefined;
+  // The look/geometry properties that morph pill → title (and back). Position is a
+  // transform so it stays crisp; the rest interpolate the pill's dressing away.
+  const NAME_MORPH_PROPS = [
+    "transform",
+    "width",
+    "padding",
+    "border-radius",
+    "border-color",
+    "border-width",
+    "background-color",
+    "color",
+    "font-size",
+    "font-weight",
+    "line-height",
+    "box-shadow",
+  ];
+  if (nameEl && nameStart && nameTarget) {
+    const cardRectN = card.getBoundingClientRect();
+    const nRect0 = nameTarget.getBoundingClientRect();
+    const startLeft = nameStart.left - dRect.left;
+    const startTop = nameStart.top - dRect.top;
+    // The title's final on-screen box = card origin + the title's offset in the body.
+    const destLeft = leftLocal + (nRect0.left - cardRectN.left);
+    const destTop = topLocal + CARD_HEADER_H + (nRect0.top - cardRectN.top);
+    const startW = nameStart.width;
+    const destW = nRect0.width;
+    // Read the title's resolved type live so the morph tracks the theme (dark mode)
+    // and lands on the real card-foreground colour, not a hard-coded token.
+    const ts = getComputedStyle(nameTarget);
+    const fullName = nameTarget.textContent ?? "";
+    nameTarget.style.opacity = "0"; // the flown pill is the visible title from here
+    nameEl.classList.remove("-bottom-2", "top-full", "mt-1.5", "left-1/2", "-translate-x-1/2");
+    // Drop the truncation the instant the flight starts: carry the *full* name and
+    // let it wrap, then just grow the box (below) from the pill's width to the
+    // title's — no clip/reveal, so there's nothing to pop in. `display:block` so the
+    // name wraps the same way the card's block title does when it's too long for one
+    // line; the box lands identical to it.
+    nameEl.textContent = fullName;
+    Object.assign(nameEl.style, {
+      position: "absolute",
+      left: `${startLeft}px`,
+      top: `${startTop}px`,
+      width: `${startW}px`,
+      margin: "0",
+      zIndex: "47",
+      transform: "none",
+      transition: "none",
+      display: "block",
+      whiteSpace: "normal",
+    });
+    detail.append(nameEl);
+    void nameEl.offsetWidth; // commit the pill start state before morphing
+    flyName = () => {
+      nameEl.style.transition = NAME_MORPH_PROPS.map((p) => `${p} ${CARD_MS}ms ${CARD_EASE}`).join(
+        ", ",
+      );
+      Object.assign(nameEl.style, {
+        transform: `translate(${destLeft - startLeft}px, ${destTop - startTop}px)`,
+        width: `${destW}px`,
+        padding: "0",
+        borderWidth: "0",
+        borderColor: "transparent",
+        borderRadius: "0",
+        backgroundColor: "transparent",
+        boxShadow: "none",
+        color: ts.color,
+        fontSize: ts.fontSize,
+        fontWeight: ts.fontWeight,
+        lineHeight: ts.lineHeight,
+        // Pin left alignment: the flown block sits inside the marker `<button>`,
+        // whose UA `text-align:center` it would otherwise honour and centre the name
+        // against the left-aligned card title.
+        textAlign: "left",
+      });
+    };
+    unflyName = () => {
+      // Re-truncate immediately as the close begins, so the compact chip — not the
+      // full name — is what flies home over the shrinking disc.
+      nameEl.textContent = nameChipText;
+      // Geometry rides back with the card (CARD_MS); the pill dressing snaps back
+      // fast (CARD_CLOSE_FX_MS) so no oversized name lingers over the shrinking disc.
+      nameEl.style.transition = [
+        `transform ${CARD_MS}ms ${CARD_EASE}`,
+        ...NAME_MORPH_PROPS.filter((p) => p !== "transform").map(
+          (p) => `${p} ${CARD_CLOSE_FX_MS}ms ease`,
+        ),
+      ].join(", ");
+      nameEl.style.transform = "none";
+      nameEl.style.width = `${startW}px`;
+      // Clear the look overrides so each property eases back to its pill class value.
+      for (const p of [
+        "padding",
+        "borderWidth",
+        "borderColor",
+        "borderRadius",
+        "backgroundColor",
+        "boxShadow",
+        "color",
+        "fontSize",
+        "fontWeight",
+        "lineHeight",
+        "textAlign",
+      ] as const) {
+        nameEl.style[p] = "";
+      }
     };
   }
 
@@ -811,6 +947,7 @@ export function openAttractionCard(opts: {
     card.style.opacity = "1";
     closeBtn.style.opacity = "1";
     flyWait?.();
+    flyName?.();
   });
 
   let closed = false;
@@ -842,6 +979,7 @@ export function openAttractionCard(opts: {
     });
     if (fill) fill.style.height = `${size}px`;
     unflyWait?.(); // the wait chip flies back down to the disc
+    unflyName?.(); // the name pill restyles back and flies home under the disc
     card.style.opacity = "0";
     // Fade the close button out fast (its open transition carried a 140ms delay
     // that otherwise left it hanging in mid-air after the card had collapsed away).
@@ -855,11 +993,28 @@ export function openAttractionCard(opts: {
       wrap.className = wrapClass;
       wrap.setAttribute("style", wrapStyle);
       if (fill) fill.setAttribute("style", fillStyle);
-      // Return the wait chip to its resting spot under the disc, verbatim.
+      // Return the flown chips to their resting spots under the disc, verbatim. The
+      // wait pill and name pill are adjacent badge siblings, so each one's captured
+      // `next` reference points at the other — and both have been reparented into
+      // `detail`, so that reference is no longer a child of `wrap`. Fall back to an
+      // append when it isn't, or `insertBefore` throws and aborts the whole restore
+      // (which left the disc stuck for the next open).
+      const restoreBadge = (el: HTMLElement, next: ChildNode | null) => {
+        if (next && next.parentNode === wrap) wrap.insertBefore(el, next);
+        else wrap.append(el);
+      };
       if (waitEl && waitRestore) {
         waitEl.className = waitRestore.cls;
         waitEl.setAttribute("style", waitRestore.style);
-        wrap.insertBefore(waitEl, waitRestore.next);
+        restoreBadge(waitEl, waitRestore.next);
+      }
+      // Same for the name pill: its truncated label, class and inline style all
+      // reset to the resting chip.
+      if (nameEl && nameRestore) {
+        nameEl.textContent = nameChipText;
+        nameEl.className = nameRestore.cls;
+        nameEl.setAttribute("style", nameRestore.style);
+        restoreBadge(nameEl, nameRestore.next);
       }
       for (const b of badges) b.el.classList.toggle("hidden", b.wasHidden);
       detail.removeAttribute("data-card-open");
@@ -1173,7 +1328,7 @@ export function poiCardBodyHtml(poi: PoiItem): string {
     directions || link
       ? `<div class="mt-3 flex items-center gap-2">${directions}${link}</div>`
       : "";
-  return `<div class="text-[15px] font-semibold leading-tight text-card-foreground">${escapeHtml(
+  return `<div data-name-target class="text-[15px] font-semibold leading-tight text-card-foreground">${escapeHtml(
     poi.name,
   )}</div><div class="mt-1 text-[12px] text-muted-foreground">${escapeHtml(
     subtitle,

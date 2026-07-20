@@ -3,6 +3,7 @@ import { Store } from "@tanstack/store";
 import posthog from "posthog-js";
 
 import { useGeoSim } from "#/lib/dev-geo-sim.ts";
+import { isNative } from "#/lib/platform.ts";
 
 /**
  * Discriminated geolocation state. Coords follow the project's [lng, lat]
@@ -58,15 +59,30 @@ export const activeWatchesStore = new Store(0);
 // across sessions (see `rememberActive`). Only ever set once we're actually
 // `granted`, and cleared on `denied`, so a stale flag can't outlive a revoked
 // permission.
+//
+// Three stored states (native uses all three; web only ever "1"/absent):
+//   "1"    — on: the user has locate engaged.
+//   "0"    — explicitly off: the user toggled locate off in-app. Native-only,
+//            so the persistent OS grant doesn't silently re-engage on next
+//            launch against the user's stated choice.
+//   absent — unset: no in-app preference yet. On native the default then comes
+//            from the phone's own location permission (see `nativeLocationGranted`).
 const ACTIVE_KEY = "parkfi:geo:active";
 
-function readActiveFlag(): boolean {
-  if (typeof window === "undefined") return false;
+type ActivePref = "on" | "off" | null;
+
+function readActivePref(): ActivePref {
+  if (typeof window === "undefined") return null;
   try {
-    return window.localStorage.getItem(ACTIVE_KEY) === "1";
+    const v = window.localStorage.getItem(ACTIVE_KEY);
+    return v === "1" ? "on" : v === "0" ? "off" : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+function readActiveFlag(): boolean {
+  return readActivePref() === "on";
 }
 
 /** Whether the user has ever turned locate on — lets a page gate copy on
@@ -82,6 +98,36 @@ function writeActiveFlag(active: boolean) {
     else window.localStorage.removeItem(ACTIVE_KEY);
   } catch {
     /* private mode / disabled storage — the session still tracks state in memory */
+  }
+}
+
+/** Native-only: record an explicit user "off" (distinct from unset) so the
+ *  persistent OS grant doesn't auto-re-engage locate on next launch. */
+function writeActiveOff() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(ACTIVE_KEY, "0");
+  } catch {
+    /* storage disabled — session state still reflects the toggle */
+  }
+}
+
+/**
+ * Native-only: read the phone's location permission via the Capacitor plugin —
+ * the source of truth for "is locate available" in the shell. Used to default
+ * the locate toggle on for a fresh install that already granted location, since
+ * the WebView's `navigator.permissions` query is unreliable/unsupported there.
+ * The plugin is dynamically imported so it never enters the web bundle. Returns
+ * false (never throws) off native or if the read fails.
+ */
+async function nativeLocationGranted(): Promise<boolean> {
+  if (!isNative()) return false;
+  try {
+    const { Geolocation } = await import("@capacitor/geolocation");
+    const status = await Geolocation.checkPermissions();
+    return status.location === "granted" || status.coarseLocation === "granted";
+  } catch {
+    return false;
   }
 }
 
@@ -144,7 +190,13 @@ export function useGeolocation(opts?: {
   // `locate()` re-engages without another prompt.
   const deactivate = React.useCallback(() => {
     stop();
-    if (rememberActive) writeActiveFlag(false);
+    // On native, record an explicit "off" so the persistent OS location grant
+    // doesn't silently re-engage locate on next launch against this choice; on
+    // web, forgetting the flag is enough (there's no OS-grant default there).
+    if (rememberActive) {
+      if (isNative()) writeActiveOff();
+      else writeActiveFlag(false);
+    }
     activeWrittenRef.current = false;
     setState({ status: "idle" });
   }, [stop, rememberActive]);
@@ -273,7 +325,31 @@ export function useGeolocation(opts?: {
   const locateRef = React.useRef(locate);
   locateRef.current = locate;
   React.useEffect(() => {
-    if (!rememberActive || !readActiveFlag()) return;
+    if (!rememberActive) return;
+    // Native (Capacitor) shell: the phone's location permission is the source of
+    // truth. The WebView has no synchronous per-call permission dialog to guard
+    // against (the web gesture rule doesn't apply), and its `navigator.permissions`
+    // query is routinely unsupported for geolocation — which is why the web gate
+    // below returned early and the watch never resumed, making the "on" state
+    // look like it wasn't remembered. So: honor an explicit in-app off; otherwise
+    // engage when remembered on, or default to on whenever the OS already grants
+    // location. A revoked OS grant surfaces as PERMISSION_DENIED in `onError`.
+    if (isNative()) {
+      const pref = readActivePref();
+      if (pref === "off") return;
+      if (pref === "on") {
+        locateRef.current();
+        return;
+      }
+      let cancelled = false;
+      void nativeLocationGranted().then((granted) => {
+        if (!cancelled && granted) locateRef.current();
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+    if (!readActiveFlag()) return;
     if (typeof navigator === "undefined" || !navigator.permissions?.query) return;
     let cancelled = false;
     navigator.permissions
