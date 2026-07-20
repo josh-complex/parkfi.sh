@@ -284,6 +284,10 @@ export function DiningMobileFAB({ options }: { options: FilterOptions }) {
   const sortDir = useStore(diningStore, (s) => s.sortDir);
   const searched = useStore(diningStore, (s) => s.searched);
   const extraCount = useStore(diningStore, (s) => countExtraFilters(s.filters));
+  // The park selector lives inside this drawer on mobile (no search pill here),
+  // so its active state feeds the badge dot and enables "Clear all" too.
+  const parkActive = useStore(diningStore, (s) => s.filters.parkResort !== "ALL");
+  const dirty = extraCount > 0 || parkActive;
 
   // The extended-filter Selects are Base UI Selects portaled out of the React
   // tree. Inside a vaul Drawer they must portal into the drawer's own node, not
@@ -326,22 +330,22 @@ export function DiningMobileFAB({ options }: { options: FilterOptions }) {
         <DrawerTrigger className={MAP_FILTER_PILL}>
           <SlidersHorizontalIcon />
           Filter
-          {extraCount > 0 ? <span className="bg-primary size-1.5 rounded-full" /> : null}
+          {dirty ? <span className="bg-primary size-1.5 rounded-full" /> : null}
         </DrawerTrigger>
         <DrawerContent ref={setFiltersNode}>
           <DrawerHeader className="border-b pb-4">
             <DrawerTitle>Filters</DrawerTitle>
-            <DrawerDescription>Narrow by price, hours, features, and more.</DrawerDescription>
+            <DrawerDescription>Narrow by park, price, hours, features, and more.</DrawerDescription>
           </DrawerHeader>
           <div className="overflow-y-auto px-4">
-            <ExtendedFilters options={options} container={filtersNode} />
+            <ExtendedFilters options={options} container={filtersNode} showPark />
           </div>
           <DrawerFooter className="flex-row gap-2">
             <Button
               variant="outline"
-              className={cn("flex-1", extraCount === 0 && "opacity-50")}
-              disabled={extraCount === 0}
-              onClick={clearExtraFilters}
+              className={cn("flex-1", !dirty && "opacity-50")}
+              disabled={!dirty}
+              onClick={() => clearExtraFilters({ includePark: true })}
             >
               Clear all
             </Button>

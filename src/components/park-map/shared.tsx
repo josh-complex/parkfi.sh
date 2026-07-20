@@ -614,6 +614,12 @@ export function openAttractionCard(opts: {
 
   const { detail, container, bodyHtml, wasSelected, onClose, onPress } = opts;
   const wrap = detail.firstElementChild as HTMLElement; // the disc wrapper → the card
+  // A marker still mid fade-in (wireMarkerFadeIn) carries an inline opacity < 1
+  // and its own transition on the wrap; force it opaque and drop that transition
+  // before we snapshot, so neither the card nor the restored disc inherits a
+  // half-faded look (the card's own morph sets the transition it needs below).
+  wrap.style.opacity = "1";
+  wrap.style.transition = "";
   const fill = wrap.querySelector<HTMLElement>("[data-face-fill]"); // photo / icon face
   const label = detail.querySelector<HTMLElement>("[data-label]");
   const size = wrap.offsetWidth || 52;
@@ -1130,6 +1136,42 @@ export function wireFaceFadeIn(root: HTMLElement): void {
   };
   img.addEventListener("load", reveal, { once: true });
   img.addEventListener("error", reveal, { once: true });
+}
+
+// Whole-marker fade-in duration (ms) — long enough to read as an ease, short
+// enough not to lag a park-to-park jump.
+const MARKER_FADE_MS = 450;
+
+/**
+ * Fade a freshly-built marker in as one piece: the disc wrapper carries the
+ * photo, the wait/name chips, and any cluster "+N" dots, so ramping *its*
+ * opacity eases every badge in *with* the disc instead of the chips popping in
+ * over a still-fading photo. The renderers call this only when a marker set
+ * genuinely (re)appears — first paint, a zoom into a park, or a quick jump to
+ * another park — so a live-wait refetch that rebuilds the same markers doesn't
+ * re-flash them. Independent of the photo's own decode-time blur/scale reveal
+ * (`wireFaceFadeIn`), which still textures the image as it lands on top. The
+ * inline opacity/transition are cleared once settled so neither lingers to ease
+ * a later card-morph or get snapshotted into the disc's resting style.
+ */
+export function wireMarkerFadeIn(detail: HTMLElement): void {
+  const wrap = detail.firstElementChild as HTMLElement | null;
+  if (!wrap || typeof requestAnimationFrame === "undefined") return;
+  wrap.style.opacity = "0";
+  wrap.style.transition = `opacity ${MARKER_FADE_MS}ms ease-out`;
+  // Two frames: paint the transparent start before flipping to opaque, so the
+  // browser runs the transition instead of collapsing both writes into one.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      wrap.style.opacity = "1";
+      const clear = () => {
+        wrap.style.transition = "";
+        wrap.style.opacity = "";
+        wrap.removeEventListener("transitionend", clear);
+      };
+      wrap.addEventListener("transitionend", clear);
+    });
+  });
 }
 
 function discMarkup(opts: {

@@ -106,7 +106,7 @@ export function ResultsView({
       <div className="hidden items-center gap-2 md:flex">
         <FiltersModal options={options} />
         {extraCount > 0 && (
-          <Button variant="ghost" size="sm" onClick={clearExtraFilters}>
+          <Button variant="ghost" size="sm" onClick={() => clearExtraFilters()}>
             Clear ({extraCount})
           </Button>
         )}
@@ -136,7 +136,7 @@ export function ResultsView({
       <div className="flex items-center justify-between gap-2 md:hidden">
         <span className="text-sm font-medium">{countLabel}</span>
         {extraCount > 0 && (
-          <Button variant="ghost" size="xs" onClick={clearExtraFilters}>
+          <Button variant="ghost" size="xs" onClick={() => clearExtraFilters()}>
             Clear ({extraCount})
           </Button>
         )}
@@ -171,7 +171,12 @@ export function ResultsView({
           <EmptyTitle>No matches</EmptyTitle>
           <EmptyDescription>No restaurants match your current search.</EmptyDescription>
           {extraCount > 0 && (
-            <Button variant="outline" size="sm" onClick={clearExtraFilters} className="mt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => clearExtraFilters()}
+              className="mt-2"
+            >
               Clear filters
             </Button>
           )}

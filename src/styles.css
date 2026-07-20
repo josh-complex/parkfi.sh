@@ -88,13 +88,11 @@
      designed web look) so big-bezel-radius devices don't balloon the bar. */
   --nav-corner-bl: clamp(1rem, calc(var(--device-corner-radius-bl) - 1rem), 2.5rem);
   --nav-corner-br: clamp(1rem, calc(var(--device-corner-radius-br) - 1rem), 2.5rem);
-  /* Bottom-drawer card corners (ui/drawer.tsx), same concentric treatment: the
-     visible card (the `before:` pseudo) floats 0.5rem in from the screen edges
-     (`before:inset-2` on an `inset-x-0 bottom-0` content box), so concentric =
-     device radius − 0.5rem, with the same square-device floor and designed
-     2.5rem ceiling as the nav. */
-  --drawer-corner-bl: clamp(1rem, calc(var(--device-corner-radius-bl) - 0.5rem), 2.5rem);
-  --drawer-corner-br: clamp(1rem, calc(var(--device-corner-radius-br) - 0.5rem), 2.5rem);
+  /* Bottom-drawer card corners (ui/drawer.tsx). On web there's no bezel to hug,
+     so the card keeps the fixed 2.5rem design radius (matching its top corners).
+     Native overrides these below to the true concentric radius. */
+  --drawer-corner-bl: 2.5rem;
+  --drawer-corner-br: 2.5rem;
 }
 
 /* Installed PWA (home-screen, no Safari chrome): drop the safe-area padding the
@@ -133,6 +131,13 @@
 html.native {
   --safe-bottom: 0px;
   min-height: 100vh;
+  /* The bottom drawer's visible card floats 0.5rem in from the physical screen
+     edges (`before:inset-2` on a `bottom-0` content box), so its bottom corners
+     are concentric with the bezel at device radius − 0.5rem. Floored at 1rem for
+     square-cornered devices, but — unlike the nav pill — uncapped, so it actually
+     hugs the bezel instead of being pinned to the 2.5rem web design radius. */
+  --drawer-corner-bl: max(1rem, calc(var(--device-corner-radius-bl) - 0.5rem));
+  --drawer-corner-br: max(1rem, calc(var(--device-corner-radius-br) - 0.5rem));
 }
 html.native body,
 html.native [data-slot="sidebar-wrapper"] {

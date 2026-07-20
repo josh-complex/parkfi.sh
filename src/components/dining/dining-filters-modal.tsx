@@ -6,7 +6,12 @@ import { AnimatePresence, motion } from "motion/react";
 import { createPortal } from "react-dom";
 import { SearchIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
 
-import { clearExtraFilters, diningStore, patchFilters } from "#/components/dining/dining-store.ts";
+import {
+  clearExtraFilters,
+  commitSearch,
+  diningStore,
+  patchFilters,
+} from "#/components/dining/dining-store.ts";
 import {
   countExtraFilters,
   FEATURE_FILTERS,
@@ -86,10 +91,15 @@ export function AllSelect({
 export function ExtendedFilters({
   options,
   container,
+  showPark = false,
 }: {
   options: FilterOptions;
   /** Portal target for the embedded dropdowns — see `AllSelect`. */
   container?: HTMLElement | null;
+  /** Render a Park selector. On desktop the park lives in the search pill's
+   *  "Where" segment, so the drawer omits it; mobile has no such pill, so the
+   *  drawer is where park narrowing lives. */
+  showPark?: boolean;
 }) {
   const filters = useStore(diningStore, (s) => s.filters);
   const todayOnly = filters.availability === "today";
@@ -106,6 +116,24 @@ export function ExtendedFilters({
           className="pl-9"
         />
       </div>
+
+      {showPark && options.parks.length > 0 && (
+        <Section label="Park">
+          <AllSelect
+            value={filters.parkResort}
+            onValueChange={(v) => {
+              patchFilters({ parkResort: v });
+              // Mobile has no separate search button — picking a park commits the
+              // search so results appear, mirroring the quick cuisine chips.
+              if (v !== "ALL") commitSearch();
+            }}
+            allLabel="Any park"
+            options={options.parks}
+            ariaLabel="Park"
+            container={container}
+          />
+        </Section>
+      )}
 
       {options.experiences.length > 0 && (
         <Section label="Service level">
@@ -298,7 +326,7 @@ export function FiltersModal({ options }: { options: FilterOptions }) {
                       variant="outline"
                       className={cn("flex-1", extraCount === 0 && "opacity-40")}
                       disabled={extraCount === 0}
-                      onClick={clearExtraFilters}
+                      onClick={() => clearExtraFilters()}
                     >
                       Clear all
                     </Button>

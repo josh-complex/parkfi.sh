@@ -54,6 +54,7 @@ import {
   waitLabelFor,
   wireCardWalkTime,
   wireHoverLabelFlip,
+  wireMarkerFadeIn,
 } from "./shared.tsx";
 
 import "leaflet/dist/leaflet.css";
@@ -100,17 +101,35 @@ function makeTileLayer(dark: boolean): L.TileLayer {
   });
 }
 
+// Marker z-offset tiers (added atop Leaflet's latitude-derived base z-index):
+//   • lift  — reference-counted neighbor lift  • hover — exclusive hover tier
+//   • card  — an open detail card, above every other marker until it closes
+const Z_LIFT = 1000;
+const Z_HOVER = 3000;
+const Z_CARD = 5000;
+
+/** A raise handler with the extra `pinTop` used to float an open card's marker. */
+type MarkerRaise = ((on: boolean) => void) & { pinTop: (on: boolean) => void };
+
 /**
  * A marker's z-lift, reference-counted. Leaflet computes each marker's z-index
  * from its latitude; a large offset wins. Also wires hover to the same lift;
- * returns the `raise(on)` to hand the cluster controller.
+ * returns the `raise(on)` to hand the cluster controller. `raise.pinTop(on)` pins
+ * the marker above every other marker (over the hover tier too) for as long as
+ * its detail card is open, so a higher-z neighbor can't paint over the card.
  */
-function makeRaise(el: HTMLElement, marker: L.Marker): (on: boolean) => void {
+function makeRaise(el: HTMLElement, marker: L.Marker): MarkerRaise {
   let count = 0;
-  // Recompute the marker's resting z-offset from its lift count.
-  const applyZ = () => marker.setZIndexOffset(count > 0 ? 1000 : 0);
-  const raise = (on: boolean) => {
+  let pinned = false;
+  // Recompute the marker's resting z-offset: an open card wins outright;
+  // otherwise the lift count decides.
+  const applyZ = () => marker.setZIndexOffset(pinned ? Z_CARD : count > 0 ? Z_LIFT : 0);
+  const raise = ((on: boolean) => {
     count += on ? 1 : -1;
+    applyZ();
+  }) as MarkerRaise;
+  raise.pinTop = (on: boolean) => {
+    pinned = on;
     applyZ();
   };
   el.addEventListener("mouseenter", () => {
@@ -118,10 +137,11 @@ function makeRaise(el: HTMLElement, marker: L.Marker): (on: boolean) => void {
     // The hovered marker jumps to an exclusive z-offset above every other marker
     // so its expanded label always clears its neighbors. Demote the previously
     // hovered marker back to its resting z first, so only one ever holds the top
-    // slot (no DOM reorder, which would drop :hover and cancel the click).
+    // slot (no DOM reorder, which would drop :hover and cancel the click). A
+    // pinned (card-open) marker stays on its top tier — hover must not drop it.
     if (topHover && topHover !== applyZ) topHover();
     topHover = applyZ;
-    marker.setZIndexOffset(3000);
+    if (!pinned) marker.setZIndexOffset(Z_HOVER);
   });
   el.addEventListener("mouseleave", () => {
     raise(false);
@@ -228,6 +248,10 @@ export function ParkMapLeaflet({
   const [focusSlug, setFocusSlug] = React.useState<string | null>(null);
   const focusSlugRef = React.useRef<string | null>(null);
   focusSlugRef.current = focusSlug;
+  // True from the start of a deliberate `flyToPark` (a chip / badge tap) until its
+  // settling `moveend` — that one move's focus is owned by the tap, so the roam
+  // watcher must not re-derive (and possibly clear) it from the camera geometry.
+  const focusFlyLockRef = React.useRef(false);
   const effectiveSlug = roam ? focusSlug : activeSlug;
   const effectiveSlugRef = React.useRef<string | null>(effectiveSlug);
   effectiveSlugRef.current = effectiveSlug;
@@ -297,6 +321,12 @@ export function ParkMapLeaflet({
   const traveledRef = React.useRef<L.Polyline | null>(null);
   const selectedIdRef = React.useRef(selectedId);
   selectedIdRef.current = selectedId;
+  // The park context (`effectiveSlug`, or the overview) whose markers we've
+  // already faded in. The marker effect reruns on every live-wait refetch, but a
+  // fade should only play when the set genuinely (re)appears — a zoom into a park
+  // or a jump to another. `undefined` at mount → the first paint fades. Mirrors
+  // the GL renderer; see `wireMarkerFadeIn`.
+  const fadedSlugRef = React.useRef<string | null | undefined>(undefined);
 
   const listQ = useQuery(trpc.parks.list.queryOptions());
   const overviewQ = useQuery(trpc.parks.overview.queryOptions());
@@ -525,6 +555,12 @@ export function ParkMapLeaflet({
     const map = mapRef.current;
     const park = parksRef.current?.find((p) => p.slug === slug);
     if (!map || !park) return;
+    // The tap owns the focus: set it now (don't wait for the watcher to guess the
+    // park back from the settled camera, which fails when the padded fit leaves
+    // the viewport center outside the boundary) and lock the ensuing moveend from
+    // overriding it.
+    setFocusSlug(slug);
+    focusFlyLockRef.current = true;
     map.setMaxZoom(21);
     map.setMaxBounds(null as unknown as L.LatLngBoundsExpression);
     if (park.bounds) {
@@ -553,6 +589,11 @@ export function ParkMapLeaflet({
     const layer = layerRef.current;
     if (!map || !layer || !ready) return;
     clearMarkers();
+    // Fade the markers in only when the park context actually changed (a zoom
+    // into a park / a jump to another) — not on a live-wait refetch that rebuilds
+    // the same set. Committed below once we've actually built markers, so an
+    // early rebuild with an empty board still fades once the board lands.
+    const shouldFade = fadedSlugRef.current !== effectiveSlug;
     // Overview spreads its handful of parks apart; a park view clusters its rides
     // until it's zoomed in past SPREAD_ZOOM, where it spreads too (no grouping).
     layer.setMode(effectiveSlug && map.getZoom() < SPREAD_ZOOM ? "cluster" : "spread");
@@ -567,6 +608,7 @@ export function ParkMapLeaflet({
         if (navDest && !sameCoords([p.longitude, p.latitude], navDest)) continue;
         const latLng: [number, number] = [p.latitude, p.longitude];
         const { el, detail } = buildParkBadgeEl(p);
+        if (shouldFade) wireMarkerFadeIn(detail);
         const marker = L.marker(latLng, { icon: pointIcon(el) }).addTo(map);
         const raise = makeRaise(el, marker);
         if (containerRef.current) wireHoverLabelFlip(el, containerRef.current);
@@ -577,8 +619,9 @@ export function ParkMapLeaflet({
           detail,
           raise,
           onActivate: () => {
+            // Roam: a tap flies into the park (its rides reveal by zoom) —
+            // `flyToPark` sets the focus itself. Otherwise open the park page.
             if (roam) {
-              setFocusSlug(p.slug);
               flyToPark(p.slug);
             } else {
               void navigate({ to: "/park/$slug", params: { slug: p.slug } });
@@ -618,6 +661,7 @@ export function ParkMapLeaflet({
         if (navDest && !sameCoords([a.longitude, a.latitude], navDest)) continue;
         const latLng: [number, number] = [a.latitude, a.longitude];
         const { el, detail } = buildAttractionEl(a, a.id === selectedIdRef.current);
+        if (shouldFade) wireMarkerFadeIn(detail);
         const waitLabel = waitLabelFor(a);
         const marker = L.marker(latLng, { icon: pointIcon(el) }).addTo(map);
         const raise = makeRaise(el, marker);
@@ -639,15 +683,15 @@ export function ParkMapLeaflet({
             );
             cardRef.current?.close();
             if (!containerRef.current) return;
-            // Morph the marker's own disc into an info card in place, lifting it
-            // above its neighbors for as long as it's open.
-            raise(true);
+            // Morph the marker's own disc into an info card in place, pinning it
+            // above every other marker for as long as it's open (dropped on close).
+            raise.pinTop(true);
             const { card, close } = openAttractionCard({
               detail,
               container: containerRef.current,
               bodyHtml: attractionCardBodyHtml(a, waitLabel, operatorSlug),
               wasSelected,
-              onClose: () => raise(false),
+              onClose: () => raise.pinTop(false),
               // The whole card is a button now — tapping it opens the ride page.
               onPress: () => {
                 void navigate({
@@ -743,6 +787,7 @@ export function ParkMapLeaflet({
           if (!pointInPolygon(lngLat, boundary)) return;
           const latLng: [number, number] = [poi.latitude, poi.longitude];
           const { el, detail } = buildPoiEl(poi);
+          if (shouldFade) wireMarkerFadeIn(detail);
           // The mid-walk restrooms read as background context, not destinations.
           if (navDest && !sameCoords(lngLat, navDest)) el.style.opacity = "0.6";
           const marker = L.marker(latLng, { icon: pointIcon(el) }).addTo(map);
@@ -757,7 +802,8 @@ export function ParkMapLeaflet({
             onActivate: () => {
               cardRef.current?.close();
               if (!containerRef.current) return;
-              raise(true);
+              // Pinned above every other marker while open (dropped on close).
+              raise.pinTop(true);
               // The whole card is a button now: shops → /shop/$slug, dining →
               // /dining/$facilityId, overlay POIs → the operator's page in a new
               // tab. `poiPressTarget` centralizes where each kind leads.
@@ -767,7 +813,7 @@ export function ParkMapLeaflet({
                 container: containerRef.current,
                 bodyHtml: poiCardBodyHtml(poi),
                 wasSelected: false,
-                onClose: () => raise(false),
+                onClose: () => raise.pinTop(false),
                 onPress: press
                   ? () => {
                       if (press.kind === "shop")
@@ -809,6 +855,11 @@ export function ParkMapLeaflet({
         });
       }
     }
+
+    // Remember this park context as faded, but only once we've actually built
+    // markers — so a first rebuild with an empty board doesn't consume the fade
+    // before the rides arrive.
+    if (shouldFade && markersRef.current.length > 0) fadedSlugRef.current = effectiveSlug;
 
     layer.setItems(items);
     layer.refresh();
@@ -885,15 +936,21 @@ export function ParkMapLeaflet({
       const c = map.getCenter();
       // Remember the roam camera so returning to `/map` restores this exact view.
       saveRoamCamera({ center: [c.lng, c.lat], zoom: z });
+      // A deliberate fly-to-park (chip / badge tap) already set the focus and owns
+      // this settling move — consume the lock and leave its focus alone.
+      if (focusFlyLockRef.current) {
+        focusFlyLockRef.current = false;
+        return;
+      }
       if (z >= ROAM_RIDE_ZOOM) {
+        // Zoomed in: adopt whichever park the center sits in. If it sits in none
+        // (a pan just outside an irregular boundary, or over the gap between
+        // parks) keep the current focus rather than snapping to badges — only a
+        // real zoom-out below clears it.
         const park = (parksRef.current ?? []).find((p) =>
           pointInPolygon([c.lng, c.lat], p.boundary ?? null),
         );
-        if (park) {
-          if (park.slug !== focusSlugRef.current) setFocusSlug(park.slug);
-        } else if (focusSlugRef.current != null) {
-          setFocusSlug(null);
-        }
+        if (park && park.slug !== focusSlugRef.current) setFocusSlug(park.slug);
       } else if (focusSlugRef.current != null) {
         setFocusSlug(null);
       }
@@ -913,8 +970,7 @@ export function ParkMapLeaflet({
     );
     if (park) {
       autoFocusedRef.current = true;
-      setFocusSlug(park.slug);
-      flyToPark(park.slug);
+      flyToPark(park.slug); // sets the focus itself
     }
   }, [roam, ready, userLocation, flyToPark]);
 

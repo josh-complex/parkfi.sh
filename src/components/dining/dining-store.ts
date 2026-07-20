@@ -78,13 +78,19 @@ export function applySearch(state: {
   }));
 }
 
-export function clearExtraFilters() {
+/**
+ * Reset the extended (drawer/modal) filters back to defaults, preserving the
+ * facets promoted into the search pill (operator / park / cuisine). Pass
+ * `includePark` on mobile, where the park selector lives *in* the drawer, so its
+ * "Clear all" also drops the park.
+ */
+export function clearExtraFilters(opts?: { includePark?: boolean }) {
   diningStore.setState((s) => ({
     ...s,
     filters: {
       ...DEFAULT_FILTERS,
       operator: s.filters.operator,
-      parkResort: s.filters.parkResort,
+      parkResort: opts?.includePark ? DEFAULT_FILTERS.parkResort : s.filters.parkResort,
       cuisine: s.filters.cuisine,
     },
     page: 0,
