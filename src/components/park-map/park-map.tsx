@@ -48,6 +48,7 @@ import {
   ORLANDO_ZOOM,
   poiCardBodyHtml,
   poiKind,
+  poiPressTarget,
   saveRoamCamera,
   SPREAD_ZOOM,
   waitLabelFor,
@@ -1119,7 +1120,6 @@ export function ParkMap({
         const raise = makeRaise(el);
         if (containerRef.current) wireHoverLabelFlip(el, containerRef.current);
         const waitLabel = waitLabelFor(a);
-        const rideHref = `/park/${effectiveSlug}/ride/${a.slug}`;
         const marker = new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map);
         markersRef.current.push(marker);
         markerElsRef.current.set(a.id, detail);
@@ -1131,9 +1131,9 @@ export function ParkMap({
           onActivate: () => {
             const wasSelected = a.id === selectedIdRef.current;
             onSelectRef.current?.({ id: a.id, name: a.name });
-            // Warm the ride page's data the moment its card opens, so tapping
-            // "More info" navigates instantly instead of blocking on the route
-            // loader's uncached `attraction` fetch (the imperative navigate below
+            // Warm the ride page's data the moment its card opens, so tapping the
+            // card navigates instantly instead of blocking on the route loader's
+            // uncached `attraction` fetch (the imperative navigate in onPress
             // never triggers the router's intent-preload).
             void queryClient.prefetchQuery(
               trpc.parks.attraction.queryOptions({ parkSlug: effectiveSlug, rideSlug: a.slug }),
@@ -1146,28 +1146,29 @@ export function ParkMap({
             const { card, close } = openAttractionCard({
               detail,
               container: containerRef.current,
-              bodyHtml: attractionCardBodyHtml(a, waitLabel, rideHref, operatorSlug),
+              bodyHtml: attractionCardBodyHtml(a, waitLabel, operatorSlug),
               wasSelected,
               onClose: () => raise(false),
+              // The whole card is a button now — tapping it opens the ride page.
+              onPress: () => {
+                void navigate({
+                  to: "/park/$slug/ride/$rideSlug",
+                  params: { slug: effectiveSlug, rideSlug: a.slug },
+                });
+              },
             });
             cardRef.current = { close };
             // Walk time from here (§4.1) — the number that converts a glance
             // into a trip, and a warm cache for the Directions tap.
             const estimate = fetchWalkEstimate(lngLat);
             if (estimate) wireCardWalkTime(card, estimate);
-            // Intercept the in-card "More info" link for client-side navigation.
-            card.querySelector<HTMLAnchorElement>("[data-spa]")?.addEventListener("click", (e) => {
-              e.preventDefault();
-              void navigate({
-                to: "/park/$slug/ride/$rideSlug",
-                params: { slug: effectiveSlug, rideSlug: a.slug },
-              });
-            });
             // "Directions" asks the stage to route from the user's location here.
+            // stopPropagation so pressing it never also reads as a card press.
             card
               .querySelector<HTMLButtonElement>("[data-directions]")
               ?.addEventListener("click", (e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 if (a.longitude != null && a.latitude != null) {
                   onRequestDirectionsRef.current?.({
                     id: a.id,
@@ -1262,37 +1263,41 @@ export function ParkMap({
               if (!containerRef.current) return;
               // Same disc→card morph as rides, with the shared POI body.
               raise(true);
+              // The whole card is a button now: shops → /shop/$slug, dining →
+              // /dining/$facilityId, overlay POIs → the operator's page in a new
+              // tab. `poiPressTarget` centralizes where each kind leads.
+              const press = poiPressTarget(poi);
               const { card, close } = openAttractionCard({
                 detail,
                 container: containerRef.current,
                 bodyHtml: poiCardBodyHtml(poi),
                 wasSelected: false,
                 onClose: () => raise(false),
+                onPress: press
+                  ? () => {
+                      if (press.kind === "shop")
+                        void navigate({ to: "/shop/$slug", params: { slug: press.slug } });
+                      else if (press.kind === "dining")
+                        void navigate({
+                          to: "/dining/$facilityId",
+                          params: { facilityId: press.facilityId },
+                        });
+                      else window.open(press.url, "_blank", "noopener,noreferrer");
+                    }
+                  : undefined,
               });
               cardRef.current = { close };
               // Walk time from here (§4.1), warming the Directions cache.
               const estimate = fetchWalkEstimate(lngLat);
               if (estimate) wireCardWalkTime(card, estimate);
-              // "Details" always lands on our own page (never the operator site):
-              // shops → /shop/$slug, dining → /dining/$facilityId. The target ids
-              // ride on data attributes so one handler covers both.
-              card
-                .querySelector<HTMLAnchorElement>("[data-spa]")
-                ?.addEventListener("click", (e) => {
-                  e.preventDefault();
-                  const link = e.currentTarget as HTMLAnchorElement;
-                  const shopSlug = link.getAttribute("data-shop-slug");
-                  const diningId = link.getAttribute("data-dining-id");
-                  if (shopSlug) void navigate({ to: "/shop/$slug", params: { slug: shopSlug } });
-                  else if (diningId)
-                    void navigate({ to: "/dining/$facilityId", params: { facilityId: diningId } });
-                });
               // "Directions" routes from the user's location to this POI, same as
               // rides. Negative ids keep POIs clear of the attraction id space.
+              // stopPropagation so pressing it never also reads as a card press.
               card
                 .querySelector<HTMLButtonElement>("[data-directions]")
                 ?.addEventListener("click", (e) => {
                   e.preventDefault();
+                  e.stopPropagation();
                   if (poi.longitude != null && poi.latitude != null) {
                     onRequestDirectionsRef.current?.({
                       id: -(i + 1),

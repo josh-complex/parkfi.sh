@@ -3,6 +3,15 @@ import { Store } from "@tanstack/store";
 import posthog from "posthog-js";
 
 import { useGeoSim } from "#/lib/dev-geo-sim.ts";
+import {
+  type GeoFix,
+  type GeoSourceError,
+  type GeoWatch,
+  geolocationAvailable,
+  getOnce,
+  nativeLocationGranted,
+  startWatch,
+} from "#/lib/geolocation-source.ts";
 import { isNative } from "#/lib/platform.ts";
 
 /**
@@ -113,29 +122,11 @@ function writeActiveOff() {
 }
 
 /**
- * Native-only: read the phone's location permission via the Capacitor plugin —
- * the source of truth for "is locate available" in the shell. Used to default
- * the locate toggle on for a fresh install that already granted location, since
- * the WebView's `navigator.permissions` query is unreliable/unsupported there.
- * The plugin is dynamically imported so it never enters the web bundle. Returns
- * false (never throws) off native or if the read fails.
- */
-async function nativeLocationGranted(): Promise<boolean> {
-  if (!isNative()) return false;
-  try {
-    const { Geolocation } = await import("@capacitor/geolocation");
-    const status = await Geolocation.checkPermissions();
-    return status.location === "granted" || status.coarseLocation === "granted";
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Thin wrapper over `navigator.geolocation`. It never prompts on mount — the
- * browser only surfaces the permission dialog from a user gesture, and silent
- * geolocation is hostile UX — so the consumer calls `locate()` from a tap. With
- * `watch: true` it keeps a live `watchPosition` going (for following the user as
+ * Thin wrapper over the geolocation source ({@link startWatch} — web
+ * `navigator.geolocation`, native `@capacitor/geolocation`). It never prompts on
+ * mount — the browser only surfaces the permission dialog from a user gesture,
+ * and silent geolocation is hostile UX — so the consumer calls `locate()` from a
+ * tap. With `watch: true` it keeps a live watch going (for following the user as
  * they walk) until `stop()` or unmount. Degrades to `unavailable` off a secure
  * context / SSR rather than throwing.
  *
@@ -157,7 +148,7 @@ export function useGeolocation(opts?: {
   const rememberActive = opts?.rememberActive ?? false;
   const profile = opts?.profile ?? "high";
   const [state, setState] = React.useState<GeoState>({ status: "idle" });
-  const watchIdRef = React.useRef<number | null>(null);
+  const watchRef = React.useRef<GeoWatch | null>(null);
   // Whether the "feature is on" flag has been persisted for the current
   // activation — so reaching `granted` writes localStorage once, not on every
   // fix the watch delivers.
@@ -178,9 +169,9 @@ export function useGeolocation(opts?: {
 
   const stop = React.useCallback(() => {
     uncountWatch();
-    if (watchIdRef.current != null && typeof navigator !== "undefined") {
-      navigator.geolocation.clearWatch(watchIdRef.current);
-      watchIdRef.current = null;
+    if (watchRef.current) {
+      watchRef.current.clear();
+      watchRef.current = null;
     }
   }, [uncountWatch]);
 
@@ -202,20 +193,20 @@ export function useGeolocation(opts?: {
   }, [stop, rememberActive]);
 
   const onSuccess = React.useCallback(
-    (pos: GeolocationPosition) => {
+    (fix: GeoFix) => {
       // Reaching `granted` means the feature is on — remember it so a later
       // session can silently re-engage (no-op when `rememberActive` is off).
       if (rememberActive && !activeWrittenRef.current) {
         activeWrittenRef.current = true;
         writeActiveFlag(true);
       }
-      // First fix from a live watch: announce it to the shared count.
-      if (watchIdRef.current != null && !countedRef.current) {
+      // First fix from a live watch: announce it to the shared count. One-shot
+      // (`watch: false`) fixes don't keep delivering, so they never count.
+      if (watch && !countedRef.current) {
         countedRef.current = true;
         activeWatchesStore.setState((n) => n + 1);
       }
-      const coords: [number, number] = [pos.coords.longitude, pos.coords.latitude];
-      const { accuracy, heading } = pos.coords;
+      const { coords, accuracy, heading } = fix;
       lastFixStore.setState((f) =>
         f && f.coords[0] === coords[0] && f.coords[1] === coords[1] && f.accuracy === accuracy
           ? f
@@ -235,11 +226,11 @@ export function useGeolocation(opts?: {
           : { status: "granted", coords, accuracy, heading },
       );
     },
-    [rememberActive],
+    [rememberActive, watch],
   );
   const onError = React.useCallback(
-    (err: GeolocationPositionError) => {
-      if (err.code === err.PERMISSION_DENIED) {
+    (err: GeoSourceError) => {
+      if (err.kind === "denied") {
         // Expected user choice — an event (never an exception). Living Layer
         // depends on this funnel to see how many users grant location.
         posthog.capture("geolocation_denied");
@@ -249,6 +240,8 @@ export function useGeolocation(opts?: {
         // The watch object survives a revocation but will never deliver again.
         uncountWatch();
         setState({ status: "denied" });
+      } else if (err.kind === "unavailable") {
+        setState({ status: "unavailable" });
       } else {
         posthog.capture("geolocation_error", { code: err.code, message: err.message });
         setState({ status: "error", message: err.message });
@@ -258,12 +251,7 @@ export function useGeolocation(opts?: {
   );
 
   const locate = React.useCallback(() => {
-    if (
-      typeof navigator === "undefined" ||
-      !navigator.geolocation ||
-      typeof window === "undefined" ||
-      !window.isSecureContext
-    ) {
+    if (!geolocationAvailable()) {
       setState({ status: "unavailable" });
       return;
     }
@@ -271,23 +259,21 @@ export function useGeolocation(opts?: {
     const options = GEO_PROFILES[profileRef.current];
     if (watch) {
       stop();
-      watchIdRef.current = navigator.geolocation.watchPosition(onSuccess, onError, options);
+      watchRef.current = startWatch(options, { onFix: onSuccess, onError });
     } else {
-      navigator.geolocation.getCurrentPosition(onSuccess, onError, options);
+      getOnce(options, { onFix: onSuccess, onError });
     }
   }, [watch, stop, onSuccess, onError]);
 
   // Re-arm a live watch when the profile changes (browse → trip pending → nav),
   // so the accuracy/staleness trade-off takes effect mid-session. Only touches
   // an already-running watch — it never starts one on its own (needs a gesture).
+  // Preserves the shared-count membership (no stop/uncount), so re-arming doesn't
+  // flicker the `activeWatchesStore` tally.
   React.useEffect(() => {
-    if (!watch || watchIdRef.current == null || typeof navigator === "undefined") return;
-    navigator.geolocation.clearWatch(watchIdRef.current);
-    watchIdRef.current = navigator.geolocation.watchPosition(
-      onSuccess,
-      onError,
-      GEO_PROFILES[profile],
-    );
+    if (!watch || watchRef.current == null) return;
+    watchRef.current.clear();
+    watchRef.current = startWatch(GEO_PROFILES[profile], { onFix: onSuccess, onError });
   }, [profile, watch, onSuccess, onError]);
 
   React.useEffect(() => stop, [stop]);
@@ -317,30 +303,27 @@ export function useGeolocation(opts?: {
         }
       : state;
 
-  // Cross-session resume: if the user previously had locate on, re-engage it on
-  // mount — but only after the Permissions API confirms geolocation is already
-  // `granted`, so no dialog is ever surfaced without a gesture. Runs once. If
-  // the API is unavailable (or reports prompt/denied) we leave it off; the user
-  // taps the button, which prompts as usual.
+  // Cross-session resume: re-engage locate on mount when it should already be
+  // on, without ever surfacing a permission dialog absent a gesture. Runs once.
+  // The source-of-truth for "already granted" differs by platform (native reads
+  // the OS grant via the plugin; web reads the Permissions API) — see each
+  // branch. If neither confirms a grant we leave it off; the user taps the
+  // button, which prompts as usual.
   const locateRef = React.useRef(locate);
   locateRef.current = locate;
   React.useEffect(() => {
     if (!rememberActive) return;
     // Native (Capacitor) shell: the phone's location permission is the source of
-    // truth. The WebView has no synchronous per-call permission dialog to guard
-    // against (the web gesture rule doesn't apply), and its `navigator.permissions`
-    // query is routinely unsupported for geolocation — which is why the web gate
-    // below returned early and the watch never resumed, making the "on" state
-    // look like it wasn't remembered. So: honor an explicit in-app off; otherwise
-    // engage when remembered on, or default to on whenever the OS already grants
-    // location. A revoked OS grant surfaces as PERMISSION_DENIED in `onError`.
+    // truth. Honor an explicit in-app "off"; otherwise re-engage on launch
+    // whenever the OS already grants location — covering both "the user had it
+    // on" and "a fresh install already granted location" without a stored flag.
+    // Gating on the real grant (not the flag) means we never surface a prompt at
+    // launch: `locate()` only runs when permission is already `granted`. This
+    // path replaces the web `navigator.permissions` query below, which is
+    // routinely unsupported for geolocation in the WebView and so silently never
+    // resumed — the reason the "on" state looked like it wasn't remembered.
     if (isNative()) {
-      const pref = readActivePref();
-      if (pref === "off") return;
-      if (pref === "on") {
-        locateRef.current();
-        return;
-      }
+      if (readActivePref() === "off") return;
       let cancelled = false;
       void nativeLocationGranted().then((granted) => {
         if (!cancelled && granted) locateRef.current();

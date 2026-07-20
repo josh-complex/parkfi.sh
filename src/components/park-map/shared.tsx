@@ -16,6 +16,7 @@ import {
   FilmIcon,
   GlobeIcon,
   InfoIcon,
+  MapPinIcon,
   PopcornIcon,
   RocketIcon,
   RollerCoasterIcon,
@@ -24,6 +25,7 @@ import {
   SparklesIcon,
   TicketIcon,
   TreesIcon,
+  UserIcon,
   UtensilsIcon,
   WavesIcon,
   XIcon,
@@ -308,7 +310,7 @@ const NAME_CHIP_MAX = 20;
  * card-morph's badge-hiding (see `openAttractionCard`) tucks it away on expand.
  */
 function nameChipMarkup(name: string, underWait: boolean): string {
-  const pos = underWait ? "top-full mt-1.5" : "-bottom-2";
+  const pos = underWait ? "top-full mt-2" : "-bottom-2";
   return `<span data-name-chip class="pointer-events-none absolute ${pos} left-1/2 -translate-x-1/2 ${WAIT_CHIP_CLASS}">${escapeHtml(
     truncateLabel(name, NAME_CHIP_MAX),
   )}</span>`;
@@ -394,26 +396,31 @@ export function poiKind(category: string): MapItemKind {
  * there's no separate hero image here). Disney rides carry rich `meta` (tags,
  * height/land); Universal (and un-enriched rows) degrade to just the name + live
  * wait line. The card lives in our themed DOM (not a white map popup), so it uses
- * theme tokens and reads correctly in dark mode. The "More info" link points at
- * our own ride page (`rideHref`); the renderer intercepts its click (`data-spa`)
- * for client-side navigation.
+ * theme tokens and reads correctly in dark mode. There's no in-body link — the
+ * whole card is a button (see `openAttractionCard` `onPress`) that navigates to
+ * our ride page; the action row carries the Directions button and the walk-time
+ * slot (filled by `wireCardWalkTime`).
  */
 /**
  * The in-card "Directions" button. Routes from the user's location to the point;
  * the renderer intercepts the click (marked `data-directions`) and reads the
  * destination from the data attributes. Empty string when we have no coordinates
  * to route to. A 3D-embossed button matching our `Button` primitive (border-3d /
- * shadow-3d), in blue to pair with the "More info"/"Details" link. Hand-written
- * classes rather than the React <Button> because the card body is injected HTML.
+ * shadow-3d), in blue. Hand-written classes rather than the React <Button>
+ * because the card body is injected HTML.
  */
 export function directionsButtonHtml(lng: number | null, lat: number | null): string {
   if (lng == null || lat == null) return "";
-  // The walk-time slot lives *inside* the button as subtext (revealed by
-  // wireCardWalkTime): landing an estimate next to the button pushed "More
-  // info" sideways and word-wrapped long times — inset, it only deepens the
-  // button, and the action row's alignment never shifts (§4.1).
-  return `<button type="button" data-directions data-lng="${lng}" data-lat="${lat}" class="relative top-0 inline-flex shrink-0 flex-col items-center justify-center rounded-full border-3d shadow-3d min-h-8 px-3.5 py-1 text-[12px] font-semibold leading-tight whitespace-nowrap text-white outline-none select-none bg-blue-600 hover:bg-blue-500 [--btn-3d:var(--color-blue-800)] [--btn-glare:oklch(1_0_0_/_0.28)] transition-[box-shadow,top,background-color] duration-150 ease-out hover:-top-px hover:shadow-3d-hover active:top-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active">Directions<span data-walk-time class="hidden text-[10px] font-medium leading-tight whitespace-nowrap text-white/80"></span></button>`;
+  return `<button type="button" data-directions data-lng="${lng}" data-lat="${lat}" class="relative top-0 inline-flex shrink-0 items-center justify-center rounded-full border-3d shadow-3d min-h-8 px-3.5 py-1 text-[12px] font-semibold leading-tight whitespace-nowrap text-white outline-none select-none bg-blue-600 hover:bg-blue-500 [--btn-3d:var(--color-blue-800)] [--btn-glare:oklch(1_0_0_/_0.28)] transition-[box-shadow,top,background-color] duration-150 ease-out hover:-top-px hover:shadow-3d-hover active:top-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active">Directions</button>`;
 }
+
+/**
+ * The walk-time slot for the action row — it takes the place the "More info" /
+ * "Details" link used to occupy. Starts empty and invisible; `wireCardWalkTime`
+ * fills it and eases it in once the route estimate resolves, so the number
+ * fades/rises into place instead of popping (§4.1).
+ */
+const walkSlotHtml = `<span data-walk-time class="text-[13px] font-medium whitespace-nowrap text-muted-foreground translate-y-1 opacity-0 transition-[opacity,transform] duration-300 ease-out"></span>`;
 
 /** Walk-duration copy for the in-card estimate — minutes under an hour, hours +
  *  minutes past it (a cross-resort "195 min walk" reads as a typo). */
@@ -426,11 +433,12 @@ function formatWalkEstimate(s: number): string {
 }
 
 /**
- * Fill a card's walk-time subtext (inside the Directions button) once the route
- * estimate resolves (§4.1). The fetch is fired as the card opens — the same
- * query the Directions preview runs, so the tap that follows hits a warm cache.
- * Best-effort: on failure (or a card closed before the estimate lands) the slot
- * simply stays hidden.
+ * Fill a card's walk-time slot (in the action row, where "More info" used to be)
+ * once the route estimate resolves (§4.1). The fetch is fired as the card opens
+ * — the same query the Directions preview runs, so the tap that follows hits a
+ * warm cache. The slot starts empty + invisible and eases in on arrival, so the
+ * number fades/rises into place instead of popping. Best-effort: on failure (or
+ * a card closed before the estimate lands) the slot simply stays hidden.
  */
 export function wireCardWalkTime(
   card: HTMLElement,
@@ -442,7 +450,8 @@ export function wireCardWalkTime(
     .then((r) => {
       if (!r || r.durationSeconds <= 0 || !slot.isConnected) return;
       slot.textContent = formatWalkEstimate(r.durationSeconds);
-      slot.classList.remove("hidden");
+      // Ease it in from its resting-invisible state (translate-y-1 / opacity-0).
+      slot.classList.remove("translate-y-1", "opacity-0");
     })
     .catch(() => {
       /* no estimate — the slot stays hidden */
@@ -479,49 +488,69 @@ function paidLineCardHtml(a: BoardItem, operatorSlug: string | null): string {
   )}</span>${pill}${priceHtml}${kindHtml}</div>`;
 }
 
+// Most tag chips a card shows inline before the rest collapse into a "+N"
+// counter — keeps the tag row to a single line instead of wrapping to a fourth.
+const MAX_CARD_TAGS = 3;
+// Small leading icons for the detail lines, rendered once: a person for the
+// height requirement, a pin for the land/location.
+const HEIGHT_LINE_ICON = renderToStaticMarkup(
+  <UserIcon width={12} height={12} strokeWidth={2} className="shrink-0" />,
+);
+const LAND_LINE_ICON = renderToStaticMarkup(
+  <MapPinIcon width={12} height={12} strokeWidth={2} className="shrink-0" />,
+);
+
+/** One muted detail line (height / land) with a leading icon. */
+function detailLineHtml(icon: string, text: string, marginTop: string): string {
+  return `<div class="${marginTop} flex items-center gap-1 text-[11px] text-muted-foreground"><span class="flex text-muted-foreground/80">${icon}</span><span>${escapeHtml(
+    text,
+  )}</span></div>`;
+}
+
 export function attractionCardBodyHtml(
   a: BoardItem,
   waitLabel: string,
-  rideHref: string,
   operatorSlug: string | null,
 ): string {
   const meta = a.meta;
+  // Cap the tag row at MAX_CARD_TAGS chips; any beyond collapse into a single
+  // "+N" chip so the row never wraps to a fourth line.
   const tags =
     meta?.tags && meta.tags.length > 0
-      ? `<div class="mt-1.5 flex flex-wrap gap-1">${meta.tags
-          .map(
-            (t) =>
-              `<span class="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">${escapeHtml(
-                t,
-              )}</span>`,
-          )
-          .join("")}</div>`
+      ? (() => {
+          const shown = meta.tags.slice(0, MAX_CARD_TAGS);
+          const extra = meta.tags.length - shown.length;
+          const chip = (t: string) =>
+            `<span class="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">${escapeHtml(
+              t,
+            )}</span>`;
+          const overflow =
+            extra > 0
+              ? `<span class="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">+${extra}</span>`
+              : "";
+          return `<div class="mt-1.5 flex flex-wrap gap-1">${shown.map(chip).join("")}${overflow}</div>`;
+        })()
       : "";
-  // Height requirement first, then the land/location on its own line below it.
-  const detail = [meta?.heightRequirement, meta?.land]
-    .filter(Boolean)
-    .map(
-      (bit, i) =>
-        `<div class="${i === 0 ? "mt-1 " : ""}text-[11px] text-muted-foreground">${escapeHtml(bit as string)}</div>`,
-    )
-    .join("");
+  // Height requirement first (person icon), then the land/location below it (pin).
+  const heightLine = meta?.heightRequirement
+    ? detailLineHtml(HEIGHT_LINE_ICON, meta.heightRequirement, "mt-1")
+    : "";
+  const landLine = meta?.land
+    ? detailLineHtml(LAND_LINE_ICON, meta.land, heightLine ? "mt-0.5" : "mt-1")
+    : "";
+  const detail = heightLine + landLine;
   const directions = directionsButtonHtml(a.longitude, a.latitude);
-  const moreInfo = `<a href="${escapeHtml(
-    rideHref,
-  )}" data-spa class="text-[13px] font-medium text-blue-600 hover:underline">More info →</a>`;
-  const actions = `<div class="mt-2.5 flex items-center gap-2">${directions}${moreInfo}</div>`;
-  // The wait line. When a live wait exists it renders as the very chip the marker
-  // carries — the marker's chip physically flies onto this one on expand (see
-  // openAttractionCard), growing to reveal the "standby" subtext held inside it.
-  // `data-wait-chip` is that flight target. With no posted wait it's plain text.
+  // The whole card is the button to the ride page now (see `openAttractionCard`
+  // `onPress`); where "More info" used to sit, the walk time eases in instead.
+  const actions = `<div class="mt-2.5 flex items-center gap-2">${directions}${walkSlotHtml}</div>`;
+  // The wait line only renders in the body when there's *no* live posted wait
+  // (closed / down / no standby). When a live wait exists, the marker's chip
+  // flies up and settles as an overlay badge over the photo header (see
+  // `openAttractionCard`), so nothing is shown here for it.
   const minutes = a.status === "OPERATING" && a.standbyWait != null ? a.standbyWait : null;
   const waitLine =
     minutes != null
-      ? `<div class="mt-0.5 flex text-[12px]"><span data-wait-chip class="${WAIT_CHIP_CLASS}">${waitChipInner(
-          minutes,
-          waitLabel,
-          true,
-        )}</span></div>`
+      ? ""
       : `<div class="mt-0.5 text-[12px] text-muted-foreground">${escapeHtml(waitLabel)}</div>`;
   const paidLine = paidLineCardHtml(a, operatorSlug);
   // `data-name-target` is the landing slot for the marker's name pill, which flies
@@ -543,6 +572,10 @@ const CARD_EASE = "cubic-bezier(.16,1,.3,1)"; // smooth ease-out, no overshoot
 // clears faster than the geometry collapse so none of it lingers as a wide/heavy
 // artifact once the disc has shrunk back — it's gone well before CARD_MS elapses.
 const CARD_CLOSE_FX_MS = 170;
+// The live-wait chip's overlay resting spot on the photo header (inset px from
+// the card's top-left) and the little swell it does once the open morph settles.
+const WAIT_OVERLAY_INSET = 8;
+const WAIT_GROW = 1.16; // scale the chip grows to as it flies into its overlay spot
 
 /** The single card currently expanded (across both engines), so opening one — or
  *  any other interaction — collapses the previous first. */
@@ -561,8 +594,10 @@ let openCard: { close: () => void } | null = null;
  *
  * Engine-agnostic: it only touches the marker's `detail` element (which both
  * renderers position) and reads the map `container` to keep the card on-screen.
- * The returned `card` (the details body) is where the renderer wires the
- * `data-spa` / `data-directions` clicks; `close()` reverses the morph.
+ * The whole card is a button: tapping anywhere on it (except the close button
+ * and the in-card Directions button, which stops its own click) fires `onPress`;
+ * the returned `card` (the details body) is where the renderer wires the
+ * `data-directions` click; `close()` reverses the morph.
  */
 export function openAttractionCard(opts: {
   detail: HTMLElement;
@@ -572,10 +607,12 @@ export function openAttractionCard(opts: {
   wasSelected: boolean;
   /** Fired once when the card begins closing — e.g. to drop the marker's z-lift. */
   onClose?: () => void;
+  /** Fired when the card is tapped as a button (opens the detail page). */
+  onPress?: () => void;
 }): { card: HTMLElement; close: () => void } {
   openCard?.close();
 
-  const { detail, container, bodyHtml, wasSelected, onClose } = opts;
+  const { detail, container, bodyHtml, wasSelected, onClose, onPress } = opts;
   const wrap = detail.firstElementChild as HTMLElement; // the disc wrapper → the card
   const fill = wrap.querySelector<HTMLElement>("[data-face-fill]"); // photo / icon face
   const label = detail.querySelector<HTMLElement>("[data-label]");
@@ -656,12 +693,11 @@ export function openAttractionCard(opts: {
   card.style.opacity = "0";
   card.style.transition = "opacity 200ms ease 110ms";
   card.innerHTML = bodyHtml;
-  card.addEventListener("click", (e) => e.stopPropagation());
   wrap.appendChild(card);
   const totalH = CARD_HEADER_H + card.offsetHeight;
 
   // Placement: the card always settles in the center of the map, so every button
-  // (Directions / More info) is on-screen regardless of where the pin sits — the
+  // (Directions / walk time) is on-screen regardless of where the pin sits — the
   // disc morphs from its point and slides to center. Still clamped 8px inside the
   // edges so an unusually tall card can't run off the top. Coords are detail-local
   // — detail's box is the disc, so we subtract dRect to convert from viewport space.
@@ -683,22 +719,21 @@ export function openAttractionCard(opts: {
 
   // Wait-chip flight. Promote the marker's chip out of the (soon overflow-hidden,
   // transforming) wrap into `detail` — a stable, untransformed box — so it can
-  // travel cleanly from its resting spot under the disc to the card's wait line.
-  // The destination is the transparent placeholder chip in the card body; because
-  // both chips share WAIT_CHIP_CLASS they're the same size, so the landing is exact.
-  const waitTarget = card.querySelector<HTMLElement>("[data-wait-chip]");
+  // travel cleanly from its resting spot under the disc up to its overlay resting
+  // spot on the photo header (top-left, inset WAIT_OVERLAY_INSET). It's
+  // `pointer-events-none` so a tap over it presses the card beneath. Once the open
+  // morph settles, the chip does a small swell (WAIT_GROW) as a final flourish.
   let flyWait: (() => void) | undefined;
   let unflyWait: (() => void) | undefined;
-  if (waitEl && waitStart && waitTarget) {
-    const cardRect0 = card.getBoundingClientRect();
-    const tRect0 = waitTarget.getBoundingClientRect();
+  if (waitEl && waitStart) {
     const startLeft = waitStart.left - dRect.left;
     const startTop = waitStart.top - dRect.top;
-    // The placeholder's offset within the fixed-width card body is layout-stable;
-    // its final on-screen spot is the card's final origin + that offset.
-    const destLeft = leftLocal + (tRect0.left - cardRect0.left);
-    const destTop = topLocal + CARD_HEADER_H + (tRect0.top - cardRect0.top);
-    waitTarget.style.opacity = "0"; // the flown chip is the only visible one
+    // Overlay resting spot: the card's final top-left corner, inset a touch, so it
+    // sits over the top-left of the photo header.
+    const destLeft = leftLocal + WAIT_OVERLAY_INSET;
+    const destTop = topLocal + WAIT_OVERLAY_INSET;
+    const dx = destLeft - startLeft;
+    const dy = destTop - startTop;
     waitEl.classList.remove("-bottom-2", "left-1/2", "-translate-x-1/2");
     Object.assign(waitEl.style, {
       position: "absolute",
@@ -707,7 +742,9 @@ export function openAttractionCard(opts: {
       margin: "0",
       zIndex: "46",
       transform: "none",
+      transformOrigin: "top left",
       transition: "none",
+      pointerEvents: "none",
     });
     detail.append(waitEl);
     void waitEl.offsetWidth; // commit the start transform before animating
@@ -715,15 +752,19 @@ export function openAttractionCard(opts: {
     // up (so the pill grows to include it), re-collapsed as it flies back.
     const waitSub = waitEl.querySelector<HTMLElement>("[data-wait-sub]");
     flyWait = () => {
+      // The swell (scale) rides along *with* the fly over the same CARD_MS, so the
+      // chip grows into place as it settles rather than popping bigger afterward.
       waitEl.style.transition = `transform ${CARD_MS}ms ${CARD_EASE}`;
       if (waitSub) waitSub.style.transition = ""; // reveal at the class default pace
       waitSub?.classList.remove("max-w-0", "opacity-0");
       waitSub?.classList.add("ml-1", "max-w-[8rem]", "opacity-100");
-      waitEl.style.transform = `translate(${destLeft - startLeft}px, ${destTop - startTop}px)`;
+      waitEl.style.transform = `translate(${dx}px, ${dy}px) scale(${WAIT_GROW})`;
     };
     unflyWait = () => {
-      // The pill travels back with the card (transform stays on CARD_MS), but its
-      // width snaps narrow fast so it isn't left wide well after the disc has formed.
+      // The pill travels back with the card (transform stays on CARD_MS), dropping
+      // the swell as it goes; its width snaps narrow fast so it isn't left wide
+      // well after the disc has formed.
+      waitEl.style.transition = `transform ${CARD_MS}ms ${CARD_EASE}`;
       waitEl.style.transform = "none";
       if (waitSub) waitSub.style.transition = `all ${CARD_CLOSE_FX_MS}ms ease`;
       waitSub?.classList.remove("ml-1", "max-w-[8rem]", "opacity-100");
@@ -772,7 +813,7 @@ export function openAttractionCard(opts: {
     const ts = getComputedStyle(nameTarget);
     const fullName = nameTarget.textContent ?? "";
     nameTarget.style.opacity = "0"; // the flown pill is the visible title from here
-    nameEl.classList.remove("-bottom-2", "top-full", "mt-1.5", "left-1/2", "-translate-x-1/2");
+    nameEl.classList.remove("-bottom-2", "top-full", "mt-2", "left-1/2", "-translate-x-1/2");
     // Drop the truncation the instant the flight starts: carry the *full* name and
     // let it wrap, then just grow the box (below) from the pill's width to the
     // title's — no clip/reveal, so there's nothing to pop in. `display:block` so the
@@ -849,9 +890,17 @@ export function openAttractionCard(opts: {
     };
   }
 
-  // While open, swallow clicks on the card container so they don't bubble to the
-  // marker's own click handler (which would re-fire activate). Removed on close.
-  const stopProp = (e: Event) => e.stopPropagation();
+  // The whole card is the button. A click anywhere on it (header photo or body)
+  // fires `onPress` (→ the detail page). The in-card Directions button and the
+  // close × stop their own clicks, so those never read as a card press. Either
+  // way we stop propagation so the click doesn't bubble to the marker's own
+  // handler (which would re-fire activate). The flown name/wait chips are
+  // `pointer-events-none`, so taps over them fall through to the card beneath.
+  const stopProp = (e: Event) => {
+    e.stopPropagation();
+    onPress?.();
+  };
+  wrap.style.cursor = "pointer";
   wrap.addEventListener("click", stopProp);
 
   // Close (×), pinned to the header's top-right. A sibling of the wrap (in detail),
@@ -1279,11 +1328,9 @@ export type PoiItem = {
  * Body of the shared POI info card (dining + shops) — the same layout both
  * overlay layers pop, mirroring the attraction card below the photo header (the
  * marker's own disc, flown up by `openAttractionCard`). Shows the name, a
- * kind · land subtitle, and a "Details →" link to *our own* page — never the
- * operator's site: shops → `/shop/$slug`, dining/character spots →
- * `/dining/$facilityId` (the POI id). The link carries `data-spa` plus the
- * target ids in data attributes; the renderer intercepts it for client-side nav.
- * Lives in themed DOM (reads correctly in dark).
+ * kind · land subtitle, and the action row (Directions + walk-time slot). There's
+ * no in-body link — the whole card is a button (`poiPressTarget` decides where it
+ * leads). Lives in themed DOM (reads correctly in dark).
  */
 // Subtitle label per POI category. `characters` (plural) is a dining character
 // spot; `character` (singular) is a park_poi meet-and-greet.
@@ -1304,35 +1351,35 @@ const POI_OVERLAY_CATEGORIES = new Set(["info", "entertainment", "character", "t
 export function poiCardBodyHtml(poi: PoiItem): string {
   const kindLabel = POI_KIND_LABEL[poi.category] ?? "Dining";
   const subtitle = [kindLabel, poi.land].filter(Boolean).join(" · ");
-  // Shops key their page on the finder slug; dining on the facility id (our
-  // `/dining/$facilityId` route); overlay POIs (guest services / entertainment /
-  // tours) have no in-app page, so they link out to the operator's page.
-  const link = POI_OVERLAY_CATEGORIES.has(poi.category)
-    ? poi.detailUrl
-      ? `<a href="${escapeHtml(
-          poi.detailUrl,
-        )}" target="_blank" rel="noopener noreferrer" class="text-[13px] font-medium text-blue-600 hover:underline">Details ↗</a>`
-      : ""
-    : poi.category === "shop"
-      ? poi.slug
-        ? `<a href="/shop/${escapeHtml(poi.slug)}" data-spa data-shop-slug="${escapeHtml(
-            poi.slug,
-          )}" class="text-[13px] font-medium text-blue-600 hover:underline">Details →</a>`
-        : ""
-      : `<a href="/dining/${escapeHtml(poi.id)}" data-spa data-dining-id="${escapeHtml(
-          poi.id,
-        )}" class="text-[13px] font-medium text-blue-600 hover:underline">Details →</a>`;
-  // Shops/dining route from the user's location too — same button as rides.
+  // The whole card is the button now (see `openAttractionCard` `onPress`): shops →
+  // `/shop/$slug`, dining → `/dining/$facilityId`, overlay POIs → the operator's
+  // page in a new tab. Where the "Details" link used to sit, the walk time eases
+  // in instead — same as the ride card.
   const directions = directionsButtonHtml(poi.longitude, poi.latitude);
-  const actions =
-    directions || link
-      ? `<div class="mt-3 flex items-center gap-2">${directions}${link}</div>`
-      : "";
+  const actions = `<div class="mt-3 flex items-center gap-2">${directions}${walkSlotHtml}</div>`;
   return `<div data-name-target class="text-[15px] font-semibold leading-tight text-card-foreground">${escapeHtml(
     poi.name,
   )}</div><div class="mt-1 text-[12px] text-muted-foreground">${escapeHtml(
     subtitle,
   )}</div>${actions}`;
+}
+
+/** Where tapping a POI card leads (the whole card is a button now). Shops key on
+ *  the finder slug, dining on the facility id (`/dining/$facilityId`); overlay
+ *  POIs (guest services / entertainment / tours) have no in-app page and open
+ *  the operator's page in a new tab. `null` when there's nowhere to go — the card
+ *  is inert. Centralized here so both renderers press to the same place. */
+export type PoiPressTarget =
+  | { kind: "shop"; slug: string }
+  | { kind: "dining"; facilityId: string }
+  | { kind: "external"; url: string }
+  | null;
+
+export function poiPressTarget(poi: PoiItem): PoiPressTarget {
+  if (POI_OVERLAY_CATEGORIES.has(poi.category))
+    return poi.detailUrl ? { kind: "external", url: poi.detailUrl } : null;
+  if (poi.category === "shop") return poi.slug ? { kind: "shop", slug: poi.slug } : null;
+  return { kind: "dining", facilityId: poi.id };
 }
 
 // Accent per POI kind — warm amber for dining, orange for quick service/carts,
