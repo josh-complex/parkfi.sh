@@ -1058,6 +1058,18 @@ export function ParkMap({
     // overriding it.
     setFocusSlug(slug);
     focusFlyLockRef.current = true;
+    // The tap also owns the camera: drop the follow-cam (else the next GPS fix
+    // recenters on the user and yanks the camera straight back to where they're
+    // standing), and hold `engagingRef` through the flight so a fix or heading
+    // tick landing mid-fly can't cancel the animation before the follow state
+    // has flipped. Same moveend + timeout pattern as flyToLocation.
+    onUserInteractRef.current?.();
+    engagingRef.current = true;
+    const done = () => {
+      engagingRef.current = false;
+    };
+    map.once("moveend", done);
+    setTimeout(done, MAP_FLY_MS + 200);
     map.setMaxZoom(21);
     map.setMaxBounds(null);
     if (park.bounds) {
