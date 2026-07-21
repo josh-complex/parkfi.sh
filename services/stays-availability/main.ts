@@ -33,12 +33,17 @@ import {
   writeStayObs,
   type ResortSearchParams,
 } from "#/server/stays/availability.ts";
+import type { ResortStore } from "#/server/stays/resort-catalog.generated.ts";
 
 // Parties to keep warm for cold browse (count of adults; no children).
 const WARM_PARTIES = [
   { adults: 2, children: 0 },
   { adults: 4, children: 0 },
 ] as const;
+
+// Stores kept warm every run. Each is a separate Disney availability endpoint;
+// one fetch per (store, dates, party) returns all of that store's resorts.
+const WARM_STORES: ReadonlyArray<ResortStore> = ["wdw", "dlr"];
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -65,30 +70,34 @@ function warmWeekends(
 async function seedWarmSet(now: Date): Promise<number> {
   const weekends = warmWeekends(config.staysWarmHorizonDays, now);
   let seeded = 0;
-  for (const w of weekends) {
-    for (const p of WARM_PARTIES) {
-      const params: ResortSearchParams = {
-        checkInDate: w.checkIn,
-        checkOutDate: w.checkOut,
-        adults: p.adults,
-        children: p.children,
-        childAges: [],
-        accessible: false,
-        floridaResident: false,
-      };
-      const res = await db
-        .insert(stayQuery)
-        .values({
-          checkIn: w.checkIn,
-          checkOut: w.checkOut,
-          partyKey: buildPartyKey(params),
+  for (const store of WARM_STORES) {
+    for (const w of weekends) {
+      for (const p of WARM_PARTIES) {
+        const params: ResortSearchParams = {
+          store,
+          checkInDate: w.checkIn,
+          checkOutDate: w.checkOut,
           adults: p.adults,
           children: p.children,
+          childAges: [],
           accessible: false,
           floridaResident: false,
-        })
-        .onConflictDoNothing();
-      seeded += res.rowCount ?? 0;
+        };
+        const res = await db
+          .insert(stayQuery)
+          .values({
+            checkIn: w.checkIn,
+            checkOut: w.checkOut,
+            partyKey: buildPartyKey(params),
+            store,
+            adults: p.adults,
+            children: p.children,
+            accessible: false,
+            floridaResident: false,
+          })
+          .onConflictDoNothing();
+        seeded += res.rowCount ?? 0;
+      }
     }
   }
   return seeded;

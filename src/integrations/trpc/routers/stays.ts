@@ -18,6 +18,9 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD");
 
 /** The (dates, party) search dims shared by `availability` and `priceHistory`. */
 const stayDims = {
+  // Which Disney store to price against. Defaults to WDW so existing callers
+  // (and the WDW-only browse UI) are unchanged; DLR reads pass "dlr".
+  store: z.enum(["wdw", "dlr"]).default("wdw"),
   checkInDate: isoDate,
   checkOutDate: isoDate,
   adults: z.number().int().min(1).max(10).default(2),

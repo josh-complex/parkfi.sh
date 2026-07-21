@@ -3,6 +3,10 @@
 
 export type ResortTier = "value" | "moderate" | "deluxe" | "villa" | "campground";
 
+/** Disney store (booking system) that prices a resort — Walt Disney World or
+ *  Disneyland Resort. Each has its own resort-availability endpoint. */
+export type ResortStore = "wdw" | "dlr";
+
 export interface ResortCatalogEntry {
   /** Numeric facility ID — joins to the resort-availability response keys. */
   id: string;
@@ -15,8 +19,11 @@ export interface ResortCatalogEntry {
   /** ThumbHash placeholder of `image` (base64) — instant blurry preview. */
   imageThumbhash: string | null;
   detailUrl: string;
+  store: ResortStore;
 }
 
+/** Walt Disney World resorts. This is the WDW-only browse catalog the Stays UI
+ *  renders; DLR is kept separate so existing WDW surfaces are unchanged. */
 export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
   {
     id: "1",
@@ -28,6 +35,7 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
       "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/disney-world/resorts/bay-lake-tower-at-contemporary/bay-lake-tower-contemporary-fireworks-16x9.jpg?1780333536412",
     imageThumbhash: "khgOFIKFSWcFiqZ6iJgnYClVkA==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/bay-lake-tower-at-contemporary/",
+    store: "wdw",
   },
   {
     id: "80010393",
@@ -36,10 +44,11 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
     tier: "villa",
     area: "Magic Kingdom Resort Area",
     image:
-      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/disney-world/resorts/boulder-ridge-villas-at-wilderness-lodge/boulder-ridge-landscape-16x9.jpg?1780489306702",
+      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/disney-world/resorts/boulder-ridge-villas-at-wilderness-lodge/boulder-ridge-landscape-16x9.jpg?1784546850207",
     imageThumbhash: "0vcFPIgqhJe/d4h1mqt2cGEGBw==",
     detailUrl:
       "https://disneyworld.disney.go.com/resorts/boulder-ridge-villas-at-wilderness-lodge/",
+    store: "wdw",
   },
   {
     id: "18390992",
@@ -48,9 +57,10 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
     tier: "villa",
     area: "Magic Kingdom Resort Area",
     image:
-      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/disney-world/resorts/copper-creek-villas-and-cabins/copper-creek-exterior-lake-16x9.jpg?1780489283003",
+      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/disney-world/resorts/copper-creek-villas-and-cabins/copper-creek-exterior-lake-16x9.jpg?1784546680182",
     imageThumbhash: "5QgSJIR3eHiPeId7iIZ5hJBWCA==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/copper-creek-villas-and-cabins/",
+    store: "wdw",
   },
   {
     id: "80010402",
@@ -59,9 +69,10 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
     tier: "value",
     area: "Disney's Animal Kingdom Resort Area",
     image:
-      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/all-star-movies/all-star-movies-resort-00.jpg?1780517194255",
+      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/all-star-movies/all-star-movies-resort-00.jpg?1783438441431",
     imageThumbhash: "WvcJbIT4kmeKd5d2tnSIYOQGYw==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/all-star-movies-resort/",
+    store: "wdw",
   },
   {
     id: "80010400",
@@ -70,9 +81,10 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
     tier: "value",
     area: "Disney's Animal Kingdom Resort Area",
     image:
-      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/all-star-music/all-star-music-resort-00.jpg?1779767499048",
+      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/all-star-music/all-star-music-resort-00.jpg?1781541954155",
     imageThumbhash: "GBgOVIRFaYZlZ3hweZiEYANIBw==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/all-star-music-resort/",
+    store: "wdw",
   },
   {
     id: "80010401",
@@ -84,6 +96,7 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
       "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/all-star-sports/all-star-sports-resort-00.jpg?1779767543971",
     imageThumbhash: "UOcJPIKXZXh0enlwh5m1YAmG1g==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/all-star-sports-resort/",
+    store: "wdw",
   },
   {
     id: "80010395",
@@ -95,6 +108,7 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
       "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/animal-kingdom/animal-kingdom-lodge-00.jpg?1779767762297",
     imageThumbhash: "mPgRLIR3d3iPd4eHh3V2gFMrBw==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/animal-kingdom-lodge/",
+    store: "wdw",
   },
   {
     id: "5",
@@ -106,6 +120,7 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
       "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/disney-world/resorts/animal-kingdom-villas-jambo/animal-kingdom-lodge-exterior-16x9.jpg?1779767763815",
     imageThumbhash: "mPgRLIR3d3iPd4eHh3V2gFMrBw==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/animal-kingdom-villas-jambo/",
+    store: "wdw",
   },
   {
     id: "273239",
@@ -114,9 +129,10 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
     tier: "villa",
     area: "Disney's Animal Kingdom Resort Area",
     image:
-      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/disney-world/resorts/animal-kingdom-villas-kidani/kidani-villiage-firepit-16x9.jpg?1780567344468",
+      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/disney-world/resorts/animal-kingdom-villas-kidani/kidani-villiage-firepit-16x9.jpg?1781542173918",
     imageThumbhash: "1jgGRIhViZh+Z3e4a29WcGIFNw==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/animal-kingdom-villas-kidani/",
+    store: "wdw",
   },
   {
     id: "80010404",
@@ -126,8 +142,9 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
     area: "Wide World of Sports Resort Area",
     image:
       "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/art-of-animation/art-of-animation-00.jpg?1779767764376",
-    imageThumbhash: "4+cJJIJ4mpyfZ1Z1eHlmcEgESA==",
+    imageThumbhash: "5OcJJIJ4mpyfZ1Z1eHpmcEgEOA==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/art-of-animation-resort/",
+    store: "wdw",
   },
   {
     id: "80010389",
@@ -139,6 +156,7 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
       "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/beach-club/beach-club-resort-00.jpg?1780646104502",
     imageThumbhash: "j/cJLIaIeGmPh4h4d4yLY7BJBg==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/beach-club-resort/",
+    store: "wdw",
   },
   {
     id: "80010407",
@@ -150,6 +168,7 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
       "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/disney-world/resorts/beach-club-villas/beach-club-villas-resort-16x9.jpg?1779768140261",
     imageThumbhash: "oBgOFIRYh3h/iXeJiHe5Z4D3hw==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/beach-club-villas/",
+    store: "wdw",
   },
   {
     id: "80010386",
@@ -161,6 +180,7 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
       "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/gallery/resorts-fy16q2/boardwalk-inn/Overview/board-walk-inn-gallery02.jpg?1779767572794",
     imageThumbhash: "EQgKNIxmiIZPiYdlZ3drcLEHJw==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/boardwalk-inn/",
+    store: "wdw",
   },
   {
     id: "80010391",
@@ -172,6 +192,7 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
       "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/boardwalk-villas/board-walk-villas-00.jpg?1779767598251",
     imageThumbhash: "UPcFRIySiHW/hpdjiHeEkFIIOQ==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/boardwalk-villas/",
+    store: "wdw",
   },
   {
     id: "80010399",
@@ -183,6 +204,7 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
       "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/vision-dam/digital/parks-platform/parks-global-assets/disney-world/resorts/caribbean-beach-resort/experience/0425ZM_0079OK_R1PW-5x2.jpg?2026-05-19T18:08:05+00:00",
     imageThumbhash: "YscJM4gIV3lId1aXmJCKCZg=",
     detailUrl: "https://disneyworld.disney.go.com/resorts/caribbean-beach-resort/",
+    store: "wdw",
   },
   {
     id: "80010385",
@@ -191,9 +213,10 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
     tier: "deluxe",
     area: "Magic Kingdom Resort Area",
     image:
-      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/contemporary/contemporary-resort-00.jpg?1780305600543",
+      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/contemporary/contemporary-resort-00.jpg?1781687555152",
     imageThumbhash: "1PYNLIRoeXl/h4hnd4ZpgOVQeQ==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/contemporary-resort/",
+    store: "wdw",
   },
   {
     id: "80010396",
@@ -202,9 +225,10 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
     tier: "moderate",
     area: "Disney's Animal Kingdom Resort Area",
     image:
-      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/disney-world/resorts/coronado-springs-resort/coronado-tower-16x9.jpg?1779767618521",
+      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/disney-world/resorts/coronado-springs-resort/coronado-tower-16x9.jpg?1781687577444",
     imageThumbhash: "HggKHIgVV2h/dnaIeHlGcHAGdw==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/coronado-springs-resort/",
+    store: "wdw",
   },
   {
     id: "80010384",
@@ -216,6 +240,7 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
       "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/vision-dam/digital/parks-platform/parks-global-assets/disney-world/resorts/grand-floridian/0821ZM_0873SD_JRoh_R2-16x9.jpg?2025-03-27T20:57:58+00:00",
     imageThumbhash: "4BgSJISFh4iPd3iLeXmYYERVBg==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/grand-floridian-resort-and-spa/",
+    store: "wdw",
   },
   {
     id: "80010387",
@@ -227,6 +252,7 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
       "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/disney-world/resorts/old-key-west-resort/old-key-west-resort-dock-16x9.jpg?1780400704342",
     imageThumbhash: "WfgJFIIDNqd6eYiVeaeAlWgGZg==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/old-key-west-resort/",
+    store: "wdw",
   },
   {
     id: "80010388",
@@ -235,9 +261,10 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
     tier: "deluxe",
     area: "Magic Kingdom Resort Area",
     image:
-      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/polynesian/polynesian-resort-00.jpg?1779767738104",
-    imageThumbhash: "zOYFNIifinalmWhjaJhhYApFlw==",
+      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/polynesian/polynesian-resort-00.jpg?1784655209981",
+    imageThumbhash: "zOYFNIifinalmWhjaJhhYApFpw==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/polynesian-resort/",
+    store: "wdw",
   },
   {
     id: "17797842",
@@ -246,9 +273,10 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
     tier: "villa",
     area: "Magic Kingdom Resort Area",
     image:
-      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/polynesian-villas-bungalows/polynesian-villas-bungalows-overview-01.jpg?1779767690937",
+      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/polynesian-villas-bungalows/polynesian-villas-bungalows-overview-01.jpg?1784654472741",
     imageThumbhash: "pBgOJISnZ4h+iXePh3d1d0CGBw==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/polynesian-villas-bungalows/",
+    store: "wdw",
   },
   {
     id: "80010403",
@@ -260,6 +288,7 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
       "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/pop-century/pop-century-resort-00.jpg?1780580973389",
     imageThumbhash: "UQYKVIJad3doiHhgeapncIg2CA==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/pop-century-resort/",
+    store: "wdw",
   },
   {
     id: "80010398",
@@ -271,6 +300,7 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
       "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/vision-dam/digital/parks-platform/parks-global-assets/disney-world/resorts/port-orleans/experience/port-orleans-resort-french-quarter-gallery00-8-16x9.jpg?2026-05-05T20:09:43+00:00",
     imageThumbhash: "lZUJdJJ4eYiPiHl0d3Z5cJgHpw==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/port-orleans-resort-french-quarter/",
+    store: "wdw",
   },
   {
     id: "80010397",
@@ -282,6 +312,7 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
       "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/vision-dam/digital/parks-platform/parks-global-assets/disney-world/resorts/port-orleans/experience/1204ZV_0127RW-16x9.jpg?2026-05-05T20:10:37+00:00",
     imageThumbhash: "IwgSHISJh4ePeIh3iHiagJgJiQ==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/port-orleans-resort-riverside/",
+    store: "wdw",
   },
   {
     id: "18995875",
@@ -290,9 +321,10 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
     tier: "villa",
     area: "EPCOT Resort Area",
     image:
-      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/disney-world/resorts/riviera-resort/overview/riviera-enterance-16x9.jpg?1779767463819",
-    imageThumbhash: "XOcFTI5feot4imgjNZh2cGUHVw==",
+      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/disney-world/resorts/riviera-resort/overview/riviera-enterance-16x9.jpg?1783421959589",
+    imageThumbhash: "XOcFTIxfeox3imgjNJd2cGUHVw==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/riviera-resort/",
+    store: "wdw",
   },
   {
     id: "80010383",
@@ -301,9 +333,10 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
     tier: "villa",
     area: "Disney Springs Resort Area",
     image:
-      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/disney-world/resorts/saratoga-springs-resort-and-spa/saratoga-springs-water-island-16x9.jpg?1779767866035",
-    imageThumbhash: "WtcNJISGiIh/d4iJd4V5c5BIBw==",
+      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/disney-world/resorts/saratoga-springs-resort-and-spa/saratoga-springs-water-island-16x9.jpg?1784548790730",
+    imageThumbhash: "WucNJISGiIh/d4iJd4V5c5A4Bw==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/saratoga-springs-resort-and-spa/",
+    store: "wdw",
   },
   {
     id: "80010394",
@@ -312,9 +345,10 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
     tier: "deluxe",
     area: "Magic Kingdom Resort Area",
     image:
-      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/wilderness-lodge/wilderness-lodge-resort-00.jpg?1780489474144",
+      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/wilderness-lodge/wilderness-lodge-resort-00.jpg?1784546901796",
     imageThumbhash: "kggKHIYJund7lohYdpy3cZBJCA==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/wilderness-lodge-resort/",
+    store: "wdw",
   },
   {
     id: "80010390",
@@ -323,9 +357,10 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
     tier: "deluxe",
     area: "EPCOT Resort Area",
     image:
-      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/yacht-club-resort/yacht-club-resort-00.jpg?1779768080648",
+      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/yacht-club-resort/yacht-club-resort-00.jpg?1783422361307",
     imageThumbhash: "0dYFNIYFJqtuiXlVm4uHhHBICA==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/yacht-club-resort/",
+    store: "wdw",
   },
   {
     id: "411930769",
@@ -337,6 +372,7 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
       "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/cabins-at-fort-wilderness/cabins-at-fort-wilderness-resort-00.jpg",
     imageThumbhash: "ixgGDII4TYpumZamep8JRqIDNQ==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/cabins-at-fort-wilderness-resort/",
+    store: "wdw",
   },
   {
     id: "80010392",
@@ -345,9 +381,10 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
     tier: "campground",
     area: "Magic Kingdom Resort Area",
     image:
-      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/campsites-at-fort-wilderness/campsites-at-fort-wilderness-resort-00.jpg?1779888485158",
+      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/campsites-at-fort-wilderness/campsites-at-fort-wilderness-resort-00.jpg?1784031778415",
     imageThumbhash: "StcJLIQpOKePlXZ8lpqYcIQMJQ==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/campsites-at-fort-wilderness-resort/",
+    store: "wdw",
   },
   {
     id: "16491822",
@@ -356,10 +393,11 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
     tier: "villa",
     area: "Magic Kingdom Resort Area",
     image:
-      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/disney-world/resorts/grand-floridian-resort-and-spa/grand-floridian-exterior-lake-16x9.jpg?1779984138193",
-    imageThumbhash: "7QcKHIRsmIhveHeVeGF5gIA3CA==",
+      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/disney-world/resorts/grand-floridian-resort-and-spa/grand-floridian-exterior-lake-16x9.jpg?1782810384532",
+    imageThumbhash: "7QcKHIRsmIhveHeVeGF5kIA3CA==",
     detailUrl:
       "https://disneyworld.disney.go.com/resorts/villas-at-grand-floridian-resort-and-spa/",
+    store: "wdw",
   },
   {
     id: "80069788",
@@ -371,6 +409,7 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
       "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/dolphin/dolphin-resort-00.jpg?1771929265571",
     imageThumbhash: "j9cBNIbfN2gYdZcUZ3NZcKMFRg==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/dolphin-hotel/",
+    store: "wdw",
   },
   {
     id: "80069789",
@@ -382,6 +421,7 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
       "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/places-to-stay/swan-resort/swan-resort-00.jpg?1776340761827",
     imageThumbhash: "V+cRHIR3eHd/d4h6d4h2ZFBoBQ==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/swan-hotel/",
+    store: "wdw",
   },
   {
     id: "19621562",
@@ -393,9 +433,53 @@ export const RESORT_CATALOG: Array<ResortCatalogEntry> = [
       "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/vision-dam/digital/parks-platform/parks-global-assets/disney-world/resorts/swan-and-dolphin/A176-Exterior-2-16x9.jpg?2022-02-18T19:49:36+00:00",
     imageThumbhash: "3MYFJIbwxYeKdoWIdIcnYJcCdw==",
     detailUrl: "https://disneyworld.disney.go.com/resorts/swan-reserve/",
+    store: "wdw",
   },
 ];
 
+/** Disneyland Resort hotels. Swept + priced like WDW, but not yet surfaced in
+ *  the WDW browse UI (join only, via `RESORT_BY_ID`). */
+export const DLR_RESORT_CATALOG: Array<ResortCatalogEntry> = [
+  {
+    id: "334222",
+    name: "Disney's Grand Californian Hotel & Spa",
+    slug: "grand-californian-hotel",
+    tier: "deluxe",
+    area: "Disneyland Resort",
+    image:
+      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/vision-dam/digital/parks-platform/parks-global-assets/disney-vacation-club/lift/grand-californian/0322Z0_884A8890AXZ-2-5x2.jpg?2023-03-11T00:07:36+00:00",
+    imageThumbhash: "1RgKE4I5mVife5VY/GzS7yg=",
+    detailUrl: "https://disneyland.disney.go.com/hotels/grand-californian-hotel/",
+    store: "dlr",
+  },
+  {
+    id: "334223",
+    name: "Disneyland Hotel",
+    slug: "disneyland-hotel",
+    tier: "deluxe",
+    area: "Disneyland Resort",
+    image:
+      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/dam/wdpro-assets/dlr/places-to-stay/disneyland-hotel/resort-overview/disneyland-hotel-06-full.jpg?1723533862220",
+    imageThumbhash: "l8UFU4h/hKekp4hoc1AbBNU=",
+    detailUrl: "https://disneyland.disney.go.com/hotels/disneyland-hotel/",
+    store: "dlr",
+  },
+  {
+    id: "334394",
+    name: "Pixar Place Hotel",
+    slug: "pixar-place-hotel",
+    tier: "deluxe",
+    area: "Disneyland Resort",
+    image:
+      "https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900/75/vision-dam/digital/parks-platform/parks-global-assets/disneyland/resorts/pixar-place-hotel/overview/00-Hero-Image-16x9.jpg?2024-06-19T17:11:59+00:00",
+    imageThumbhash: "2OcFLIZbV4RfdVlWaYSLoLMHOg==",
+    detailUrl: "https://disneyland.disney.go.com/hotels/pixar-place-hotel/",
+    store: "dlr",
+  },
+];
+
+/** Every resort across stores, keyed by facility id — the price/availability
+ *  join (WDW ids and DLR ids don't overlap). */
 export const RESORT_BY_ID: Map<string, ResortCatalogEntry> = new Map(
-  RESORT_CATALOG.map((r) => [r.id, r]),
+  [...RESORT_CATALOG, ...DLR_RESORT_CATALOG].map((r) => [r.id, r]),
 );

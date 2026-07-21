@@ -42,6 +42,7 @@ const scopeInput = {
 // The search dims that define which (dates, party) the alert watches — same
 // shape the stays search sends, so "Alert me" can pass its current query through.
 const queryDims = {
+  store: z.enum(["wdw", "dlr"]).default("wdw"),
   checkInDate: isoDate,
   checkOutDate: isoDate,
   adults: z.number().int().min(1).max(10).default(2),
@@ -158,6 +159,7 @@ export const stayAlertsRouter = {
         checkIn: input.checkInDate,
         checkOut: input.checkOutDate,
         partyKey,
+        store: input.store,
         adults: input.adults,
         children: input.children,
         childAges,
@@ -170,6 +172,7 @@ export const stayAlertsRouter = {
         target: [stayQuery.checkIn, stayQuery.checkOut, stayQuery.partyKey],
         set: {
           alertBacked: true,
+          store: input.store,
           adults: input.adults,
           children: input.children,
           childAges,

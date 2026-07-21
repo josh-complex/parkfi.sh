@@ -1039,6 +1039,12 @@ export const stayQuery = pgTable(
     checkOut: date("check_out").notNull(),
     partyKey: text("party_key").notNull(),
 
+    // Disney store (booking system) this tuple is swept against: 'wdw' or 'dlr'.
+    // Also encoded into `party_key`, so WDW and DLR never share a `stay_obs`
+    // generation; kept as a column too so the sweep rebuilds the right request
+    // body (and picks the right endpoint) from a row alone.
+    store: text("store").notNull().default("wdw"),
+
     // Raw dims to rebuild the resort-availability request body.
     adults: smallint("adults").notNull(),
     children: smallint("children").notNull(),

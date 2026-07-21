@@ -14,11 +14,17 @@ import { db } from "#/db/index.ts";
 import { stayObs, stayQuery } from "#/db/schema.ts";
 import { Source } from "#/server/parks/codes.ts";
 import { config } from "../parks/config.ts";
-import { RESORT_BY_ID, type ResortTier } from "./resort-catalog.generated.ts";
+import { RESORT_BY_ID, type ResortStore, type ResortTier } from "./resort-catalog.generated.ts";
 
 const RESORT_AVAILABILITY_URL =
   process.env.DISNEY_RESORTS_BASE ??
   "https://disneyworld.disney.go.com/wdpr-resorts-list-api/api/v1/resort-availability";
+
+/** Disneyland Resort's availability endpoint — a different host + path from WDW,
+ *  but the same cookieless public JSON contract (see `buildRequestBody`). */
+const DLR_RESORT_AVAILABILITY_URL =
+  process.env.DISNEY_DLR_RESORTS_BASE ??
+  "https://disneyland.disney.go.com/dlr-resort-list-api/api/v1/resorts/availability/";
 
 /** A stable anonymous personalization id (Disney requires the field present). */
 const PERSONALIZATION_ID = "6deb8ea6-0081-44ad-96ee-e8bfd0959bc6";
@@ -30,6 +36,8 @@ const PERSONALIZATION_ID = "6deb8ea6-0081-44ad-96ee-e8bfd0959bc6";
 const FLORIDA_POSTAL_CODE = "32830"; // Lake Buena Vista, FL (WDW)
 
 export interface ResortSearchParams {
+  /** Which Disney store to price against — WDW (default) or Disneyland Resort. */
+  store: ResortStore;
   checkInDate: string; // YYYY-MM-DD
   checkOutDate: string; // YYYY-MM-DD
   adults: number;
@@ -57,13 +65,16 @@ export interface ResortOffer {
   reasonCode: string | null;
 }
 
+/** One offer bucket in a resort node. The bucket's KEY varies by store/state
+ *  (WDW `annual`; DLR `rackOffer` when undiscounted, `specialOffer` when a
+ *  promo applies), but there's always exactly one, so we read it by value. */
+interface DisneyOffer {
+  displayPrice?: { basePrice?: { subtotal?: number } };
+}
+
 interface DisneyResortNode {
   displaySequence?: number;
-  offers?: {
-    annual?: {
-      displayPrice?: { basePrice?: { subtotal?: number } };
-    };
-  };
+  offers?: Record<string, DisneyOffer>;
   reasonsUnavailable?: Array<{ reasonCode?: string }>;
 }
 
@@ -71,19 +82,43 @@ interface DisneyResortResponse {
   resorts?: Record<string, DisneyResortNode>;
 }
 
-/** Build the resort-availability request body from search params. */
+/**
+ * Build the resort-availability request body from search params. WDW and DLR
+ * are separate booking systems with slightly different contracts, so the body
+ * branches on `params.store`:
+ *  - WDW takes a `marketingOfferId`/`resortGroup`/`personalizationId` and the
+ *    Florida-resident postal trick.
+ *  - DLR takes `disneyOwned` + an `infantCount` in the party mix and has no
+ *    resident-postal concept. (Its `accept-language` must match `region`, which
+ *    both stores keep at `us`/`en-us`; see `fetchResortAvailability`.)
+ */
 export function buildRequestBody(params: ResortSearchParams): Record<string, unknown> {
+  const partyMix = {
+    adultCount: params.adults,
+    childCount: params.children,
+    // Disney expects each non-adult age as an object ({age}); a bare number
+    // array 500s, and an absent list 400s when childCount > 0.
+    nonAdultAges: params.childAges.map((age) => ({ age })),
+  };
+
+  if (params.store === "dlr") {
+    return {
+      storeId: "dlr",
+      checkInDate: params.checkInDate,
+      checkOutDate: params.checkOutDate,
+      partyMix: { ...partyMix, infantCount: 0 },
+      region: "us",
+      disneyOwned: true,
+      affiliations: ["STD_GST"],
+      accessible: params.accessible,
+    };
+  }
+
   return {
     storeId: "wdw",
     checkInDate: params.checkInDate,
     checkOutDate: params.checkOutDate,
-    partyMix: {
-      adultCount: params.adults,
-      childCount: params.children,
-      // Disney expects each non-adult age as an object ({age}); a bare number
-      // array 500s, and an absent list 400s when childCount > 0.
-      nonAdultAges: params.childAges.map((age) => ({ age })),
-    },
+    partyMix,
     accessible: params.accessible,
     region: "us",
     resortGroup: "CORE",
@@ -103,10 +138,13 @@ export async function fetchResortAvailability(
   params: ResortSearchParams,
   signal: AbortSignal,
 ): Promise<Array<ResortOffer>> {
-  const res = await fetch(RESORT_AVAILABILITY_URL, {
+  const url = params.store === "dlr" ? DLR_RESORT_AVAILABILITY_URL : RESORT_AVAILABILITY_URL;
+  const res = await fetch(url, {
     method: "POST",
     signal,
     headers: {
+      // Must match the request `region` (both stores use `us`) or DLR 406s with
+      // "Invalid Accept-language …".
       "accept-language": "en-us",
       "content-type": "application/json",
       accept: "application/json",
@@ -123,8 +161,11 @@ export async function fetchResortAvailability(
   const offers: Array<ResortOffer> = [];
   for (const [id, node] of Object.entries(resorts)) {
     const entry = RESORT_BY_ID.get(id);
-    if (!entry) continue; // Swan/Dolphin & any feed drift — no catalog row.
-    const subtotal = node.offers?.annual?.displayPrice?.basePrice?.subtotal;
+    // Skip rows with no catalog entry (Swan/Dolphin, feed drift) or that belong
+    // to a different store (defensive — WDW and DLR ids don't overlap).
+    if (!entry || entry.store !== params.store) continue;
+    // The offer bucket key varies by store/state, but there's exactly one.
+    const subtotal = Object.values(node.offers ?? {})[0]?.displayPrice?.basePrice?.subtotal;
     const available = subtotal != null;
     offers.push({
       id,
@@ -170,7 +211,9 @@ export function buildPartyKey(params: ResortSearchParams): string {
   const acc = params.accessible ? 1 : 0;
   const fl = params.floridaResident ? 1 : 0;
   const zip = params.floridaResident && params.postalCode ? `|zip${params.postalCode}` : "";
-  return `a${params.adults}c${params.children}:${ages}|acc${acc}|fl${fl}${zip}`;
+  // Store leads the key so WDW and DLR sweeps never share a `stay_obs`
+  // generation (the read path takes the single latest obs per party key).
+  return `${params.store}|a${params.adults}c${params.children}:${ages}|acc${acc}|fl${fl}${zip}`;
 }
 
 /** Build a `ResortOffer` from a catalog id + the observed price/availability. */
@@ -282,6 +325,7 @@ export async function upsertStayQuery(
       checkIn: params.checkInDate,
       checkOut: params.checkOutDate,
       partyKey,
+      store: params.store,
       adults: params.adults,
       children: params.children,
       childAges,
@@ -294,6 +338,7 @@ export async function upsertStayQuery(
       target: [stayQuery.checkIn, stayQuery.checkOut, stayQuery.partyKey],
       set: {
         lastRequestedAt: now,
+        store: params.store,
         adults: params.adults,
         children: params.children,
         childAges,
@@ -350,6 +395,7 @@ export async function readStayPriceHistory(
 /** Rebuild the search params from a stored `stay_query` row (for the sweep). */
 export function stayQueryToParams(q: typeof stayQuery.$inferSelect): ResortSearchParams {
   return {
+    store: q.store as ResortStore,
     checkInDate: q.checkIn,
     checkOutDate: q.checkOut,
     adults: q.adults,
