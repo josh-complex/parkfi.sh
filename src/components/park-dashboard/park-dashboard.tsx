@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { showClock } from "#/lib/showtimes.ts";
 
+import { HeroCrossfade } from "#/components/hero-media.tsx";
 import { MapSlot } from "#/components/park-map/map-stage.tsx";
 import { NotificationPrompt } from "#/components/notifications/notification-prompt.tsx";
 import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
@@ -40,40 +41,6 @@ const ParkAnalytics = lazyWithReload(
   () => import("./park-analytics.tsx").then((m) => ({ default: m.ParkAnalytics })),
   "park-analytics",
 );
-
-/**
- * Crossfading extra hero stills layered over the base hero image (plan item
- * 1.9). The base `Image` (SSR'd, thumbhash placeholder) stays slide 0; the
- * stored carousel's other stills (video slides contribute their poster — no
- * ambient mp4 playback in v1) fade in above it on a slow rotation. Renders
- * nothing when there are no extra slides, and stays on the base image under
- * prefers-reduced-motion.
- */
-function HeroCrossfade({ slides }: { slides: Array<{ url: string; alt: string | null }> }) {
-  const [active, setActive] = React.useState(0); // 0 = base image, 1..n = slides
-  React.useEffect(() => {
-    if (slides.length === 0) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const t = setInterval(() => setActive((i) => (i + 1) % (slides.length + 1)), 8000);
-    return () => clearInterval(t);
-  }, [slides.length]);
-  if (slides.length === 0) return null;
-  return (
-    <>
-      {slides.map((s, i) => (
-        <img
-          key={s.url}
-          src={disneyResizeUrl(s.url, 1600)}
-          alt={s.alt ?? ""}
-          loading="lazy"
-          aria-hidden={active !== i + 1}
-          className="absolute inset-0 size-full object-cover transition-opacity duration-1000"
-          style={{ opacity: active === i + 1 ? 1 : 0 }}
-        />
-      ))}
-    </>
-  );
-}
 
 /**
  * "Early Entry rides today" (plan item 1.4): rides whose per-entity hours carry

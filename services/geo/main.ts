@@ -52,11 +52,7 @@ import {
 import { config } from "#/server/parks/config.ts";
 import { fillMissingThumbhashes } from "#/server/parks/thumbhash.ts";
 import { browserlessConfigured } from "#/server/parks/sources/browserless.ts";
-import {
-  fetchEntityDescription,
-  fetchParkDetail,
-  toNum,
-} from "#/server/parks/sources/disney-finder.ts";
+import { fetchEntityDetail, fetchParkDetail, toNum } from "#/server/parks/sources/disney-finder.ts";
 import {
   fetchThemeParkBoundaries,
   normalizeParkName,
@@ -208,9 +204,10 @@ async function upsertAttractionMeta(
           land: sql`excluded.land`,
           heightRequirement: sql`excluded.height_requirement`,
           tags: sql`excluded.tags`,
-          // Never null out copy a re-crawl didn't carry (stale beats none) —
-          // a failed per-attraction description fetch leaves the field null.
+          // Never null out copy/media a re-crawl didn't carry (stale beats
+          // none) — a failed per-attraction detail fetch leaves both null.
           description: sql`coalesce(excluded.description, attraction_meta.description)`,
+          heroMedia: sql`coalesce(excluded.hero_media, attraction_meta.hero_media)`,
           source: sql`excluded.source`,
           updatedAt: sql`now()`,
         },
@@ -602,10 +599,11 @@ async function enrichDisneyPark(
     });
   }
 
-  // Per-attraction official copy (plan item 2.3): one `details-entity-simple`
-  // fetch per enriched attraction (~40–60/park, monthly). Small concurrent
-  // window like the dining schedules pass; a failed fetch just leaves the row's
-  // description null (the upsert coalesces, so previously stored copy survives).
+  // Per-attraction official copy + media collection (plan items 2.3 + 1.9
+  // ride-level): one `details-entity-simple` fetch per enriched attraction
+  // (~40–60/park, monthly). Small concurrent window like the dining schedules
+  // pass; a failed fetch just leaves the row's description/hero_media null
+  // (the upsert coalesces, so previously stored values survive).
   let descOk = 0;
   let descErr = 0;
   const descWindow = 4;
@@ -614,15 +612,14 @@ async function enrichDisneyPark(
     await Promise.all(
       descTargets.slice(i, i + descWindow).map(async (row) => {
         try {
-          const description = await fetchEntityDescription(
+          const detail = await fetchEntityDetail(
             slugByAttractionId.get(row.attractionId)!,
             today,
             AbortSignal.timeout(config.fetchTimeoutMs),
           );
-          if (description) {
-            row.description = description;
-            descOk++;
-          }
+          if (detail.description) row.description = detail.description;
+          if (detail.heroMedia) row.heroMedia = detail.heroMedia;
+          if (detail.description || detail.heroMedia) descOk++;
         } catch {
           descErr++;
         }

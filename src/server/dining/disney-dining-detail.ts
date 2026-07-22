@@ -1,5 +1,5 @@
-import type { MenuPriceTier } from "../../db/schema.ts";
-import { stripInlineHtml } from "../parks/codes.ts";
+import type { MenuPriceTier, ParkHeroSlide } from "../../db/schema.ts";
+import { disneyEntityHeroSlides, stripInlineHtml } from "../parks/codes.ts";
 import { config } from "../parks/config.ts";
 import {
   DisneyDineMenuSchema,
@@ -73,11 +73,14 @@ export interface DiningScheduleRow {
  * item 2.3 — parse widening, zero extra requests). `description` prefers the
  * richer `aagData.description` marketing copy over the `structuredData`
  * one-liner; `apDiscountPct` is the Annual Passholder percentage from the
- * discounts modal ("10%" → 10), null when none is published.
+ * discounts modal ("10%" → 10), null when none is published; `heroMedia` is
+ * the normalized `mediaEngine` collection (plan item 1.9 follow-up —
+ * cinemagraph/video first, then stills).
  */
 export interface DiningDetailEnrichment {
   description: string | null;
   apDiscountPct: number | null;
+  heroMedia: Array<ParkHeroSlide> | null;
 }
 
 export interface DiningMenuItemRow {
@@ -200,6 +203,7 @@ function enrichmentFrom(detail: DisneyDiningDetail): DiningDetailEnrichment {
   return {
     description: raw ? stripInlineHtml(raw) || null : null,
     apDiscountPct: m ? Math.round(Number.parseFloat(m[1])) : null,
+    heroMedia: disneyEntityHeroSlides(detail.mediaEngine?.data),
   };
 }
 

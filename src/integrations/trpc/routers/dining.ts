@@ -7,7 +7,7 @@ import { buildDiningDeepLink } from "#/server/notifications/diningFormat.ts";
 import { config } from "#/server/parks/config.ts";
 import { publicProcedure } from "../init.ts";
 
-import type { MenuPriceTier } from "#/db/schema.ts";
+import type { MenuPriceTier, ParkHeroSlide } from "#/db/schema.ts";
 import type { TRPCRouterRecord } from "@trpc/server";
 
 export const diningRouter = {
@@ -118,6 +118,7 @@ export const diningRouter = {
       quick_service: boolean;
       description: string | null;
       ap_discount_pct: number | null;
+      hero_media: Array<ParkHeroSlide> | null;
       annual_pass_discount: boolean;
       disney_visa_discount: boolean;
       trip_advisor_award: boolean;
@@ -147,7 +148,7 @@ export const diningRouter = {
              r.image_url, r.image_thumbhash, r.detail_url, r.url_friendly_id, r.entity_type,
              r.character_dining, r.fine_dining, r.dining_package,
              r.walkup_wait_list, r.mobile_order, r.quick_service,
-             r.description, r.ap_discount_pct,
+             r.description, r.ap_discount_pct, r.hero_media,
              r.annual_pass_discount, r.disney_visa_discount, r.trip_advisor_award,
              r.dining_plan_qs, r.dining_plan_ts,
              r.land, r.map_pin, r.latitude, r.longitude, r.maximum_party_size,
@@ -183,6 +184,9 @@ export const diningRouter = {
       parkResort: r.park_resort,
       imageUrl: suppressed.has("image") ? null : r.image_url,
       imageThumbhash: suppressed.has("image") ? null : r.image_thumbhash,
+      // Full media collection (plan item 1.9 follow-up) — ambient loop +
+      // gallery stills for the venue hero; cinemagraph/video slides first.
+      heroMedia: suppressed.has("image") ? [] : (r.hero_media ?? []),
       detailUrl: r.detail_url,
       urlFriendlyId: r.url_friendly_id,
       dinnerShow: r.entity_type === "dinner-show",

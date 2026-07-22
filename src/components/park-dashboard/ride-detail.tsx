@@ -5,6 +5,7 @@ import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeftIcon, ExternalLinkIcon } from "lucide-react";
 
+import { AmbientHeroVideo, HeroCrossfade } from "#/components/hero-media.tsx";
 import { getLastMapView } from "#/components/park-map/map-stage.tsx";
 import { WalkThereButton } from "#/components/park-map/walk-there-button.tsx";
 import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
@@ -190,7 +191,28 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
   const operatorSlug = ride.park.operatorSlug;
   const ll = paidLineInfo(ride, operatorSlug);
   const llPrice = formatPriceCents(ll.priceCents, ride.lightningLane.currency);
-  const heroImage = ride.meta?.imageHeroUrl ?? ride.meta?.imageThumbUrl ?? null;
+  // Base still: the marker hero, falling back to the media collection's first
+  // image slide (some rides — e.g. TRON — publish only videos + gallery).
+  const firstSlideImage = ride.meta?.heroMedia?.find((s) => s.kind === "image")?.url ?? null;
+  const heroImage = ride.meta?.imageHeroUrl ?? ride.meta?.imageThumbUrl ?? firstSlideImage;
+  // Ambient loop (plan item 1.9, ride-level): slide 0 is the best ambient
+  // asset — the normalizer orders cinemagraph → video → stills.
+  const heroVideo = ride.meta?.heroMedia?.find((s) => s.kind === "video") ?? null;
+  // No video: crossfade the gallery stills instead (de-duped vs the base
+  // still, compared sans query — CDN timestamps churn). Plain computation —
+  // this sits below the loading/not-found early returns, so no hooks here.
+  const heroSlides: Array<{ url: string; alt: string | null }> = [];
+  if (!heroVideo) {
+    const baseKey = heroImage?.split("?")[0];
+    const seen = new Set(baseKey ? [baseKey] : []);
+    for (const s of ride.meta?.heroMedia ?? []) {
+      if (s.kind !== "image") continue;
+      const key = s.url.split("?")[0];
+      if (seen.has(key)) continue;
+      seen.add(key);
+      heroSlides.push({ url: s.url, alt: s.alt });
+    }
+  }
   const subtitleParts = [ride.park.name, ride.meta?.land].filter(Boolean);
   const status = ride.status ?? "UNKNOWN";
 
@@ -223,18 +245,29 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
       </div>
 
       <header className="flex flex-col gap-4">
-        {heroImage && (
+        {(heroImage || heroVideo) && (
           <div className="relative h-56 w-full overflow-hidden rounded-2xl bg-muted sm:h-72">
-            <Image
-              src={disneyResizeUrl(heroImage, HERO_IMAGE.resizeWidth)}
-              alt={ride.meta?.imageAlt ?? ride.name}
-              className="size-full object-cover"
-              loading="eager"
-              fetchPriority="high"
-              sizes={HERO_IMAGE.sizes}
-              quality={HERO_IMAGE.quality}
-              placeholder={ride.meta?.imageThumbhash}
-            />
+            {heroImage && (
+              <Image
+                src={disneyResizeUrl(heroImage, HERO_IMAGE.resizeWidth)}
+                alt={ride.meta?.imageAlt ?? ride.name}
+                className="size-full object-cover"
+                loading="eager"
+                fetchPriority="high"
+                sizes={HERO_IMAGE.sizes}
+                quality={HERO_IMAGE.quality}
+                placeholder={ride.meta?.imageThumbhash}
+              />
+            )}
+            {/* Ambient hero loop (plan item 1.9, ride-level): fades in over
+                the still once it can play; never mounts under
+                prefers-reduced-motion. Video-less rides crossfade their
+                gallery stills instead. */}
+            {heroVideo ? (
+              <AmbientHeroVideo src={heroVideo.url} poster={heroVideo.poster ?? null} />
+            ) : (
+              <HeroCrossfade slides={heroSlides} />
+            )}
           </div>
         )}
         <div className="flex flex-col gap-2">

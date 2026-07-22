@@ -1,4 +1,5 @@
-import { stripInlineHtml } from "../codes.ts";
+import type { ParkHeroSlide } from "../../../db/schema.ts";
+import { disneyEntityHeroSlides, stripInlineHtml } from "../codes.ts";
 import { config } from "../config.ts";
 import {
   DisneyDiningDetailSchema,
@@ -46,20 +47,31 @@ export async function fetchParkDetail(
   return DisneyParkDetailSchema.parse(await getJson(url, signal));
 }
 
+export interface DisneyEntityDetail {
+  /** Official marketing copy, HTML-stripped; null when absent. */
+  description: string | null;
+  /** Normalized `mediaEngine` slides (stills + video/cinemagraph loops). */
+  heroMedia: Array<ParkHeroSlide> | null;
+}
+
 /**
- * Official description copy for any finder entity (plan item 2.3) — the same
- * `details-entity-simple` endpoint the park/dining details come from, keyed by
- * the entity's `urlFriendlyId`. Prefers the richer `aagData.description`
- * marketing copy over the `structuredData` one-liner; HTML-stripped. Used by
- * the monthly geo cron's per-attraction pass (~40–60 requests/park).
+ * Official copy + media collection for any finder entity (plan items 2.3 +
+ * 1.9 ride-level) — the same `details-entity-simple` endpoint the park/dining
+ * details come from, keyed by the entity's `urlFriendlyId`. Description
+ * prefers the richer `aagData.description` marketing copy over the
+ * `structuredData` one-liner. Used by the monthly geo cron's per-attraction
+ * pass (~40–60 requests/park).
  */
-export async function fetchEntityDescription(
+export async function fetchEntityDetail(
   finderSlug: string,
   date: string,
   signal: AbortSignal,
-): Promise<string | null> {
+): Promise<DisneyEntityDetail> {
   const url = `${config.disneyFinderBase}/details-entity-simple/wdw/${finderSlug}/${date}/`;
   const detail = DisneyDiningDetailSchema.parse(await getJson(url, signal));
   const raw = detail.aagData?.description?.trim() || detail.structuredData?.description?.trim();
-  return raw ? stripInlineHtml(raw) || null : null;
+  return {
+    description: raw ? stripInlineHtml(raw) || null : null,
+    heroMedia: disneyEntityHeroSlides(detail.mediaEngine?.data),
+  };
 }

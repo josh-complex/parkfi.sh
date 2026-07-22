@@ -358,7 +358,7 @@ export function MapToggleChips() {
   const toggleLayer = (key: keyof MapLayers) =>
     setFilter((f) => ({ ...f, layers: { ...f.layers, [key]: !f.layers[key] } }));
   return (
-    <div className="pointer-events-auto -mx-3 flex w-[calc(100%+1.5rem)] touch-pan-x gap-1.5 overflow-x-auto overscroll-contain px-3 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="pointer-events-auto -mx-3 flex w-[calc(100%+1.5rem)] touch-pan-x gap-1.5 overflow-x-auto overscroll-contain px-4 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {MAP_TOGGLES.map((t) => {
         const active =
           t.kind === "category"

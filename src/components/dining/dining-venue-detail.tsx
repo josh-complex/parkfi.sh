@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { ArrowLeftIcon, ExternalLinkIcon, MapPinIcon } from "lucide-react";
 
+import { AmbientHeroVideo, HeroCrossfade } from "#/components/hero-media.tsx";
 import { DiningAlertButton } from "#/components/dining/dining-alert-button.tsx";
 import { taxonomyLabel } from "#/components/dining/dining-filters.ts";
 import { diningTrail } from "#/components/dining/dining-search-params.ts";
@@ -372,6 +373,24 @@ export function DiningVenueDetail({
 
   const schedules = hoursQ.data?.find((h) => h.facilityId === facilityId)?.schedules ?? [];
 
+  // Venue hero media (plan item 1.9 follow-up): slide 0 is the best ambient
+  // asset (the normalizer orders cinemagraph → video → stills). Without a
+  // video, the gallery stills crossfade over the base image (de-duped sans
+  // query — CDN timestamps churn).
+  const venueHeroVideo = venue?.heroMedia.find((s) => s.kind === "video") ?? null;
+  const venueHeroSlides: Array<{ url: string; alt: string | null }> = [];
+  if (venue && !venueHeroVideo) {
+    const baseKey = venue.imageUrl?.split("?")[0];
+    const seen = new Set(baseKey ? [baseKey] : []);
+    for (const s of venue.heroMedia) {
+      if (s.kind !== "image") continue;
+      const key = s.url.split("?")[0];
+      if (seen.has(key)) continue;
+      seen.add(key);
+      venueHeroSlides.push({ url: s.url, alt: s.alt });
+    }
+  }
+
   // Deduped, prettified taxonomy chips from the finder's interest/franchise tags.
   const taxonomy = venue
     ? [...new Set([...venue.diningInterests, ...venue.disneyFavorites])]
@@ -463,21 +482,30 @@ export function DiningVenueDetail({
         </div>
       ) : (
         <header className="flex flex-col gap-4">
-          {venue.imageUrl && (
+          {(venue.imageUrl || venueHeroVideo) && (
             <div className="relative h-40 w-full overflow-hidden rounded-2xl bg-muted sm:h-56 lg:h-64">
-              <Image
-                src={disneyResizeUrl(venue.imageUrl, 1600)}
-                alt={venue.name}
-                className="size-full object-cover"
-                loading="eager"
-                fetchPriority="high"
-                sizes="100vw"
-                quality={80}
-                // Box is h-40/sm:h-56/lg:h-64 at full width — worst case ~2.4:1
-                // on a small phone. Same banner crop as the park-dashboard hero.
-                aspect={12 / 5}
-                placeholder={venue.imageThumbhash}
-              />
+              {venue.imageUrl && (
+                <Image
+                  src={disneyResizeUrl(venue.imageUrl, 1600)}
+                  alt={venue.name}
+                  className="size-full object-cover"
+                  loading="eager"
+                  fetchPriority="high"
+                  sizes="100vw"
+                  quality={80}
+                  // Box is h-40/sm:h-56/lg:h-64 at full width — worst case ~2.4:1
+                  // on a small phone. Same banner crop as the park-dashboard hero.
+                  aspect={12 / 5}
+                  placeholder={venue.imageThumbhash}
+                />
+              )}
+              {/* Ambient loop / stills crossfade from the venue's mediaEngine
+                  collection (plan item 1.9 follow-up). */}
+              {venueHeroVideo ? (
+                <AmbientHeroVideo src={venueHeroVideo.url} poster={venueHeroVideo.poster ?? null} />
+              ) : (
+                <HeroCrossfade slides={venueHeroSlides} />
+              )}
             </div>
           )}
           <div className="flex flex-col gap-2">

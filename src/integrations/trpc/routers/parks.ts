@@ -821,6 +821,7 @@ export const parksRouter = {
         meta_height_requirement: string | null;
         meta_tags: Array<string> | null;
         meta_description: string | null;
+        meta_hero_media: Array<ParkHeroSlide> | null;
         coaster_track_length_m: number | null;
         coaster_top_speed_kmh: number | null;
         coaster_drop_height_m: number | null;
@@ -892,6 +893,7 @@ export const parksRouter = {
                m.height_requirement AS meta_height_requirement,
                m.tags AS meta_tags,
                m.description AS meta_description,
+               m.hero_media AS meta_hero_media,
                cs.track_length_m AS coaster_track_length_m,
                cs.top_speed_kmh AS coaster_top_speed_kmh,
                cs.drop_height_m AS coaster_drop_height_m,
@@ -989,6 +991,9 @@ export const parksRouter = {
                 tags: r.meta_tags ?? [],
                 // Official marketing copy (plan item 2.3) — the About section.
                 description: suppressed.has("description") ? null : r.meta_description,
+                // Full media collection (plan item 1.9, ride-level) — stills +
+                // ambient video/cinemagraph loops for the hero.
+                heroMedia: hideImage ? [] : (r.meta_hero_media ?? []),
               }
             : null,
         // Published coaster facts (from coaster_stats). Present only when the

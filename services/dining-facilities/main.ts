@@ -134,9 +134,10 @@ async function enrichDetails(rows: Array<DiningCatalogRow>, now: Date): Promise<
     if (i + window < withSlug.length) await new Promise((res) => setTimeout(res, 200));
   }
 
-  // Enrichment: batched per-venue update. Descriptions are never nulled out on
-  // an absent field (stale copy beats no copy); the AP percentage IS nulled when
-  // the modal stops publishing one (the discount genuinely ended).
+  // Enrichment: batched per-venue update. Descriptions and hero media are
+  // never nulled out on an absent field (stale beats none); the AP percentage
+  // IS nulled when the modal stops publishing one (the discount genuinely
+  // ended).
   const enriched = [...enrichmentByFacility.entries()];
   for (let i = 0; i < enriched.length; i += 100) {
     await Promise.all(
@@ -145,6 +146,7 @@ async function enrichDetails(rows: Array<DiningCatalogRow>, now: Date): Promise<
           .update(restaurantDim)
           .set({
             ...(e.description != null ? { description: e.description } : {}),
+            ...(e.heroMedia != null ? { heroMedia: e.heroMedia } : {}),
             apDiscountPct: e.apDiscountPct,
             updatedAt: now,
           })

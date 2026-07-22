@@ -515,6 +515,36 @@ export const DisneyDiningDetailSchema = z
       .passthrough()
       .nullable()
       .optional(),
+    // Entity-level media collection (plan item 1.9, ride-level): gallery
+    // stills (`source` is a single 1600x900 URL) plus `video` / `cinemagraph`
+    // slides (`source` is a rendition array, webm+mp4; `thumbnail` is a 43px
+    // square on the resizable mwImage segment). Present on attraction AND
+    // dining detail payloads — currently consumed for attractions.
+    mediaEngine: z
+      .object({
+        data: z
+          .array(
+            z
+              .object({
+                type: z.string().nullable().optional(),
+                thumbnail: z.string().nullable().optional(),
+                mobile: z.string().nullable().optional(),
+                source: z
+                  .union([z.string(), z.array(z.string())])
+                  .nullable()
+                  .optional(),
+                title: z.string().nullable().optional(),
+                alt: z.string().nullable().optional(),
+              })
+              .partial()
+              .passthrough(),
+          )
+          .default([]),
+      })
+      .partial()
+      .passthrough()
+      .nullable()
+      .optional(),
   })
   .passthrough();
 export type DisneyDiningDetail = z.infer<typeof DisneyDiningDetailSchema>;

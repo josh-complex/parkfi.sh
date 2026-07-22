@@ -248,6 +248,12 @@ export const attractionMeta = pgTable("attraction_meta", {
   // Official marketing copy — UOR: places-feed long/short description; WDW:
   // per-attraction finder detail fetch (monthly geo cron), HTML-stripped.
   description: text("description"),
+  // Full hero media collection from the same per-attraction detail payload
+  // (plan item 1.9, ride-level): gallery stills + video/cinemagraph ambient
+  // loops. Same normalized slide shape as `parks.hero_media`; WDW-only (the
+  // UOR places feed has no per-ride media collection). Null until the geo
+  // cron's description pass has fetched the venue.
+  heroMedia: jsonb("hero_media").$type<Array<ParkHeroSlide>>(),
   source: smallint("source")
     .notNull()
     .references(() => refSource.id),
@@ -686,6 +692,11 @@ export const restaurantDim = pgTable(
     // HTML-stripped. Refreshed by the respective catalog crons; never nulled out
     // on a failed detail fetch (stale copy beats no copy).
     description: text("description"),
+    // Full hero media collection from the same WDW detail payload (plan item
+    // 1.9 follow-up): stills + video/cinemagraph ambient loops, normalized to
+    // the shared slide shape (cinemagraph/video first). WDW-only; coalesce-
+    // preserved like `description`.
+    heroMedia: jsonb("hero_media").$type<Array<ParkHeroSlide>>(),
     // Finder list `quickServiceAvailable` — the operator's own QS flag, cleaner
     // than inferring from the `tableService` facets (DISNEY_DIRECT only).
     quickService: boolean("quick_service").notNull().default(false),

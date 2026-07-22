@@ -359,6 +359,53 @@ export function disneyParkHeroSlides(
   return out.length > 0 ? out : null;
 }
 
+interface DisneyEntitySlide {
+  type?: string | null;
+  thumbnail?: string | null;
+  mobile?: string | null;
+  source?: string | Array<string> | null;
+  alt?: string | null;
+}
+
+/**
+ * Normalize a per-entity `mediaEngine.data` collection (ride/venue detail
+ * payloads — plan item 1.9, ride-level) into the shared `ParkHeroSlide` shape.
+ * Image slides carry `source` as one 1600x900 URL (fallback `mobile`);
+ * `video` / `cinemagraph` slides carry a rendition array — prefer the mp4
+ * (Safari) and upsize the 43px square `thumbnail` into the poster via the
+ * mwImage resize segment. Stored order is normalized to cinemagraph → video →
+ * stills (stable within each kind) so slide 0 is always the best ambient
+ * asset regardless of feed order; de-duped sans query. Null when nothing
+ * usable.
+ */
+export function disneyEntityHeroSlides(
+  slides?: Array<DisneyEntitySlide> | null,
+): Array<ParkHeroSlide> | null {
+  const rank = (s: DisneyEntitySlide): number =>
+    s.type === "cinemagraph" ? 0 : s.type === "video" ? 1 : 2;
+  const ordered = [...(slides ?? [])].sort((a, b) => rank(a) - rank(b));
+  const out: Array<ParkHeroSlide> = [];
+  const seen = new Set<string>();
+  for (const s of ordered) {
+    const sources = Array.isArray(s.source) ? s.source : s.source ? [s.source] : [];
+    const isVideo = s.type === "video" || s.type === "cinemagraph";
+    const url = isVideo
+      ? (sources.find((u) => /\.mp4(\?|$)/.test(u)) ?? sources[0] ?? null)
+      : (sources[0] ?? s.mobile ?? null);
+    if (!url) continue;
+    const key = url.split("?")[0];
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      kind: isVideo ? "video" : "image",
+      url,
+      poster: isVideo && s.thumbnail ? (disneyHeroUrl(s.thumbnail) ?? s.thumbnail) : null,
+      alt: s.alt ?? null,
+    });
+  }
+  return out.length > 0 ? out : null;
+}
+
 export interface DisneyFacetInfo {
   land: string | null;
   heightRequirement: string | null;
