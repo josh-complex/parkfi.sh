@@ -1,5 +1,6 @@
 import {
   AttractionStatus,
+  boardingAllocationFromThemeparks,
   QueueType,
   queueStateFromThemeparks,
   statusFromThemeparks,
@@ -18,6 +19,10 @@ export interface NormalizedQueue {
   returnStart: Date | null;
   returnEnd: Date | null;
   boardingGroup: number | null;
+  // BOARDING_GROUP tail (plan item 1.5): end of the range being called + the
+  // day's allocation state (QueueState vocabulary).
+  boardingGroupEnd: number | null;
+  boardingAllocation: QueueStateCode | null;
 }
 
 /** One of the day's performances for a SHOW entity (ISO times, park-local offset). */
@@ -36,6 +41,12 @@ export interface NormalizedEntity {
   queues: Array<NormalizedQueue>;
   /** Today's performances (SHOW entities); empty for non-shows. */
   showtimes: Array<NormalizedShowtime>;
+  /** Today's per-entity operating windows (plan item 1.4); empty when unposted. */
+  hoursToday: Array<NormalizedShowtime>;
+  /** Live walk-up waits per party size (plan item 1.2); empty for non-dining. */
+  diningWaits: Array<{ partySize: number; waitMin: number | null }>;
+  /** Operator's own id ("16660079;entityType=restaurant") — the walk-up join key. */
+  operatorExternalId: string | null;
 }
 
 function toDate(s?: string | null): Date | null {
@@ -100,6 +111,8 @@ function normalizeEntity(e: LiveEntity, tickNow: Date): NormalizedEntity {
       blankQueue(QueueType.BOARDING_GROUP, {
         state: queueStateFromThemeparks(q.BOARDING_GROUP.state),
         boardingGroup: q.BOARDING_GROUP.currentGroupStart ?? null,
+        boardingGroupEnd: q.BOARDING_GROUP.currentGroupEnd ?? null,
+        boardingAllocation: boardingAllocationFromThemeparks(q.BOARDING_GROUP.allocationStatus),
       }),
     );
   }
@@ -116,6 +129,20 @@ function normalizeEntity(e: LiveEntity, tickNow: Date): NormalizedEntity {
     });
   }
 
+  // Per-entity hours today (plan item 1.4): same shape/rules as showtimes.
+  const hoursToday: Array<NormalizedShowtime> = [];
+  for (const h of e.operatingHours ?? []) {
+    if (!h.startTime || toDate(h.startTime) == null) continue;
+    hoursToday.push({ type: h.type ?? null, start: h.startTime, end: h.endTime ?? null });
+  }
+
+  // Walk-up dining waits (plan item 1.2): keep well-formed party-size entries.
+  const diningWaits: Array<{ partySize: number; waitMin: number | null }> = [];
+  for (const d of e.diningAvailability ?? []) {
+    if (d.partySize == null) continue;
+    diningWaits.push({ partySize: d.partySize, waitMin: d.waitTime ?? null });
+  }
+
   return {
     externalId: e.id,
     name: e.name,
@@ -124,6 +151,9 @@ function normalizeEntity(e: LiveEntity, tickNow: Date): NormalizedEntity {
     status: e.status ? statusFromThemeparks(e.status) : AttractionStatus.UNKNOWN,
     queues,
     showtimes,
+    hoursToday,
+    diningWaits,
+    operatorExternalId: e.externalId ?? null,
   };
 }
 
@@ -140,5 +170,7 @@ function blankQueue(
     returnStart: over.returnStart ?? null,
     returnEnd: over.returnEnd ?? null,
     boardingGroup: over.boardingGroup ?? null,
+    boardingGroupEnd: over.boardingGroupEnd ?? null,
+    boardingAllocation: over.boardingAllocation ?? null,
   };
 }

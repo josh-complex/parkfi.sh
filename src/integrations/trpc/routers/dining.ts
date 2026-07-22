@@ -7,6 +7,7 @@ import { buildDiningDeepLink } from "#/server/notifications/diningFormat.ts";
 import { config } from "#/server/parks/config.ts";
 import { publicProcedure } from "../init.ts";
 
+import type { MenuPriceTier } from "#/db/schema.ts";
 import type { TRPCRouterRecord } from "@trpc/server";
 
 export const diningRouter = {
@@ -36,6 +37,7 @@ export const diningRouter = {
       location_type: string | null;
       priority: boolean;
       bookable: boolean;
+      walkup_wait_min: number | null;
     }>(sql`
       SELECT r.facility_id, r.name, r.cuisine, r.experience_type, r.price_range, r.park_resort,
              r.image_url, r.image_thumbhash, r.detail_url, r.source,
@@ -45,10 +47,13 @@ export const diningRouter = {
              (m.facility_id IS NOT NULL AND m.item_count > 0) AS has_menu,
              r.entity_type,
              dl.location_type,
-             r.priority, r.bookable
+             r.priority, r.bookable,
+             CASE WHEN w.observed_at >= now() - INTERVAL '2 hours' THEN w.wait_min END
+               AS walkup_wait_min
       FROM restaurant_dim r
       LEFT JOIN dining_menu_snapshot m ON m.facility_id = r.facility_id
       LEFT JOIN dining_location dl ON split_part(dl.id, ';', 1) = r.park_resort_id
+      LEFT JOIN dining_walkup_live w ON w.facility_id = r.facility_id
       WHERE r.active = true
       ORDER BY r.park_resort NULLS LAST, r.name
     `);
@@ -80,6 +85,9 @@ export const diningRouter = {
       // rest (snack carts, quick service).
       availabilityEligible: r.priority && r.bookable,
       bookable: r.bookable,
+      // Live walk-up wait (plan item 1.2) — minutes, null unless the venue
+      // reported within the last 2h (sparse: signature TS venues only).
+      walkupWaitMin: r.walkup_wait_min,
     }));
   }),
 
@@ -107,6 +115,9 @@ export const diningRouter = {
       dining_package: boolean;
       walkup_wait_list: boolean;
       mobile_order: boolean;
+      quick_service: boolean;
+      description: string | null;
+      ap_discount_pct: number | null;
       annual_pass_discount: boolean;
       disney_visa_discount: boolean;
       trip_advisor_award: boolean;
@@ -129,11 +140,14 @@ export const diningRouter = {
       last_checked_at: string | null;
       first_seen_at: string;
       location_type: string | null;
+      walkup_wait_min: number | null;
+      walkup_party_sizes: Array<{ partySize: number; waitMin: number | null }> | null;
     }>(sql`
       SELECT r.facility_id, r.name, r.cuisine, r.experience_type, r.price_range, r.park_resort,
              r.image_url, r.image_thumbhash, r.detail_url, r.url_friendly_id, r.entity_type,
              r.character_dining, r.fine_dining, r.dining_package,
-             r.walkup_wait_list, r.mobile_order,
+             r.walkup_wait_list, r.mobile_order, r.quick_service,
+             r.description, r.ap_discount_pct,
              r.annual_pass_discount, r.disney_visa_discount, r.trip_advisor_award,
              r.dining_plan_qs, r.dining_plan_ts,
              r.land, r.map_pin, r.latitude, r.longitude, r.maximum_party_size,
@@ -143,10 +157,15 @@ export const diningRouter = {
              (m.facility_id IS NOT NULL AND m.item_count > 0) AS has_menu,
              m.last_checked_at,
              r.first_seen_at,
-             dl.location_type
+             dl.location_type,
+             CASE WHEN w.observed_at >= now() - INTERVAL '2 hours' THEN w.wait_min END
+               AS walkup_wait_min,
+             CASE WHEN w.observed_at >= now() - INTERVAL '2 hours' THEN w.party_sizes END
+               AS walkup_party_sizes
       FROM restaurant_dim r
       LEFT JOIN dining_menu_snapshot m ON m.facility_id = r.facility_id
       LEFT JOIN dining_location dl ON split_part(dl.id, ';', 1) = r.park_resort_id
+      LEFT JOIN dining_walkup_live w ON w.facility_id = r.facility_id
       WHERE r.facility_id = ${input.facilityId} AND r.active = true
       LIMIT 1
     `);
@@ -171,7 +190,16 @@ export const diningRouter = {
       fineDining: r.fine_dining,
       diningPackage: r.dining_package,
       walkupWaitList: r.walkup_wait_list,
+      // Live walk-up waitlist (plan item 1.2): headline minutes + the per-party
+      // breakdown; null unless reported within the last 2h.
+      walkupWaitMin: r.walkup_wait_min,
+      walkupPartySizes: r.walkup_party_sizes,
       mobileOrder: r.mobile_order,
+      quickService: r.quick_service,
+      // Official marketing copy (plan item 2.3) — the About section.
+      description: suppressed.has("description") ? null : r.description,
+      // AP discount % when Disney publishes one; pairs with the boolean flag.
+      apDiscountPct: r.ap_discount_pct,
       annualPassDiscount: r.annual_pass_discount,
       disneyVisaDiscount: r.disney_visa_discount,
       tripAdvisorAward: r.trip_advisor_award,
@@ -459,8 +487,9 @@ export const diningRouter = {
       price: number | null;
       price_type: string | null;
       currency: string | null;
+      prices: Array<MenuPriceTier> | null;
     }>(sql`
-        SELECT i.meal_period, i.group_name, i.item_type, i.title, i.description, i.price, i.price_type, i.currency
+        SELECT i.meal_period, i.group_name, i.item_type, i.title, i.description, i.price, i.price_type, i.currency, i.prices
         FROM dining_menu_item i
         JOIN dining_menu_snapshot s
           ON s.facility_id = i.facility_id AND s.observed_at = i.observed_at
@@ -475,6 +504,8 @@ export const diningRouter = {
       price: number | null;
       priceType: string | null;
       currency: string | null;
+      // Full tier list (plan item 1.6); null pre-upgrade / unpriced.
+      prices: Array<MenuPriceTier> | null;
     };
     type Group = { groupName: string | null; itemType: string | null; items: Array<Item> };
     const periods: Array<{ mealPeriod: string; groups: Array<Group> }> = [];
@@ -500,6 +531,7 @@ export const diningRouter = {
         price: r.price === null ? null : Number(r.price),
         priceType: r.price_type,
         currency: r.currency,
+        prices: r.prices,
       });
     }
 
@@ -734,9 +766,10 @@ export const diningRouter = {
         meal_period: string;
         group_name: string | null;
         item_type: string | null;
+        prices: Array<MenuPriceTier> | null;
       }>(sql`
         SELECT i.title, i.description, i.price, i.price_type, i.currency,
-               i.meal_period, i.group_name, i.item_type
+               i.meal_period, i.group_name, i.item_type, i.prices
         FROM dining_menu_item i
         JOIN dining_menu_snapshot s
           ON s.facility_id = i.facility_id AND s.observed_at = i.observed_at
@@ -855,6 +888,8 @@ export const diningRouter = {
               mealPeriod: cur.meal_period,
               groupName: cur.group_name,
               itemType: cur.item_type,
+              // Full tier list (plan item 1.6) — drives the price-tier table.
+              prices: cur.prices,
             }
           : null,
         firstSeenAt,

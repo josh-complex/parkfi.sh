@@ -20,6 +20,8 @@ import { authClient } from "#/lib/auth-client.ts";
 import { QueueType } from "#/server/parks/codes.ts";
 import { cn } from "#/lib/utils.ts";
 
+import { showClock } from "#/lib/showtimes.ts";
+
 import { formatPriceCents, isUniversal, paidLineInfo, paidLineProduct } from "./lightning-lane.ts";
 import { LightningLaneAvailability } from "./ll-availability.tsx";
 import { RideAnalytics } from "./ride-analytics.tsx";
@@ -297,6 +299,67 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
           )}
         </StatCard>
       </div>
+
+      {/* Per-entity hours today (plan item 1.4) — only interesting when the
+          ride's windows differ from park hours, which is exactly when Disney
+          posts them. Early Entry windows get their own badge (rope-drop gold). */}
+      {ride.hoursToday.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+          {ride.hoursToday.map((h) => (
+            <span key={`${h.type}-${h.start}`} className="inline-flex items-center gap-1.5">
+              {h.type === "Early Entry" ? (
+                <Badge className="bg-amber-400/20 text-amber-700 hover:bg-amber-400/20 dark:text-amber-400">
+                  Open during Early Entry
+                </Badge>
+              ) : (
+                <span>
+                  {h.type && h.type !== "Operating" ? `${h.type}: ` : "Hours today: "}
+                  {showClock(h.start!, ride.park.timezone)}
+                  {h.end ? ` – ${showClock(h.end, ride.park.timezone)}` : ""}
+                </span>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Boarding-group range + allocation state (plan item 1.5). */}
+      {(ride.boardingGroup != null || ride.boardingAllocation != null) && (
+        <Card size="sm">
+          <CardContent className="flex flex-col gap-1">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Virtual queue
+            </span>
+            <span className="text-base">
+              {ride.boardingAllocation === "SOLD_OUT" ? (
+                "All boarding groups distributed for today"
+              ) : ride.boardingAllocation === "PAUSED" ? (
+                "Boarding-group distribution paused"
+              ) : ride.boardingGroup != null ? (
+                <>
+                  Now boarding groups{" "}
+                  <span className="font-semibold tabular-nums">
+                    {ride.boardingGroup}
+                    {ride.boardingGroupEnd != null && ride.boardingGroupEnd !== ride.boardingGroup
+                      ? `–${ride.boardingGroupEnd}`
+                      : ""}
+                  </span>
+                </>
+              ) : (
+                "Boarding groups available"
+              )}
+            </span>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Official marketing copy (plan item 2.3). */}
+      {ride.meta?.description && (
+        <section className="flex flex-col gap-1.5">
+          <h2 className="text-lg font-semibold tracking-tight">About</h2>
+          <p className="max-w-prose text-sm text-muted-foreground">{ride.meta.description}</p>
+        </section>
+      )}
 
       {ride.showtimes.length > 0 && (
         <ShowtimesCard showtimes={ride.showtimes} timeZone={ride.park.timezone} />

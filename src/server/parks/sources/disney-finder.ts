@@ -1,5 +1,10 @@
+import { stripInlineHtml } from "../codes.ts";
 import { config } from "../config.ts";
-import { DisneyParkDetailSchema, type DisneyParkDetail } from "../schemas.ts";
+import {
+  DisneyDiningDetailSchema,
+  DisneyParkDetailSchema,
+  type DisneyParkDetail,
+} from "../schemas.ts";
 import { UpstreamError } from "./themeparks.ts";
 
 /**
@@ -39,4 +44,22 @@ export async function fetchParkDetail(
 ): Promise<DisneyParkDetail> {
   const url = `${config.disneyFinderBase}/details-entity-simple/wdw/${finderSlug}/${date}/`;
   return DisneyParkDetailSchema.parse(await getJson(url, signal));
+}
+
+/**
+ * Official description copy for any finder entity (plan item 2.3) — the same
+ * `details-entity-simple` endpoint the park/dining details come from, keyed by
+ * the entity's `urlFriendlyId`. Prefers the richer `aagData.description`
+ * marketing copy over the `structuredData` one-liner; HTML-stripped. Used by
+ * the monthly geo cron's per-attraction pass (~40–60 requests/park).
+ */
+export async function fetchEntityDescription(
+  finderSlug: string,
+  date: string,
+  signal: AbortSignal,
+): Promise<string | null> {
+  const url = `${config.disneyFinderBase}/details-entity-simple/wdw/${finderSlug}/${date}/`;
+  const detail = DisneyDiningDetailSchema.parse(await getJson(url, signal));
+  const raw = detail.aagData?.description?.trim() || detail.structuredData?.description?.trim();
+  return raw ? stripInlineHtml(raw) || null : null;
 }

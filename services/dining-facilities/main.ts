@@ -4,8 +4,11 @@
  * same `list-ancestor-entities/wdw/{destinationId}/{date}/{type}` endpoint:
  *   • dining → upsert `restaurant_dim` (source DISNEY_DIRECT) + the
  *     `dining_location` reference table, soft-delete venues that dropped out,
- *     then enrich each active venue with schedules (`details-entity-simple`,
- *     slug-keyed → `dining_schedule`) and menus (dinemenu API, id-keyed →
+ *     refresh today's `dining_schedule` rows from the list feed's INLINE
+ *     schedules (one request — what makes a daily DINING_DETAILS=0 run useful),
+ *     then enrich each active venue with schedules + description/AP-discount
+ *     (`details-entity-simple`, slug-keyed → `dining_schedule` +
+ *     `restaurant_dim` copy columns) and menus (dinemenu API, id-keyed →
  *     `dining_menu_item`) — neither rides the list feed.
  *   • shops → upsert `shop_dim` + soft-delete (see `refreshShops`).
  * Additional point crawls (characters, guest services, …) slot in the same way.
@@ -39,8 +42,9 @@ import {
 import { Source } from "#/server/parks/codes.ts";
 import { config } from "#/server/parks/config.ts";
 import {
+  fetchDiningDetail,
   fetchDiningMenu,
-  fetchDiningSchedule,
+  type DiningDetailEnrichment,
   type DiningMenuItemRow,
   type DiningScheduleRow,
 } from "#/server/dining/disney-dining-detail.ts";
@@ -59,7 +63,13 @@ function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Stable content hash of a venue's menu — drives change detection. */
+/**
+ * Stable content hash of a venue's menu — drives change detection. Includes
+ * the full price-tier list (plan item 1.6) so a beyond-first-tier move
+ * registers. NB: adding `prices` makes every venue read "changed" on the first
+ * run after deploy — one generation of churn, no false diff events (the diff
+ * compares values).
+ */
 function menuHash(rows: Array<DiningMenuItemRow>): string {
   const lines = rows
     .map((r) =>
@@ -72,6 +82,7 @@ function menuHash(rows: Array<DiningMenuItemRow>): string {
         r.price,
         r.priceType,
         r.currency,
+        r.prices ? JSON.stringify(r.prices) : "",
       ].join(""),
     )
     .sort();
@@ -80,7 +91,8 @@ function menuHash(rows: Array<DiningMenuItemRow>): string {
 
 /**
  * Per-venue detail enrichment. Schedules (slug-keyed) full-replace each
- * refreshed venue. Menus (id-keyed) are APPEND-ONLY + change-only: a venue's
+ * refreshed venue; the same detail payload's description + AP discount %
+ * update `restaurant_dim` (plan item 2.3 — zero extra requests). Menus (id-keyed) are APPEND-ONLY + change-only: a venue's
  * menu is hashed and a new `dining_menu_item` generation written only when the
  * hash differs from `dining_menu_snapshot`; price moves between generations are
  * logged to `dining_menu_price_change`. Per-venue try/catch isolates a single
@@ -99,21 +111,46 @@ async function enrichDetails(rows: Array<DiningCatalogRow>, now: Date): Promise<
   let schedErr = 0;
   let menuErr = 0;
 
-  // --- Schedules: the finder host tolerates a small concurrent burst. ---
+  // --- Schedules + enrichment: one detail fetch per venue (the finder host
+  // tolerates a small concurrent burst). The same payload carries the venue's
+  // description + AP discount % (plan item 2.3), collected for a batched
+  // restaurant_dim update below.
+  const enrichmentByFacility = new Map<string, DiningDetailEnrichment>();
   const window = Math.max(1, config.diningDetailConcurrency);
   const withSlug = rows.filter((r) => r.urlFriendlyId);
   for (let i = 0; i < withSlug.length; i += window) {
     await Promise.all(
       withSlug.slice(i, i + window).map(async (r) => {
         try {
-          scheduleRows.push(...(await fetchDiningSchedule(r.facilityId, r.urlFriendlyId!, today)));
+          const detail = await fetchDiningDetail(r.facilityId, r.urlFriendlyId!, today);
+          scheduleRows.push(...detail.schedule);
           scheduleOk.push(r.facilityId);
+          enrichmentByFacility.set(r.facilityId, detail.enrichment);
         } catch {
           schedErr++;
         }
       }),
     );
     if (i + window < withSlug.length) await new Promise((res) => setTimeout(res, 200));
+  }
+
+  // Enrichment: batched per-venue update. Descriptions are never nulled out on
+  // an absent field (stale copy beats no copy); the AP percentage IS nulled when
+  // the modal stops publishing one (the discount genuinely ended).
+  const enriched = [...enrichmentByFacility.entries()];
+  for (let i = 0; i < enriched.length; i += 100) {
+    await Promise.all(
+      enriched.slice(i, i + 100).map(([facilityId, e]) =>
+        db
+          .update(restaurantDim)
+          .set({
+            ...(e.description != null ? { description: e.description } : {}),
+            apDiscountPct: e.apDiscountPct,
+            updatedAt: now,
+          })
+          .where(eq(restaurantDim.facilityId, facilityId)),
+      ),
+    );
   }
 
   // --- Menus: the dinemenu API Gateway rejects concurrency and rate-caps per
@@ -202,6 +239,7 @@ async function enrichDetails(rows: Array<DiningCatalogRow>, now: Date): Promise<
           price: diningMenuItem.price,
           priceType: diningMenuItem.priceType,
           currency: diningMenuItem.currency,
+          prices: diningMenuItem.prices,
         })
         .from(diningMenuItem)
         .where(
@@ -257,6 +295,7 @@ async function enrichDetails(rows: Array<DiningCatalogRow>, now: Date): Promise<
   const removed = eventRows.filter((e) => e.changeType === "removed").length;
   console.log(
     `[dining-facilities] schedules: ${scheduleRows.length} rows / ${scheduleOk.length} venues (${schedErr} failed); ` +
+      `enrichment: ${enriched.length} venues; ` +
       `menus: ${menuOk.length} fetched (${menuErr} failed), ${snapUpserts.length} changed / ${unchanged.length} unchanged, ` +
       `${priceRows.length} price changes, ${added} added / ${removed} removed`,
   );
@@ -330,7 +369,7 @@ async function refreshShops(now: Date): Promise<void> {
 async function main() {
   const now = new Date();
 
-  const { rows, locations } = await fetchDisneyDiningCatalog(
+  const { rows, locations, todaySchedules } = await fetchDisneyDiningCatalog(
     WDW_DESTINATION_ID,
     isoDate(now),
     AbortSignal.timeout(config.fetchTimeoutMs),
@@ -393,6 +432,7 @@ async function main() {
           mobileOrder: sql`excluded.mobile_order`,
           characterDining: sql`excluded.character_dining`,
           fineDining: sql`excluded.fine_dining`,
+          quickService: sql`excluded.quick_service`,
           diningPackage: sql`excluded.dining_package`,
           annualPassDiscount: sql`excluded.annual_pass_discount`,
           disneyVisaDiscount: sql`excluded.disney_visa_discount`,
@@ -429,6 +469,34 @@ async function main() {
   console.log(
     `[dining-facilities] upserted ${rows.length} venues, deactivated ${deactivated.length}`,
   );
+
+  // Inline TODAY hours from the list feed (~372/409 venues carry them): full-
+  // replace each carrying venue's today rows so a daily DINING_DETAILS=0 run
+  // keeps `dining_schedule` fresh at ONE request. The weekly per-venue detail
+  // pass below still owns the forward week (and re-replaces today identically).
+  if (todaySchedules.length > 0) {
+    const today = isoDate(now);
+    const fids = [...new Set(todaySchedules.map((r) => r.facilityId))];
+    for (let i = 0; i < fids.length; i += 200) {
+      await db
+        .delete(diningSchedule)
+        .where(
+          and(
+            inArray(diningSchedule.facilityId, fids.slice(i, i + 200)),
+            eq(diningSchedule.scheduleDate, today),
+          ),
+        );
+    }
+    for (let i = 0; i < todaySchedules.length; i += 500) {
+      await db
+        .insert(diningSchedule)
+        .values(todaySchedules.slice(i, i + 500))
+        .onConflictDoNothing();
+    }
+    console.log(
+      `[dining-facilities] inline today hours: ${todaySchedules.length} rows / ${fids.length} venues`,
+    );
+  }
 
   // Shops point-crawl — isolated so a shops-feed hiccup can't fail the dining
   // refresh (or its enrichment below).

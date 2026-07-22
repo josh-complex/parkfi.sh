@@ -72,6 +72,7 @@ function VenueBadges({
     walkupWaitList: boolean;
     mobileOrder: boolean;
     annualPassDiscount: boolean;
+    apDiscountPct: number | null;
     disneyVisaDiscount: boolean;
     tripAdvisorAward: boolean;
     diningPlanQs: boolean;
@@ -102,7 +103,14 @@ function VenueBadges({
       {planTiers.length > 0 && (
         <Badge variant="secondary">Dining Plan: {planTiers.join(" + ")}</Badge>
       )}
-      {venue.annualPassDiscount && <Badge variant="secondary">Annual Pass discount</Badge>}
+      {venue.annualPassDiscount && (
+        <Badge variant="secondary">
+          {/* Disney publishes a % for some venues (plan item 2.3) — show it. */}
+          {venue.apDiscountPct != null
+            ? `Annual Pass ${venue.apDiscountPct}% off`
+            : "Annual Pass discount"}
+        </Badge>
+      )}
       {venue.disneyVisaDiscount && <Badge variant="secondary">Disney Visa discount</Badge>}
       {venue.tripAdvisorAward && <Badge variant="secondary">TripAdvisor award</Badge>}
       {venue.maximumPartySize != null && (
@@ -513,6 +521,19 @@ export function DiningVenueDetail({
             )}
             <div className="flex flex-wrap items-center gap-1.5">
               {schedules.length > 0 && <HoursChip schedules={schedules} />}
+              {/* Live walk-up waitlist (plan item 1.2) — signature TS venues. */}
+              {venue.walkupWaitMin != null && (
+                <Badge
+                  variant="secondary"
+                  className="bg-sky-500/15 font-normal text-sky-700 dark:text-sky-400"
+                  title={(venue.walkupPartySizes ?? [])
+                    .filter((p) => p.waitMin != null)
+                    .map((p) => `Party of ${p.partySize}: ~${p.waitMin} min`)
+                    .join(" · ")}
+                >
+                  Walk-up ~{venue.walkupWaitMin} min
+                </Badge>
+              )}
               <VenueBadges venue={venue} />
             </div>
             {taxonomy.length > 0 && (
@@ -523,6 +544,10 @@ export function DiningVenueDetail({
                   </Badge>
                 ))}
               </div>
+            )}
+            {/* Official marketing copy (plan item 2.3). */}
+            {venue.description && (
+              <p className="max-w-prose text-sm text-muted-foreground">{venue.description}</p>
             )}
             {venue.detailUrl && (
               <a

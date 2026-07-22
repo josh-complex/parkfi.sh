@@ -18,7 +18,25 @@ export type PrevMenuRow = Pick<
   | "price"
   | "priceType"
   | "currency"
+  | "prices"
 >;
+
+/**
+ * An item's price tiers for diffing (plan item 1.6). Generations captured
+ * before the `prices` column existed degrade to the single denormalized price,
+ * so a first post-upgrade diff compares tier-vs-first-price rather than
+ * treating every tier as new.
+ */
+function tiersOf(r: PrevMenuRow | DiningMenuItemRow): Map<string, number> {
+  const m = new Map<string, number>();
+  const list =
+    r.prices ?? (r.price != null ? [{ amount: r.price, type: r.priceType, currency: null }] : []);
+  for (const t of list) {
+    const key = t.type ?? "";
+    if (!m.has(key)) m.set(key, t.amount);
+  }
+  return m;
+}
 
 /** Groups menu rows by a composed key, preserving insertion order per bucket. */
 function bucketBy<T>(rows: Array<T>, keyOf: (r: T) => string): Map<string, Array<T>> {
@@ -58,8 +76,8 @@ function titleExcess<T extends { title: string }>(
  * the price-move log rows and the item lifecycle events (added / removed).
  * Two independent passes:
  *   • Price moves — persisting items matched by (period, group, title, type),
- *     aligned by occurrence order so duplicate titles line up; only a differing
- *     price emits a row.
+ *     aligned by occurrence order so duplicate titles line up; each price TIER
+ *     that differs emits a row naming the tier (plan item 1.6).
  *   • Roster — per (period, group), the multiset title difference gives the
  *     items added and removed.
  * Composite keys join fields with a U+0001 delimiter (a control char that can't
@@ -83,20 +101,27 @@ export function diffMenu(
   for (const [key, nextRows] of bucketBy(next, priceKey)) {
     const prevRows = prevByPriceKey.get(key) ?? [];
     for (let i = 0; i < Math.min(prevRows.length, nextRows.length); i++) {
-      const oldPrice = prevRows[i].price ?? null;
-      const newPrice = nextRows[i].price ?? null;
-      if (oldPrice === newPrice) continue;
       const r = nextRows[i];
-      priceRows.push({
-        facilityId,
-        mealPeriod: r.mealPeriod,
-        groupName: r.groupName,
-        title: r.title,
-        oldPrice,
-        newPrice,
-        priceType: r.priceType,
-        currency: r.currency,
-      });
+      // Compare per tier (plan item 1.6): one row per tier that moved, its
+      // `priceType` naming the tier ("Per Glass $14 → $16"). A tier appearing
+      // or vanishing logs with a null old/new side.
+      const oldTiers = tiersOf(prevRows[i]);
+      const newTiers = tiersOf(r);
+      for (const tierType of new Set([...oldTiers.keys(), ...newTiers.keys()])) {
+        const oldPrice = oldTiers.get(tierType) ?? null;
+        const newPrice = newTiers.get(tierType) ?? null;
+        if (oldPrice === newPrice) continue;
+        priceRows.push({
+          facilityId,
+          mealPeriod: r.mealPeriod,
+          groupName: r.groupName,
+          title: r.title,
+          oldPrice,
+          newPrice,
+          priceType: tierType || null,
+          currency: r.currency,
+        });
+      }
     }
   }
 

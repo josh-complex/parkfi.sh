@@ -115,6 +115,10 @@ function ShopPage() {
                 {location}
               </p>
             )}
+            {/* Official marketing copy (plan item 2.3). */}
+            {shop?.description && (
+              <p className="text-muted-foreground max-w-prose text-sm">{shop.description}</p>
+            )}
           </div>
 
           {shop && shop.merchandise.length > 0 && (

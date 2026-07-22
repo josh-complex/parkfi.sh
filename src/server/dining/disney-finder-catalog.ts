@@ -12,6 +12,7 @@ import {
   type DisneyDiningLocation,
 } from "../parks/schemas.ts";
 import { UpstreamError } from "../parks/sources/themeparks.ts";
+import type { DiningScheduleRow } from "./disney-dining-detail.ts";
 
 /**
  * WDW dining catalog from the PUBLIC finder explorer
@@ -52,6 +53,9 @@ export interface DiningCatalogRow {
   mobileOrder: boolean;
   characterDining: boolean;
   fineDining: boolean;
+  // The operator's own quick-service flag (`quickServiceAvailable`, populated
+  // on ~407/409 venues) — cleaner than inferring from the tableService facets.
+  quickService: boolean;
   // Dining package / dining-event (dessert parties, Fantasmic!/fireworks dining
   // packages, festival concert packages) — derived from the tableService tags.
   diningPackage: boolean;
@@ -136,6 +140,7 @@ function toRow(entity: DisneyDiningEntity): DiningCatalogRow {
     mobileOrder: features.includes("mobile-orders"),
     characterDining: tableService.includes("character-dining"),
     fineDining: tableService.includes("fine-signature-dining"),
+    quickService: entity.quickServiceAvailable ?? false,
     diningPackage: tableService.includes("dine-events") || tableService.includes("dessert-events"),
     annualPassDiscount: (facets.annualPass ?? []).length > 0,
     disneyVisaDiscount: discounts.some((d) => d.startsWith("disney-visa")),
@@ -159,9 +164,42 @@ function toLocationRow(loc: DisneyDiningLocation): DiningLocationRow {
   };
 }
 
+/** "17:00:00" / "17:00" -> "17:00:00"; null when unparseable. */
+function normListTime(t?: string | null): string | null {
+  const m = (t ?? "").match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) return null;
+  return `${m[1].padStart(2, "0")}:${m[2]}:${m[3] ?? "00"}`;
+}
+
+/**
+ * Today's typed hours a venue carries INLINE on the list feed (populated on
+ * ~372/409 venues). One list call keeps `dining_schedule`'s today rows fresh
+ * between the weekly per-venue detail fetches — which is what makes a daily
+ * `DINING_DETAILS=0` catalog run a meaningful hours refresh (plan item 2.3).
+ */
+function inlineScheduleRows(entity: DisneyDiningEntity, date: string): Array<DiningScheduleRow> {
+  const rows: Array<DiningScheduleRow> = [];
+  for (const s of entity.schedule?.schedules ?? []) {
+    if (s.isClosed) continue;
+    const start = normListTime(s.startTime);
+    const end = normListTime(s.endTime);
+    if (!start || !end) continue;
+    rows.push({
+      facilityId: entity.facilityId,
+      scheduleDate: s.date ?? date,
+      scheduleType: s.type?.trim() || "Operating",
+      startTime: start,
+      endTime: end,
+    });
+  }
+  return rows;
+}
+
 export interface DiningCatalog {
   rows: Array<DiningCatalogRow>;
   locations: Array<DiningLocationRow>;
+  // Inline today-hours rows (see `inlineScheduleRows`), de-duped with the rows.
+  todaySchedules: Array<DiningScheduleRow>;
 }
 
 export async function fetchDisneyDiningCatalog(
@@ -173,12 +211,15 @@ export async function fetchDisneyDiningCatalog(
   const payload = DisneyDiningListSchema.parse(await getJson(url, signal));
   // De-dupe on facilityId (a facility can list under multiple ancestors).
   const byId = new Map<string, DiningCatalogRow>();
+  const todaySchedules: Array<DiningScheduleRow> = [];
   for (const entity of payload.results) {
-    if (!byId.has(entity.facilityId)) byId.set(entity.facilityId, toRow(entity));
+    if (byId.has(entity.facilityId)) continue;
+    byId.set(entity.facilityId, toRow(entity));
+    todaySchedules.push(...inlineScheduleRows(entity, date));
   }
   const locById = new Map<string, DiningLocationRow>();
   for (const loc of payload.locations) {
     if (!locById.has(loc.id)) locById.set(loc.id, toLocationRow(loc));
   }
-  return { rows: [...byId.values()], locations: [...locById.values()] };
+  return { rows: [...byId.values()], locations: [...locById.values()], todaySchedules };
 }

@@ -1,3 +1,5 @@
+import type { MenuPriceTier } from "../../db/schema.ts";
+import { stripInlineHtml } from "../parks/codes.ts";
 import { config } from "../parks/config.ts";
 import {
   DisneyDineMenuSchema,
@@ -13,7 +15,9 @@ import { UpstreamError } from "../parks/sources/themeparks.ts";
  *
  *   • Schedules ← `details-entity-simple/wdw/{urlFriendlyId}/{date}/`, parsed
  *     from `structuredData.openingHoursSpecification[]` (a forward ~7-day week).
- *     Slug-keyed (the finder `urlFriendlyId`, e.g. "jaleo").
+ *     Slug-keyed (the finder `urlFriendlyId`, e.g. "jaleo"). The same payload
+ *     also yields venue enrichment (description, AP discount %) — see
+ *     `DiningDetailEnrichment`.
  *   • Menus ← `dining/dinemenu/api/menu?searchTerm={facilityId}`, the numeric
  *     facility id (NOT the slug). Flattened meal-period → group → item.
  *
@@ -64,6 +68,18 @@ export interface DiningScheduleRow {
   endTime: string; // HH:MM:SS
 }
 
+/**
+ * Venue enrichment parsed from the same detail payload as the schedule (plan
+ * item 2.3 — parse widening, zero extra requests). `description` prefers the
+ * richer `aagData.description` marketing copy over the `structuredData`
+ * one-liner; `apDiscountPct` is the Annual Passholder percentage from the
+ * discounts modal ("10%" → 10), null when none is published.
+ */
+export interface DiningDetailEnrichment {
+  description: string | null;
+  apDiscountPct: number | null;
+}
+
 export interface DiningMenuItemRow {
   facilityId: string;
   mealPeriod: string;
@@ -74,6 +90,9 @@ export interface DiningMenuItemRow {
   price: number | null;
   priceType: string | null;
   currency: string | null;
+  // Full tier list (plan item 1.6) — `price`/`priceType`/`currency` above stay
+  // the first-tier denormalization. Null when the item carries no priced entry.
+  prices: Array<MenuPriceTier> | null;
 }
 
 /**
@@ -174,14 +193,29 @@ function scheduleRows(
   return rows;
 }
 
-export async function fetchDiningSchedule(
+function enrichmentFrom(detail: DisneyDiningDetail): DiningDetailEnrichment {
+  const raw = detail.aagData?.description?.trim() || detail.structuredData?.description?.trim();
+  const pct = detail.aagData?.discountsModal?.sections?.["annualPass"]?.percentage;
+  const m = typeof pct === "string" ? pct.match(/(\d+(?:\.\d+)?)\s*%/) : null;
+  return {
+    description: raw ? stripInlineHtml(raw) || null : null,
+    apDiscountPct: m ? Math.round(Number.parseFloat(m[1])) : null,
+  };
+}
+
+export interface DiningDetailResult {
+  schedule: Array<DiningScheduleRow>;
+  enrichment: DiningDetailEnrichment;
+}
+
+export async function fetchDiningDetail(
   facilityId: string,
   slug: string,
   date: string,
-): Promise<Array<DiningScheduleRow>> {
+): Promise<DiningDetailResult> {
   const url = `${config.disneyFinderBase}/details-entity-simple/wdw/${slug}/${date}/`;
   const detail = DisneyDiningDetailSchema.parse(await getJson(url));
-  return scheduleRows(facilityId, date, detail);
+  return { schedule: scheduleRows(facilityId, date, detail), enrichment: enrichmentFrom(detail) };
 }
 
 function menuRows(facilityId: string, menu: DisneyDineMenu): Array<DiningMenuItemRow> {
@@ -193,8 +227,15 @@ function menuRows(facilityId: string, menu: DisneyDineMenu): Array<DiningMenuIte
       for (const item of group.items ?? []) {
         const title = item.title?.trim();
         if (!title) continue;
-        // First priced entry (an item may list per-serving + per-glass etc.).
-        const priced = (item.prices ?? []).find((p) => p.withoutTax != null);
+        // Full tier list (plan item 1.6); the first entry doubles as the
+        // denormalized price columns (an item may list per-serving + per-glass).
+        const tiers = (item.prices ?? [])
+          .filter((p) => p.withoutTax != null)
+          .map((p) => ({
+            amount: p.withoutTax!,
+            type: p.type ?? null,
+            currency: p.currency ?? null,
+          }));
         rows.push({
           facilityId,
           mealPeriod,
@@ -202,9 +243,10 @@ function menuRows(facilityId: string, menu: DisneyDineMenu): Array<DiningMenuIte
           itemType: group.type ?? null,
           title,
           description: item.description?.trim() || null,
-          price: priced?.withoutTax ?? null,
-          priceType: priced?.type ?? null,
-          currency: priced?.currency ?? null,
+          price: tiers[0]?.amount ?? null,
+          priceType: tiers[0]?.type ?? null,
+          currency: tiers[0]?.currency ?? null,
+          prices: tiers.length > 0 ? tiers : null,
         });
       }
     }

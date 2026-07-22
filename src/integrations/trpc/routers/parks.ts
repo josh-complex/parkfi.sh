@@ -10,7 +10,7 @@ import { config } from "#/server/parks/config.ts";
 import { suppressedFields } from "#/server/content/suppression.ts";
 import { publicProcedure } from "../init.ts";
 
-import type { GeoPolygon } from "#/db/schema.ts";
+import type { GeoPolygon, ParkHeroSlide } from "#/db/schema.ts";
 import type { TRPCRouterRecord } from "@trpc/server";
 
 const STATUS_CODE: Record<number, string> = {
@@ -63,11 +63,12 @@ export const parksRouter = {
       image_url: string | null;
       image_alt: string | null;
       image_thumbhash: string | null;
+      hero_media: Array<ParkHeroSlide> | null;
     }>(sql`
       SELECT p.id, p.slug, p.name, p.timezone,
              o.slug AS operator_slug, o.name AS operator_name, r.name AS resort_name,
              p.latitude, p.longitude, p.lat_min, p.lat_max, p.lng_min, p.lng_max, p.map_zoom,
-             p.boundary, p.image_url, p.image_alt, p.image_thumbhash
+             p.boundary, p.image_url, p.image_alt, p.image_thumbhash, p.hero_media
       FROM parks p
       LEFT JOIN operators o ON o.id = p.operator_id
       LEFT JOIN resorts r ON r.id = p.resort_id
@@ -93,6 +94,8 @@ export const parksRouter = {
       imageUrl: p.image_url,
       imageAlt: p.image_alt,
       imageThumbhash: p.image_thumbhash,
+      // Full hero carousel slides (plan item 1.9) — Disney parks only for now.
+      heroMedia: p.hero_media ?? [],
     }));
   }),
 
@@ -207,6 +210,7 @@ export const parksRouter = {
       meta_land: string | null;
       meta_height_requirement: string | null;
       meta_tags: Array<string> | null;
+      hours_today: Array<{ type: string | null; start: string | null; end: string | null }> | null;
       is_open: boolean | null;
       has_schedule: boolean;
     }>(sql`
@@ -257,7 +261,8 @@ export const parksRouter = {
                  CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.return_state END AS return_state,
                  CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.return_start END AS return_start,
                  CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.return_end END AS return_end,
-                 CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.showtimes END AS showtimes
+                 CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.showtimes END AS showtimes,
+                 CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.hours_today END AS hours_today
           FROM attraction_live al
           JOIN attractions a ON a.id = al.attraction_id
           WHERE a.park_id = (SELECT id FROM park)
@@ -285,6 +290,7 @@ export const parksRouter = {
                lv.ll_return_start, lv.ll_return_end,
                lv.return_state, lv.return_start, lv.return_end,
                lv.showtimes,
+               lv.hours_today,
                caps.qtypes AS support_types,
                hist.hist_standby_wait,
                a.latitude, a.longitude, a.category,
@@ -336,6 +342,9 @@ export const parksRouter = {
         : { start: r.return_start ?? null, end: r.return_end ?? null },
       // Today's showtimes for SHOW entities (plan item 1.1); [] otherwise.
       showtimes: knownClosed ? [] : (r.showtimes ?? []).filter((s) => s.start != null),
+      // Per-entity operating windows today (plan item 1.4) — feeds the "Early
+      // Entry rides today" rail; [] when unposted or the park is closed.
+      hoursToday: knownClosed ? [] : (r.hours_today ?? []).filter((h) => h.start != null),
       supportsQueueTypes: (r.support_types ?? []).map(Number),
       histStandbyWait: r.hist_standby_wait,
       latitude: r.latitude,
@@ -501,9 +510,10 @@ export const parksRouter = {
       merchandise: Array<string> | null;
       latitude: number | null;
       longitude: number | null;
+      description: string | null;
     }>(sql`
       SELECT facility_id, name, url_friendly_id, land, park_resort, image_url, image_thumbhash,
-             detail_url, merchandise, latitude, longitude
+             detail_url, merchandise, latitude, longitude, description
       FROM shop_dim
       WHERE active = true AND url_friendly_id = ${input.slug}
       LIMIT 1
@@ -525,6 +535,9 @@ export const parksRouter = {
       merchandise: r.merchandise ?? [],
       latitude: r.latitude,
       longitude: r.longitude,
+      // Official marketing copy (plan item 2.3) — UOR shops only until a WDW
+      // shop-detail fetch pass exists.
+      description: suppressed.has("description") ? null : r.description,
     };
   }),
 
@@ -786,6 +799,14 @@ export const parksRouter = {
         return_end: string | null;
         observed_at: string | null;
         showtimes: Array<{ type: string | null; start: string | null; end: string | null }> | null;
+        hours_today: Array<{
+          type: string | null;
+          start: string | null;
+          end: string | null;
+        }> | null;
+        boarding_group: number | null;
+        boarding_group_end: number | null;
+        boarding_allocation: number | null;
         support_types: Array<number> | null;
         hist_standby_wait: number | null;
         latitude: number | null;
@@ -799,6 +820,7 @@ export const parksRouter = {
         meta_land: string | null;
         meta_height_requirement: string | null;
         meta_tags: Array<string> | null;
+        meta_description: string | null;
         coaster_track_length_m: number | null;
         coaster_top_speed_kmh: number | null;
         coaster_drop_height_m: number | null;
@@ -856,6 +878,8 @@ export const parksRouter = {
                rt.state AS return_state,
                rt.return_start AS return_start, rt.return_end AS return_end,
                al.showtimes AS showtimes,
+               al.hours_today AS hours_today,
+               al.boarding_group, al.boarding_group_end, al.boarding_allocation,
                caps.qtypes AS support_types,
                hist.hist_standby_wait,
                a.latitude, a.longitude, a.category,
@@ -867,6 +891,7 @@ export const parksRouter = {
                m.land AS meta_land,
                m.height_requirement AS meta_height_requirement,
                m.tags AS meta_tags,
+               m.description AS meta_description,
                cs.track_length_m AS coaster_track_length_m,
                cs.top_speed_kmh AS coaster_top_speed_kmh,
                cs.drop_height_m AS coaster_drop_height_m,
@@ -932,6 +957,13 @@ export const parksRouter = {
         returnTimeWindow: { start: r.return_start ?? null, end: r.return_end ?? null },
         // Today's performances for SHOW entities (plan item 1.1); [] otherwise.
         showtimes: (r.showtimes ?? []).filter((s) => s.start != null),
+        // Per-entity operating windows today (plan item 1.4); [] when unposted.
+        hoursToday: (r.hours_today ?? []).filter((h) => h.start != null),
+        // Boarding-group range + allocation state (plan item 1.5). Allocation
+        // reuses the QueueState vocabulary (SOLD_OUT = all groups distributed).
+        boardingGroup: r.boarding_group,
+        boardingGroupEnd: r.boarding_group_end,
+        boardingAllocation: code(QUEUE_STATE_CODE, r.boarding_allocation),
         lightningLaneDeepLink,
         supportsQueueTypes: (r.support_types ?? []).map(Number),
         histStandbyWait: r.hist_standby_wait,
@@ -944,6 +976,7 @@ export const parksRouter = {
           r.meta_detail_url != null ||
           r.meta_land != null ||
           r.meta_height_requirement != null ||
+          r.meta_description != null ||
           (r.meta_tags != null && r.meta_tags.length > 0)
             ? {
                 imageThumbUrl: hideImage ? null : r.meta_image_thumb_url,
@@ -954,6 +987,8 @@ export const parksRouter = {
                 land: r.meta_land,
                 heightRequirement: r.meta_height_requirement,
                 tags: r.meta_tags ?? [],
+                // Official marketing copy (plan item 2.3) — the About section.
+                description: suppressed.has("description") ? null : r.meta_description,
               }
             : null,
         // Published coaster facts (from coaster_stats). Present only when the

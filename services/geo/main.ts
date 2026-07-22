@@ -31,7 +31,7 @@ import { flushTelemetry, reportServiceError } from "../shared/telemetry.ts";
 import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
-import { attractionMeta, externalIds, parkPoi } from "#/db/schema.ts";
+import { attractionMeta, externalIds, parkPoi, shopDim, type ParkHeroSlide } from "#/db/schema.ts";
 import {
   categoryFromDisneyPin,
   categoryFromDisneyPoi,
@@ -39,6 +39,7 @@ import {
   categoryFromUniversalPlace,
   disneyHeroUrl,
   disneyParkHero,
+  disneyParkHeroSlides,
   normalizeUniversalName,
   parseDisneyFacets,
   Source,
@@ -51,7 +52,11 @@ import {
 import { config } from "#/server/parks/config.ts";
 import { fillMissingThumbhashes } from "#/server/parks/thumbhash.ts";
 import { browserlessConfigured } from "#/server/parks/sources/browserless.ts";
-import { fetchParkDetail, toNum } from "#/server/parks/sources/disney-finder.ts";
+import {
+  fetchEntityDescription,
+  fetchParkDetail,
+  toNum,
+} from "#/server/parks/sources/disney-finder.ts";
 import {
   fetchThemeParkBoundaries,
   normalizeParkName,
@@ -76,6 +81,7 @@ const DISNEY_FINDER_SLUGS = new Set([
 interface ParkRow {
   id: number;
   slug: string;
+  name: string;
   operatorSlug: string | null;
   uuid: string;
 }
@@ -89,10 +95,11 @@ async function activeParks(): Promise<Array<ParkRow>> {
   const result = await db.execute<{
     id: string;
     slug: string;
+    name: string;
     operator_slug: string | null;
     uuid: string;
   }>(sql`
-    SELECT p.id, p.slug, o.slug AS operator_slug, e.external_id AS uuid
+    SELECT p.id, p.slug, p.name, o.slug AS operator_slug, e.external_id AS uuid
     FROM parks p
     LEFT JOIN operators o ON o.id = p.operator_id
     JOIN external_ids e
@@ -103,6 +110,7 @@ async function activeParks(): Promise<Array<ParkRow>> {
   return result.rows.map((r) => ({
     id: Number(r.id),
     slug: r.slug,
+    name: r.name,
     operatorSlug: r.operator_slug,
     uuid: r.uuid,
   }));
@@ -200,6 +208,9 @@ async function upsertAttractionMeta(
           land: sql`excluded.land`,
           heightRequirement: sql`excluded.height_requirement`,
           tags: sql`excluded.tags`,
+          // Never null out copy a re-crawl didn't carry (stale beats none) —
+          // a failed per-attraction description fetch leaves the field null.
+          description: sql`coalesce(excluded.description, attraction_meta.description)`,
           source: sql`excluded.source`,
           updatedAt: sql`now()`,
         },
@@ -251,12 +262,16 @@ async function upsertParkPoi(rows: Array<typeof parkPoi.$inferInsert>): Promise<
 }
 
 /**
- * Soft-delete this park's Disney POIs that fell out of the latest marker set
- * (active=false, keep the row + history), scoped by (park_id, source) so it
- * never touches another park's or operator's rows. An empty `seenIds` (park has
- * no POIs this run) deactivates all of them.
+ * Soft-delete this park's POIs that fell out of the latest crawl (active=false,
+ * keep the row + history), scoped by (park_id, source) so it never touches
+ * another park's or operator's rows. An empty `seenIds` (park has no POIs this
+ * run) deactivates all of them.
  */
-async function deactivateStaleParkPoi(parkId: number, seenIds: Array<string>): Promise<void> {
+async function deactivateStaleParkPoi(
+  parkId: number,
+  seenIds: Array<string>,
+  source: number = Source.DISNEY_DIRECT,
+): Promise<void> {
   const notSeen =
     seenIds.length > 0
       ? sql`AND poi_id NOT IN (${sql.join(
@@ -267,7 +282,7 @@ async function deactivateStaleParkPoi(parkId: number, seenIds: Array<string>): P
   await db.execute(sql`
     UPDATE park_poi
     SET active = false, updated_at = now()
-    WHERE park_id = ${parkId} AND source = ${Source.DISNEY_DIRECT} AND active = true ${notSeen}
+    WHERE park_id = ${parkId} AND source = ${source} AND active = true ${notSeen}
   `);
 }
 
@@ -423,8 +438,19 @@ async function ingestBoundaries(): Promise<void> {
 async function updateParkImage(
   parkId: number,
   image: { url: string; alt: string | null } | null,
+  // Full hero carousel (plan item 1.9) — Disney parks only; omitted callers
+  // leave any previously stored slides untouched.
+  heroMedia?: Array<ParkHeroSlide> | null,
 ): Promise<void> {
   if (!image) return;
+  if (heroMedia !== undefined) {
+    await db.execute(
+      sql`UPDATE parks SET image_url = ${image.url}, image_alt = ${image.alt},
+          hero_media = ${heroMedia == null ? null : JSON.stringify(heroMedia)}::jsonb
+          WHERE id = ${parkId}`,
+    );
+    return;
+  }
   await db.execute(
     sql`UPDATE parks SET image_url = ${image.url}, image_alt = ${image.alt} WHERE id = ${parkId}`,
   );
@@ -501,14 +527,18 @@ async function enrichDisneyPark(
   );
   const loc = detail.mapData?.location;
 
-  // Park-level hero photo from the finder's hero carousel (previously discarded).
+  // Park-level hero photo from the finder's hero carousel, plus the full
+  // normalized slide list for the dashboard carousel (plan item 1.9).
   await updateParkImage(
     park.id,
     disneyParkHero(detail.heroData?.mediaEngine?.data, detail.heroData?.media),
+    disneyParkHeroSlides(detail.heroData?.mediaEngine?.data, detail.heroData?.media),
   );
 
   const overrides: Array<{ id: number; category: MapCategory }> = [];
   const metaRows: Array<typeof attractionMeta.$inferInsert> = [];
+  // Finder slug per meta row, for the per-attraction description pass below.
+  const slugByAttractionId = new Map<number, string>();
   // Non-facility POIs (guest-services / entertainment / events-tours), deduped
   // by their own point-of-interest id (park-center entries repeat across a few
   // guest services — last wins, which is fine: they collapse to one info pin).
@@ -554,6 +584,11 @@ async function enrichDisneyPark(
 
     const thumb = marker.card?.media?.desktop ?? null;
     const { land, heightRequirement, tags } = parseDisneyFacets(marker.facets);
+    // Finder slug — explicit `urlFriendlyId` first, else the detail path's last
+    // segment ("/attractions/magic-kingdom/space-mountain/" -> "space-mountain").
+    const slug =
+      marker.card?.urlFriendlyId ?? marker.card?.url?.split("/").filter(Boolean).pop() ?? null;
+    if (slug) slugByAttractionId.set(attractionId, slug);
     metaRows.push({
       attractionId,
       imageThumbUrl: thumb,
@@ -566,13 +601,44 @@ async function enrichDisneyPark(
       source: Source.DISNEY_DIRECT,
     });
   }
+
+  // Per-attraction official copy (plan item 2.3): one `details-entity-simple`
+  // fetch per enriched attraction (~40–60/park, monthly). Small concurrent
+  // window like the dining schedules pass; a failed fetch just leaves the row's
+  // description null (the upsert coalesces, so previously stored copy survives).
+  let descOk = 0;
+  let descErr = 0;
+  const descWindow = 4;
+  const descTargets = metaRows.filter((r) => slugByAttractionId.has(r.attractionId));
+  for (let i = 0; i < descTargets.length; i += descWindow) {
+    await Promise.all(
+      descTargets.slice(i, i + descWindow).map(async (row) => {
+        try {
+          const description = await fetchEntityDescription(
+            slugByAttractionId.get(row.attractionId)!,
+            today,
+            AbortSignal.timeout(config.fetchTimeoutMs),
+          );
+          if (description) {
+            row.description = description;
+            descOk++;
+          }
+        } catch {
+          descErr++;
+        }
+      }),
+    );
+    if (i + descWindow < descTargets.length) await new Promise((res) => setTimeout(res, 200));
+  }
+
   if (overrides.length > 0) await overrideCategories(overrides);
   if (metaRows.length > 0) await upsertAttractionMeta(metaRows);
   const poiRows = [...poiById.values()];
   if (poiRows.length > 0) await upsertParkPoi(poiRows);
   await deactivateStaleParkPoi(park.id, [...poiById.keys()]);
   console.log(
-    `[geo] ${park.slug}: ${overrides.length} categories enriched, ${metaRows.length} meta rows, ${poiRows.length} POIs from Disney finder`,
+    `[geo] ${park.slug}: ${overrides.length} categories enriched, ${metaRows.length} meta rows ` +
+      `(${descOk} descriptions, ${descErr} failed), ${poiRows.length} POIs from Disney finder`,
   );
 }
 
@@ -620,6 +686,11 @@ interface PlaceIndex {
   landById: Map<string, string>;
   // venue_id -> the `Park`-type place (carries the park's own hero photo + logo).
   parkByVenue: Map<string, UniversalPlace>;
+  // venue_id -> its Shopping / Amenity places (plan item 2.2). In-park venues
+  // only get consumed (the per-park enrichment passes its own venue), so
+  // CityWalk/hotel entries sit here unused until a park-less home exists.
+  shopsByVenue: Map<string, Array<UniversalPlace>>;
+  amenitiesByVenue: Map<string, Array<UniversalPlace>>;
 }
 
 /** Enrichment richness — prefer the place carrying the most card metadata. */
@@ -636,6 +707,8 @@ function buildPlaceIndex(places: UniversalPlaces): PlaceIndex {
   const byVenueName = new Map<string, Map<string, UniversalPlace>>();
   const landById = new Map<string, string>();
   const parkByVenue = new Map<string, UniversalPlace>();
+  const shopsByVenue = new Map<string, Array<UniversalPlace>>();
+  const amenitiesByVenue = new Map<string, Array<UniversalPlace>>();
   for (const { place } of places.results) {
     if (place.place_type?.type === "Land" && place.name) {
       landById.set(place.place_id, place.name);
@@ -649,13 +722,23 @@ function buildPlaceIndex(places: UniversalPlaces): PlaceIndex {
     if (place.place_type?.type === "Land" || place.place_type?.type === "Park") continue;
     const venue = place.venue_id;
     if (!venue || !place.name) continue;
+    // Shops + amenities land in their own catalogs (plan item 2.2).
+    if (place.place_type?.type === "Shopping") {
+      const list = shopsByVenue.get(venue) ?? [];
+      if (!shopsByVenue.has(venue)) shopsByVenue.set(venue, list);
+      list.push(place);
+    } else if (place.place_type?.type === "Amenity") {
+      const list = amenitiesByVenue.get(venue) ?? [];
+      if (!amenitiesByVenue.has(venue)) amenitiesByVenue.set(venue, list);
+      list.push(place);
+    }
     const names = byVenueName.get(venue) ?? new Map<string, UniversalPlace>();
     if (!byVenueName.has(venue)) byVenueName.set(venue, names);
     const key = normalizeUniversalName(place.name);
     const existing = names.get(key);
     if (!existing || placeRichness(place) > placeRichness(existing)) names.set(key, place);
   }
-  return { byVenueName, landById, parkByVenue };
+  return { byVenueName, landById, parkByVenue, shopsByVenue, amenitiesByVenue };
 }
 
 /**
@@ -704,14 +787,153 @@ async function enrichUniversalPark(park: ParkRow, index: PlaceIndex): Promise<vo
       // Universal places carry no height-requirement field — leave null.
       heightRequirement: null,
       tags: universalPlaceTags(place.place_type?.categories),
+      // Official copy the feed already carries (plan item 2.3) — prefer the
+      // richer long_description.
+      description: place.long_description?.trim() || place.short_description?.trim() || null,
       source: Source.UNIVERSAL_DIRECT,
     });
   }
   if (overrides.length > 0) await overrideCategories(overrides);
   if (metaRows.length > 0) await upsertAttractionMeta(metaRows);
+
+  // Shops + amenity POIs (plan item 2.2) — in-park scope only: this runs per
+  // park venue, so CityWalk/hotel places never reach it (park_poi.park_id is
+  // NOT NULL; the park-less home is a phase-2 decision recorded in the plan).
+  const shopCount = await upsertUniversalShops(park, venue!, index);
+  const poiCount = await upsertUniversalAmenities(park, venue!, index);
+
   console.log(
-    `[geo] ${park.slug}: ${overrides.length} categories enriched, ${metaRows.length}/${attractions.length} meta rows from Universal places`,
+    `[geo] ${park.slug}: ${overrides.length} categories enriched, ${metaRows.length}/${attractions.length} meta rows, ` +
+      `${shopCount} shops, ${poiCount} amenity POIs from Universal places`,
   );
+}
+
+/** First location's lat/lng from a place's geometry; nulls when absent. */
+function placeLatLng(place: UniversalPlace): { lat: number | null; lng: number | null } {
+  const ll = place.geometry?.locations?.[0]?.lat_lng;
+  return { lat: toNum(ll?.lat), lng: toNum(ll?.lng) };
+}
+
+/**
+ * `Shopping` places → `shop_dim` (source UNIVERSAL_DIRECT) — the UOR analog of
+ * the WDW shops point-crawl, riding the same places feed the geo cron already
+ * fetches. Slug comes from the official detail URL's last path segment; land
+ * resolves through the feed's own Land places. Soft-delete is scoped to
+ * (source, park_resort_id) so each venue's pass owns only its rows.
+ */
+async function upsertUniversalShops(
+  park: ParkRow,
+  venue: string,
+  index: PlaceIndex,
+): Promise<number> {
+  const places = index.shopsByVenue.get(venue) ?? [];
+  const rows = places.map((p) => {
+    const { lat, lng } = placeLatLng(p);
+    const images = universalPlaceImages(p.images, p.name);
+    const detailUrl = universalDetailUrl(p.urls);
+    return {
+      facilityId: p.place_id,
+      name: p.name ?? p.place_id,
+      urlFriendlyId: detailUrl?.split("/").filter(Boolean).pop() ?? null,
+      latitude: lat,
+      longitude: lng,
+      mapPin: "shop",
+      land: (p.land_id ? index.landById.get(p.land_id) : null) ?? universalLandLabel(p.land_id),
+      landId: p.land_id ?? null,
+      parkResort: park.name,
+      parkResortId: venue,
+      imageUrl: images.hero,
+      detailUrl,
+      merchandise: p.place_type?.categories ?? [],
+      description: p.long_description?.trim() || p.short_description?.trim() || null,
+      source: Source.UNIVERSAL_DIRECT,
+      active: true,
+    };
+  });
+  for (let i = 0; i < rows.length; i += 500) {
+    await db
+      .insert(shopDim)
+      .values(rows.slice(i, i + 500))
+      .onConflictDoUpdate({
+        target: shopDim.facilityId,
+        set: {
+          name: sql`excluded.name`,
+          urlFriendlyId: sql`excluded.url_friendly_id`,
+          latitude: sql`excluded.latitude`,
+          longitude: sql`excluded.longitude`,
+          mapPin: sql`excluded.map_pin`,
+          land: sql`excluded.land`,
+          landId: sql`excluded.land_id`,
+          parkResort: sql`excluded.park_resort`,
+          parkResortId: sql`excluded.park_resort_id`,
+          imageUrl: sql`excluded.image_url`,
+          detailUrl: sql`excluded.detail_url`,
+          merchandise: sql`excluded.merchandise`,
+          description: sql`coalesce(excluded.description, shop_dim.description)`,
+          active: sql`true`,
+          lastSeenAt: sql`now()`,
+          updatedAt: sql`now()`,
+        },
+      });
+  }
+  const seen = rows.map((r) => r.facilityId);
+  const notSeen =
+    seen.length > 0
+      ? sql`AND facility_id NOT IN (${sql.join(
+          seen.map((id) => sql`${id}`),
+          sql`, `,
+        )})`
+      : sql``;
+  await db.execute(sql`
+    UPDATE shop_dim
+    SET active = false, updated_at = now()
+    WHERE source = ${Source.UNIVERSAL_DIRECT} AND park_resort_id = ${venue}
+      AND active = true ${notSeen}
+  `);
+  return rows.length;
+}
+
+/**
+ * `Amenity` places → `park_poi` (services layer) — restrooms, first aid,
+ * lockers, guest services. All land in the `info` map category (the Disney
+ * guest-services analog); `poi_type` is the literal "amenity" so UOR rows are
+ * distinguishable from the finder marker types.
+ */
+async function upsertUniversalAmenities(
+  park: ParkRow,
+  venue: string,
+  index: PlaceIndex,
+): Promise<number> {
+  const places = index.amenitiesByVenue.get(venue) ?? [];
+  const rows = places.map((p) => {
+    const { lat, lng } = placeLatLng(p);
+    return {
+      poiId: p.place_id,
+      parkId: park.id,
+      poiType: "amenity",
+      category: "info",
+      mapPin: null,
+      name: p.name ?? p.place_id,
+      entityName: null,
+      entityId: null,
+      urlFriendlyId: null,
+      latitude: lat,
+      longitude: lng,
+      land: (p.land_id ? index.landById.get(p.land_id) : null) ?? universalLandLabel(p.land_id),
+      // Amenity images are mostly flat icons — mirror the Disney guest-services
+      // rule and let the client render the category glyph instead.
+      imageUrl: null,
+      detailUrl: universalDetailUrl(p.urls),
+      source: Source.UNIVERSAL_DIRECT,
+    };
+  });
+  if (rows.length > 0) await upsertParkPoi(rows);
+  await deactivateStaleParkPoi(
+    park.id,
+    rows.map((r) => r.poiId),
+    Source.UNIVERSAL_DIRECT,
+  );
+  return rows.length;
 }
 
 // --- orchestration --------------------------------------------------------

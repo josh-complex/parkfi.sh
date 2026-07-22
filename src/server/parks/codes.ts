@@ -3,6 +3,7 @@
  * Hot tables store these ints; reference tables hold the human-readable codes.
  * Keep these in lock-step with `src/db/seed.ts`.
  */
+import type { ParkHeroSlide } from "../../db/schema.ts";
 
 export const QueueType = {
   STANDBY: 1,
@@ -101,6 +102,17 @@ export function queueStateFromThemeparks(state?: string | null): QueueStateCode 
     default:
       return null;
   }
+}
+
+/**
+ * Boarding-group `allocationStatus` -> QueueState code (plan item 1.5). Reuses
+ * the QueueState vocabulary rather than a new ref table: AVAILABLE = groups
+ * being distributed, PAUSED = distribution paused, SOLD_OUT = the day's groups
+ * all distributed (`CLOSED` upstream).
+ */
+export function boardingAllocationFromThemeparks(state?: string | null): QueueStateCode | null {
+  if (state === "CLOSED") return QueueState.SOLD_OUT;
+  return queueStateFromThemeparks(state);
 }
 
 /** Disney availability-calendar string -> QueueState code. */
@@ -268,6 +280,20 @@ interface DisneyHeroImage {
   tablet?: string;
   mobile?: string;
   alt?: string;
+  // Video slides: mp4 rendition URLs, largest first.
+  source?: Array<string>;
+}
+
+/**
+ * Strip inline HTML (Disney copy carries <em> etc.) and collapse whitespace —
+ * the shared cleaner for official description text before it lands in a
+ * `description` column.
+ */
+export function stripInlineHtml(s: string): string {
+  return s
+    .replace(/<[^>]*>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**
@@ -296,6 +322,41 @@ export function disneyParkHero(
   const url = urlOf(chosen);
   if (!url) return null;
   return { url: disneyHeroUrl(url) ?? url, alt: chosen.alt ?? null };
+}
+
+/**
+ * Normalize the full finder hero carousel into `parks.hero_media` slides (plan
+ * item 1.9). Image slides keep their best still upsized to the 16:9 hero size;
+ * video slides keep the first (largest) mp4 rendition + an upsized poster. The
+ * feed repeats renditions of the same video as separate slides, so de-dupe on
+ * the primary URL. Returns null when nothing usable (callers store null, not []).
+ */
+export function disneyParkHeroSlides(
+  slides?: Array<DisneyHeroImage> | null,
+  fallback?: DisneyHeroImage | null,
+): Array<ParkHeroSlide> | null {
+  const out: Array<ParkHeroSlide> = [];
+  const seen = new Set<string>();
+  const list = [...(slides ?? []), ...(fallback ? [fallback] : [])];
+  for (const s of list) {
+    const video = s.type === "video" ? (s.source?.find(Boolean) ?? null) : null;
+    const still = s.poster ?? s.desktop ?? s.tablet ?? s.mobile ?? null;
+    const url = video ?? (still ? (disneyHeroUrl(still) ?? still) : null);
+    if (!url) continue;
+    // De-dupe sans query (rendition timestamps differ, asset doesn't). The
+    // feed repeats one video as slides with DIFFERENT mp4 rendition URLs but
+    // the same poster — so videos key on their poster when they have one.
+    const key = (video && still ? still : url).split("?")[0];
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      kind: video ? "video" : "image",
+      url,
+      poster: video && still ? (disneyHeroUrl(still) ?? still) : null,
+      alt: s.alt ?? null,
+    });
+  }
+  return out.length > 0 ? out : null;
 }
 
 export interface DisneyFacetInfo {

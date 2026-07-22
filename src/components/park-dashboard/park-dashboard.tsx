@@ -1,9 +1,11 @@
 "use client";
 
 import * as React from "react";
+import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
 import { useTRPC } from "#/integrations/trpc/react.ts";
+import { showClock } from "#/lib/showtimes.ts";
 
 import { MapSlot } from "#/components/park-map/map-stage.tsx";
 import { NotificationPrompt } from "#/components/notifications/notification-prompt.tsx";
@@ -38,6 +40,92 @@ const ParkAnalytics = lazyWithReload(
   () => import("./park-analytics.tsx").then((m) => ({ default: m.ParkAnalytics })),
   "park-analytics",
 );
+
+/**
+ * Crossfading extra hero stills layered over the base hero image (plan item
+ * 1.9). The base `Image` (SSR'd, thumbhash placeholder) stays slide 0; the
+ * stored carousel's other stills (video slides contribute their poster — no
+ * ambient mp4 playback in v1) fade in above it on a slow rotation. Renders
+ * nothing when there are no extra slides, and stays on the base image under
+ * prefers-reduced-motion.
+ */
+function HeroCrossfade({ slides }: { slides: Array<{ url: string; alt: string | null }> }) {
+  const [active, setActive] = React.useState(0); // 0 = base image, 1..n = slides
+  React.useEffect(() => {
+    if (slides.length === 0) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const t = setInterval(() => setActive((i) => (i + 1) % (slides.length + 1)), 8000);
+    return () => clearInterval(t);
+  }, [slides.length]);
+  if (slides.length === 0) return null;
+  return (
+    <>
+      {slides.map((s, i) => (
+        <img
+          key={s.url}
+          src={disneyResizeUrl(s.url, 1600)}
+          alt={s.alt ?? ""}
+          loading="lazy"
+          aria-hidden={active !== i + 1}
+          className="absolute inset-0 size-full object-cover transition-opacity duration-1000"
+          style={{ opacity: active === i + 1 ? 1 : 0 }}
+        />
+      ))}
+    </>
+  );
+}
+
+/**
+ * "Early Entry rides today" (plan item 1.4): rides whose per-entity hours carry
+ * an `Early Entry` window — otherwise-unpublished rope-drop planning data.
+ * Renders nothing when no ride posts one (non-Disney parks, most days until the
+ * evening feed refresh).
+ */
+function EarlyEntryRides({
+  board,
+  parkSlug,
+  timezone,
+}: {
+  board:
+    | Array<{
+        name: string;
+        slug: string;
+        hoursToday: Array<{ type: string | null; start: string | null; end: string | null }>;
+      }>
+    | undefined;
+  parkSlug: string | null;
+  timezone: string | undefined;
+}) {
+  const rides = (board ?? []).filter((b) =>
+    (b.hoursToday ?? []).some((h) => h.type === "Early Entry"),
+  );
+  if (rides.length === 0 || !parkSlug) return null;
+  const window = rides[0].hoursToday.find((h) => h.type === "Early Entry");
+  const windowLabel =
+    window?.start && timezone
+      ? `${showClock(window.start, timezone)}${window.end ? ` – ${showClock(window.end, timezone)}` : ""}`
+      : null;
+  return (
+    <div className="rounded-2xl border bg-card p-4 shadow-sm">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-sm font-semibold tracking-tight">Early Entry rides today</h3>
+        {windowLabel && <span className="text-xs text-muted-foreground">{windowLabel}</span>}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {rides.map((r) => (
+          <Link
+            key={r.slug}
+            to="/park/$slug/ride/$rideSlug"
+            params={{ slug: parkSlug, rideSlug: r.slug }}
+            className="rounded-full border bg-background px-2.5 py-1 text-xs hover:bg-muted"
+          >
+            {r.name}
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
   const trpc = useTRPC();
@@ -100,6 +188,23 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
   // park has no image.
   const heroUrl = park?.imageUrl ?? null;
 
+  // Extra carousel stills beyond the base image (plan item 1.9): stored slides
+  // de-duped against the base hero (compare sans query — CDN timestamps churn).
+  const heroSlides = React.useMemo(() => {
+    const baseKey = heroUrl?.split("?")[0];
+    const seen = new Set(baseKey ? [baseKey] : []);
+    const out: Array<{ url: string; alt: string | null }> = [];
+    for (const s of park?.heroMedia ?? []) {
+      const url = s.kind === "video" ? s.poster : s.url;
+      if (!url) continue;
+      const key = url.split("?")[0];
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ url, alt: s.alt });
+    }
+    return out;
+  }, [park?.heroMedia, heroUrl]);
+
   // Trim the redundant "Theme Park" / "Park" suffix the feeds tack on, so the
   // page title doesn't read as a repeat (e.g. "Animal Kingdom Theme Park").
   const parkName = park ? formatParkName(park.name) : null;
@@ -132,6 +237,7 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
               aspect={12 / 5}
               placeholder={park?.imageThumbhash}
             />
+            <HeroCrossfade slides={heroSlides} />
             <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent" />
             <div className="absolute inset-x-0 bottom-0 flex flex-wrap items-end justify-between gap-3 p-4 lg:p-6">
               <div className="flex min-w-0 flex-col gap-1">
@@ -203,6 +309,10 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
         {/* Operating hours for today + the days ahead, sourced from the park's
             schedule feed (same data that gates the open/closed state). */}
         <ParkHours parkSlug={activeSlug ?? null} />
+        {/* Which rides open during Early Entry today (plan item 1.4) — pairs
+            with the Early Entry window ParkHours already shows. Disney-only
+            data; renders nothing elsewhere. */}
+        <EarlyEntryRides board={board} parkSlug={activeSlug ?? null} timezone={timezone} />
         {/* Deep links out to the operator's ticket store (+ the MDE app on
             native). Only render once we know the operator, to pick the resort. */}
         {operatorSlug && <ParkTicketsCta operatorSlug={operatorSlug} />}

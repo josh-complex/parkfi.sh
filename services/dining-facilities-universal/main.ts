@@ -99,6 +99,9 @@ async function main() {
         priceRange: null,
         parkResort: venueLabel(p.venue_id),
         parkResortId: p.venue_id ?? null,
+        // Official copy the places feed already carries (plan item 2.3) —
+        // prefer the richer long_description.
+        description: p.long_description?.trim() || p.short_description?.trim() || null,
         bookable,
         sellableOnline: false,
         imageUrl: images.hero,
@@ -131,6 +134,7 @@ async function main() {
           parkResort: sql`excluded.park_resort`,
           parkResortId: sql`excluded.park_resort_id`,
           bookable: sql`excluded.bookable`,
+          description: sql`coalesce(excluded.description, restaurant_dim.description)`,
           imageUrl: sql`excluded.image_url`,
           detailUrl: sql`excluded.detail_url`,
           source: sql`excluded.source`,

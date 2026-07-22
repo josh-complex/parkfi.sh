@@ -7,7 +7,7 @@ import { DiningVenueDetail } from "#/components/dining/dining-venue-detail.tsx";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
 import { useAchievementTrack } from "#/hooks/use-achievement-track.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
-import { breadcrumbJsonLd, restaurantJsonLd, seo } from "#/lib/seo.ts";
+import { breadcrumbJsonLd, restaurantJsonLd, seo, truncateMeta } from "#/lib/seo.ts";
 
 export const Route = createFileRoute("/_app/dining_/$facilityId")({
   component: VenuePage,
@@ -37,6 +37,7 @@ export const Route = createFileRoute("/_app/dining_/$facilityId")({
       name: venue?.name ?? null,
       cuisine: venue?.cuisine ?? null,
       parkResort: venue?.parkResort ?? null,
+      description: venue?.description ?? null,
     };
   },
   head: ({ params, loaderData }) => {
@@ -44,9 +45,11 @@ export const Route = createFileRoute("/_app/dining_/$facilityId")({
     // Anchor the copy to the venue's actual location instead of the generic
     // "Walt Disney World and Universal Orlando".
     const at = loaderData?.parkResort ? ` at ${loaderData.parkResort}` : "";
+    // Official copy (plan item 2.3) beats the template blurb when we have it.
+    const about = loaderData?.description ? ` ${truncateMeta(loaderData.description)}` : "";
     return seo({
       title: `${name} — Menu & Reservations — ParkFi`,
-      description: `Full menu, pricing, and live reservation availability for ${name}${at} on ParkFi.`,
+      description: `Full menu, pricing, and live reservation availability for ${name}${at} on ParkFi.${about}`,
       path: `/dining/${params.facilityId}`,
       image: `/og/dining/${params.facilityId}/card.png`,
       imageWidth: 1200,
@@ -83,6 +86,7 @@ function VenuePage() {
             data={restaurantJsonLd({
               facilityId,
               name: venue.name,
+              description: venue.description ?? undefined,
               cuisine: venue.cuisine,
               priceRange: venue.priceRange,
               image: venue.imageUrl,

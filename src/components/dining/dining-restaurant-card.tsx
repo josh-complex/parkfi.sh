@@ -216,6 +216,12 @@ export function RestaurantCard({
             <SmartphoneIcon className="size-3.5 shrink-0" />
             Mobile order available
           </a>
+        ) : restaurant.walkupWaitMin != null ? (
+          // Live waitlist beats the static flag when the venue is reporting one
+          // right now (plan item 1.2).
+          <span className="text-xs font-medium text-sky-600 dark:text-sky-400">
+            Walk-up ~{restaurant.walkupWaitMin} min right now
+          </span>
         ) : restaurant.walkupWaitList ? (
           <span className="text-muted-foreground text-xs">Walk-up · no reservations</span>
         ) : null}

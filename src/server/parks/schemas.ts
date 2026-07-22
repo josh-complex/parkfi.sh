@@ -66,6 +66,37 @@ export const LiveEntitySchema = z.object({
   lastUpdated: z.string().nullable().optional(),
   queue: Queue.optional(),
   showtimes: z.array(LiveShowtime).optional(),
+  // Per-entity operating hours for today (plan item 1.4) — typed windows incl.
+  // per-ride `Early Entry`. Same {type, startTime, endTime} shape as showtimes.
+  operatingHours: z.array(LiveShowtime).optional(),
+  // Live walk-up waitlist on restaurant entities (plan item 1.2) — one entry
+  // per party size, sparse (signature TS venues only).
+  diningAvailability: z
+    .array(
+      z
+        .object({
+          partySize: z.number().nullable().optional(),
+          waitTime: z.number().nullable().optional(),
+        })
+        .partial()
+        .passthrough(),
+    )
+    .optional(),
+  // Disney's own hourly wait forecast (plan item 1.3) — parsed so the batch
+  // rides one schema change; capture/storage is a later phase-3 item and the
+  // worker currently ignores it.
+  forecast: z
+    .array(
+      z
+        .object({
+          time: z.string().nullable().optional(),
+          waitTime: z.number().nullable().optional(),
+          percentage: z.number().nullable().optional(),
+        })
+        .partial()
+        .passthrough(),
+    )
+    .optional(),
 });
 export type LiveEntity = z.infer<typeof LiveEntitySchema>;
 
@@ -162,10 +193,11 @@ const DisneyParkMarker = z.object({
     .optional(),
 });
 
-// One hero slide. Videos carry a `poster` still; image slides carry a
-// `desktop`/`tablet`/`mobile` URL. Both are park-level marketing imagery and
-// share the `/resize/mwImage/1/{w}/{h}/…` CDN segment (resizable). `partial` +
-// `passthrough` so unknown slide shapes don't fail the parse.
+// One hero slide. Videos carry a `poster` still + mp4 rendition `source[]`;
+// image slides carry a `desktop`/`tablet`/`mobile` URL. Both are park-level
+// marketing imagery and share the `/resize/mwImage/1/{w}/{h}/…` CDN segment
+// (resizable). `partial` + `passthrough` so unknown slide shapes don't fail
+// the parse.
 const DisneyHeroSlide = z
   .object({
     type: z.string().optional(),
@@ -174,6 +206,7 @@ const DisneyHeroSlide = z
     tablet: z.string().optional(),
     mobile: z.string().optional(),
     alt: z.string().optional(),
+    source: z.array(z.string()).optional(),
   })
   .partial()
   .passthrough();
@@ -272,6 +305,30 @@ const DisneyDiningEntitySchema = z
     facetsLabel: z.string().nullable().optional(),
     facetGroupType: z.string().nullable().optional(),
     quickServiceAvailable: z.boolean().optional(),
+    // Inline TODAY schedule (populated on ~372/409 venues): typed hours for the
+    // requested date. A single list call keeps `dining_schedule`'s today rows
+    // fresh between the weekly per-venue detail fetches (plan item 2.3).
+    schedule: z
+      .object({
+        schedules: z
+          .array(
+            z
+              .object({
+                type: z.string().nullable().optional(),
+                startTime: z.string().nullable().optional(),
+                endTime: z.string().nullable().optional(),
+                date: z.string().nullable().optional(),
+                isClosed: z.boolean().nullable().optional(),
+              })
+              .partial()
+              .passthrough(),
+          )
+          .default([]),
+      })
+      .partial()
+      .passthrough()
+      .nullable()
+      .optional(),
     media: z
       .object({
         finderStandardThumb: DisneyFinderMedia.optional(),
@@ -423,7 +480,36 @@ export const DisneyDiningDetailSchema = z
   .object({
     structuredData: z
       .object({
+        // Clean one-liner ("Experience an endless variety of sips…") — the
+        // description fallback when `aagData.description` is absent.
+        description: z.string().nullable().optional(),
         openingHoursSpecification: z.array(DisneyOpeningHours).default([]),
+      })
+      .partial()
+      .passthrough()
+      .nullable()
+      .optional(),
+    // Venue enrichment (plan item 2.3): richer marketing copy (may carry inline
+    // HTML like <em> — stripped at parse) and the per-venue discounts modal,
+    // whose `sections` map is keyed by discount type ('annualPass' | 'dvc' |
+    // 'diningPlan' | 'disneyVisa') with a "10%"-style `percentage` (nullable —
+    // some sections publish no figure).
+    aagData: z
+      .object({
+        description: z.string().nullable().optional(),
+        discountsModal: z
+          .object({
+            sections: z
+              .record(
+                z.string(),
+                z.object({ percentage: z.string().nullable().optional() }).partial().passthrough(),
+              )
+              .optional(),
+          })
+          .partial()
+          .passthrough()
+          .nullable()
+          .optional(),
       })
       .partial()
       .passthrough()

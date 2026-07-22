@@ -164,7 +164,24 @@ export const parks = pgTable("parks", {
   // ThumbHash placeholder pair — see attractionMeta.imageThumbhash.
   imageThumbhash: text("image_thumbhash"),
   imageThumbhashSrc: text("image_thumbhash_src"),
+  // Full hero carousel from the Disney finder `heroData.mediaEngine` (plan item
+  // 1.9): normalized, de-duped slides — image stills + videos with posters.
+  // Null for parks whose feed carries no carousel (Universal, water parks);
+  // `image_url` above stays the first-usable-image denormalization.
+  heroMedia: jsonb("hero_media").$type<Array<ParkHeroSlide>>(),
 });
+
+/**
+ * One normalized hero-carousel slide stored on `parks.hero_media`. For images
+ * `url` is the 16:9 still (upsized via the mwImage resize segment); for videos
+ * `url` is the mp4 and `poster` its still.
+ */
+export interface ParkHeroSlide {
+  kind: "image" | "video";
+  url: string;
+  poster?: string | null;
+  alt: string | null;
+}
 
 /** GeoJSON geometry stored on `parks.boundary` — a park's outline in [lng,lat]. */
 export type GeoPolygon =
@@ -228,6 +245,9 @@ export const attractionMeta = pgTable("attraction_meta", {
   land: text("land"),
   heightRequirement: text("height_requirement"),
   tags: text("tags").array().notNull().default([]),
+  // Official marketing copy — UOR: places-feed long/short description; WDW:
+  // per-attraction finder detail fetch (monthly geo cron), HTML-stripped.
+  description: text("description"),
   source: smallint("source")
     .notNull()
     .references(() => refSource.id),
@@ -356,8 +376,11 @@ export const queueObs = pgTable(
     currency: char("currency", { length: 3 }),
     returnStart: timestamp("return_start", { withTimezone: true }),
     returnEnd: timestamp("return_end", { withTimezone: true }),
-    // BOARDING_GROUP only
+    // BOARDING_GROUP only. Start/end bound the group range being called;
+    // `boarding_allocation` is the day's distribution state (plan item 1.5).
     boardingGroup: integer("boarding_group"),
+    boardingGroupEnd: integer("boarding_group_end"),
+    boardingAllocation: smallint("boarding_allocation"),
     source: smallint("source")
       .notNull()
       .references(() => refSource.id),
@@ -400,8 +423,18 @@ export const attractionLive = pgTable("attraction_live", {
   returnState: smallint("return_state").references(() => refQueueState.id),
   returnStart: timestamp("return_start", { withTimezone: true }),
   returnEnd: timestamp("return_end", { withTimezone: true }),
-  // BOARDING_GROUP (queue_type 6) — current group being called.
+  // BOARDING_GROUP (queue_type 6) — group range being called + the day's
+  // allocation state (plan item 1.5).
   boardingGroup: integer("boarding_group"),
+  boardingGroupEnd: integer("boarding_group_end"),
+  boardingAllocation: smallint("boarding_allocation"),
+  // Per-entity operating hours for today (plan item 1.4) — typed windows
+  // (`Operating`, `Early Entry`, …, raw ISO times) for rides whose hours differ
+  // from the park's. Effectively Disney-only; null when the feed posts none.
+  hoursToday:
+    jsonb("hours_today").$type<
+      Array<{ type: string | null; start: string | null; end: string | null }>
+    >(),
   // SHOW entities: today's performance list (`{type, start, end}` with raw ISO
   // times). Worker-upserted on change like the other mirror columns; null for
   // non-shows / shows with no posted times. No history table — a day's schedule
@@ -412,6 +445,24 @@ export const attractionLive = pgTable("attraction_live", {
     >(),
   source: smallint("source").references(() => refSource.id),
   // The poll tick that wrote this snapshot (staleness clock for readers).
+  observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
+});
+
+/**
+ * (B3) Live walk-up dining waitlist mirror (plan item 1.2) — restaurant live
+ * entities at WDW carry `diningAvailability[]` (per-party-size walk-up waits).
+ * Sparse by design: only the signature table-service tier (~4 MK venues on the
+ * probe day) reports it. `facility_id` is the live entity's externalId numeric
+ * prefix, which IS `restaurant_dim.facility_id` (verified join) — but no FK:
+ * the mirror may briefly lead the catalog. Worker-upserted per tick; readers
+ * treat rows as stale once `observed_at` ages out (same 24h rule as
+ * `attraction_live`). `wait_min` is the headline wait (party of 2 when posted,
+ * else the venue's minimum); `party_sizes` keeps the full breakdown.
+ */
+export const diningWalkupLive = pgTable("dining_walkup_live", {
+  facilityId: text("facility_id").primaryKey(),
+  waitMin: integer("wait_min"),
+  partySizes: jsonb("party_sizes").$type<Array<{ partySize: number; waitMin: number | null }>>(),
   observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
 });
 
@@ -630,6 +681,18 @@ export const restaurantDim = pgTable(
     // Which Disney Dining Plan credit tiers apply (2026/2027 QS + TS meals).
     diningPlanQs: boolean("dining_plan_qs").notNull().default(false),
     diningPlanTs: boolean("dining_plan_ts").notNull().default(false),
+    // Official marketing copy — UOR: places-feed long/short description; WDW:
+    // finder detail `aagData.description` (fallback `structuredData.description`),
+    // HTML-stripped. Refreshed by the respective catalog crons; never nulled out
+    // on a failed detail fetch (stale copy beats no copy).
+    description: text("description"),
+    // Finder list `quickServiceAvailable` — the operator's own QS flag, cleaner
+    // than inferring from the `tableService` facets (DISNEY_DIRECT only).
+    quickService: boolean("quick_service").notNull().default(false),
+    // Annual Passholder discount percentage from the finder detail
+    // `aagData.discountsModal` ("10%" → 10). Null when no AP discount published;
+    // complements the boolean `annual_pass_discount` facet flag.
+    apDiscountPct: smallint("ap_discount_pct"),
     // Recommendation/taxonomy arrays that feed the "Disney Picks" shelves:
     // franchise affinity (`star-wars-rec`…), rec buckets (`character-dining-rec`…),
     // venue entertainment (`live-music`…), and premium-events categories.
@@ -721,6 +784,9 @@ export const shopDim = pgTable("shop_dim", {
   merchandise: text("merchandise").array().notNull().default([]),
   // Disney-operated vs third-party lessee (the finder `disneyOwned` "true"/"false").
   disneyOwned: boolean("disney_owned").notNull().default(false),
+  // Official marketing copy — UOR places-feed description (WDW shops list feed
+  // carries none today; stays null until a detail-fetch pass exists).
+  description: text("description"),
   // Operator/source that owns this row; scopes the catalog cron's soft-delete.
   source: smallint("source")
     .notNull()
@@ -834,6 +900,13 @@ export const diningSchedule = pgTable(
  * shows what was added/removed. Surrogate `id` PK — titles repeat within a menu
  * (e.g. duplicate beers, identical lunch/dinner wine lists).
  */
+/** One price tier stored in `dining_menu_item.prices` (plan item 1.6). */
+export interface MenuPriceTier {
+  amount: number;
+  type: string | null; // "Per Glass" | "Per Bottle" | "Per Serving" | …
+  currency: string | null;
+}
+
 export const diningMenuItem = pgTable(
   "dining_menu_item",
   {
@@ -851,6 +924,11 @@ export const diningMenuItem = pgTable(
     price: real("price"),
     priceType: text("price_type"),
     currency: text("currency"),
+    // Full price-tier list (plan item 1.6) — an item can be priced per glass /
+    // bottle / serving. `price`/`price_type`/`currency` above stay the first-
+    // tier denormalization; null for single/unpriced items and generations
+    // captured before the column existed.
+    prices: jsonb("prices").$type<Array<MenuPriceTier>>(),
   },
   (t) => [
     index("dining_menu_item_facility_idx").on(t.facilityId, t.observedAt),

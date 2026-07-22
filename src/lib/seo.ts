@@ -75,6 +75,17 @@ export function seo(opts: SeoOptions) {
 }
 
 /**
+ * Word-boundary truncation for meta-description fragments — official venue/
+ * attraction copy (plan item 2.3) can run long, and the appended blurb should
+ * not balloon the tag past what SERPs render.
+ */
+export function truncateMeta(s: string, max = 180): string {
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), 0)).trimEnd()}…`;
+}
+
+/**
  * Sitewide WebSite + Organization graph. Rendered once in the root document so
  * every page carries brand identity and enables the SERP sitelinks search box.
  */

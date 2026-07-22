@@ -47,6 +47,9 @@ export interface Restaurant {
   // badge instead of a reservation grid.
   availabilityEligible: boolean;
   bookable: boolean;
+  // Live walk-up wait in minutes (plan item 1.2); null unless the venue
+  // reported a waitlist within the last 2h (signature TS venues only).
+  walkupWaitMin: number | null;
 }
 
 /** Catalog-attribute toggles. Selecting several narrows to venues with ALL of them. */

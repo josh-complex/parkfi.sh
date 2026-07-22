@@ -4,7 +4,7 @@ import { isServer, useQuery } from "@tanstack/react-query";
 import { RideDetail } from "#/components/park-dashboard/ride-detail.tsx";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
-import { attractionJsonLd, breadcrumbJsonLd, seo } from "#/lib/seo.ts";
+import { attractionJsonLd, breadcrumbJsonLd, seo, truncateMeta } from "#/lib/seo.ts";
 
 /** "space-mountain" -> "Space Mountain" for a readable, indexable title. */
 function titleizeSlug(slug: string): string {
@@ -37,6 +37,7 @@ export const Route = createFileRoute("/_app/_dash/park/$slug_/ride/$rideSlug")({
       parkName: ride?.park.name ?? null,
       operatorSlug: ride?.park.operatorSlug ?? null,
       standbyWait: ride?.standbyWait ?? null,
+      description: ride?.meta?.description ?? null,
     };
   },
   head: ({ params, loaderData }) => {
@@ -48,9 +49,11 @@ export const Route = createFileRoute("/_app/_dash/park/$slug_/ride/$rideSlug")({
     const lineLabel = isUniversal ? "Virtual Line" : "Lightning Lane";
     const wait = loaderData?.standbyWait;
     const waitLede = wait != null ? `Now ${wait} min standby. ` : "";
+    // Official copy (plan item 2.3) beats the template blurb when we have it.
+    const about = loaderData?.description ? ` ${truncateMeta(loaderData.description)}` : "";
     return seo({
       title: `${name} Wait Times${isUniversal ? "" : " & Lightning Lane"} — ${parkName} — ParkFi`,
-      description: `${waitLede}Live standby wait, ride status, and ${lineLabel} availability for ${name} at ${parkName}. Track it in real time on ParkFi.`,
+      description: `${waitLede}Live standby wait, ride status, and ${lineLabel} availability for ${name} at ${parkName}.${about}`,
       path: `/park/${params.slug}/ride/${params.rideSlug}`,
       image: `/og/ride/${params.slug}/${params.rideSlug}/card.png`,
       imageWidth: 1200,
@@ -73,6 +76,7 @@ function RidePage() {
               parkSlug: slug,
               rideSlug,
               name: ride.name,
+              description: ride.meta?.description ?? undefined,
               parkName: ride.park.name,
               latitude: ride.latitude,
               longitude: ride.longitude,

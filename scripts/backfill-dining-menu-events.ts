@@ -83,6 +83,7 @@ async function main() {
         price: diningMenuItem.price,
         priceType: diningMenuItem.priceType,
         currency: diningMenuItem.currency,
+        prices: diningMenuItem.prices,
       })
       .from(diningMenuItem)
       .where(eq(diningMenuItem.facilityId, facilityId))
@@ -101,6 +102,7 @@ async function main() {
         price: r.price,
         priceType: r.priceType,
         currency: r.currency,
+        prices: r.prices,
       };
       const list = byGen.get(key);
       if (list) list.push(row);

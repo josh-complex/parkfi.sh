@@ -81,6 +81,9 @@ export interface MenuItemData {
   price: number | null;
   priceType: string | null;
   currency: string | null;
+  // Full price-tier list (plan item 1.6) — "Per Glass $16 / Per Bottle $64".
+  // Null/absent for single-priced items and pre-upgrade menu generations.
+  prices?: Array<{ amount: number; type: string | null; currency: string | null }> | null;
 }
 
 /**
@@ -306,7 +309,19 @@ function MenuItem({
       </div>
       {(price || change) && (
         <div className="flex shrink-0 flex-col items-end gap-0.5">
-          {price && <span className="text-sm tabular-nums text-muted-foreground">{price}</span>}
+          {/* Multi-tier items (plan item 1.6) list every tier; the single-price
+              case keeps the plain number. Per-person scaling never applies to
+              tiered items (tiers are per-glass/bottle/serving). */}
+          {item.prices != null && item.prices.length > 1 ? (
+            item.prices.map((t) => (
+              <span key={t.type ?? "base"} className="text-xs tabular-nums text-muted-foreground">
+                {t.type ? `${t.type} ` : ""}
+                {formatPrice(t.amount, t.currency ?? item.currency)}
+              </span>
+            ))
+          ) : price ? (
+            <span className="text-sm tabular-nums text-muted-foreground">{price}</span>
+          ) : null}
           {perPerson && (
             <span className="text-[10px] leading-none tabular-nums text-muted-foreground/60">
               {guests > 1 ? `${unitPrice} × ${guests}` : "per person"}

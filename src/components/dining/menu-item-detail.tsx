@@ -258,6 +258,24 @@ export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug:
             </span>
           )}
         </div>
+        {/* Full price-tier table (plan item 1.6) — only when the item is
+            genuinely multi-priced ("Per Glass $16 · Per Bottle $64"); the
+            single-price case is already the headline number above. */}
+        {item.current?.prices != null && item.current.prices.length > 1 && (
+          <div className="flex w-fit flex-col gap-1 rounded-xl border px-4 py-3">
+            {item.current.prices.map((t) => (
+              <div
+                key={t.type ?? "base"}
+                className="flex items-baseline justify-between gap-6 text-sm"
+              >
+                <span className="text-muted-foreground">{t.type ?? "Each"}</span>
+                <span className="font-medium tabular-nums">
+                  {formatPrice(t.amount, t.currency ?? currency)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
         {item.current?.description && (
           <p className="text-sm leading-relaxed text-muted-foreground">
             {item.current.description}

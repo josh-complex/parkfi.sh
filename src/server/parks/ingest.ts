@@ -6,6 +6,7 @@ import {
   attractionQueueSupport,
   attractionStatusObs,
   attractions,
+  diningWalkupLive,
   externalIds,
   parks,
   queueObs,
@@ -196,9 +197,14 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
           returnStart: null,
           returnEnd: null,
           boardingGroup: null,
+          boardingGroupEnd: null,
+          boardingAllocation: null,
         },
       ],
       showtimes: [],
+      hoursToday: [],
+      diningWaits: [],
+      operatorExternalId: null,
     }));
   }
 
@@ -253,6 +259,8 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
       returnStart: q.returnStart,
       returnEnd: q.returnEnd,
       boardingGroup: q.boardingGroup,
+      boardingGroupEnd: q.boardingGroupEnd,
+      boardingAllocation: q.boardingAllocation,
       source,
     }));
   });
@@ -303,7 +311,10 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
       returnStart: rt?.returnStart ?? null,
       returnEnd: rt?.returnEnd ?? null,
       boardingGroup: bg?.boardingGroup ?? null,
+      boardingGroupEnd: bg?.boardingGroupEnd ?? null,
+      boardingAllocation: bg?.boardingAllocation ?? null,
       showtimes: e.showtimes.length > 0 ? e.showtimes : null,
+      hoursToday: e.hoursToday.length > 0 ? e.hoursToday : null,
       source,
       observedAt: tickNow,
     };
@@ -327,12 +338,46 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
             returnStart: sql`excluded.return_start`,
             returnEnd: sql`excluded.return_end`,
             boardingGroup: sql`excluded.boarding_group`,
+            boardingGroupEnd: sql`excluded.boarding_group_end`,
+            boardingAllocation: sql`excluded.boarding_allocation`,
             showtimes: sql`excluded.showtimes`,
+            hoursToday: sql`excluded.hours_today`,
             source: sql`excluded.source`,
             observedAt: sql`excluded.observed_at`,
           },
         });
     }
+  }
+
+  // (E) walk-up dining mirror (plan item 1.2) — restaurant entities carrying a
+  // live `diningAvailability` breakdown. The join key is the operator's own
+  // numeric id prefix (== restaurant_dim.facility_id). Headline wait prefers
+  // the party-of-2 entry, else the venue's minimum posted wait.
+  const walkupRows = normalized
+    .filter((e) => e.diningWaits.length > 0 && e.operatorExternalId)
+    .map((e) => {
+      const posted = e.diningWaits.filter((d) => d.waitMin != null);
+      const partyOf2 = posted.find((d) => d.partySize === 2);
+      const min = posted.length > 0 ? Math.min(...posted.map((d) => d.waitMin!)) : null;
+      return {
+        facilityId: e.operatorExternalId!.split(";")[0],
+        waitMin: partyOf2?.waitMin ?? min,
+        partySizes: e.diningWaits,
+        observedAt: tickNow,
+      };
+    });
+  if (walkupRows.length > 0) {
+    await db
+      .insert(diningWalkupLive)
+      .values(walkupRows)
+      .onConflictDoUpdate({
+        target: diningWalkupLive.facilityId,
+        set: {
+          waitMin: sql`excluded.wait_min`,
+          partySizes: sql`excluded.party_sizes`,
+          observedAt: sql`excluded.observed_at`,
+        },
+      });
   }
 
   return {
