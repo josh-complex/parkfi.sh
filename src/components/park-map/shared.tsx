@@ -38,6 +38,7 @@ import {
 } from "#/components/park-dashboard/lightning-lane.ts";
 
 import { formatParkName } from "#/lib/parks.ts";
+import { capacityLabel, type CapacityLevel } from "#/lib/ticket-scarcity.ts";
 
 import type { BoardItem } from "#/components/park-dashboard/types.ts";
 import type { GeoPolygon } from "#/db/schema.ts";
@@ -1186,6 +1187,8 @@ function discMarkup(opts: {
   bg: string;
   px: number;
   badge?: string;
+  /** A chip floated above the disc (e.g. Express capacity on a park badge). */
+  topChip?: string;
 }): string {
   const ring = `--tw-ring-color:${opts.ring}`;
   const hires =
@@ -1197,7 +1200,19 @@ function discMarkup(opts: {
         opts.alt,
       )}" loading="lazy" class="size-full rounded-full object-cover shadow-md ring-[3px]" style="${ring};${FACE_FADE_STYLE}" />`
     : `<span data-face-fill class="flex size-full items-center justify-center rounded-full text-white shadow-md ring-[3px]" style="background:${opts.bg};${ring}">${opts.fallbackSvg}</span>`;
-  return `<span class="relative block shrink-0" style="width:${opts.px}px;height:${opts.px}px">${face}${opts.badge ?? ""}</span>`;
+  return `<span class="relative block shrink-0" style="width:${opts.px}px;height:${opts.px}px">${face}${
+    opts.topChip ?? ""
+  }${opts.badge ?? ""}</span>`;
+}
+
+/** Express capacity chip floated above a park badge (plan item 3.1). `full` reads
+ *  urgent red, `nearing` amber. Absolute, centered above the disc. */
+function capacityChipMarkup(level: CapacityLevel): string {
+  const style =
+    level === "full" ? "background:#dc2626;color:#fff" : "background:#f59e0b;color:#1c1917";
+  return `<span class="pointer-events-none absolute left-1/2 -top-1.5 z-20 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide shadow-sm ring-1 ring-black/10" style="${style}">${escapeHtml(
+    capacityLabel(level),
+  )}</span>`;
 }
 
 /**
@@ -1324,6 +1339,8 @@ export function buildParkBadgeEl(p: {
   avgWait: number | null;
   imageUrl?: string | null;
   imageAlt?: string | null;
+  /** Today's Universal Express capacity (plan item 3.1); null → no chip. */
+  expressCapacity?: CapacityLevel | null;
 }): { el: HTMLButtonElement; detail: HTMLDivElement } {
   const el = document.createElement("button");
   el.type = "button";
@@ -1339,6 +1356,7 @@ export function buildParkBadgeEl(p: {
     bg: color,
     px: 64,
     badge: nameChipMarkup(formatParkName(p.name), false),
+    topChip: p.expressCapacity ? capacityChipMarkup(p.expressCapacity) : undefined,
   });
   const subtitle = `${p.operating} open · ${escapeHtml(wait)}`;
   const detail = document.createElement("div");
@@ -1361,6 +1379,10 @@ export type PoiItem = {
    *  'tour'. */
   category: string;
   imageUrl: string | null;
+  /** Higher-res variant of `imageUrl`, swapped into the card header on open (see
+   *  `discMarkup` `hiResUrl`). Lets the disc load a small thumb fast while the
+   *  full-size photo waits for an actual card open. */
+  hiResUrl?: string | null;
   detailUrl?: string | null;
   /** Finder slug — present on shops (deep-links `/shop/$slug`); absent on dining. */
   slug?: string | null;
@@ -1401,6 +1423,32 @@ export function poiCardBodyHtml(poi: PoiItem): string {
   const actions = `<div class="mt-3 flex items-center gap-2">${directions}${walkSlotHtml}</div>`;
   return `<div data-name-target class="text-[15px] font-semibold leading-tight text-card-foreground">${escapeHtml(
     poi.name,
+  )}</div><div class="mt-1 text-[12px] text-muted-foreground">${escapeHtml(
+    subtitle,
+  )}</div>${actions}`;
+}
+
+/**
+ * Card body for a live SHOW marker (plan item 1.1) — leads with the next
+ * showtime (or "Done for today"), then the land, then Directions + walk time.
+ * The whole card presses to the show's detail page (wired by the renderer).
+ * `nextLabel` is the pre-formatted "Next 3:00 PM · in 25 min" line (null when the
+ * day's shows are done); `sub` is the fallback subtitle used then.
+ */
+export function showCardBodyHtml(opts: {
+  name: string;
+  land: string | null;
+  longitude: number | null;
+  latitude: number | null;
+  nextLabel: string | null;
+  sub: string;
+}): string {
+  const lead = opts.nextLabel ?? opts.sub;
+  const subtitle = [lead, opts.land].filter(Boolean).join(" · ");
+  const directions = directionsButtonHtml(opts.longitude, opts.latitude);
+  const actions = `<div class="mt-3 flex items-center gap-2">${directions}${walkSlotHtml}</div>`;
+  return `<div data-name-target class="text-[15px] font-semibold leading-tight text-card-foreground">${escapeHtml(
+    opts.name,
   )}</div><div class="mt-1 text-[12px] text-muted-foreground">${escapeHtml(
     subtitle,
   )}</div>${actions}`;
@@ -1447,6 +1495,27 @@ const POI_COLOR: Record<string, string> = {
  * the renderer, so overlapping markers group + collision-avoid together. Returns
  * the root plus the `detail` layer (for the hover-label flip), like the others.
  */
+/**
+ * Shrink a Disney `mwImage` CDN url to a disc-sized thumbnail by rewriting the
+ * resize dimensions baked into its path (`/resize/mwImage/<mode>/<w>/<h>/<q>/…`).
+ * Scales the longest side to ~160px — plenty for a retina 52px disc — keeping the
+ * source aspect ratio so the crop is identical to the full-size photo, just far
+ * lighter (an 800x450 card asset drops ~70% in bytes). Returns null for urls that
+ * aren't mwImage (e.g. Universal venues on their own host), so the caller falls
+ * back to the original — no worse than before.
+ */
+function mwImageThumb(url: string | null): string | null {
+  if (!url) return null;
+  const m = url.match(/(\/resize\/mwImage\/\d+\/)(\d+)\/(\d+)(\/)/);
+  if (!m) return null;
+  const w = Number(m[2]);
+  const h = Number(m[3]);
+  if (!w || !h) return null;
+  const scale = 160 / Math.max(w, h);
+  if (scale >= 1) return null; // already disc-sized or smaller
+  return url.replace(m[0], `${m[1]}${Math.round(w * scale)}/${Math.round(h * scale)}${m[4]}`);
+}
+
 export function buildPoiEl(poi: PoiItem): { el: HTMLButtonElement; detail: HTMLDivElement } {
   // Normalize the finder pin to a CATEGORY_ICON key ("characters" -> "character").
   const iconKey = poi.category === "characters" ? "character" : poi.category;
@@ -1465,8 +1534,17 @@ export function buildPoiEl(poi: PoiItem): { el: HTMLButtonElement; detail: HTMLD
   // glyph never sits at the same weight as a real attraction/venue photo.
   const iconOnly = !poi.imageUrl;
   const px = iconOnly ? 28 : 52;
+  // Two-tier image load (same as the ride markers): the disc loads a small,
+  // fast-decoding thumb; the full-size photo is fetched only when a card opens.
+  // Feeds that set `hiResUrl` (shows) already split upstream; the single-url
+  // feeds (dining/shops/overlay POIs) carry an 800x450 Disney asset, so derive
+  // the disc thumb here and keep the full size as the hi-res swap. Non-mwImage
+  // urls (Universal) fall back to loading the one url for both.
+  const hiResUrl = poi.hiResUrl ?? poi.imageUrl;
+  const discUrl = poi.hiResUrl ? poi.imageUrl : (mwImageThumb(poi.imageUrl) ?? poi.imageUrl);
   const disc = discMarkup({
-    url: poi.imageUrl,
+    url: discUrl,
+    hiResUrl: hiResUrl !== discUrl ? hiResUrl : null,
     alt: poi.name,
     fallbackSvg: categoryIconSvg(iconKey, iconOnly ? 13 : 14),
     ring: color,

@@ -43,6 +43,19 @@ const Queue = z
   })
   .passthrough();
 
+// SHOW entities carry a `showtimes[]` of the day's performances
+// (`Performance Time` type covers parades/fireworks/meet-and-greets too). Times
+// are ISO strings with a park-local offset. Tolerant: fields optional, unknown
+// keys pass through.
+const LiveShowtime = z
+  .object({
+    type: z.string().nullable().optional(),
+    startTime: z.string().nullable().optional(),
+    endTime: z.string().nullable().optional(),
+  })
+  .partial()
+  .passthrough();
+
 export const LiveEntitySchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -52,6 +65,7 @@ export const LiveEntitySchema = z.object({
   status: z.string().nullable().optional(),
   lastUpdated: z.string().nullable().optional(),
   queue: Queue.optional(),
+  showtimes: z.array(LiveShowtime).optional(),
 });
 export type LiveEntity = z.infer<typeof LiveEntitySchema>;
 

@@ -27,6 +27,7 @@ import {
   type AgeGroup,
   type Resort,
 } from "#/components/ticket-pricing/shared.tsx";
+import { unitsLeftChip } from "#/lib/ticket-scarcity.ts";
 import { TicketsResortChips } from "#/components/ticket-pricing/tickets-resort-chips.tsx";
 import { ConnectionLost } from "#/components/connection-lost.tsx";
 import { queryUnavailable } from "#/hooks/use-online-status.ts";
@@ -44,6 +45,7 @@ interface ShelfPark {
   parkHopper: boolean;
   todayCents: number | null;
   todayAvailable: boolean;
+  todayUnits: number | null;
   cheapestCents: number | null;
   cheapestDate: string | null;
   crowdIndex: number | null;
@@ -139,14 +141,18 @@ function ParkShelf({
   onOpenCalendar,
   todayIso,
   native,
+  apBlockedToday,
 }: {
   park: ShelfPark;
   onOpenCalendar: (focusDate: string | undefined) => void;
   todayIso: string;
   native: boolean;
+  /** Today is an Annual Pass blockout for this park (WDW only). */
+  apBlockedToday: boolean;
 }) {
   const crowd = park.crowdIndex != null ? crowdConfig(park.crowdIndex) : null;
   const precip = formatPrecip(park.precipProb);
+  const units = park.todayAvailable ? unitsLeftChip(park.todayUnits) : null;
   const subtitle =
     park.cheapestCents != null
       ? `${typeLabel(park)} · from ${dollars(park.cheapestCents)}`
@@ -181,6 +187,21 @@ function ParkShelf({
                 </span>
               ) : (
                 <span className="text-2xl font-bold text-muted-foreground/30">—</span>
+              )}
+              {units && (
+                <span
+                  className={cn(
+                    "absolute left-2 top-2 rounded-full px-1.5 py-[3px] text-[9px] font-bold uppercase tracking-widest leading-none",
+                    units.pill,
+                  )}
+                >
+                  {units.label}
+                </span>
+              )}
+              {apBlockedToday && (
+                <span className="absolute left-2 top-2 rounded-full bg-red-100 px-1.5 py-[3px] text-[9px] font-bold uppercase tracking-widest leading-none text-red-600 dark:bg-red-900/50 dark:text-red-300">
+                  AP blocked
+                </span>
               )}
             </StatCard>
           </CarouselItem>
@@ -338,6 +359,17 @@ export function TicketsMobileShelves({
   const todayIso = q.data?.date ?? "";
   const allParks = (q.data?.parks ?? []) as Array<ShelfPark>;
 
+  // Today's Annual Pass blockouts (WDW only) — a red label on that park's Today
+  // card. `days: 1` scopes the fetch to today.
+  const blockoutQ = useQuery({
+    ...trpc.tickets.passholderBlockouts.queryOptions({ days: 1 }),
+    enabled,
+  });
+  const blockedTodaySlugs = React.useMemo(
+    () => new Set((blockoutQ.data?.todayBlocked ?? []).map((p) => p.slug)),
+    [blockoutQ.data],
+  );
+
   const [resortFilter, setResortFilter] = React.useState<Resort | null>(null);
   const parks = resortFilter ? allParks.filter((p) => p.resort === resortFilter) : allParks;
 
@@ -370,6 +402,7 @@ export function TicketsMobileShelves({
               park={park}
               todayIso={todayIso}
               native={native}
+              apBlockedToday={park.slug != null && blockedTodaySlugs.has(park.slug)}
               onOpenCalendar={(focusDate) => setCal({ park, focusDate })}
             />
           ))

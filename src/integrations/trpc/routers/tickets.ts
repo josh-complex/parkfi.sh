@@ -3,7 +3,8 @@ import { z } from "zod";
 
 import { db } from "#/db/index.ts";
 import { ALL_PARKS, UOR_PARKS, WDW_PARKS, WDW_WATER_PARK_CODES } from "#/lib/parks.ts";
-import { WDW_WATER_PARK_FAMILIES } from "#/server/parks/codes.ts";
+import { scarcityTier } from "#/lib/ticket-scarcity.ts";
+import { QueueState, WDW_WATER_PARK_FAMILIES } from "#/server/parks/codes.ts";
 import { loadParkCalendar } from "#/server/forecast/parkCalendar.ts";
 import { publicProcedure } from "../init.ts";
 
@@ -118,11 +119,13 @@ export const ticketsRouter = {
         service_date: Date | string;
         price_cents: number;
         available: boolean | null;
+        available_units: number | null;
         observed_at: string | null;
       }>(sql`
         WITH latest AS (
           SELECT DISTINCT ON (sp.sku, sp.service_date)
-                 sp.sku, sp.service_date, sp.price_cents, sp.available, sp.observed_at
+                 sp.sku, sp.service_date, sp.price_cents, sp.available,
+                 sp.available_units, sp.observed_at
           FROM sku_price_obs sp
           JOIN product_dim d ON d.sku = sp.sku
           WHERE d.resort = ${input.resort}
@@ -134,7 +137,12 @@ export const ticketsRouter = {
         SELECT service_date,
                min(price_cents) AS price_cents,
                bool_or(available) AS available,
-               max(observed_at) AS observed_at
+               max(observed_at) AS observed_at,
+               -- units of the cheapest *available* SKU for the date (Universal
+               -- Express only; WDW admission carries no units → NULL)
+               (array_agg(available_units ORDER BY
+                  (CASE WHEN available THEN 0 ELSE 1 END), price_cents ASC NULLS LAST)
+                 FILTER (WHERE available_units IS NOT NULL))[1] AS available_units
         FROM latest
         WHERE price_cents IS NOT NULL
         GROUP BY service_date
@@ -149,14 +157,21 @@ export const ticketsRouter = {
         resort: input.resort,
         productLabel: product.label,
         lastUpdatedAt,
-        days: result.rows.map((r) => ({
-          date: (r.service_date instanceof Date
-            ? r.service_date.toISOString()
-            : String(r.service_date)
-          ).slice(0, 10),
-          priceCents: Number(r.price_cents),
-          available: r.available ?? true,
-        })),
+        days: result.rows.map((r) => {
+          const units = r.available_units != null ? Number(r.available_units) : null;
+          return {
+            date: (r.service_date instanceof Date
+              ? r.service_date.toISOString()
+              : String(r.service_date)
+            ).slice(0, 10),
+            priceCents: Number(r.price_cents),
+            available: r.available ?? true,
+            // Raw count for the Tickets page (shows actual availability); tier
+            // for hedged surfaces like the map's limited marker display.
+            availableUnits: units,
+            scarcity: scarcityTier(units),
+          };
+        }),
       };
     }),
 
@@ -197,12 +212,13 @@ export const ticketsRouter = {
           const priceP = db.execute<{
             today_cents: number | null;
             today_available: boolean | null;
+            today_units: number | null;
             cheapest_cents: number | null;
             cheapest_date: Date | string | null;
           }>(sql`
             WITH latest AS (
               SELECT DISTINCT ON (sp.sku, sp.service_date)
-                     sp.sku, sp.service_date, sp.price_cents, sp.available
+                     sp.sku, sp.service_date, sp.price_cents, sp.available, sp.available_units
               FROM sku_price_obs sp
               JOIN product_dim d ON d.sku = sp.sku
               WHERE d.resort = ${p.resort}
@@ -214,7 +230,10 @@ export const ticketsRouter = {
             agg AS (
               SELECT service_date,
                      min(price_cents) AS price_cents,
-                     bool_or(available) AS available
+                     bool_or(available) AS available,
+                     (array_agg(available_units ORDER BY
+                        (CASE WHEN available THEN 0 ELSE 1 END), price_cents ASC NULLS LAST)
+                       FILTER (WHERE available_units IS NOT NULL))[1] AS available_units
               FROM latest
               WHERE price_cents IS NOT NULL
               GROUP BY service_date
@@ -222,6 +241,7 @@ export const ticketsRouter = {
             SELECT
               (SELECT price_cents FROM agg WHERE service_date = current_date) AS today_cents,
               (SELECT available FROM agg WHERE service_date = current_date) AS today_available,
+              (SELECT available_units FROM agg WHERE service_date = current_date) AS today_units,
               (SELECT price_cents FROM agg WHERE available
                  ORDER BY price_cents ASC, service_date ASC LIMIT 1) AS cheapest_cents,
               (SELECT service_date FROM agg WHERE available
@@ -283,6 +303,10 @@ export const ticketsRouter = {
             parkHopper: p.resort === "WDW" ? input.parkHopper : false,
             todayCents: price?.today_cents != null ? Number(price.today_cents) : null,
             todayAvailable: price?.today_available ?? false,
+            todayUnits: price?.today_units != null ? Number(price.today_units) : null,
+            todayScarcity: scarcityTier(
+              price?.today_units != null ? Number(price.today_units) : null,
+            ),
             cheapestCents: price?.cheapest_cents != null ? Number(price.cheapest_cents) : null,
             cheapestDate: cheapestDate
               ? (cheapestDate instanceof Date
@@ -304,5 +328,72 @@ export const ticketsRouter = {
       );
 
       return { date: today, parks: rows };
+    }),
+
+  /**
+   * Annual Pass blockout calendar (plan item 2.4). The tickets cron sweeps the
+   * `passholder` segment of the free availability endpoint into
+   * `ticket_availability`; a blockout is a `SOLD_OUT` state for a (park, date) in
+   * that segment, from the latest snapshot. Blockouts are seasonal (holiday
+   * weeks) and often absent entirely — an empty `days` is the expected
+   * "all-clear" case, which the UI renders as a designed empty state (the
+   * *appearance* of blockouts is itself the news). WDW-only (Disney AP concept).
+   */
+  passholderBlockouts: publicProcedure
+    .input(
+      z.object({
+        days: z.number().int().min(1).max(365).default(180),
+      }),
+    )
+    .query(async ({ input }) => {
+      const result = await db.execute<{
+        slug: string;
+        name: string;
+        service_date: Date | string;
+        snapshot_date: Date | string;
+      }>(sql`
+        WITH latest AS (
+          SELECT DISTINCT ON (ta.park_id, ta.service_date)
+                 ta.park_id, ta.service_date, ta.state, ta.snapshot_date
+          FROM ticket_availability ta
+          WHERE ta.segment = 'passholder'
+            AND ta.service_date >= current_date
+            AND ta.service_date < current_date + ${input.days}::int
+          ORDER BY ta.park_id, ta.service_date, ta.snapshot_date DESC
+        )
+        SELECT p.slug, p.name, l.service_date, l.snapshot_date
+        FROM latest l
+        JOIN parks p ON p.id = l.park_id
+        WHERE l.state = ${QueueState.SOLD_OUT} AND p.slug IS NOT NULL
+        ORDER BY l.service_date, p.name
+      `);
+
+      const isoDate = (d: Date | string) =>
+        (d instanceof Date ? d.toISOString() : String(d)).slice(0, 10);
+      const todayIso = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/New_York",
+      }).format(new Date());
+
+      // Group blocked parks by service date.
+      const byDate = new Map<string, Array<{ slug: string; name: string }>>();
+      let lastSnapshot: string | null = null;
+      for (const r of result.rows) {
+        const date = isoDate(r.service_date);
+        const list = byDate.get(date) ?? [];
+        list.push({ slug: r.slug, name: r.name });
+        byDate.set(date, list);
+        const snap = isoDate(r.snapshot_date);
+        if (!lastSnapshot || snap > lastSnapshot) lastSnapshot = snap;
+      }
+
+      const days = [...byDate.entries()]
+        .map(([date, blocked]) => ({ date, blocked }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+      return {
+        lastSnapshot,
+        days,
+        todayBlocked: byDate.get(todayIso) ?? [],
+      };
     }),
 } satisfies TRPCRouterRecord;

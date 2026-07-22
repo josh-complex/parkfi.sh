@@ -17,6 +17,7 @@ import { disneyResizeUrl } from "#/lib/image.ts";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { formatParkName } from "#/lib/parks.ts";
 
+import { EntertainmentRail } from "./entertainment-rail.tsx";
 import { ParkBoardTable } from "./park-board-table.tsx";
 import { ParkHours } from "./park-hours.tsx";
 import { ParkStatCards } from "./park-stat-cards.tsx";
@@ -50,6 +51,12 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
     enabled: !!activeSlug,
   });
   const board = boardQ.data;
+
+  // Annual Pass blockout for today (plan item 2.4) — a WDW-only concept, so the
+  // chip only ever lights up for a blocked Disney park. `days: 1` scopes the
+  // fetch to today.
+  const blockoutQ = useQuery(trpc.tickets.passholderBlockouts.queryOptions({ days: 1 }));
+  const apBlockedToday = blockoutQ.data?.todayBlocked.some((p) => p.slug === activeSlug) ?? false;
 
   // Selection is shared with the persistent map in the dash layout (see
   // `selection-context.tsx`) so clicking a marker drives the chart and the
@@ -179,6 +186,12 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
       )}
 
       <div className="order-1 flex flex-col gap-4 px-4 lg:px-6">
+        {apBlockedToday && (
+          <div className="flex w-fit items-center gap-2 rounded-full bg-red-100 px-3 py-1.5 text-sm font-semibold text-red-700 dark:bg-red-900/40 dark:text-red-300">
+            <span className="inline-block size-2 rounded-full bg-red-500" />
+            Annual Pass blockout today
+          </div>
+        )}
         <NotificationPrompt />
         {/* The at-a-glance stat bar leads the dashboard, above the map + chart. */}
         <ParkStatCards
@@ -241,6 +254,13 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
         ) : (
           <Skeleton className="h-[320px] w-full rounded-2xl lg:h-auto lg:min-h-[460px]" />
         )}
+      </div>
+
+      {/* Entertainment today — shows/parades/fireworks ordered by next start.
+          Renders nothing when the park has no timed entertainment. Sits just
+          above the ride board (both order-3; DOM order keeps it first). */}
+      <div className="order-3 px-4 lg:px-6">
+        <EntertainmentRail board={board} parkSlug={activeSlug ?? null} timezone={timezone} />
       </div>
 
       <div className="order-3 px-4 lg:px-6">

@@ -198,6 +198,7 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
           boardingGroup: null,
         },
       ],
+      showtimes: [],
     }));
   }
 
@@ -302,6 +303,7 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
       returnStart: rt?.returnStart ?? null,
       returnEnd: rt?.returnEnd ?? null,
       boardingGroup: bg?.boardingGroup ?? null,
+      showtimes: e.showtimes.length > 0 ? e.showtimes : null,
       source,
       observedAt: tickNow,
     };
@@ -325,6 +327,7 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
             returnStart: sql`excluded.return_start`,
             returnEnd: sql`excluded.return_end`,
             boardingGroup: sql`excluded.boarding_group`,
+            showtimes: sql`excluded.showtimes`,
             source: sql`excluded.source`,
             observedAt: sql`excluded.observed_at`,
           },

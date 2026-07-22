@@ -242,7 +242,15 @@ export function PricingCalendar() {
                 ? dollars(priceMap.get(localIso(today))!.priceCents)
                 : "—"}
             </CardTitle>
-            <CardDescription>{productLabel} for today</CardDescription>
+            <CardDescription className="flex flex-wrap items-center gap-2">
+              {productLabel} for today
+              {data.blockedDates.has(localIso(today)) && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide leading-none text-red-600 dark:bg-red-900/50 dark:text-red-300">
+                  <span className="inline-block size-1.5 rounded-full bg-red-500" />
+                  AP blocked
+                </span>
+              )}
+            </CardDescription>
           </CardHeader>
         </Card>
       </div>
@@ -255,6 +263,12 @@ export function PricingCalendar() {
               <span>
                 {productLabel} · cheapest in <span className="text-primary">color</span>, sold-out
                 struck through
+                {data.blockedDates.size > 0 && (
+                  <>
+                    , <span className="text-red-500 dark:text-red-400">AP blockouts</span> outlined
+                    in red
+                  </>
+                )}
               </span>
               {data.hasOverlay && (
                 <span

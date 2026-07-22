@@ -50,16 +50,50 @@ import {
   poiKind,
   poiPressTarget,
   saveRoamCamera,
+  showCardBodyHtml,
   SPREAD_ZOOM,
   waitLabelFor,
   wireCardWalkTime,
   wireHoverLabelFlip,
   wireMarkerFadeIn,
+  type PoiItem,
 } from "./shared.tsx";
+import { nextShowtime, parseShowtimes, showClock, untilLabel } from "#/lib/showtimes.ts";
 
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import type { FeatureCollection, Point } from "geojson";
+
+/**
+ * Collapse a show/POI name for cross-feed identity: Disney's finder feed and
+ * the live board disagree on ™/®, dash style, ellipses, and even spacing
+ * ("Side Show" vs "Sideshow"), so compare only the letters and digits.
+ */
+function squashName(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/** Distinctive words of an act's name for the rename-alias check (≥4 chars,
+ *  minus the filler every Disney act shares). */
+const NAME_STOPWORDS = new Set(["disney", "disneys", "meet", "with", "near", "entertainment"]);
+function nameWords(s: string): Set<string> {
+  return new Set(
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .split(" ")
+      .filter((w) => w.length >= 4 && !NAME_STOPWORDS.has(w)),
+  );
+}
+
+/**
+ * Finder POIs for hard-ticket party / holiday / one-night shows. The finder
+ * feed is date-blind — it lists Halloween-party and Christmas-party acts in
+ * July — so these are hidden outright rather than gated on showtimes (they
+ * never appear on the live board at all until their event runs).
+ */
+const SEASONAL_POI_RE =
+  /halloween|not-so-scary|very merry|christmas|holiday|jollywood|jingle bell|seasons greetings|celebrate america|heartbeat of freedom|after hours|fourth of july/i;
 
 /**
  * Vector basemap, per the app theme. We use a custom MapTiler GL style —
@@ -1254,13 +1288,89 @@ export function ParkMap({
       // positive attraction/park id space the cluster + selection use.
       const boundary = parks?.find((p) => p.slug === effectiveSlug)?.boundary ?? null;
       if (boundary) {
+        // Entertainment/character finder-POI hygiene. Disney's finder feed
+        // (park_poi) and the live board (SHOW attractions) both list the park's
+        // entertainment under loosely-agreeing names — plotting both draws two
+        // pins for one act (verified 2026-07: ~50 of 91 ent/char POIs duplicate
+        // a board SHOW; names diverge by ™/dashes ("Indiana Jones™"), spacing
+        // ("Side Show"/"Sideshow"), articles ("The Dapper Dans"), and outright
+        // renames ("Mickey's Royal Friendship Faire" → "…Magical…")). The finder
+        // is also date-blind, carrying hard-ticket holiday-party shows
+        // year-round. Policy (2026-07-22): the showtime marker wins where one
+        // renders; a POI naming a board SHOW that is dark today is hidden (no
+        // performance today = don't advertise it — forward schedules don't
+        // exist upstream, so "today" is the only signal we have); event-named
+        // POIs are hidden outright; everything else (year-round streetmosphere
+        // the live feed doesn't track) keeps its plain pin.
+        const showNameKeys: Array<string> = [];
+        const todayShows: Array<{ lngLat: [number, number]; words: Set<string> }> = [];
+        if (layers?.entertainment && !navDest) {
+          for (const a of board ?? []) {
+            if (a.entityType !== "SHOW") continue;
+            showNameKeys.push(squashName(a.name));
+            if (a.showtimes.length === 0) continue;
+            if (a.latitude == null || a.longitude == null) continue;
+            if (!pointInPolygon([a.longitude, a.latitude], boundary)) continue;
+            if (parseShowtimes(a.showtimes).length === 0) continue;
+            todayShows.push({ lngLat: [a.longitude, a.latitude], words: nameWords(a.name) });
+          }
+        }
+        const hideEntertainmentPoi = (p: {
+          name: string;
+          latitude: number | null;
+          longitude: number | null;
+        }): boolean => {
+          // Same act on the board (performing → superseded by the showtime
+          // marker; dark today → hidden per policy). Containment either way so
+          // articles, ™-suffixes, and "X at Y-event" wrappers still match; the
+          // ≥6-char guard keeps short names from matching inside longer ones.
+          const key = squashName(p.name);
+          if (
+            showNameKeys.some(
+              (k) =>
+                k === key ||
+                (key.length >= 6 && k.includes(key)) ||
+                (k.length >= 6 && key.includes(k)),
+            )
+          )
+            return true;
+          // Hard-ticket party / holiday one-offs the finder lists year-round.
+          if (SEASONAL_POI_RE.test(p.name)) return true;
+          // Renames the name matching can't see (e.g. "Music of Mexico" is the
+          // board's "Mariachi Cobre"): pinned at the same spot as a show
+          // performing today and sharing a distinctive word — or the exact
+          // same pin.
+          if (p.latitude != null && p.longitude != null) {
+            const at: [number, number] = [p.longitude, p.latitude];
+            const words = nameWords(p.name);
+            for (const s of todayShows) {
+              const d = distanceMeters(at, s.lngLat);
+              if (d <= 20 && (d <= 3 || [...words].some((w) => s.words.has(w)))) return true;
+            }
+          }
+          return false;
+        };
+        // Finder-POI media keyed by squashed name so a showtime marker that
+        // replaces a finder pin can borrow its image (below). `attraction_meta`
+        // only keeps a 90x90 thumb, but the finder feed carries the full
+        // 800x450 card asset — usually the same image at higher res,
+        // occasionally a better one. Prefer it over the attraction's own hero
+        // so the finder's richer media wins.
+        const poiMediaByName = new Map<string, string | null>();
+        for (const p of poiQ.data ?? []) {
+          if (p.category === "entertainment" || p.category === "character") {
+            poiMediaByName.set(squashName(p.name), p.imageUrl ?? null);
+          }
+        }
         // The park_poi feed carries all three overlay categories; pick the ones
-        // whose layer is lit (Live folds entertainment + character meets).
+        // whose layer is lit (Live folds entertainment + character meets),
+        // minus any entertainment/character pin a showtime marker replaces.
         const overlayPoi = (poiQ.data ?? []).filter(
           (p) =>
             (layers?.services && p.category === "info") ||
             (layers?.entertainment &&
-              (p.category === "entertainment" || p.category === "character")) ||
+              (p.category === "entertainment" || p.category === "character") &&
+              !hideEntertainmentPoi(p)) ||
             (layers?.tours && p.category === "tour"),
         );
         // The dining feed carries both reservable table-service venues and
@@ -1377,6 +1487,110 @@ export function ParkMap({
             kind: poiKind(poi.category),
           });
         });
+
+        // Live SHOW entities as entertainment markers (plan item 1.1): the card
+        // leads with the next showtime and presses to the show's detail page.
+        // Gated on the entertainment layer (alongside the park_poi entertainment
+        // POIs) and hidden while navigating. Show ids are offset far negative to
+        // stay clear of both the attraction id space and the POI ids above.
+        if (layers?.entertainment && !navDest) {
+          const tz =
+            parksRef.current?.find((p) => p.slug === effectiveSlug)?.timezone ?? "America/New_York";
+          (board ?? []).forEach((a, i) => {
+            if (a.entityType !== "SHOW" || a.showtimes.length === 0) return;
+            if (a.latitude == null || a.longitude == null) return;
+            const lngLat: [number, number] = [a.longitude, a.latitude];
+            if (!pointInPolygon(lngLat, boundary)) return;
+            const times = parseShowtimes(a.showtimes);
+            if (times.length === 0) return;
+            // Prefer the finder-POI photo (800x450) over the attraction's own
+            // images, falling back to the hero (also full-size) then the thumb.
+            // `buildPoiEl` derives the small disc thumb from this and reserves the
+            // full size for the card header (two-tier load), so passing the full
+            // asset here doesn't weigh the marker down.
+            const showImage =
+              poiMediaByName.get(squashName(a.name)) ??
+              a.meta?.imageHeroUrl ??
+              a.meta?.imageThumbUrl ??
+              null;
+            const showPoi: PoiItem = {
+              id: `show-${a.id}`,
+              name: a.name,
+              latitude: a.latitude,
+              longitude: a.longitude,
+              land: a.meta?.land ?? null,
+              category: "entertainment",
+              imageUrl: showImage,
+            };
+            const { el, detail } = buildPoiEl(showPoi);
+            if (shouldFade) wireMarkerFadeIn(detail);
+            const raise = makeRaise(el);
+            if (containerRef.current) wireHoverLabelFlip(el, containerRef.current);
+            const marker = new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map);
+            markersRef.current.push(marker);
+            const showItemId = -100_000 - i;
+            items.push({
+              id: showItemId,
+              point: () => map.project(lngLat),
+              detail,
+              raise,
+              onActivate: () => {
+                void queryClient.prefetchQuery(
+                  trpc.parks.attraction.queryOptions({ parkSlug: effectiveSlug, rideSlug: a.slug }),
+                );
+                cardRef.current?.close();
+                if (!containerRef.current) return;
+                raise.pinTop(true);
+                const now = Date.now();
+                const next = nextShowtime(times, now);
+                const nextLabel = next
+                  ? `Next ${showClock(next.iso, tz)} · ${untilLabel(
+                      Math.round((next.ms - now) / 60_000),
+                    )}`
+                  : null;
+                const sub = `${times.length} ${times.length === 1 ? "show" : "shows"} today`;
+                const { card, close } = openAttractionCard({
+                  detail,
+                  container: containerRef.current,
+                  bodyHtml: showCardBodyHtml({
+                    name: a.name,
+                    land: a.meta?.land ?? null,
+                    longitude: a.longitude,
+                    latitude: a.latitude,
+                    nextLabel,
+                    sub,
+                  }),
+                  wasSelected: false,
+                  onClose: () => raise.pinTop(false),
+                  onPress: () => {
+                    void navigate({
+                      to: "/park/$slug/ride/$rideSlug",
+                      params: { slug: effectiveSlug, rideSlug: a.slug },
+                    });
+                  },
+                });
+                cardRef.current = { close };
+                const estimate = fetchWalkEstimate(lngLat);
+                if (estimate) wireCardWalkTime(card, estimate);
+                card
+                  .querySelector<HTMLButtonElement>("[data-directions]")
+                  ?.addEventListener("click", (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onRequestDirectionsRef.current?.({
+                      id: showItemId,
+                      name: a.name,
+                      coords: lngLat,
+                    });
+                    close();
+                    cardRef.current = null;
+                  });
+              },
+              priority: 0,
+              kind: poiKind("entertainment"),
+            });
+          });
+        }
       }
     }
 
@@ -1680,8 +1894,9 @@ export function ParkMap({
     if (roam) {
       // Free-roam: frame all parks but let the user zoom all the way in. Rides
       // reveal themselves by zoom (the focus watcher above), so no zoom cap and
-      // no max-bounds — the whole region stays explorable.
-      map.setMaxZoom(18);
+      // no max-bounds — the whole region stays explorable. Match the park view's
+      // close-in ceiling (21) so guests can zoom right down to a single marker.
+      map.setMaxZoom(21);
       map.setMaxBounds(null);
       // Returning to the map: restore the exact camera the user left (so a round
       // trip through a ride page doesn't snap back to the all-parks overview).

@@ -32,6 +32,7 @@ import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { formatHourRange } from "#/lib/park-hours.ts";
 import { RESORT_DEFAULT_SLUG, UOR_PARKS, WDW_PARKS } from "#/lib/parks.ts";
+import { unitsLeftChip, type ScarcityTier } from "#/lib/ticket-scarcity.ts";
 import { cn } from "#/lib/utils.ts";
 
 export type Resort = "WDW" | "UOR";
@@ -48,6 +49,10 @@ export const PAST_DAYS = 90;
 export interface DayPrice {
   priceCents: number;
   available: boolean;
+  /** Raw Express units left (Universal only); null = no unit signal. */
+  availableUnits: number | null;
+  /** Express-inventory scarcity tier (Universal only); drives the accent color. */
+  scarcity: ScarcityTier | null;
 }
 
 export interface DayOverlay {
@@ -155,10 +160,17 @@ interface CalendarState {
   priceMap: Map<string, DayPrice>;
   min: number | undefined;
   overlayMap: Map<string, DayOverlay>;
+  /** ISO dates blocked for this selection's Annual Passholders (WDW only). */
+  blockedDates: Set<string>;
 }
 
 function newCalendarStore(): Store<CalendarState> {
-  return new Store<CalendarState>({ priceMap: new Map(), min: undefined, overlayMap: new Map() });
+  return new Store<CalendarState>({
+    priceMap: new Map(),
+    min: undefined,
+    overlayMap: new Map(),
+    blockedDates: new Set<string>(),
+  });
 }
 
 // Fallback for a DayButton rendered outside a provider (shouldn't happen in practice).
@@ -181,12 +193,17 @@ function PriceDayButton({
   const priceMap = useSelector(store, (s) => s.priceMap);
   const min = useSelector(store, (s) => s.min);
   const overlayMap = useSelector(store, (s) => s.overlayMap);
+  const blockedDates = useSelector(store, (s) => s.blockedDates);
   const iso = localIso(day.date);
   const info = priceMap.get(iso);
   const overlay = overlayMap.get(iso);
+  const apBlocked = blockedDates.has(iso);
   const isCheapest = info != null && min != null && info.priceCents === min;
   const crowd = overlay?.crowdIndex != null ? crowdConfig(overlay.crowdIndex) : null;
   const precip = formatPrecip(overlay?.precipProb ?? null);
+  // Express units left (Universal only; hidden for sold-out / WDW). The Tickets
+  // page shows the actual count even when plentiful.
+  const units = info?.available ? unitsLeftChip(info.availableUnits) : null;
 
   return (
     <AnimateIcon animateOnHover asChild>
@@ -195,6 +212,7 @@ function PriceDayButton({
         className={cn(
           "relative flex h-full w-full overflow-hidden p-0 font-normal",
           modifiers.outside && "opacity-40",
+          apBlocked && "ring-2 ring-inset ring-red-500/55",
           className,
         )}
         {...props}
@@ -271,6 +289,11 @@ function PriceDayButton({
                   {overlay.hours}
                 </span>
               )}
+              {apBlocked && (
+                <span className="text-[9px] font-bold uppercase leading-none tracking-wide text-red-500 dark:text-red-400">
+                  AP blocked
+                </span>
+              )}
             </div>
 
             <div className="relative z-10 flex flex-col items-end gap-0.75">
@@ -317,17 +340,29 @@ function PriceDayButton({
               <span className="text-[10px] text-muted-foreground/25">—</span>
             )}
 
-            {crowd && (
-              <span
-                className={cn(
-                  "shrink-0 rounded-full px-1.5 py-[3px] text-[9px] font-bold uppercase tracking-widest leading-none",
-                  crowd.pill,
-                  overlay?.crowdIsEstimate && "opacity-60",
-                )}
-              >
-                {crowd.label}
-              </span>
-            )}
+            <div className="flex shrink-0 items-center gap-1">
+              {units && (
+                <span
+                  className={cn(
+                    "shrink-0 rounded-full px-1.5 py-[3px] text-[9px] font-bold uppercase tracking-widest leading-none",
+                    units.pill,
+                  )}
+                >
+                  {units.label}
+                </span>
+              )}
+              {crowd && (
+                <span
+                  className={cn(
+                    "shrink-0 rounded-full px-1.5 py-[3px] text-[9px] font-bold uppercase tracking-widest leading-none",
+                    crowd.pill,
+                    overlay?.crowdIsEstimate && "opacity-60",
+                  )}
+                >
+                  {crowd.label}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -353,13 +388,33 @@ function PriceDayButton({
             )}
           />
         )}
+
+        {/* Scarcity top accent bar — mobile + tablet only (desktop shows the "N
+            left" pill); only for the urgent tiers so plentiful dates stay calm.
+            The exact count lives in the day-detail sheet. */}
+        {units && (info?.scarcity === "selling_out" || info?.scarcity === "low") && (
+          <span
+            className={cn(
+              "absolute left-0 right-0 top-0 h-[3px] opacity-70 lg:hidden",
+              info.scarcity === "selling_out" ? "bg-red-500" : "bg-amber-400",
+            )}
+          />
+        )}
       </Button>
     </AnimateIcon>
   );
 }
 
 export interface PricingData {
-  rows: Array<{ date: string; priceCents: number; available: boolean }> | undefined;
+  rows:
+    | Array<{
+        date: string;
+        priceCents: number;
+        available: boolean;
+        availableUnits: number | null;
+        scarcity: ScarcityTier | null;
+      }>
+    | undefined;
   productLabel: string;
   lastUpdatedAt: string | null;
   isLoading: boolean;
@@ -367,6 +422,8 @@ export interface PricingData {
   overlayMap: Map<string, DayOverlay>;
   stats: { min: number; max: number; cheapest: { date: string; priceCents: number } } | null;
   hasOverlay: boolean;
+  /** ISO dates blocked for the selection's Annual Passholders (WDW only). */
+  blockedDates: Set<string>;
   today: Date;
   startDate: Date;
   endDate: Date;
@@ -410,7 +467,13 @@ export function usePricingData({
 
   const priceMap = React.useMemo(() => {
     const m = new Map<string, DayPrice>();
-    for (const r of rows ?? []) m.set(r.date, { priceCents: r.priceCents, available: r.available });
+    for (const r of rows ?? [])
+      m.set(r.date, {
+        priceCents: r.priceCents,
+        available: r.available,
+        availableUnits: r.availableUnits,
+        scarcity: r.scarcity,
+      });
     return m;
   }, [rows]);
 
@@ -462,6 +525,22 @@ export function usePricingData({
     enabled: enabled && !!parkSlug,
   });
 
+  // Annual Pass blockouts (WDW only) — marked on the calendar and the Today card.
+  // Scope to the selected park's blocked dates; for "All parks", any WDW park
+  // being blocked marks the date.
+  const blockoutQ = useQuery({
+    ...trpc.tickets.passholderBlockouts.queryOptions({ days: DAYS }),
+    enabled: enabled && resort === "WDW",
+  });
+  const blockedDates = React.useMemo(() => {
+    const set = new Set<string>();
+    const selectedSlug = park ? (WDW_PARKS.find((p) => p.code === park)?.slug ?? null) : null;
+    for (const d of blockoutQ.data?.days ?? []) {
+      if (selectedSlug == null || d.blocked.some((b) => b.slug === selectedSlug)) set.add(d.date);
+    }
+    return set;
+  }, [blockoutQ.data, park]);
+
   const overlayMap = React.useMemo(() => {
     const m = new Map<string, DayOverlay>();
     const ensure = (date: string) => {
@@ -503,6 +582,7 @@ export function usePricingData({
     overlayMap,
     stats,
     hasOverlay: !!overlayQ.data,
+    blockedDates,
     today,
     startDate,
     endDate,
@@ -544,8 +624,9 @@ export function PriceCalendarGrid({
       priceMap: data.priceMap,
       min: data.stats?.min,
       overlayMap: data.overlayMap,
+      blockedDates: data.blockedDates,
     }));
-  }, [store, data.priceMap, data.stats?.min, data.overlayMap]);
+  }, [store, data.priceMap, data.stats?.min, data.overlayMap, data.blockedDates]);
 
   return (
     <CalendarStoreContext.Provider value={store}>
@@ -587,6 +668,7 @@ export function PriceCalendarGrid({
         onClose={() => setSelectedDay(null)}
         priceMap={data.priceMap}
         overlayMap={data.overlayMap}
+        blockedDates={data.blockedDates}
         min={data.stats?.min}
         productLabel={data.productLabel}
       />
@@ -604,6 +686,7 @@ function DayDetailSheet({
   onClose,
   priceMap,
   overlayMap,
+  blockedDates,
   min,
   productLabel,
 }: {
@@ -611,6 +694,7 @@ function DayDetailSheet({
   onClose: () => void;
   priceMap: Map<string, DayPrice>;
   overlayMap: Map<string, DayOverlay>;
+  blockedDates: Set<string>;
   min: number | undefined;
   productLabel: string;
 }) {
@@ -620,6 +704,8 @@ function DayDetailSheet({
   const precip = formatPrecip(overlay?.precipProb ?? null);
   const isCheapest = info != null && min != null && info.priceCents === min;
   const deltaCents = info != null && min != null ? info.priceCents - min : null;
+  const units = info?.available ? unitsLeftChip(info.availableUnits) : null;
+  const apBlocked = iso != null && blockedDates.has(iso);
 
   const fullDate = iso
     ? new Date(`${iso}T00:00:00`).toLocaleDateString("en-US", {
@@ -669,6 +755,21 @@ function DayDetailSheet({
             ) : (
               <span className="text-sm text-muted-foreground">
                 No pricing captured for this day.
+              </span>
+            )}
+            {units && (
+              <span
+                className={cn(
+                  "mt-1 w-fit rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-widest leading-none",
+                  units.pill,
+                )}
+              >
+                {units.label} · Express
+              </span>
+            )}
+            {apBlocked && (
+              <span className="mt-1 w-fit rounded-full bg-red-100 px-2.5 py-1 text-xs font-bold uppercase tracking-widest leading-none text-red-600 dark:bg-red-900/50 dark:text-red-300">
+                Annual Pass blocked
               </span>
             )}
           </div>

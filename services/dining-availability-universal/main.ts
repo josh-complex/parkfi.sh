@@ -79,6 +79,14 @@ async function main() {
     // Flush per target so a mid-sweep timeout doesn't lose completed work.
     for (const t of targets) {
       const rows: Array<typeof diningObs.$inferInsert> = [];
+      // Reservation bounds ride on every response; capture from the first one so
+      // we can refresh restaurant_dim once per venue (plan item 3.2).
+      let bounds: {
+        min_party_size?: number;
+        max_party_size?: number;
+        min_advanced_minutes?: number;
+        max_advanced_days?: number;
+      } | null = null;
       for (const partySize of PARTY_SIZES) {
         const avail = await fetchUniversalReservationAvailability(
           page,
@@ -88,6 +96,7 @@ async function main() {
           endDate,
           partySize,
         );
+        if (avail && bounds == null) bounds = avail;
         for (const d of avail?.dates ?? []) {
           const serviceDate = d.date.slice(0, 10);
           const open = d.slots.filter((s) => s.availability_status === AVAILABLE);
@@ -116,6 +125,25 @@ async function main() {
       }
       await flush(rows);
       total += rows.length;
+
+      // Refresh the venue's reservation bounds when the response carried any.
+      if (
+        bounds &&
+        (bounds.min_party_size != null ||
+          bounds.max_party_size != null ||
+          bounds.min_advanced_minutes != null ||
+          bounds.max_advanced_days != null)
+      ) {
+        await db
+          .update(restaurantDim)
+          .set({
+            minPartySize: bounds.min_party_size ?? null,
+            maxPartySize: bounds.max_party_size ?? null,
+            minAdvanceMinutes: bounds.min_advanced_minutes ?? null,
+            maxAdvanceDays: bounds.max_advanced_days ?? null,
+          })
+          .where(eq(restaurantDim.facilityId, t.facilityId));
+      }
     }
   }, AbortSignal.timeout(config.browserlessTimeoutMs));
 

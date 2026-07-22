@@ -23,6 +23,7 @@ import { cn } from "#/lib/utils.ts";
 import { formatPriceCents, isUniversal, paidLineInfo, paidLineProduct } from "./lightning-lane.ts";
 import { LightningLaneAvailability } from "./ll-availability.tsx";
 import { RideAnalytics } from "./ride-analytics.tsx";
+import { ShowtimesCard } from "./showtimes-card.tsx";
 
 const STATUS_BADGE: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   OPERATING: "secondary",
@@ -296,6 +297,10 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
           )}
         </StatCard>
       </div>
+
+      {ride.showtimes.length > 0 && (
+        <ShowtimesCard showtimes={ride.showtimes} timeZone={ride.park.timezone} />
+      )}
 
       {ll.has && (
         <Card>

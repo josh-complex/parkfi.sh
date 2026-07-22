@@ -59,7 +59,13 @@ import { fetchSchedule } from "#/server/parks/sources/themeparks.ts";
 import { fetchUniversalCatalogAndPricing } from "#/server/parks/sources/universal.ts";
 import { config } from "#/server/parks/config.ts";
 
-const SEGMENT = "tickets" as const;
+// The availability calendar serves three free segments off the same endpoint.
+// `tickets` = standard day-ticket admission; `passholder` = Annual Pass blockout
+// calendar; `resort` = resort-guest admission. `ticket_availability.segment`
+// stores all three. Passholder/resort blockouts are seasonal (holiday weeks), so
+// most days those segments return `[{}]` (no restrictions) — the "appearance" of
+// blockouts is itself the newsworthy event.
+const SEGMENTS = ["tickets", "passholder", "resort"] as const;
 const WINDOW_DAYS = Number(process.env.TICKET_WINDOW_DAYS ?? 60);
 // How far forward to record Disney per-date pricing (the calendar reaches ~17mo).
 const DISNEY_PRICE_WINDOW_DAYS = Number(process.env.DISNEY_PRICE_WINDOW_DAYS ?? 180);
@@ -277,24 +283,27 @@ async function captureDisneyAvailability(
   todayIso: string,
   endIso: string,
   snapshotDate: string,
+  segment: (typeof SEGMENTS)[number],
 ): Promise<number> {
   const calendar = await fetchAvailabilityCalendar(
     todayIso,
     endIso,
-    SEGMENT,
+    segment,
     AbortSignal.timeout(config.fetchTimeoutMs),
   );
 
   // Disney returns placeholder entries (e.g. `[{}]`) when there are no
   // restrictions to report — `[{}]` means "all parks available", not a block.
-  // Keep only entries with a real date+state.
+  // Keep only entries with a real date+state. This is the common case for the
+  // `passholder`/`resort` segments outside holiday-blockout season, so an empty
+  // result is expected, not an error.
   const usable = calendar.filter(
     (e): e is { date: string; availability: string; parks: Array<string> } =>
       typeof e.date === "string" && typeof e.availability === "string",
   );
   if (usable.length === 0) {
     console.log(
-      "[D1] Disney availability: no per-date restrictions (all dates open) — nothing to record",
+      `[D1] Disney availability (${segment}): no per-date restrictions (all dates open) — nothing to record`,
     );
     return 0;
   }
@@ -310,7 +319,7 @@ async function captureDisneyAvailability(
         snapshotDate,
         parkId,
         serviceDate: entry.date,
-        segment: SEGMENT,
+        segment,
         state,
         source: Source.DISNEY_DIRECT,
       });
@@ -757,9 +766,11 @@ async function main() {
   if (disneyMap.size === 0) {
     console.warn("[cron-tickets] no disney_direct park mappings — run db:seed first");
   } else {
-    await runStep("D1 Disney availability", () =>
-      captureDisneyAvailability(disneyMap, todayIso, endIso, snapshotDate),
-    );
+    for (const segment of SEGMENTS) {
+      await runStep(`D1 Disney availability (${segment})`, () =>
+        captureDisneyAvailability(disneyMap, todayIso, endIso, snapshotDate, segment),
+      );
+    }
     await runStep("D2 Disney ticket pricing", () => captureDisneyPricing(observedAt));
   }
 

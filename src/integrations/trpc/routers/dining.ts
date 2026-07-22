@@ -117,6 +117,9 @@ export const diningRouter = {
       latitude: number | null;
       longitude: number | null;
       maximum_party_size: number | null;
+      min_party_size: number | null;
+      max_party_size: number | null;
+      max_advance_days: number | null;
       dining_interests: string[] | null;
       disney_favorites: string[] | null;
       entertainment_type: string[] | null;
@@ -134,6 +137,7 @@ export const diningRouter = {
              r.annual_pass_discount, r.disney_visa_discount, r.trip_advisor_award,
              r.dining_plan_qs, r.dining_plan_ts,
              r.land, r.map_pin, r.latitude, r.longitude, r.maximum_party_size,
+             r.min_party_size, r.max_party_size, r.max_advance_days,
              r.dining_interests, r.disney_favorites, r.entertainment_type,
              r.priority, r.bookable,
              (m.facility_id IS NOT NULL AND m.item_count > 0) AS has_menu,
@@ -178,6 +182,10 @@ export const diningRouter = {
       latitude: r.latitude,
       longitude: r.longitude,
       maximumPartySize: r.maximum_party_size,
+      // UOR reservation bounds (plan item 3.2); null for WDW / unswept venues.
+      minPartySize: r.min_party_size,
+      maxPartySize: r.max_party_size,
+      maxAdvanceDays: r.max_advance_days,
       diningInterests: r.dining_interests ?? [],
       disneyFavorites: r.disney_favorites ?? [],
       entertainmentType: r.entertainment_type ?? [],

@@ -166,26 +166,46 @@ function ReservationsSection({
   facilityId,
   restaurantName,
   webUrl,
+  minPartySize,
+  maxPartySize,
+  maxAdvanceDays,
 }: {
   facilityId: string;
   restaurantName: string;
   /** Disney's official venue page — the web fallback when MDE isn't installed. */
   webUrl: string | null;
+  /** UOR reservation bounds (plan item 3.2); null for WDW / unswept venues. */
+  minPartySize: number | null;
+  maxPartySize: number | null;
+  maxAdvanceDays: number | null;
 }) {
   const trpc = useTRPC();
   const native = useIsNative();
   const { data: session } = authClient.useSession();
-  const [partySize, setPartySize] = React.useState(2);
+
+  // Party-size options bounded by the venue's real limits when known.
+  const partyOptions = React.useMemo(() => {
+    const lo = minPartySize ?? PARTY_SIZES[0];
+    const hi = maxPartySize ?? PARTY_SIZES[PARTY_SIZES.length - 1];
+    const opts = PARTY_SIZES.filter((n) => n >= lo && n <= hi);
+    return opts.length > 0 ? opts : PARTY_SIZES;
+  }, [minPartySize, maxPartySize]);
+  const [partySize, setPartySize] = React.useState(() =>
+    partyOptions.includes(2) ? 2 : partyOptions[0],
+  );
 
   const todayIso = parkToday();
   const today = React.useMemo(() => new Date(`${todayIso}T00:00:00`), [todayIso]);
   // Same-day reservations are bookable, so the search starts today — the sweep
-  // records today's service date and `dining.availability` returns it.
+  // records today's service date and `dining.availability` returns it. Cap the
+  // picker at the venue's advance window when it's tighter than our sweep horizon.
   const maxDate = React.useMemo(() => {
+    const horizon =
+      maxAdvanceDays != null ? Math.min(AVAIL_HORIZON, maxAdvanceDays) : AVAIL_HORIZON;
     const d = new Date(today);
-    d.setDate(d.getDate() + AVAIL_HORIZON - 1);
+    d.setDate(d.getDate() + horizon - 1);
     return d;
-  }, [today]);
+  }, [today, maxAdvanceDays]);
   const [date, setDate] = React.useState<Date | undefined>(today);
   const selectedIso = date ? format(date, ISO) : todayIso;
 
@@ -215,7 +235,7 @@ function ReservationsSection({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {PARTY_SIZES.map((n) => (
+              {partyOptions.map((n) => (
                 <SelectItem key={n} value={String(n)}>
                   {n} {n === 1 ? "guest" : "guests"}
                 </SelectItem>
@@ -230,6 +250,17 @@ function ReservationsSection({
           />
         </div>
       </div>
+      {(maxPartySize != null || maxAdvanceDays != null) && (
+        <p className="text-xs text-muted-foreground">
+          {minPartySize != null && maxPartySize != null && (
+            <>
+              Parties {minPartySize}–{maxPartySize}
+            </>
+          )}
+          {minPartySize != null && maxPartySize != null && maxAdvanceDays != null && " · "}
+          {maxAdvanceDays != null && <>bookable up to {maxAdvanceDays} days out</>}
+        </p>
+      )}
       <Card size="sm" className="px-4">
         {availabilityQ.isLoading ? (
           <Skeleton className="h-12 w-full" />
@@ -514,6 +545,9 @@ export function DiningVenueDetail({
           facilityId={facilityId}
           restaurantName={venue.name}
           webUrl={diningReserveUrl(venue.urlFriendlyId, venue.detailUrl)}
+          minPartySize={venue.minPartySize}
+          maxPartySize={venue.maxPartySize}
+          maxAdvanceDays={venue.maxAdvanceDays}
         />
       )}
 

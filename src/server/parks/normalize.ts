@@ -20,6 +20,13 @@ export interface NormalizedQueue {
   boardingGroup: number | null;
 }
 
+/** One of the day's performances for a SHOW entity (ISO times, park-local offset). */
+export interface NormalizedShowtime {
+  type: string | null;
+  start: string | null;
+  end: string | null;
+}
+
 export interface NormalizedEntity {
   externalId: string;
   name: string;
@@ -27,6 +34,8 @@ export interface NormalizedEntity {
   observedAt: Date;
   status: AttractionStatusCode;
   queues: Array<NormalizedQueue>;
+  /** Today's performances (SHOW entities); empty for non-shows. */
+  showtimes: Array<NormalizedShowtime>;
 }
 
 function toDate(s?: string | null): Date | null {
@@ -95,6 +104,18 @@ function normalizeEntity(e: LiveEntity, tickNow: Date): NormalizedEntity {
     );
   }
 
+  // SHOW showtimes: keep entries with a parseable start; preserve the raw ISO
+  // strings (they carry the park-local offset the UI formats against).
+  const showtimes: Array<NormalizedShowtime> = [];
+  for (const s of e.showtimes ?? []) {
+    if (!s.startTime || toDate(s.startTime) == null) continue;
+    showtimes.push({
+      type: s.type ?? null,
+      start: s.startTime,
+      end: s.endTime ?? null,
+    });
+  }
+
   return {
     externalId: e.id,
     name: e.name,
@@ -102,6 +123,7 @@ function normalizeEntity(e: LiveEntity, tickNow: Date): NormalizedEntity {
     observedAt,
     status: e.status ? statusFromThemeparks(e.status) : AttractionStatus.UNKNOWN,
     queues,
+    showtimes,
   };
 }
 

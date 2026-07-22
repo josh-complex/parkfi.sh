@@ -402,6 +402,14 @@ export const attractionLive = pgTable("attraction_live", {
   returnEnd: timestamp("return_end", { withTimezone: true }),
   // BOARDING_GROUP (queue_type 6) — current group being called.
   boardingGroup: integer("boarding_group"),
+  // SHOW entities: today's performance list (`{type, start, end}` with raw ISO
+  // times). Worker-upserted on change like the other mirror columns; null for
+  // non-shows / shows with no posted times. No history table — a day's schedule
+  // isn't time-series-interesting (plan item 1.1).
+  showtimes:
+    jsonb("showtimes").$type<
+      Array<{ type: string | null; start: string | null; end: string | null }>
+    >(),
   source: smallint("source").references(() => refSource.id),
   // The poll tick that wrote this snapshot (staleness clock for readers).
   observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
@@ -596,6 +604,15 @@ export const restaurantDim = pgTable(
     landId: text("land_id"),
     // Booking party-size cap (mostly dining-events); null when unbounded.
     maximumPartySize: integer("maximum_party_size"),
+    // UOR reservation bounds from the reservation-availability response (plan
+    // item 3.2). Distinct from `maximum_party_size` (a Disney dining-event cap):
+    // these are the live booking constraints the availability sweep observes and
+    // the alert form uses to bound its party-size / date pickers. UOR-only; null
+    // until the sweep has seen the venue.
+    minPartySize: integer("min_party_size"),
+    maxPartySize: integer("max_party_size"),
+    maxAdvanceDays: integer("max_advance_days"),
+    minAdvanceMinutes: integer("min_advance_minutes"),
     // Catalog attribute flags (DISNEY_DIRECT only; UOR leaves them at default).
     // Derived in `disney-finder-catalog.toRow` from the finder facets. Power the
     // "no reservation needed" / "mobile order" / "character dining" filters.

@@ -2,6 +2,8 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "#/db/index.ts";
+import { UOR_PARKS } from "#/lib/parks.ts";
+import { capacityFromUnits, type CapacityLevel } from "#/lib/ticket-scarcity.ts";
 import { buildLightningLaneDeepLink } from "#/server/notifications/lightningLaneDeepLink.ts";
 import { disneyCardUrl, QueueState, QueueType } from "#/server/parks/codes.ts";
 import { config } from "#/server/parks/config.ts";
@@ -191,6 +193,7 @@ export const parksRouter = {
       return_start: string | null;
       return_end: string | null;
       observed_at: string | null;
+      showtimes: Array<{ type: string | null; start: string | null; end: string | null }> | null;
       support_types: Array<number> | null;
       hist_standby_wait: number | null;
       latitude: number | null;
@@ -253,7 +256,8 @@ export const parksRouter = {
                  CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.ll_return_end END AS ll_return_end,
                  CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.return_state END AS return_state,
                  CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.return_start END AS return_start,
-                 CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.return_end END AS return_end
+                 CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.return_end END AS return_end,
+                 CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.showtimes END AS showtimes
           FROM attraction_live al
           JOIN attractions a ON a.id = al.attraction_id
           WHERE a.park_id = (SELECT id FROM park)
@@ -280,6 +284,7 @@ export const parksRouter = {
                lv.ll_state, lv.ll_price_cents, lv.ll_currency,
                lv.ll_return_start, lv.ll_return_end,
                lv.return_state, lv.return_start, lv.return_end,
+               lv.showtimes,
                caps.qtypes AS support_types,
                hist.hist_standby_wait,
                a.latitude, a.longitude, a.category,
@@ -329,6 +334,8 @@ export const parksRouter = {
       returnTimeWindow: knownClosed
         ? { start: null, end: null }
         : { start: r.return_start ?? null, end: r.return_end ?? null },
+      // Today's showtimes for SHOW entities (plan item 1.1); [] otherwise.
+      showtimes: knownClosed ? [] : (r.showtimes ?? []).filter((s) => s.start != null),
       supportsQueueTypes: (r.support_types ?? []).map(Number),
       histStandbyWait: r.hist_standby_wait,
       latitude: r.latitude,
@@ -778,6 +785,7 @@ export const parksRouter = {
         return_start: string | null;
         return_end: string | null;
         observed_at: string | null;
+        showtimes: Array<{ type: string | null; start: string | null; end: string | null }> | null;
         support_types: Array<number> | null;
         hist_standby_wait: number | null;
         latitude: number | null;
@@ -847,6 +855,7 @@ export const parksRouter = {
                prt.return_start AS ll_return_start, prt.return_end AS ll_return_end,
                rt.state AS return_state,
                rt.return_start AS return_start, rt.return_end AS return_end,
+               al.showtimes AS showtimes,
                caps.qtypes AS support_types,
                hist.hist_standby_wait,
                a.latitude, a.longitude, a.category,
@@ -876,6 +885,7 @@ export const parksRouter = {
         LEFT JOIN latest_q rt ON rt.queue_type = 3
         LEFT JOIN caps ON true
         LEFT JOIN hist ON true
+        LEFT JOIN attraction_live al ON al.attraction_id = a.id
         LEFT JOIN attraction_meta m ON m.attraction_id = a.id
         LEFT JOIN coaster_stats cs ON cs.attraction_id = a.id
         WHERE a.id = (SELECT id FROM ride)
@@ -920,6 +930,8 @@ export const parksRouter = {
         },
         returnTimeState: code(QUEUE_STATE_CODE, r.return_state),
         returnTimeWindow: { start: r.return_start ?? null, end: r.return_end ?? null },
+        // Today's performances for SHOW entities (plan item 1.1); [] otherwise.
+        showtimes: (r.showtimes ?? []).filter((s) => s.start != null),
         lightningLaneDeepLink,
         supportsQueueTypes: (r.support_types ?? []).map(Number),
         histStandbyWait: r.hist_standby_wait,
@@ -1074,6 +1086,42 @@ export const parksRouter = {
       ORDER BY r.name, p.name
     `);
 
+    // Today's Universal Express capacity per park (plan item 3.1). The map's
+    // zoomed-out badges show a coarse "nearing/at capacity" chip from this —
+    // tier-based, since Universal appears to cap the raw unit count. WDW
+    // admission carries no units, so only UOR parks get a chip.
+    const capBySlug = new Map<string, CapacityLevel>();
+    {
+      const expRows = await db.execute<{
+        park_scope: Array<string>;
+        available: boolean | null;
+        available_units: number | null;
+      }>(sql`
+        SELECT DISTINCT ON (sp.sku) d.park_scope, sp.available, sp.available_units
+        FROM sku_price_obs sp
+        JOIN product_dim d ON d.sku = sp.sku
+        WHERE d.resort = 'UOR' AND d.family = 'EXPRESS' AND d.variable_priced = true
+          AND sp.service_date = current_date
+        ORDER BY sp.sku, sp.observed_at DESC
+      `);
+      for (const park of UOR_PARKS) {
+        if (!park.slug) continue;
+        const rows = expRows.rows.filter((r) => r.park_scope?.includes(park.code));
+        if (rows.length === 0) continue;
+        const available = rows.some((r) => r.available);
+        // Tightest stock among available SKUs covering the park.
+        const units = rows
+          .filter((r) => r.available && r.available_units != null)
+          .reduce<number | null>(
+            (m, r) =>
+              m == null ? Number(r.available_units) : Math.min(m, Number(r.available_units)),
+            null,
+          );
+        const level = capacityFromUnits(available, units);
+        if (level) capBySlug.set(park.slug, level);
+      }
+    }
+
     const parks = result.rows.map((p) => {
       // null = no schedule data (UI shows "hours unavailable"); otherwise a
       // confident open/closed derived from the operating calendar.
@@ -1106,6 +1154,8 @@ export const parksRouter = {
             : null,
         isOpen,
         opensAt: p.opens_at,
+        // Today's Universal Express capacity chip for the map badge (UOR only).
+        expressCapacity: capBySlug.get(p.slug) ?? null,
       };
     });
 
