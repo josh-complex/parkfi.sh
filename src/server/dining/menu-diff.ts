@@ -38,6 +38,44 @@ function tiersOf(r: PrevMenuRow | DiningMenuItemRow): Map<string, number> {
   return m;
 }
 
+/**
+ * Pair the prev/next rows that share a price-key bucket. The common case is one
+ * row per side — a trivial pairing. But Disney sometimes publishes DUPLICATE
+ * TITLES within a (period, group): two genuinely different items both named,
+ * e.g., "Chicken Milanesa Sandwich" (one a cutlet, one a beef burger). Those
+ * land in the same bucket, and pairing by raw occurrence index can cross-match
+ * the chicken row against the beef row across generations — emitting a phantom
+ * price move. So for multi-row buckets we align by `description` first (like
+ * with like); only leftovers with no description match fall back to order (a
+ * real description edit on a dup-title item). Single-row buckets are untouched,
+ * so normal items — including a same-title item whose description AND price both
+ * changed — behave exactly as before.
+ */
+function pairForPriceMoves(
+  prevRows: Array<PrevMenuRow>,
+  nextRows: Array<DiningMenuItemRow>,
+): Array<[PrevMenuRow, DiningMenuItemRow]> {
+  if (prevRows.length <= 1 || nextRows.length <= 1) {
+    return prevRows.length > 0 && nextRows.length > 0 ? [[prevRows[0]!, nextRows[0]!]] : [];
+  }
+  const pairs: Array<[PrevMenuRow, DiningMenuItemRow]> = [];
+  const prevPool = [...prevRows];
+  const leftoverNext: Array<DiningMenuItemRow> = [];
+  for (const n of nextRows) {
+    const idx = prevPool.findIndex((p) => p.description === n.description);
+    if (idx >= 0) {
+      pairs.push([prevPool[idx]!, n]);
+      prevPool.splice(idx, 1);
+    } else {
+      leftoverNext.push(n);
+    }
+  }
+  for (let i = 0; i < Math.min(prevPool.length, leftoverNext.length); i++) {
+    pairs.push([prevPool[i]!, leftoverNext[i]!]);
+  }
+  return pairs;
+}
+
 /** Groups menu rows by a composed key, preserving insertion order per bucket. */
 function bucketBy<T>(rows: Array<T>, keyOf: (r: T) => string): Map<string, Array<T>> {
   const m = new Map<string, Array<T>>();
@@ -76,7 +114,8 @@ function titleExcess<T extends { title: string }>(
  * the price-move log rows and the item lifecycle events (added / removed).
  * Two independent passes:
  *   • Price moves — persisting items matched by (period, group, title, type),
- *     aligned by occurrence order so duplicate titles line up; each price TIER
+ *     duplicate titles aligned by description (see `pairForPriceMoves`) so a
+ *     chicken row never diffs against a same-named beef row; each price TIER
  *     that differs emits a row naming the tier (plan item 1.6).
  *   • Roster — per (period, group), the multiset title difference gives the
  *     items added and removed.
@@ -100,12 +139,11 @@ export function diffMenu(
   const prevByPriceKey = bucketBy(prev, priceKey);
   for (const [key, nextRows] of bucketBy(next, priceKey)) {
     const prevRows = prevByPriceKey.get(key) ?? [];
-    for (let i = 0; i < Math.min(prevRows.length, nextRows.length); i++) {
-      const r = nextRows[i];
+    for (const [prevRow, r] of pairForPriceMoves(prevRows, nextRows)) {
       // Compare per tier (plan item 1.6): one row per tier that moved, its
       // `priceType` naming the tier ("Per Glass $14 → $16"). A tier appearing
       // or vanishing logs with a null old/new side.
-      const oldTiers = tiersOf(prevRows[i]);
+      const oldTiers = tiersOf(prevRow);
       const newTiers = tiersOf(r);
       for (const tierType of new Set([...oldTiers.keys(), ...newTiers.keys()])) {
         const oldPrice = oldTiers.get(tierType) ?? null;

@@ -64,6 +64,33 @@ function isoDate(d: Date): string {
 }
 
 /**
+ * Retry a query through a transient connection drop. This run holds a pooled
+ * client idle across slow serial menu fetches; the server/pooler can reap that
+ * socket ("Connection terminated unexpectedly"). The pool discards the dead
+ * client (see the `pool.on('error')` handler in db/index.ts), so a retry
+ * acquires a fresh one. Matters most on the first post-1.6 run, where the hash
+ * churns every venue and the per-venue prev read fires hundreds of times — one
+ * dropped read used to kill the whole run before any writes committed, so it
+ * re-churned and died again every run. Connection-shaped errors only; a real
+ * query error still throws straight through.
+ */
+async function withDbRetry<T>(op: () => Promise<T>, attempts = 3): Promise<T> {
+  for (let i = 1; ; i++) {
+    try {
+      return await op();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const transient =
+        /Connection terminated|terminating connection|ECONNRESET|ECONNREFUSED|socket hang up|connection error/i.test(
+          msg,
+        );
+      if (!transient || i >= attempts) throw err;
+      await new Promise((res) => setTimeout(res, 250 * i));
+    }
+  }
+}
+
+/**
  * Stable content hash of a venue's menu — drives change detection. Includes
  * the full price-tier list (plan item 1.6) so a beyond-first-tier move
  * registers. NB: adding `prices` makes every venue read "changed" on the first
@@ -231,22 +258,24 @@ async function enrichDetails(rows: Array<DiningCatalogRow>, now: Date): Promise<
       continue;
     }
     if (snap) {
-      const prev = await db
-        .select({
-          mealPeriod: diningMenuItem.mealPeriod,
-          groupName: diningMenuItem.groupName,
-          itemType: diningMenuItem.itemType,
-          title: diningMenuItem.title,
-          description: diningMenuItem.description,
-          price: diningMenuItem.price,
-          priceType: diningMenuItem.priceType,
-          currency: diningMenuItem.currency,
-          prices: diningMenuItem.prices,
-        })
-        .from(diningMenuItem)
-        .where(
-          and(eq(diningMenuItem.facilityId, fid), eq(diningMenuItem.observedAt, snap.observedAt)),
-        );
+      const prev = await withDbRetry(() =>
+        db
+          .select({
+            mealPeriod: diningMenuItem.mealPeriod,
+            groupName: diningMenuItem.groupName,
+            itemType: diningMenuItem.itemType,
+            title: diningMenuItem.title,
+            description: diningMenuItem.description,
+            price: diningMenuItem.price,
+            priceType: diningMenuItem.priceType,
+            currency: diningMenuItem.currency,
+            prices: diningMenuItem.prices,
+          })
+          .from(diningMenuItem)
+          .where(
+            and(eq(diningMenuItem.facilityId, fid), eq(diningMenuItem.observedAt, snap.observedAt)),
+          ),
+      );
       const diff = diffMenu(fid, prev, next);
       priceRows.push(...diff.priceRows);
       eventRows.push(...diff.eventRows);

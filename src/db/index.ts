@@ -20,6 +20,20 @@ if (!process.env.DATABASE_URL) loadEnv({ path: [".env.local", ".env"] });
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL!,
   max: Number(process.env.PG_POOL_MAX ?? 10),
+  // Long single-shot crons (e.g. dining:facilities) leave a checked-out client
+  // idle across slow serial HTTP fetches; without TCP keepalive the server/
+  // pooler silently reaps that socket and the next query throws "Connection
+  // terminated unexpectedly". Keepalive probes hold the socket open.
+  keepAlive: true,
+});
+
+// A dead IDLE client emits 'error' on the pool, not on any awaited query. With
+// no listener node-postgres rethrows it at the process level and takes the whole
+// service down; swallowing it lets the pool discard the client and hand out a
+// fresh one on the next acquire. (Errors on an in-flight query still surface to
+// that query's await — see the caller-side retry in the dining cron.)
+pool.on("error", (err) => {
+  console.error("[db] idle client error (discarded):", err.message);
 });
 
 export const db = drizzle({ client: pool, schema });
