@@ -293,7 +293,7 @@ const EMPTY_DEV_DESTINATIONS: ReadonlyArray<{
 // on every frame of a zoom made markers flicker in/out as they crossed the
 // grouping threshold; debouncing coalesces a whole gesture into one relayout
 // (with an immediate flush on `moveend`, so the settled state still snaps in).
-const DECLUTTER_SETTLE_MS = 25;
+const DECLUTTER_SETTLE_MS = 5;
 
 type ParkBounds = { latMin: number; latMax: number; lngMin: number; lngMax: number };
 

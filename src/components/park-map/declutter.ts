@@ -49,7 +49,7 @@ const DECLUTTER_FADE_MS = 200;
 // The enlarged "ghost" state a marker dissolves to as it hides — it scales up
 // while fading out, and a revealed marker starts here and condenses down into
 // place while fading in.
-const GHOST_SCALE = 1.25;
+const GHOST_SCALE = 1.2;
 
 // Markers currently fading toward hidden — the timer flips them to `display:none`
 // once the opacity ramp lands. A reveal cancels it so rapid re-layouts (pan near
