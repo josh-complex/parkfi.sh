@@ -1127,8 +1127,11 @@ export function openAttractionCard(opts: {
 // disc-sized box (so the marker's footprint is just the photo, centered on the
 // point) holding the photo plus an absolutely-positioned label that slides out on
 // hover. `will-change-transform` keeps the declutter nudge translate smooth.
+// Opacity transitions too: the cluster pass fades markers out before hiding them
+// (and in on reveal) instead of popping them — keep its duration in sync with
+// DECLUTTER_FADE_MS in declutter.ts.
 const DETAIL_CLASS =
-  "relative rounded-full transition-transform duration-200 will-change-transform";
+  "relative rounded-full transition-[transform,opacity] duration-200 will-change-transform";
 
 /** A circular photo disc (colour-ringed) or, with no photo, the fallback icon
  *  disc. No white border — a thicker colour ring hugs the image so the photo

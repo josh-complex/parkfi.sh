@@ -40,6 +40,94 @@ export interface DeclutterItem {
   wait?: number | null;
 }
 
+// How long a marker's opacity ramp runs when the cluster pass reveals or absorbs
+// it. Must stay in sync with DETAIL_CLASS's duration-200 in shared.tsx — the
+// transition itself lives there; this is just when we're allowed to `display:none`
+// the faded-out marker.
+const DECLUTTER_FADE_MS = 200;
+
+// The enlarged "ghost" state a marker dissolves to as it hides — it scales up
+// while fading out, and a revealed marker starts here and condenses down into
+// place while fading in.
+const GHOST_SCALE = 1.25;
+
+// Markers currently fading toward hidden — the timer flips them to `display:none`
+// once the opacity ramp lands. A reveal cancels it so rapid re-layouts (pan near
+// a grouping threshold) can't strand a visible marker with a pending hide.
+const hideTimers = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
+// Each ghosting marker's pre-ghost transform (its relax nudge), so a cancelled
+// hide can strip the appended scale without clobbering the positional offset.
+const ghostBase = new WeakMap<HTMLElement, string>();
+
+/** Reveal a marker: fade in while condensing down from the enlarged ghost state
+ *  (or from wherever a cancelled fade-out left it) instead of popping. */
+function fadeShow(detail: HTMLElement): void {
+  const t = hideTimers.get(detail);
+  if (t != null) {
+    clearTimeout(t);
+    hideTimers.delete(detail);
+    // Cancelled mid fade-out: drop the ghost scale, keep the positional nudge
+    // (the relax pass re-lays it out right after anyway).
+    detail.style.transform = ghostBase.get(detail) ?? "";
+    ghostBase.delete(detail);
+  }
+  detail.style.pointerEvents = "";
+  if (detail.classList.contains("hidden")) {
+    // Paint one frame at the transparent, scaled-up start before releasing to
+    // the resting state, so the un-hide actually ramps instead of both writes
+    // collapsing into one style. The scale target set here is provisional — the
+    // relax pass overwrites the transform with the real nudge moments later,
+    // and the in-flight transition simply retargets onto it.
+    detail.classList.remove("hidden");
+    detail.style.opacity = "0";
+    detail.style.transform = `scale(${GHOST_SCALE})`;
+    void detail.offsetWidth;
+    detail.style.transform = "";
+  }
+  detail.style.opacity = "";
+}
+
+/** Hide a marker: scale up and fade to transparent, then `display:none` once the
+ *  ramp lands. `instant` skips the fade — used on the first pass after a rebuild,
+ *  where the markers are already fading in as a set (wireMarkerFadeIn) and an
+ *  absorbed one flashing in just to fade back out would read as flicker. */
+function fadeHide(detail: HTMLElement, instant: boolean): void {
+  if (detail.classList.contains("hidden")) return;
+  if (instant) {
+    const t = hideTimers.get(detail);
+    if (t != null) {
+      clearTimeout(t);
+      hideTimers.delete(detail);
+      ghostBase.delete(detail);
+    }
+    detail.classList.add("hidden");
+    detail.style.opacity = "";
+    detail.style.transform = "";
+    detail.style.pointerEvents = "";
+    return;
+  }
+  if (hideTimers.has(detail)) return; // already ghosting out
+  // Grow from wherever the marker sits — the ghost scale composes onto the relax
+  // nudge, so the dissolve doesn't jump the marker back to its unnudged spot.
+  const base = detail.style.transform;
+  ghostBase.set(detail, base);
+  detail.style.transform = `${base} scale(${GHOST_SCALE})`.trim();
+  detail.style.opacity = "0";
+  // A ghost mustn't swallow taps meant for whatever it's fading over.
+  detail.style.pointerEvents = "none";
+  hideTimers.set(
+    detail,
+    setTimeout(() => {
+      hideTimers.delete(detail);
+      ghostBase.delete(detail);
+      detail.classList.add("hidden");
+      detail.style.opacity = "";
+      detail.style.transform = "";
+      detail.style.pointerEvents = "";
+    }, DECLUTTER_FADE_MS),
+  );
+}
+
 // Fixed left-to-right order for the overflow dots, so a cluster's composition
 // always reads the same way regardless of which marker anchored it.
 const DOT_ORDER: ReadonlyArray<MapItemKind> = [
@@ -169,9 +257,16 @@ export class MarkerCluster {
     this.clusterDist = dist;
   }
 
+  /** True until the first relayout after a `setItems` rebuild has run: that pass
+   *  hides absorbed markers instantly (they're brand-new DOM already fading in as
+   *  a set — a flash-then-fade-out would read as flicker), while every later pass
+   *  fades markers in/out as groups form and split. */
+  private initialPass = true;
+
   /** Replace the marker set (after a rebuild) and wire each one's click. */
   setItems(items: Array<DeclutterItem>): void {
     this.items = items;
+    this.initialPass = true;
     this.members.clear();
     for (const it of items) {
       it.detail.addEventListener("click", (e) => {
@@ -200,6 +295,7 @@ export class MarkerCluster {
   private relayout(): void {
     if (this.mode === "spread") this.spread();
     else this.cluster();
+    this.initialPass = false;
   }
 
   /** Re-cluster (cheap; runs on every pan/zoom frame so groups split/re-form). */
@@ -220,12 +316,19 @@ export class MarkerCluster {
     this.members.clear();
     const placed: Array<{ item: DeclutterItem; x: number; y: number }> = [];
     for (const it of sorted) {
-      // Clear any leftover transform so a marker that becomes visible here always
-      // sits at its true position.
-      it.detail.style.transform = "";
+      // A marker whose disc is currently morphed into an open card (or still
+      // animating closed) is off-limits: it must not be hidden, absorbed,
+      // transform-nudged, or have its badges/chips rewritten — `setClusterDots`
+      // would un-hide the "+N" dots the card-morph tucked away and paint them
+      // across the card, and `relax` would drag the whole card around. Skip it
+      // entirely; it rejoins the layout on the first pass after it restores.
+      if (it.detail.hasAttribute("data-card-open")) continue;
+      // No transform reset here: `relax` writes every placed marker's transform
+      // at the end of the pass (nudge or ""), and a hiding marker must keep its
+      // current one so the ghost scale-up composes onto it instead of jumping.
       const p = it.point();
       if (!p) {
-        it.detail.classList.add("hidden");
+        fadeHide(it.detail, this.initialPass);
         continue;
       }
       // The selected marker is never absorbed — it always stays its own anchor.
@@ -251,11 +354,11 @@ export class MarkerCluster {
             });
       if (anchor) {
         this.members.get(anchor.item.id)?.push(it);
-        it.detail.classList.add("hidden");
+        fadeHide(it.detail, this.initialPass);
       } else {
         placed.push({ item: it, x: p.x, y: p.y });
         this.members.set(it.id, []);
-        it.detail.classList.remove("hidden");
+        fadeShow(it.detail);
       }
     }
     for (const q of placed) {
@@ -296,13 +399,16 @@ export class MarkerCluster {
   private spread(): void {
     const nodes: Array<{ it: DeclutterItem; x: number; y: number; ox: number; oy: number }> = [];
     for (const it of this.items) {
-      it.detail.style.transform = "";
+      // Same card-open exemption as `cluster()`: leave the morphed disc alone.
+      if (it.detail.hasAttribute("data-card-open")) continue;
+      // As in `cluster()`, no transform reset — `relax` owns it for every shown
+      // marker, and a hiding one keeps its own for the ghost scale to ride on.
       const p = it.point();
       if (!p) {
-        it.detail.classList.add("hidden");
+        fadeHide(it.detail, this.initialPass);
         continue;
       }
-      it.detail.classList.remove("hidden");
+      fadeShow(it.detail);
       setClusterDots(it.detail, EMPTY_COUNTS);
       // No grouping in spread mode — every marker keeps its own name + wait.
       setNameChipVisible(it.detail, true);
