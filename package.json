@@ -133,6 +133,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.4.0",
+    "defuddle": "^0.19.2",
     "drizzle-kit": "^1.0.0-beta.22",
     "drizzle-orm": "^1.0.0-beta.22",
     "embla-carousel-react": "^8.6.0",

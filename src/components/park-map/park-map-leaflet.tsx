@@ -75,7 +75,7 @@ const EMPTY_DEV_DESTINATIONS: ReadonlyArray<{
 // How long the map must sit still before the cluster pass re-runs — debounced so
 // markers don't flicker in/out across the grouping threshold on every pan/zoom
 // frame (flushed immediately on move/zoom end). Mirrors the GL renderer.
-const DECLUTTER_SETTLE_MS = 150;
+const DECLUTTER_SETTLE_MS = 25;
 
 /**
  * MapTiler raster basemap, per the app theme — `streets-v4` (light) /

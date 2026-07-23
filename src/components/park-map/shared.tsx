@@ -583,6 +583,18 @@ const WAIT_GROW = 1.16; // scale the chip grows to as it flies into its overlay 
 let openCard: { close: () => void } | null = null;
 
 /**
+ * Per-marker "finish the close right now" hooks. `close()` restores the disc's
+ * resting DOM on a `CARD_MS` timer (it waits for the collapse animation). If the
+ * *same* marker is re-tapped inside that window, its restore hasn't run yet — the
+ * wrap is still mid-collapse (`overflow:hidden`, transient inline geometry). A
+ * fresh open would then snapshot that transient state as the disc's "resting"
+ * look and write it back on the next close, leaving the disc overflow-clipped for
+ * good (chips cut off). So `openAttractionCard` runs this finalizer synchronously
+ * first, settling the marker to its true resting state before it snapshots.
+ */
+const pendingClose = new WeakMap<HTMLElement, () => void>();
+
+/**
  * Expand a tapped attraction marker into an info card as a true **container
  * morph**: the marker's own disc wrapper (`detail`'s first child) *becomes* the
  * card. It's a single `overflow:hidden` box that grows in place — its center stays
@@ -614,6 +626,11 @@ export function openAttractionCard(opts: {
   openCard?.close();
 
   const { detail, container, bodyHtml, wasSelected, onClose, onPress } = opts;
+  // If this exact marker is still mid-close from a previous card, its resting DOM
+  // hasn't been restored yet — finish that restore synchronously now, so the
+  // snapshots below capture the true resting disc and not the collapsing wrap's
+  // transient inline styles (which would otherwise get written back for good).
+  pendingClose.get(detail)?.();
   const wrap = detail.firstElementChild as HTMLElement; // the disc wrapper → the card
   // A marker still mid fade-in (wireMarkerFadeIn) carries an inline opacity < 1
   // and its own transition on the wrap; force it opaque and drop that transition
@@ -1023,6 +1040,7 @@ export function openAttractionCard(opts: {
       `border-radius ${CARD_MS}ms ${CARD_EASE}`,
       `box-shadow ${CARD_CLOSE_FX_MS}ms ease`,
       `border-color ${CARD_CLOSE_FX_MS}ms ease`,
+      `border-width ${CARD_CLOSE_FX_MS}ms ease`,
     ].join(", ");
     Object.assign(wrap.style, {
       left: "0px",
@@ -1032,6 +1050,12 @@ export function openAttractionCard(opts: {
       borderRadius: `${size / 2}px`,
       boxShadow: ringShadow,
       borderColor: "transparent",
+      // Shrink the border-3d 1px edge away too, not just its colour: the wrap is
+      // border-box, so a border that persists to the end and then vanishes when
+      // the classes are stripped grows the content box by 2px — the restored disc
+      // photo (width:100%) visibly pops. Easing the width to 0 early, while the
+      // box is still large and mid-collapse, makes the strip a geometric no-op.
+      borderWidth: "0px",
     });
     if (fill) fill.style.height = `${size}px`;
     unflyWait?.(); // the wait chip flies back down to the disc
@@ -1041,44 +1065,57 @@ export function openAttractionCard(opts: {
     // that otherwise left it hanging in mid-air after the card had collapsed away).
     closeBtn.style.transition = "opacity 120ms ease";
     closeBtn.style.opacity = "0";
-    window.setTimeout(() => {
-      card.remove();
-      closeBtn.remove();
-      wrap.removeEventListener("click", stopProp);
-      // Restore the disc + detail box to their resting state.
-      wrap.className = wrapClass;
-      wrap.setAttribute("style", wrapStyle);
-      if (fill) fill.setAttribute("style", fillStyle);
-      // Return the flown chips to their resting spots under the disc, verbatim. The
-      // wait pill and name pill are adjacent badge siblings, so each one's captured
-      // `next` reference points at the other — and both have been reparented into
-      // `detail`, so that reference is no longer a child of `wrap`. Fall back to an
-      // append when it isn't, or `insertBefore` throws and aborts the whole restore
-      // (which left the disc stuck for the next open).
-      const restoreBadge = (el: HTMLElement, next: ChildNode | null) => {
-        if (next && next.parentNode === wrap) wrap.insertBefore(el, next);
-        else wrap.append(el);
-      };
-      if (waitEl && waitRestore) {
-        waitEl.className = waitRestore.cls;
-        waitEl.setAttribute("style", waitRestore.style);
-        restoreBadge(waitEl, waitRestore.next);
-      }
-      // Same for the name pill: its truncated label, class and inline style all
-      // reset to the resting chip.
-      if (nameEl && nameRestore) {
-        nameEl.textContent = nameChipText;
-        nameEl.className = nameRestore.cls;
-        nameEl.setAttribute("style", nameRestore.style);
-        restoreBadge(nameEl, nameRestore.next);
-      }
-      for (const b of badges) b.el.classList.toggle("hidden", b.wasHidden);
-      detail.removeAttribute("data-card-open");
-      detail.style.width = "";
-      detail.style.height = "";
-      if (wasSelected) applySelected(detail, true);
-      else label?.classList.remove("hidden");
-    }, CARD_MS);
+    // The DOM restore normally waits out the collapse animation. If the same
+    // marker is re-tapped before it fires, `openAttractionCard` calls `finalize`
+    // synchronously (via pendingClose) to settle the disc first — so guard it to
+    // run exactly once and cancel the pending timer when it does.
+    pendingClose.set(detail, finalize);
+    restoreTimer = window.setTimeout(finalize, CARD_MS);
+  }
+
+  let restoreTimer = 0;
+  let restored = false;
+  function finalize() {
+    if (restored) return;
+    restored = true;
+    if (restoreTimer) window.clearTimeout(restoreTimer);
+    if (pendingClose.get(detail) === finalize) pendingClose.delete(detail);
+    card.remove();
+    closeBtn.remove();
+    wrap.removeEventListener("click", stopProp);
+    // Restore the disc + detail box to their resting state.
+    wrap.className = wrapClass;
+    wrap.setAttribute("style", wrapStyle);
+    if (fill) fill.setAttribute("style", fillStyle);
+    // Return the flown chips to their resting spots under the disc, verbatim. The
+    // wait pill and name pill are adjacent badge siblings, so each one's captured
+    // `next` reference points at the other — and both have been reparented into
+    // `detail`, so that reference is no longer a child of `wrap`. Fall back to an
+    // append when it isn't, or `insertBefore` throws and aborts the whole restore
+    // (which left the disc stuck for the next open).
+    const restoreBadge = (el: HTMLElement, next: ChildNode | null) => {
+      if (next && next.parentNode === wrap) wrap.insertBefore(el, next);
+      else wrap.append(el);
+    };
+    if (waitEl && waitRestore) {
+      waitEl.className = waitRestore.cls;
+      waitEl.setAttribute("style", waitRestore.style);
+      restoreBadge(waitEl, waitRestore.next);
+    }
+    // Same for the name pill: its truncated label, class and inline style all
+    // reset to the resting chip.
+    if (nameEl && nameRestore) {
+      nameEl.textContent = nameChipText;
+      nameEl.className = nameRestore.cls;
+      nameEl.setAttribute("style", nameRestore.style);
+      restoreBadge(nameEl, nameRestore.next);
+    }
+    for (const b of badges) b.el.classList.toggle("hidden", b.wasHidden);
+    detail.removeAttribute("data-card-open");
+    detail.style.width = "";
+    detail.style.height = "";
+    if (wasSelected) applySelected(detail, true);
+    else label?.classList.remove("hidden");
   }
 
   const handle = { close };
