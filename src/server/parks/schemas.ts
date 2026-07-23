@@ -924,3 +924,176 @@ export const UniversalReservationAvailabilitySchema = z.object({
 export type UniversalReservationAvailability = z.infer<
   typeof UniversalReservationAvailabilitySchema
 >;
+
+// ---------------------------------------------------------------------------
+// Universal menu page model (plan item 2.1) — the raw Tridion/DD4T JSON behind
+// `/contentdata/uor/en/us/things-to-do/dining/{slug}/*.html` (the object the
+// Angular app hydrates from; a plain cookieless edge-cached GET — no session).
+// The payload is deeply nested, so this schema keeps only the layers the menu
+// parser walks and lets everything else drop. Components are identified by
+// `Schema.Id`/`Schema.Title`, never by list position.
+// ---------------------------------------------------------------------------
+
+/** A Tridion field's plain string values (`{Name, Values, FieldType, …}`). */
+const TridionValues = z.object({ Values: z.array(z.string()).default([]) }).partial();
+
+const UniversalMenuDish = z
+  .object({
+    Title: TridionValues.optional(),
+    // XHTML fragment ("<div>herbed butter, peach jam</div>"); wine/beer tabs
+    // carry the bottle price inside this text instead of a Price field.
+    Description: TridionValues.optional(),
+    // String with inconsistent format ("52" vs "5.00"); absent on some rows.
+    Price: TridionValues.optional(),
+    // Dietary keyword keys: V / VG / GS.
+    HealthAttribute: TridionValues.optional(),
+  })
+  .partial();
+
+const UniversalMenuSection = z
+  .object({
+    // Sometimes present-but-empty — callers fall back to the component Title.
+    Subheading: TridionValues.optional(),
+    DishDetails: z
+      .object({ EmbeddedValues: z.array(UniversalMenuDish).default([]) })
+      .partial()
+      .optional(),
+  })
+  .partial();
+
+const UniversalMenuNavLink = z
+  .object({
+    Title: TridionValues.optional(),
+    Component: z
+      .object({
+        LinkedComponentValues: z
+          .array(z.object({ ResolvedUrl: z.string().nullable().optional() }).partial())
+          .default([]),
+      })
+      .partial()
+      .optional(),
+  })
+  .partial();
+
+// --- The GDS template (Epic Universe + refreshed hotel venues): the menu
+// lives in a "GDS - Tabs Container" whose linked "GDS - Tab Items" nest
+// "GDS - Text Block Menu" components (sections → items). Headings and item
+// text are XHTML fragments; items carry NO prices (verified: 0 priced across
+// probed GDS venues — Universal doesn't publish them on this template).
+
+const GdsMenuItem = z
+  .object({
+    heading: TridionValues.optional(),
+    description: TridionValues.optional(),
+    // Not observed on any probed GDS venue, but modeled in case it appears.
+    price: TridionValues.optional(),
+    // Allergen/dietary flags ("Gluten Sensitive", "Egg Sensitive", …).
+    featureList: TridionValues.optional(),
+  })
+  .partial();
+
+const GdsMenuSection = z
+  .object({
+    heading: TridionValues.optional(),
+    items: z
+      .object({ EmbeddedValues: z.array(GdsMenuItem).default([]) })
+      .partial()
+      .optional(),
+  })
+  .partial();
+
+const GdsTabElement = z
+  .object({
+    Schema: z
+      .object({
+        Id: z.string().nullable().optional(),
+        Title: z.string().nullable().optional(),
+      })
+      .partial()
+      .nullable()
+      .optional(),
+    Fields: z
+      .object({
+        sections: z
+          .object({ EmbeddedValues: z.array(GdsMenuSection).default([]) })
+          .partial()
+          .optional(),
+      })
+      .partial()
+      .default({}),
+  })
+  .partial();
+
+const GdsTabItem = z
+  .object({
+    Fields: z
+      .object({
+        heading: TridionValues.optional(),
+        elements: z
+          .object({
+            EmbeddedValues: z
+              .array(
+                z
+                  .object({
+                    component: z
+                      .object({
+                        LinkedComponentValues: z.array(GdsTabElement).default([]),
+                      })
+                      .partial()
+                      .optional(),
+                  })
+                  .partial(),
+              )
+              .default([]),
+          })
+          .partial()
+          .optional(),
+      })
+      .partial()
+      .default({}),
+  })
+  .partial();
+
+const UniversalMenuComponent = z
+  .object({
+    Title: z.string().nullable().optional(),
+    Schema: z
+      .object({
+        Id: z.string().nullable().optional(),
+        Title: z.string().nullable().optional(),
+      })
+      .partial()
+      .nullable()
+      .optional(),
+    Fields: z
+      .object({
+        // "K2 Restaurant Menu" components (one per menu section).
+        MenuDetails: z
+          .object({ EmbeddedValues: z.array(UniversalMenuSection).default([]) })
+          .partial()
+          .optional(),
+        // "K2 Local Navigation" — the sub-menu tab list (Everyday/Kids'/Wine…).
+        Link: z
+          .object({ EmbeddedValues: z.array(UniversalMenuNavLink).default([]) })
+          .partial()
+          .optional(),
+        // "K2 Section Title" — the page's menu heading ("Everyday Menu").
+        Heading: TridionValues.optional(),
+        // "GDS - Tabs Container" — the GDS-template tab list.
+        tabContents: z
+          .object({ LinkedComponentValues: z.array(GdsTabItem).default([]) })
+          .partial()
+          .optional(),
+      })
+      .partial()
+      .default({}),
+  })
+  .partial();
+
+export const UniversalMenuPageSchema = z.object({
+  Title: z.string().nullable().optional(),
+  ComponentPresentations: z
+    .array(z.object({ Component: UniversalMenuComponent.nullable().optional() }).partial())
+    .default([]),
+});
+export type UniversalMenuPage = z.infer<typeof UniversalMenuPageSchema>;

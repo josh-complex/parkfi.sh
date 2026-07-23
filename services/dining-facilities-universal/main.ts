@@ -15,6 +15,11 @@
  * source=UNIVERSAL_DIRECT so it never touches the WDW catalog. `priority` is
  * never overwritten on update.
  *
+ * After the catalog lands, a menu pass (plan item 2.1) crawls each venue's
+ * `/contentdata/` Tridion page — a plain cookieless GET, NOT the Browserless
+ * session — into the shared `dining_menu_item` generation pipeline. Toggle off
+ * with DINING_DETAILS=0, same as the WDW cron.
+ *
  * Run:  bun run dining:facilities:universal
  */
 import { config as loadEnv } from "dotenv";
@@ -35,6 +40,9 @@ import {
   universalPlaceImages,
 } from "#/server/parks/codes.ts";
 import { config } from "#/server/parks/config.ts";
+import type { DiningMenuItemRow } from "#/server/dining/disney-dining-detail.ts";
+import { persistMenuGenerations } from "#/server/dining/menu-persist.ts";
+import { fetchUniversalMenu, universalMenuPath } from "#/server/dining/universal-menu.ts";
 import { fetchUniversalReservationAvailability } from "#/server/dining/universal-reservations.ts";
 import { browserlessConfigured } from "#/server/parks/sources/browserless.ts";
 import { fetchPlacesInPage } from "#/server/parks/sources/universal-places.ts";
@@ -69,6 +77,9 @@ async function main() {
 
   // One session: fetch the catalog, then probe each table-service candidate's
   // reservation-availability to confirm it's actually served by the endpoint.
+  // Menu paths are collected here but crawled AFTER the session closes — the
+  // contentdata fetch needs no browser.
+  const menuPaths = new Map<string, string>();
   const rows = await withUniversalSession(async (page, session) => {
     const places = await fetchPlacesInPage(page, session.headers);
     const dining = places.results
@@ -77,6 +88,8 @@ async function main() {
 
     const out: Array<Omit<typeof restaurantDim.$inferInsert, "priority">> = [];
     for (const p of dining) {
+      const menuPath = universalMenuPath(p.urls);
+      if (menuPath) menuPaths.set(p.place_id, menuPath);
       const candidate = universalDiningBookable(p.place_type?.categories);
       // Probe only candidates; confirmed bookable iff the endpoint returns 200.
       const bookable =
@@ -162,6 +175,51 @@ async function main() {
   const bookable = rows.filter((r) => r.bookable).length;
   console.log(
     `[dining-facilities-universal] upserted ${rows.length} venues (${bookable} bookable), deactivated ${deactivated.length}`,
+  );
+
+  if (config.diningDetailsEnabled) {
+    await crawlMenus(menuPaths, now);
+  }
+}
+
+/**
+ * Menu crawl (plan item 2.1): for each venue whose place carried a menu URL,
+ * fetch the `/contentdata/` page model + its sub-menu tabs and land the rows
+ * in the shared generation pipeline. Serial with a delay — the endpoint is
+ * edge-cached and this stays a light, weekly-cron-sized crawl. Per-venue
+ * try/catch isolates one bad venue; two outcomes are skipped WITHOUT touching
+ * the venue's snapshot (stale beats a phantom wipe):
+ *   • no menu page (redirect to oops-sorry) — most quick-service venues;
+ *   • a page that parses to zero rows — the drift guard: if the Tridion
+ *     markup shifts under us, we must not persist an empty generation and
+ *     emit mass "removed" events.
+ */
+async function crawlMenus(menuPaths: Map<string, string>, now: Date): Promise<void> {
+  const menuByFacility = new Map<string, Array<DiningMenuItemRow>>();
+  let noPage = 0;
+  let empty = 0;
+  let failed = 0;
+
+  for (const [facilityId, menuPath] of menuPaths) {
+    try {
+      const menuRows = await fetchUniversalMenu(facilityId, menuPath);
+      if (menuRows == null) noPage++;
+      else if (menuRows.length === 0) empty++;
+      else menuByFacility.set(facilityId, menuRows);
+    } catch {
+      failed++;
+    }
+    if (config.diningMenuDelayMs > 0) {
+      await new Promise((res) => setTimeout(res, config.diningMenuDelayMs));
+    }
+  }
+
+  const stats = await persistMenuGenerations(menuByFacility, now);
+  console.log(
+    `[dining-facilities-universal] menus: ${menuByFacility.size} fetched of ${menuPaths.size} candidates ` +
+      `(${noPage} no page, ${empty} empty, ${failed} failed), ` +
+      `${stats.changed} changed / ${stats.unchanged} unchanged, ` +
+      `${stats.priceChanges} price changes, ${stats.added} added / ${stats.removed} removed`,
   );
 }
 
