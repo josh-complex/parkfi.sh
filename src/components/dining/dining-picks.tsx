@@ -62,8 +62,10 @@ export function PickCard({
   nowMin: number;
 }) {
   const tier = priceTier(venue.priceRange);
-  const status = schedules ? openStatus(schedules, nowMin) : "closed";
-  const statusDetail = schedules ? openStatusDetail(schedules, nowMin) : "Closed today";
+  // No schedule rows means hours are UNKNOWN (UOR venues have no
+  // `dining_schedule` ingestion), not closed — omit the chip entirely.
+  const status = schedules ? openStatus(schedules, nowMin) : null;
+  const statusDetail = schedules ? openStatusDetail(schedules, nowMin) : null;
   const body = (
     <div className="group flex flex-col gap-2 outline-none">
       <div className="bg-muted relative aspect-[4/3] w-full overflow-hidden rounded-2xl">
@@ -82,18 +84,20 @@ export function PickCard({
             {tier}
           </Badge>
         )}
-        <Badge
-          title={statusDetail}
-          className={cn(
-            "absolute top-2 right-2 text-xs font-normal border-0 shadow",
-            status === "open" && "bg-emerald-500 text-white",
-            status === "closes-soon" && "bg-amber-500 text-white",
-            status === "opens-soon" && "bg-sky-500 text-white",
-            status === "closed" && "bg-black/60 text-white backdrop-blur-sm",
-          )}
-        >
-          {OPEN_STATUS_LABELS[status]}
-        </Badge>
+        {status && (
+          <Badge
+            title={statusDetail ?? undefined}
+            className={cn(
+              "absolute top-2 right-2 text-xs font-normal border-0 shadow",
+              status === "open" && "bg-emerald-500 text-white",
+              status === "closes-soon" && "bg-amber-500 text-white",
+              status === "opens-soon" && "bg-sky-500 text-white",
+              status === "closed" && "bg-black/60 text-white backdrop-blur-sm",
+            )}
+          >
+            {OPEN_STATUS_LABELS[status]}
+          </Badge>
+        )}
         {nextAvail && (
           <Badge className="absolute bottom-2 left-2 gap-1 bg-emerald-500 text-white text-xs font-normal border-0 shadow">
             <CalendarDaysIcon className="size-3" />

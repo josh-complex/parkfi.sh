@@ -704,6 +704,13 @@ export const restaurantDim = pgTable(
     // `aagData.discountsModal` ("10%" → 10). Null when no AP discount published;
     // complements the boolean `annual_pass_discount` facet flag.
     apDiscountPct: smallint("ap_discount_pct"),
+    // UOR places-feed venue contact/access fields (Universal publishes these;
+    // the Disney finder doesn't, so WDW rows stay null). `address` is the
+    // formatted one-liner; `accessibility` is the feed's small slug vocabulary
+    // (accessible-in-wheelchair / accessible-in-ecv / stationary-seating).
+    phone: text("phone"),
+    address: text("address"),
+    accessibility: text("accessibility").array(),
     // Recommendation/taxonomy arrays that feed the "Disney Picks" shelves:
     // franchise affinity (`star-wars-rec`…), rec buckets (`character-dining-rec`…),
     // venue entertainment (`live-music`…), and premium-events categories.

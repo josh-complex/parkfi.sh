@@ -118,6 +118,9 @@ export const diningRouter = {
       quick_service: boolean;
       description: string | null;
       ap_discount_pct: number | null;
+      phone: string | null;
+      address: string | null;
+      accessibility: string[] | null;
       hero_media: Array<ParkHeroSlide> | null;
       annual_pass_discount: boolean;
       disney_visa_discount: boolean;
@@ -148,7 +151,7 @@ export const diningRouter = {
              r.image_url, r.image_thumbhash, r.detail_url, r.url_friendly_id, r.entity_type,
              r.character_dining, r.fine_dining, r.dining_package,
              r.walkup_wait_list, r.mobile_order, r.quick_service,
-             r.description, r.ap_discount_pct, r.hero_media,
+             r.description, r.ap_discount_pct, r.phone, r.address, r.accessibility, r.hero_media,
              r.annual_pass_discount, r.disney_visa_discount, r.trip_advisor_award,
              r.dining_plan_qs, r.dining_plan_ts,
              r.land, r.map_pin, r.latitude, r.longitude, r.maximum_party_size,
@@ -204,6 +207,10 @@ export const diningRouter = {
       description: suppressed.has("description") ? null : r.description,
       // AP discount % when Disney publishes one; pairs with the boolean flag.
       apDiscountPct: r.ap_discount_pct,
+      // UOR contact/access fields (Universal publishes these; WDW rows null).
+      phone: r.phone,
+      address: r.address,
+      accessibility: r.accessibility ?? [],
       annualPassDiscount: r.annual_pass_discount,
       disneyVisaDiscount: r.disney_visa_discount,
       tripAdvisorAward: r.trip_advisor_award,
@@ -232,10 +239,11 @@ export const diningRouter = {
   }),
 
   /**
-   * Curated "Disney Picks" shelves — pure catalog (no availability), spanning the
-   * full active bookable Disney set rather than just the priority sweep. Groups
-   * venues by the finder taxonomy arrays / attribute flags into a handful of
-   * ordered buckets; only non-empty buckets are returned.
+   * Curated picks shelves — pure catalog (no availability), spanning the full
+   * active WDW + UOR catalogs rather than just the priority sweep. Groups
+   * venues by the finder taxonomy arrays / attribute flags (Disney) and
+   * `experience_type` / location (Universal) into a handful of ordered
+   * buckets; only non-empty buckets are returned.
    */
   picks: publicProcedure.query(async () => {
     const result = await db.execute<{
@@ -243,6 +251,7 @@ export const diningRouter = {
       name: string;
       cuisine: string | null;
       park_resort: string | null;
+      park_resort_id: string | null;
       price_range: string | null;
       image_url: string | null;
       image_thumbhash: string | null;
@@ -253,20 +262,25 @@ export const diningRouter = {
       mobile_order: boolean;
       dining_interests: string[] | null;
       disney_favorites: string[] | null;
+      source: number;
+      experience_type: string | null;
     }>(sql`
-      SELECT facility_id, name, cuisine, park_resort, price_range, image_url, image_thumbhash, detail_url,
+      SELECT facility_id, name, cuisine, park_resort, park_resort_id, price_range, image_url, image_thumbhash, detail_url,
              character_dining, fine_dining, bookable, mobile_order,
-             dining_interests, disney_favorites
+             dining_interests, disney_favorites, source, experience_type
       FROM restaurant_dim
-      WHERE source = 3 AND active = true
+      WHERE source IN (3, 4) AND active = true
       ORDER BY name
     `);
 
     const venues = result.rows.map((r) => ({
       facilityId: r.facility_id,
       name: r.name,
-      cuisine: r.cuisine,
+      // UOR rows carry no cuisine string; the experience type ("Casual
+      // Dining") stands in so their cards keep the descriptive line.
+      cuisine: r.cuisine ?? r.experience_type,
       parkResort: r.park_resort,
+      parkResortId: r.park_resort_id,
       priceRange: r.price_range,
       imageUrl: r.image_url,
       imageThumbhash: r.image_thumbhash,
@@ -277,6 +291,8 @@ export const diningRouter = {
       mobileOrder: r.mobile_order,
       diningInterests: r.dining_interests ?? [],
       disneyFavorites: r.disney_favorites ?? [],
+      universal: r.source === 4,
+      experienceType: r.experience_type,
     }));
     type Venue = (typeof venues)[number];
 
@@ -300,19 +316,45 @@ export const diningRouter = {
         key: "character",
         title: "Character Dining",
         subtitle: "Meet the characters over a meal",
-        match: (v) => v.characterDining || v.diningInterests.includes("character-dining-rec"),
+        match: (v) =>
+          v.characterDining ||
+          v.diningInterests.includes("character-dining-rec") ||
+          v.experienceType === "Character Dining",
       },
       {
         key: "signature",
         title: "Signature & Fine Dining",
         subtitle: "Special-occasion table service",
-        match: (v) => v.fineDining || v.diningInterests.includes("fine-signature-dining-rec"),
+        match: (v) =>
+          v.fineDining ||
+          v.diningInterests.includes("fine-signature-dining-rec") ||
+          v.experienceType === "Fine Dining",
       },
       {
         key: "events",
         title: "Dining Events",
         subtitle: "Dessert parties, brunches & more",
         match: (v) => v.diningInterests.includes("dining-events-rec"),
+      },
+      // Universal shelves (source UNIVERSAL_DIRECT) — keyed on location +
+      // verified bookability since UOR has no finder-style taxonomy arrays.
+      {
+        key: "universal-table",
+        title: "Universal Table Service",
+        subtitle: "Reservable restaurants at Universal Orlando",
+        match: (v) => v.universal && v.bookable,
+      },
+      {
+        key: "epic-universe",
+        title: "Epic Universe Dining",
+        subtitle: "Eats & drinks at Universal's newest park",
+        match: (v) => v.parkResortId === "uor.eu",
+      },
+      {
+        key: "citywalk",
+        title: "CityWalk Dining",
+        subtitle: "Restaurants & bars at Universal CityWalk",
+        match: (v) => v.parkResortId === "uor.cw",
       },
       {
         key: "star-wars",

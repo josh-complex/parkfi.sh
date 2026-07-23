@@ -20,6 +20,12 @@
  * session — into the shared `dining_menu_item` generation pipeline. Toggle off
  * with DINING_DETAILS=0, same as the WDW cron.
  *
+ * The places feed also carries per-venue weekly hours (`place_hours`), phone,
+ * address, and accessibility slugs (probed 2026-07-23) — the contact fields
+ * upsert onto `restaurant_dim`, and the weekly hours pattern expands into a
+ * 14-day forward window of `dining_schedule` rows (full-replaced each run),
+ * lighting up the same hours surface WDW uses.
+ *
  * Run:  bun run dining:facilities:universal
  */
 import { config as loadEnv } from "dotenv";
@@ -28,10 +34,10 @@ loadEnv({ path: [".env.local", ".env"] });
 // Imported after loadEnv so the module-level PostHog client sees POSTHOG_KEY.
 import { flushTelemetry, reportServiceError } from "../shared/telemetry.ts";
 
-import { and, eq, notInArray, sql } from "drizzle-orm";
+import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
-import { restaurantDim } from "#/db/schema.ts";
+import { diningSchedule, restaurantDim } from "#/db/schema.ts";
 import {
   Source,
   universalDetailUrl,
@@ -42,6 +48,12 @@ import {
 import { config } from "#/server/parks/config.ts";
 import type { DiningMenuItemRow } from "#/server/dining/disney-dining-detail.ts";
 import { persistMenuGenerations } from "#/server/dining/menu-persist.ts";
+import {
+  parkToday,
+  universalAddressLine,
+  universalScheduleRows,
+  type UniversalPlaceHours,
+} from "#/server/dining/universal-hours.ts";
 import { fetchUniversalMenu, universalMenuPath } from "#/server/dining/universal-menu.ts";
 import { fetchUniversalReservationAvailability } from "#/server/dining/universal-reservations.ts";
 import { browserlessConfigured } from "#/server/parks/sources/browserless.ts";
@@ -55,6 +67,7 @@ const VENUE_LABEL: Record<string, string> = {
   "uor.ioa": "Islands of Adventure",
   "uor.eu": "Epic Universe",
   "uor.cw": "Universal CityWalk",
+  "uor.vb": "Volcano Bay",
 };
 
 function venueLabel(venueId?: string | null): string | null {
@@ -77,9 +90,10 @@ async function main() {
 
   // One session: fetch the catalog, then probe each table-service candidate's
   // reservation-availability to confirm it's actually served by the endpoint.
-  // Menu paths are collected here but crawled AFTER the session closes — the
-  // contentdata fetch needs no browser.
+  // Menu paths and weekly hours are collected here but processed AFTER the
+  // session closes — neither needs the browser.
   const menuPaths = new Map<string, string>();
+  const hoursByFacility = new Map<string, UniversalPlaceHours>();
   const rows = await withUniversalSession(async (page, session) => {
     const places = await fetchPlacesInPage(page, session.headers);
     const dining = places.results
@@ -90,6 +104,7 @@ async function main() {
     for (const p of dining) {
       const menuPath = universalMenuPath(p.urls);
       if (menuPath) menuPaths.set(p.place_id, menuPath);
+      if (p.place_hours?.periods?.length) hoursByFacility.set(p.place_id, p.place_hours);
       const candidate = universalDiningBookable(p.place_type?.categories);
       // Probe only candidates; confirmed bookable iff the endpoint returns 200.
       const bookable =
@@ -115,6 +130,10 @@ async function main() {
         // Official copy the places feed already carries (plan item 2.3) —
         // prefer the richer long_description.
         description: p.long_description?.trim() || p.short_description?.trim() || null,
+        // Contact/access fields Universal publishes (2026-07-23 follow-up).
+        phone: p.phone_number?.trim() || null,
+        address: universalAddressLine(p.address),
+        accessibility: p.accessibility_options ?? null,
         bookable,
         sellableOnline: false,
         imageUrl: images.hero,
@@ -148,6 +167,9 @@ async function main() {
           parkResortId: sql`excluded.park_resort_id`,
           bookable: sql`excluded.bookable`,
           description: sql`coalesce(excluded.description, restaurant_dim.description)`,
+          phone: sql`excluded.phone`,
+          address: sql`excluded.address`,
+          accessibility: sql`excluded.accessibility`,
           imageUrl: sql`excluded.image_url`,
           detailUrl: sql`excluded.detail_url`,
           source: sql`excluded.source`,
@@ -175,6 +197,30 @@ async function main() {
   const bookable = rows.filter((r) => r.bookable).length;
   console.log(
     `[dining-facilities-universal] upserted ${rows.length} venues (${bookable} bookable), deactivated ${deactivated.length}`,
+  );
+
+  // Hours: expand each venue's weekly `place_hours` pattern into a 14-day
+  // forward window of `dining_schedule` rows. Full-replace across ALL current
+  // UOR venues (not just those with hours) so a venue that stops publishing
+  // hours sheds its stale rows; UOR facility ids never collide with WDW's, so
+  // the WDW schedule surface is untouched.
+  const today = parkToday(now);
+  const scheduleRows = [...hoursByFacility.entries()].flatMap(([fid, ph]) =>
+    universalScheduleRows(fid, ph, today),
+  );
+  for (let i = 0; i < seen.length; i += 200) {
+    await db
+      .delete(diningSchedule)
+      .where(inArray(diningSchedule.facilityId, seen.slice(i, i + 200)));
+  }
+  for (let i = 0; i < scheduleRows.length; i += 500) {
+    await db
+      .insert(diningSchedule)
+      .values(scheduleRows.slice(i, i + 500))
+      .onConflictDoNothing();
+  }
+  console.log(
+    `[dining-facilities-universal] hours: ${scheduleRows.length} schedule rows / ${hoursByFacility.size} venues with weekly hours`,
   );
 
   if (config.diningDetailsEnabled) {

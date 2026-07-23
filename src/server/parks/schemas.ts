@@ -873,6 +873,55 @@ const UniversalPlace = z
       )
       .default([]),
     tags: z.array(z.string()).default([]),
+    // Weekly recurring hours (Google-Places shape; day 0 = Sunday, 12-hour
+    // strings, literal "Closed" on dark days) — on ~163/191 dining venues.
+    place_hours: z
+      .object({
+        periods: z
+          .array(
+            z
+              .object({
+                open: z
+                  .object({
+                    day: z.number().nullable().optional(),
+                    time: z.string().nullable().optional(),
+                  })
+                  .partial()
+                  .nullable()
+                  .optional(),
+                close: z
+                  .object({
+                    day: z.number().nullable().optional(),
+                    time: z.string().nullable().optional(),
+                  })
+                  .partial()
+                  .nullable()
+                  .optional(),
+              })
+              .partial()
+              .nullable(),
+          )
+          .default([]),
+      })
+      .partial()
+      .nullable()
+      .optional(),
+    // Universal publishes venue phone numbers (unlike Disney) — ~173/191.
+    phone_number: z.string().nullable().optional(),
+    address: z
+      .object({
+        address_line1: z.string().nullable().optional(),
+        city: z.string().nullable().optional(),
+        state: z.string().nullable().optional(),
+        postal_code: z.string().nullable().optional(),
+        country_code: z.string().nullable().optional(),
+      })
+      .partial()
+      .nullable()
+      .optional(),
+    // Small slug vocabulary: accessible-in-wheelchair / accessible-in-ecv /
+    // stationary-seating.
+    accessibility_options: z.array(z.string()).nullable().optional(),
   })
   .passthrough();
 export type UniversalPlace = z.infer<typeof UniversalPlace>;

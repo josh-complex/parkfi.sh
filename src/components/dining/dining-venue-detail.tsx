@@ -4,7 +4,7 @@ import * as React from "react";
 import { getRouteApi, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { ArrowLeftIcon, ExternalLinkIcon, MapPinIcon } from "lucide-react";
+import { ArrowLeftIcon, ExternalLinkIcon, MapPinIcon, PhoneIcon } from "lucide-react";
 
 import { AmbientHeroVideo, HeroCrossfade } from "#/components/hero-media.tsx";
 import { DiningAlertButton } from "#/components/dining/dining-alert-button.tsx";
@@ -59,6 +59,13 @@ function isWithinDays(iso: string | null | undefined, days: number): boolean {
   const t = Date.parse(iso);
   return Number.isFinite(t) && Date.now() - t <= days * 86_400_000;
 }
+
+// UOR places-feed accessibility slugs → chip labels (unknown slugs drop).
+const ACCESSIBILITY_LABELS: Record<string, string> = {
+  "accessible-in-wheelchair": "Wheelchair accessible",
+  "accessible-in-ecv": "ECV accessible",
+  "stationary-seating": "Stationary seating",
+};
 
 /** A venue's attribute badges — price, format, dining plan, discounts, perks. */
 function VenueBadges({
@@ -391,11 +398,17 @@ export function DiningVenueDetail({
     }
   }
 
-  // Deduped, prettified taxonomy chips from the finder's interest/franchise tags.
+  // Deduped, prettified taxonomy chips from the finder's interest/franchise
+  // tags, plus the UOR places-feed accessibility slugs (WDW rows carry none).
   const taxonomy = venue
-    ? [...new Set([...venue.diningInterests, ...venue.disneyFavorites])]
-        .map((slug) => taxonomyLabel(slug))
-        .filter((label): label is string => label != null)
+    ? [
+        ...[...new Set([...venue.diningInterests, ...venue.disneyFavorites])]
+          .map((slug) => taxonomyLabel(slug))
+          .filter((label): label is string => label != null),
+        ...venue.accessibility
+          .map((slug) => ACCESSIBILITY_LABELS[slug])
+          .filter((label): label is string => label != null),
+      ]
     : [];
 
   const hasMenu = state.periods.length > 0;
@@ -577,16 +590,29 @@ export function DiningVenueDetail({
             {venue.description && (
               <p className="max-w-prose text-sm text-muted-foreground">{venue.description}</p>
             )}
-            {venue.detailUrl && (
-              <a
-                href={venue.detailUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex w-fit items-center gap-1.5 text-sm text-primary hover:underline"
-              >
-                View on the official site
-                <ExternalLinkIcon className="size-3.5" />
-              </a>
+            {(venue.detailUrl || venue.phone) && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                {venue.phone && (
+                  <a
+                    href={`tel:${venue.phone}`}
+                    className="inline-flex w-fit items-center gap-1.5 text-sm text-primary hover:underline"
+                  >
+                    <PhoneIcon className="size-3.5" />
+                    {venue.phone}
+                  </a>
+                )}
+                {venue.detailUrl && (
+                  <a
+                    href={venue.detailUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex w-fit items-center gap-1.5 text-sm text-primary hover:underline"
+                  >
+                    View on the official site
+                    <ExternalLinkIcon className="size-3.5" />
+                  </a>
+                )}
+              </div>
             )}
           </div>
         </header>
