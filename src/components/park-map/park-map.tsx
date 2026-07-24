@@ -703,13 +703,26 @@ export function ParkMap({
         const pad = chromePadding(containerRef.current, { sides: 70 });
         const cam = map.cameraForBounds(b, { padding: pad, maxZoom: SPREAD_ZOOM });
         const target = Math.min(SPREAD_ZOOM, Math.max(cam?.zoom ?? 0, map.getZoom() + 2));
-        // Pass `pad` (not a pre-offset `cam.center`) to easeTo so the reserve is
-        // applied at the *actual* target zoom: we often force a couple levels past
-        // `cam.zoom` for tight groups, and cam.center's offset — baked for the
-        // shallower cam.zoom — would otherwise let the top members drift back under
-        // the chip rows. Centering the raw group center inside the padded band
-        // keeps it clear at whatever zoom we land on.
-        map.easeTo({ center: b.getCenter(), zoom: target, padding: pad, duration: 500 });
+        // Reserve the chrome with a per-move `offset` rather than a pre-offset
+        // `cam.center`, so the reserve lands at the *actual* target zoom: we often
+        // force a couple levels past `cam.zoom` for tight groups, and cam.center's
+        // offset — baked for the shallower cam.zoom — would otherwise let the top
+        // members drift back under the chip rows. Centering the raw group center
+        // and shifting it in screen space keeps it clear at whatever zoom we land
+        // on. NOT `padding`, which would do the same thing for this move but
+        // writes itself onto the map transform *permanently* — and MapLibre adds
+        // the transform's standing padding to whatever a later `fitBounds` asks
+        // for, so the next park fly's own full-chrome reserve overflowed the
+        // canvas, `cameraForBounds` bailed (warning + undefined), and `fitBounds`
+        // silently did nothing: the focus/markers switched parks but the camera
+        // never moved again. This is the exact same screen-space shift MapLibre
+        // derives from padding internally, minus the persistence.
+        map.easeTo({
+          center: b.getCenter(),
+          zoom: target,
+          offset: [(pad.left - pad.right) / 2, (pad.top - pad.bottom) / 2],
+          duration: 500,
+        });
       },
       // Any marker click collapses an open ride card before it zooms/activates.
       () => {

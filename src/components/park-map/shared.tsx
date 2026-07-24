@@ -1227,8 +1227,6 @@ function discMarkup(opts: {
   bg: string;
   px: number;
   badge?: string;
-  /** A chip floated above the disc (e.g. Express capacity on a park badge). */
-  topChip?: string;
 }): string {
   const ring = `--tw-ring-color:${opts.ring}`;
   const hires =
@@ -1241,16 +1239,18 @@ function discMarkup(opts: {
       )}" loading="lazy" class="size-full rounded-full object-cover shadow-md ring-[3px]" style="${ring};${FACE_FADE_STYLE}" />`
     : `<span data-face-fill class="flex size-full items-center justify-center rounded-full text-white shadow-md ring-[3px]" style="background:${opts.bg};${ring}">${opts.fallbackSvg}</span>`;
   return `<span class="relative block shrink-0" style="width:${opts.px}px;height:${opts.px}px">${face}${
-    opts.topChip ?? ""
-  }${opts.badge ?? ""}</span>`;
+    opts.badge ?? ""
+  }</span>`;
 }
 
-/** Express capacity chip floated above a park badge (plan item 3.1). `full` reads
- *  urgent red, `nearing` amber. Absolute, centered above the disc. */
+/** Express capacity chip on a park badge (plan item 3.1). Same pill as the wait /
+ *  name chips (`WAIT_CHIP_CLASS`) so the stack reads as one family — only the fill
+ *  differs: `full` urgent red, `nearing` amber. Stacks under the park's name chip
+ *  exactly as a ride's name stacks under its wait chip (`top-full mt-2`). */
 function capacityChipMarkup(level: CapacityLevel): string {
   const style =
     level === "full" ? "background:#dc2626;color:#fff" : "background:#f59e0b;color:#1c1917";
-  return `<span class="pointer-events-none absolute left-1/2 -top-1.5 z-20 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide shadow-sm ring-1 ring-black/10" style="${style}">${escapeHtml(
+  return `<span class="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 ${WAIT_CHIP_CLASS}" style="${style}">${escapeHtml(
     capacityLabel(level),
   )}</span>`;
 }
@@ -1395,8 +1395,9 @@ export function buildParkBadgeEl(p: {
     ring: color,
     bg: color,
     px: 64,
-    badge: nameChipMarkup(formatParkName(p.name), false),
-    topChip: p.expressCapacity ? capacityChipMarkup(p.expressCapacity) : undefined,
+    badge: `${nameChipMarkup(formatParkName(p.name), false)}${
+      p.expressCapacity ? capacityChipMarkup(p.expressCapacity) : ""
+    }`,
   });
   const subtitle = `${p.operating} open · ${escapeHtml(wait)}`;
   const detail = document.createElement("div");
