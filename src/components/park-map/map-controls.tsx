@@ -24,7 +24,13 @@ import type { GeoState } from "#/hooks/use-geolocation.ts";
 import { cn } from "#/lib/utils.ts";
 import { formatParkName } from "#/lib/parks.ts";
 
-import { MAP_TYPE_COLOR, type MapItemKind } from "./shared.tsx";
+import {
+  MAP_TYPE_COLOR,
+  RIDE_CATEGORY_KEYS,
+  SHOW_CATEGORY_KEYS,
+  type MapItemKind,
+  type MapToggleKey,
+} from "./shared.tsx";
 
 /**
  * The floating chrome overlaid on the shared map: zoom/locate controls, the
@@ -289,14 +295,6 @@ export function ParkChipScroller({
   );
 }
 
-// The ride categories each on-map chip stands for. "Rides" folds the three
-// ride-type markers (coasters, flat/dark rides, water rides) into one toggle;
-// "Shows" folds stage shows and character meets together. Kept as the single
-// source of truth for both the seeded roam-map default and the chip's
-// active/toggle logic.
-export const RIDE_CATEGORY_KEYS = ["thrill", "attraction", "water"] as const;
-const SHOW_CATEGORY_KEYS = ["show", "character"] as const;
-
 /**
  * The on-map toggle row: labeled pills for what the map draws — grouped ride
  * categories (which ride markers show, shared with the Waits filter) and the
@@ -306,25 +304,53 @@ const SHOW_CATEGORY_KEYS = ["show", "character"] as const;
  * per-venue ride category would have nothing to act on — the venues live in the
  * layers instead). Sized to match the filter button, in a scroll-if-it-overflows
  * row with the scrollbar hidden.
+ *
+ * `available` (from `availableMapToggles`) is what the focused park can actually
+ * draw; a chip with nothing behind it is dropped rather than offered as a toggle
+ * that visibly does nothing — Tours at Islands of Adventure, Live and Tours at
+ * the Disney water parks. Omit it and every chip shows.
  */
 type MapToggle = { label: string; Icon: LucideIcon; color: MapItemKind } & (
-  | { kind: "category"; keys: ReadonlyArray<string> }
-  | { kind: "layer"; key: keyof MapLayers }
+  | { kind: "category"; toggle: "rides" | "shows"; keys: ReadonlyArray<string> }
+  | { kind: "layer"; toggle: keyof MapLayers; key: keyof MapLayers }
 );
 
 const MAP_TOGGLES: ReadonlyArray<MapToggle> = [
   {
     kind: "category",
+    toggle: "rides",
     label: "Rides",
     Icon: RollerCoasterIcon,
     keys: RIDE_CATEGORY_KEYS,
     color: "rides",
   },
-  { kind: "category", label: "Shows", Icon: DramaIcon, keys: SHOW_CATEGORY_KEYS, color: "shows" },
-  { kind: "layer", key: "shops", label: "Shops", Icon: ShoppingBagIcon, color: "shops" },
-  { kind: "layer", key: "dining", label: "Meals", Icon: UtensilsIcon, color: "eats" },
+  {
+    kind: "category",
+    toggle: "shows",
+    label: "Shows",
+    Icon: DramaIcon,
+    keys: SHOW_CATEGORY_KEYS,
+    color: "shows",
+  },
   {
     kind: "layer",
+    toggle: "shops",
+    key: "shops",
+    label: "Shops",
+    Icon: ShoppingBagIcon,
+    color: "shops",
+  },
+  {
+    kind: "layer",
+    toggle: "dining",
+    key: "dining",
+    label: "Meals",
+    Icon: UtensilsIcon,
+    color: "eats",
+  },
+  {
+    kind: "layer",
+    toggle: "quickService",
     key: "quickService",
     label: "Bites",
     Icon: PopcornIcon,
@@ -332,16 +358,31 @@ const MAP_TOGGLES: ReadonlyArray<MapToggle> = [
   },
   {
     kind: "layer",
+    toggle: "entertainment",
     key: "entertainment",
     label: "Live",
     Icon: SparklesIcon,
     color: "entertainment",
   },
-  { kind: "layer", key: "tours", label: "Tours", Icon: TicketIcon, color: "tours" },
-  { kind: "layer", key: "services", label: "Services", Icon: InfoIcon, color: "services" },
+  {
+    kind: "layer",
+    toggle: "tours",
+    key: "tours",
+    label: "Tours",
+    Icon: TicketIcon,
+    color: "tours",
+  },
+  {
+    kind: "layer",
+    toggle: "services",
+    key: "services",
+    label: "Services",
+    Icon: InfoIcon,
+    color: "services",
+  },
 ];
 
-export function MapToggleChips() {
+export function MapToggleChips({ available }: { available?: ReadonlySet<MapToggleKey> }) {
   const { filter, setFilter } = useRideFilter();
   // A group is on when every category it covers is selected; toggling flips the
   // whole group on/off together.
@@ -359,7 +400,7 @@ export function MapToggleChips() {
     setFilter((f) => ({ ...f, layers: { ...f.layers, [key]: !f.layers[key] } }));
   return (
     <div className="pointer-events-auto -mx-3 flex w-[calc(100%+1.5rem)] touch-pan-x gap-1.5 overflow-x-auto overscroll-contain px-4 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      {MAP_TOGGLES.map((t) => {
+      {MAP_TOGGLES.filter((t) => available?.has(t.toggle) ?? true).map((t) => {
         const active =
           t.kind === "category"
             ? t.keys.every((k) => filter.categories.has(k))

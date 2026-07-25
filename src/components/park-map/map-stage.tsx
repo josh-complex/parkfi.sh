@@ -33,7 +33,6 @@ import {
   ParkChipScroller,
   ParkDetailButton,
   PlayHint,
-  RIDE_CATEGORY_KEYS,
   ZoomControl,
 } from "./map-controls.tsx";
 import { morph, settleMorph } from "./map-morph.ts";
@@ -61,7 +60,12 @@ import {
   type NavDest,
 } from "./nav-store.ts";
 import { fusedHeadingStore, recordCompassHeading, recordHeadingFix } from "./heading-store.ts";
-import { type MapHandle } from "./shared.tsx";
+import {
+  availableMapToggles,
+  POI_STALE_MS,
+  RIDE_CATEGORY_KEYS,
+  type MapHandle,
+} from "./shared.tsx";
 import { hasWebGl } from "./webgl.ts";
 
 // Lazy-loaded so the heavy map libraries (maplibre-gl, leaflet) are never
@@ -185,6 +189,33 @@ export function MapStageProvider({
   const focusPark = parksQ.data?.find((p) => p.slug === roamFocusSlug) ?? null;
   const isDisneyFocus = focusPark?.operatorSlug === "disney";
   const playActive = playMode && roam && isDisneyFocus;
+
+  // What the focused park can actually draw, so the chip row only offers layers
+  // with something behind them (see `availableMapToggles`). These are the same
+  // four queries the renderer already runs — identical keys and `staleTime`, so
+  // both observers share one cache entry and this adds no fetching of its own.
+  // Gated exactly like the renderer's: nothing until a park is focused, and the
+  // resort-wide POI feeds wait on the board so they stay off the critical path.
+  const chipBoardQ = useQuery({
+    ...trpc.parks.board.queryOptions({ parkSlug: roamFocusSlug ?? "" }),
+    enabled: !!roamFocusSlug,
+  });
+  const chipPoiEnabled = !!roamFocusSlug && chipBoardQ.isSuccess;
+  const poiFeedOptions = { enabled: chipPoiEnabled, staleTime: POI_STALE_MS, gcTime: POI_STALE_MS };
+  const chipDiningQ = useQuery({ ...trpc.parks.dining.queryOptions(), ...poiFeedOptions });
+  const chipShopsQ = useQuery({ ...trpc.parks.shops.queryOptions(), ...poiFeedOptions });
+  const chipPoiQ = useQuery({ ...trpc.parks.poi.queryOptions(), ...poiFeedOptions });
+  const availableToggles = React.useMemo(
+    () =>
+      availableMapToggles({
+        boundary: focusPark?.boundary ?? null,
+        board: chipBoardQ.data,
+        dining: chipDiningQ.data,
+        shops: chipShopsQ.data,
+        poi: chipPoiQ.data,
+      }),
+    [focusPark?.boundary, chipBoardQ.data, chipDiningQ.data, chipShopsQ.data, chipPoiQ.data],
+  );
   // Map-reported taps: a Darkness spawn engaged (→ battle) / the bare map tapped
   // (→ drop a discovery). Cleared whenever play mode isn't actively running.
   const [battleMarkId, setBattleMarkId] = React.useState<number | null>(null);
@@ -788,9 +819,18 @@ export function MapStageProvider({
                   focusSlug={roamFocusSlug}
                   onZoom={(slug) => mapRef.current?.flyToPark(slug)}
                 />
-                {/* Layer toggle chips only for Disney — Universal parks don't
-                    have the ride/show/venue category data behind them yet. */}
-                {roamFocusSlug && isDisneyFocus && <MapToggleChips />}
+                {/* Both operators now. The Disney-only gate was here because UOR
+                    had nothing behind the layers; the content-parity ingest gave
+                    it categorised rides/shows, a typed Services layer (41–65
+                    POIs a park), Live (shows, parades, character spots), Shops
+                    (the `Shopping`/`Shop` place_type typo that kept `shop_dim`
+                    empty is fixed — 22–33 a park) and Meals/Bites from the UOR
+                    dining feed. Tours is the one layer still thin at UOR (USF
+                    only), the same already-tolerated state as Live and Tours at
+                    the Disney water parks — and those thin layers now drop their
+                    chip at a park that can't fill them rather than offering a
+                    toggle that does nothing. */}
+                {roamFocusSlug && <MapToggleChips available={availableToggles} />}
               </div>
             )}
             {/* Nav QA tool: quick-destination picker for testing walking

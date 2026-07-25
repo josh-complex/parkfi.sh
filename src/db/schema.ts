@@ -244,6 +244,33 @@ export const attractionMeta = pgTable("attraction_meta", {
   detailUrl: text("detail_url"),
   land: text("land"),
   heightRequirement: text("height_requirement"),
+  /**
+   * The same requirement as numbers, so "what can my 42-incher ride" is one
+   * comparison instead of prose parsing. `0` means the operator explicitly
+   * publishes no minimum (Disney's "Any Height", Universal's "No Minimum
+   * Height"); NULL means unknown. That distinction is the whole point — the
+   * no-height-requirement filter tests `min_height_in`, because a WDW row with
+   * `height_requirement = 'Any Height'` is non-null yet has no requirement.
+   * WDW rows are derived from `height_requirement`; UOR rows come from the
+   * mobile POI feed's numeric field and the per-ride contentdata pages.
+   */
+  minHeightIn: smallint("min_height_in"),
+  maxHeightIn: smallint("max_height_in"),
+  /**
+   * Operator-published ride attributes (plan: universal-content-parity §3).
+   * Universal publishes all four as typed booleans; the Disney finder publishes
+   * none of them, so WDW rows stay NULL — meaning "not published", never
+   * "false". Any filter over these must therefore treat NULL as unknown and
+   * hide the chip when nothing in scope has data.
+   */
+  expressPass: boolean("express_pass"),
+  singleRider: boolean("single_rider"),
+  childSwap: boolean("child_swap"),
+  virtualLine: boolean("virtual_line"),
+  /** Humanized accessibility options ("Closed captioning", "Test seat available"). */
+  accessibility: text("accessibility").array().notNull().default([]),
+  /** Universal's per-ride trivia blurb (`FunFact`) — no Disney analog. */
+  funFact: text("fun_fact"),
   tags: text("tags").array().notNull().default([]),
   // Official marketing copy — UOR: places-feed long/short description; WDW:
   // per-attraction finder detail fetch (monthly geo cron), HTML-stripped.

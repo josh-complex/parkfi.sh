@@ -39,7 +39,9 @@ import {
 
 import { formatParkName } from "#/lib/parks.ts";
 import { capacityLabel, type CapacityLevel } from "#/lib/ticket-scarcity.ts";
+import { pointInPolygon } from "#/server/living/geofence.ts";
 
+import type { MapLayers } from "#/components/rides/ride-filter.tsx";
 import type { BoardItem } from "#/components/park-dashboard/types.ts";
 import type { GeoPolygon } from "#/db/schema.ts";
 import type { Feature, FeatureCollection, MultiPolygon, Polygon } from "geojson";
@@ -392,11 +394,132 @@ export function poiKind(category: string): MapItemKind {
 }
 
 /**
+ * How long the resort-wide POI feeds (dining / shops / park_poi) stay fresh in
+ * the client cache. They're slow-moving catalogs, so a long window keeps them
+ * from refetching as the user roams between parks. Shared so every observer of
+ * these queries — both renderers *and* the chip row that counts them — agrees;
+ * a shorter staleTime on any one of them would refetch the whole feed on mount.
+ */
+export const POI_STALE_MS = 30 * 60 * 1000;
+
+// The ride categories each on-map chip stands for. "Rides" folds the three
+// ride-type markers (coasters, flat/dark rides, water rides) into one toggle;
+// "Shows" folds stage shows and character meets together. Kept as the single
+// source of truth for the seeded roam-map default, the chip's active/toggle
+// logic, and the renderers' show-marker gate.
+export const RIDE_CATEGORY_KEYS = ["thrill", "attraction", "water"] as const;
+export const SHOW_CATEGORY_KEYS = ["show", "character"] as const;
+
+/** Is a chip's whole category group selected? (A group toggles as one unit.) */
+export function categoryGroupLit(
+  keys: ReadonlyArray<string>,
+  categories: ReadonlySet<string>,
+): boolean {
+  return keys.every((k) => categories.has(k));
+}
+
+/**
+ * Does the Shows chip currently draw? It gates two marker sources: show-
+ * categorised ATTRACTION rows (plain markers, via `rideMatchesFilter`) and the
+ * board's SHOW entities (showtime markers). The latter used to hang off the Live
+ * layer, which left Shows drawing nothing at nine of ten parks — every show but
+ * a handful is a SHOW row. Live now means what its feed is: the entertainment /
+ * character `park_poi` pins.
+ *
+ * Deliberately literal about the chip rather than following `rideMatchesFilter`'s
+ * "empty set = every category" convention: an empty filter is the park
+ * dashboard's resting state, where these markers have never drawn, and reading it
+ * as "all" would push showtime pins onto every park map nobody asked for.
+ */
+export function showsLit(filter: { categories: ReadonlySet<string> } | null | undefined): boolean {
+  return !!filter && categoryGroupLit(SHOW_CATEGORY_KEYS, filter.categories);
+}
+
+/** Every chip in the map's toggle row: the two category groups, then the layers. */
+export type MapToggleKey = "rides" | "shows" | keyof MapLayers;
+
+/**
+ * Which toggle chips have something to draw for the focused park — so a chip is
+ * never offered over an empty layer (Tours at Islands of Adventure, Live/Tours
+ * at the Disney water parks, every layer at a park we hold no boundary for).
+ *
+ * Mirrors what the renderers' marker pass actually plots: ride/show markers come
+ * straight off the park-scoped board, while the POI layers are resort-wide feeds
+ * clipped to the park boundary — so no boundary means no POI markers at all, and
+ * all four layer chips drop. Shows counts both of its sources (show-categorised
+ * ATTRACTION rows and SHOW rows with times today); it doesn't subtract the Live
+ * POIs those showtime markers supersede, which can only over-count inside a chip
+ * that already has something in it, never conjure one from nothing.
+ *
+ * A feed that hasn't loaded yet is `undefined`, and its chips stay visible — the
+ * row settles by removing chips, rather than popping them in as each feed lands.
+ */
+export function availableMapToggles(input: {
+  boundary: GeoPolygon | null;
+  board: ReadonlyArray<BoardItem> | undefined;
+  dining: ReadonlyArray<PoiItem> | undefined;
+  shops: ReadonlyArray<PoiItem> | undefined;
+  poi: ReadonlyArray<PoiItem> | undefined;
+}): ReadonlySet<MapToggleKey> {
+  const { boundary, board, dining, shops, poi } = input;
+  const out = new Set<MapToggleKey>();
+  const inside = (p: { latitude: number | null; longitude: number | null }) =>
+    p.latitude != null &&
+    p.longitude != null &&
+    pointInPolygon([p.longitude, p.latitude], boundary);
+
+  if (!board) {
+    out.add("rides");
+    out.add("shows");
+  } else {
+    for (const a of board) {
+      if (a.latitude == null || a.longitude == null) continue;
+      // Shows reach the map two ways, both under the Shows chip: a show-
+      // categorised ATTRACTION row draws a plain marker, and a SHOW row draws a
+      // showtime marker (only once it has times today — a dark act isn't
+      // advertised, so it doesn't count as something the chip can draw).
+      if (a.entityType === "ATTRACTION") {
+        // An un-enriched duplicate carries no category and matches no chip.
+        if (a.category) out.add(attractionKind(a.category) === "shows" ? "shows" : "rides");
+      } else if (a.entityType === "SHOW" && a.showtimes.length > 0 && inside(a)) {
+        out.add("shows");
+      }
+    }
+  }
+
+  // Every POI layer is boundary-clipped, so an unmapped park offers none of them.
+  if (!boundary) return out;
+  for (const p of dining ?? []) {
+    if (inside(p)) out.add(p.category === "quick-service" ? "quickService" : "dining");
+  }
+  if (shops?.some(inside)) out.add("shops");
+  for (const p of poi ?? []) {
+    if (!inside(p)) continue;
+    if (p.category === "info") out.add("services");
+    else if (p.category === "tour") out.add("tours");
+    else if (p.category === "entertainment" || p.category === "character") out.add("entertainment");
+  }
+  // Keep an unloaded feed's chips up rather than blinking them in behind it.
+  if (!dining) {
+    out.add("dining");
+    out.add("quickService");
+  }
+  if (!shops) out.add("shops");
+  if (!poi) {
+    out.add("services");
+    out.add("tours");
+    out.add("entertainment");
+  }
+  return out;
+}
+
+/**
  * Build the *body* of the expanded attraction card — everything below the photo
  * header (which is the marker's own disc, flown up by `openAttractionCard`, so
- * there's no separate hero image here). Disney rides carry rich `meta` (tags,
- * height/land); Universal (and un-enriched rows) degrade to just the name + live
- * wait line. The card lives in our themed DOM (not a white map popup), so it uses
+ * there's no separate hero image here). Both operators carry rich `meta` (tags,
+ * height/land) now that UOR heights and ride types are ingested; un-enriched
+ * rows degrade to just the name + live wait line. The card lives in our themed
+ * DOM (not a white map popup), so it uses
  * theme tokens and reads correctly in dark mode. There's no in-body link — the
  * whole card is a button (see `openAttractionCard` `onPress`) that navigates to
  * our ride page; the action row carries the Directions button and the walk-time

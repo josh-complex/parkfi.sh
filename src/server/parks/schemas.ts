@@ -1146,3 +1146,334 @@ export const UniversalMenuPageSchema = z.object({
     .default([]),
 });
 export type UniversalMenuPage = z.infer<typeof UniversalMenuPageSchema>;
+
+// ---------------------------------------------------------------------------
+/**
+ * Universal's services host sends `null` where it means "empty list" on most
+ * repeating fields (a tile with no taxonomy, a venue with no boundary), so
+ * every array in the feeds below normalizes null/undefined to `[]` rather than
+ * failing the parse.
+ */
+const listOf = <T extends z.ZodType>(item: T) =>
+  z
+    .array(item)
+    .nullish()
+    .transform((v) => v ?? []);
+
+// Universal mobile-app services (`services.universalorlando.com/api`) — the
+// typed POI + venue catalog behind Universal's own app, reachable with the
+// static `X-UNIWebService-ApiKey`/`-Token` pair the website publishes in its JS
+// bundle (see config.universalServicesBase). Documented in
+// research/universal-content-parity.md §2.3.
+//
+// Every record shares a base shape (name, coords, land/venue ids, images,
+// `ExternalIds.PlaceId` in the same `uor.<venue>.<type>.<slug>` namespace the
+// places feed uses); each bucket adds its own typed attributes. Loose objects
+// throughout: Universal adds buckets and fields without notice, and an unknown
+// key must never fail the run.
+// ---------------------------------------------------------------------------
+const UniversalPoiBase = z
+  .object({
+    Id: z.number().optional(),
+    Category: z.string().nullable().optional(),
+    MblDisplayName: z.string().nullable().optional(),
+    MblShortDescription: z.string().nullable().optional(),
+    MblLongDescription: z.string().nullable().optional(),
+    Latitude: z.number().nullable().optional(),
+    Longitude: z.number().nullable().optional(),
+    // Numeric venue (park/CityWalk/hotel) + land ids — see `UniversalVenue`.
+    VenueId: z.number().nullable().optional(),
+    LandId: z.number().nullable().optional(),
+    ListImage: z.string().nullable().optional(),
+    ThumbnailImage: z.string().nullable().optional(),
+    DetailImages: listOf(z.string()),
+    QueueImage: z.string().nullable().optional(),
+    SiteUrl: z.string().nullable().optional(),
+    Tags: listOf(z.string()),
+    ExternalIds: z
+      .object({
+        PlaceId: z.string().nullable().optional(),
+        ContentId: z.string().nullable().optional(),
+        Tridion13: z.string().nullable().optional(),
+      })
+      .partial()
+      .nullable()
+      .optional(),
+  })
+  .passthrough();
+
+const UniversalPoiRide = UniversalPoiBase.extend({
+  // The operator's own numeric height fields — the reason this feed exists for
+  // us. Absent on rides with no requirement AND on every Epic Universe record
+  // (a content gap upstream, filled from the ride's contentdata page instead).
+  MinHeightInInches: z.number().nullable().optional(),
+  MaxHeightInInches: z.number().nullable().optional(),
+  ExpressPassAccepted: z.boolean().nullable().optional(),
+  HasSingleRiderLine: z.boolean().nullable().optional(),
+  HasChildSwap: z.boolean().nullable().optional(),
+  HasNominalFee: z.boolean().nullable().optional(),
+  VirtualLine: z.boolean().nullable().optional(),
+  RideTypes: listOf(z.string()),
+  AccessibilityOptions: listOf(z.string()),
+  FunFact: z.string().nullable().optional(),
+  Tier: z.string().nullable().optional(),
+});
+
+const UniversalPoiShow = UniversalPoiBase.extend({
+  ShowTypes: listOf(z.string()),
+  AccessibilityOptions: listOf(z.string()),
+  ExpressPassAccepted: z.boolean().nullable().optional(),
+  ContinuousUntilParkClose: z.boolean().nullable().optional(),
+  // "HH:MM:SS" wall-clock strings for today plus their dated forms.
+  StartTimes: listOf(z.string()),
+  StartDateTimes: listOf(z.string()),
+});
+
+const UniversalPoiEvent = UniversalPoiBase.extend({
+  Dates: z
+    .array(z.object({ StartDate: z.string().nullable().optional() }).partial().passthrough())
+    .default([]),
+  RequiresSeparateTicket: z.boolean().nullable().optional(),
+  RequiresAnnualPass: z.boolean().nullable().optional(),
+  TicketedEventDetails: z.string().nullable().optional(),
+  Location: z.string().nullable().optional(),
+  DisplayInEventList: z.boolean().nullable().optional(),
+});
+
+/**
+ * The whole `/api/PointsOfInterest?city=Orlando&pageSize=All` payload — one
+ * array per POI bucket. Every bucket defaults to `[]` so a bucket Universal
+ * stops publishing (or starts publishing) is a no-op for us.
+ */
+export const UniversalPoiFeedSchema = z
+  .object({
+    Rides: listOf(UniversalPoiRide),
+    Shows: listOf(UniversalPoiShow),
+    Parades: listOf(UniversalPoiShow),
+    Events: listOf(UniversalPoiEvent),
+    DiningLocations: listOf(UniversalPoiBase),
+    Shops: listOf(UniversalPoiBase),
+    Hotels: listOf(UniversalPoiBase),
+    Restrooms: listOf(UniversalPoiBase),
+    Lockers: listOf(UniversalPoiBase),
+    Atms: listOf(UniversalPoiBase),
+    FirstAidStations: listOf(UniversalPoiBase),
+    LostAndFoundStations: listOf(UniversalPoiBase),
+    GuestServices: listOf(UniversalPoiBase),
+    ServiceAnimalRestAreas: listOf(UniversalPoiBase),
+    SmokingAreas: listOf(UniversalPoiBase),
+    NightlifeLocations: listOf(UniversalPoiBase),
+    FamilyServices: listOf(UniversalPoiBase),
+    ChargingStations: listOf(UniversalPoiBase),
+    GeneralLocations: listOf(UniversalPoiBase),
+    Rentals: listOf(UniversalPoiBase),
+    Games: listOf(UniversalPoiBase),
+  })
+  .passthrough();
+export type UniversalPoiFeed = z.infer<typeof UniversalPoiFeedSchema>;
+export type UniversalPoi = z.infer<typeof UniversalPoiBase>;
+export type UniversalPoiRide = z.infer<typeof UniversalPoiRide>;
+export type UniversalPoiShow = z.infer<typeof UniversalPoiShow>;
+
+/** One `ContainedLands[]` entry — centroid + the brand color set per land. */
+const UniversalLand = z
+  .object({
+    Id: z.number().optional(),
+    MblDisplayName: z.string().nullable().optional(),
+    ContainingVenueId: z.number().nullable().optional(),
+    Latitude: z.number().nullable().optional(),
+    Longitude: z.number().nullable().optional(),
+    Color: z.string().nullable().optional(),
+  })
+  .passthrough();
+
+export const UniversalVenuesSchema = z.object({
+  Results: z
+    .array(
+      z
+        .object({
+          Id: z.number().optional(),
+          MblDisplayName: z.string().nullable().optional(),
+          // 'Theme-Park' | 'Entertainment-District' | 'Hotel'.
+          VenueType: z.string().nullable().optional(),
+          Latitude: z.number().nullable().optional(),
+          Longitude: z.number().nullable().optional(),
+          // The operator's own outline — an ordered lat/lng ring. Absent on a
+          // couple of venues, which then keep their OSM/centroid geometry.
+          GpsBoundary: z
+            .array(z.object({ Latitude: z.number(), Longitude: z.number() }))
+            .nullable()
+            .optional(),
+          GpsBoundaryCircle: z
+            .object({
+              RadiusInMeters: z.number().nullable().optional(),
+              Latitude: z.number().nullable().optional(),
+              Longitude: z.number().nullable().optional(),
+            })
+            .partial()
+            .nullable()
+            .optional(),
+          ContainedLands: listOf(UniversalLand),
+          ExternalIds: z
+            .object({ PlaceId: z.string().nullable().optional() })
+            .partial()
+            .nullable()
+            .optional(),
+        })
+        .passthrough(),
+    )
+    .default([]),
+});
+export type UniversalVenues = z.infer<typeof UniversalVenuesSchema>;
+export type UniversalVenue = UniversalVenues["Results"][number];
+
+// ---------------------------------------------------------------------------
+// `contentdata/uor/en/us/api/filtersdata/index.html` — the tile database behind
+// universalorlando.com's own filter UI (§2.1). One cookieless GET, ~1.4 MB,
+// 339 tiles. Each tile carries card copy WITH alt text and a `Meta` block of
+// pre-typed taxonomy facets. We take the copy/alt/interests; heights come from
+// the per-ride pages instead (the `HeightRequirements` buckets are tagged
+// inconsistently — see `sources/universal-content.ts`).
+// ---------------------------------------------------------------------------
+const TridionKeyword = z
+  .object({
+    Key: z.string().nullable().optional(),
+    Value: z.string().nullable().optional(),
+    Description: z.string().nullable().optional(),
+  })
+  .passthrough();
+
+const FiltersImage = z
+  .object({
+    HightResolutionImage: z.string().nullable().optional(),
+    DesktopTabletImage: z.string().nullable().optional(),
+    MobileImage: z.string().nullable().optional(),
+    AltText: z.string().nullable().optional(),
+  })
+  .partial()
+  .passthrough();
+
+export const UniversalFiltersDataSchema = z.object({
+  PublishedOn: z.string().nullable().optional(),
+  Tiles: z
+    .array(
+      z
+        .object({
+          PageUrl: z.string().nullable().optional(),
+          Content: z
+            .object({
+              Heading: z.string().nullable().optional(),
+              ShortDescription: z.string().nullable().optional(),
+              MediumDescription: z.string().nullable().optional(),
+              LongDescription: z.string().nullable().optional(),
+              TileImage: FiltersImage.nullable().optional(),
+              HeroImage: FiltersImage.nullable().optional(),
+              CategoryLabel: z.string().nullable().optional(),
+            })
+            .partial()
+            .nullable()
+            .optional(),
+          Meta: z
+            .object({
+              AttractionExperiences: listOf(TridionKeyword),
+              AttractionLocations: listOf(TridionKeyword),
+              AttractionInterests: listOf(TridionKeyword),
+              AreasToExplore: listOf(TridionKeyword),
+              AttractionType: listOf(TridionKeyword),
+              Age: listOf(TridionKeyword),
+              MapLatitude: z.string().nullable().optional(),
+              MapLongitude: z.string().nullable().optional(),
+            })
+            .partial()
+            .nullable()
+            .optional(),
+        })
+        .passthrough(),
+    )
+    .default([]),
+});
+export type UniversalFiltersData = z.infer<typeof UniversalFiltersDataSchema>;
+export type UniversalTile = UniversalFiltersData["Tiles"][number];
+
+// ---------------------------------------------------------------------------
+// A `/contentdata/…/things-to-do/rides-attractions/{slug}/index.html` page —
+// the per-ride Tridion document (§2.2). We only model the "GDS - Utility
+// Section" component: its `featureList` is the guest-facing attribute strip
+// (Height Requirement · Ride Type · Express Pass · Child Swap · Accessibility ·
+// Loose Articles · Rider Safety), which is the ONLY source covering Epic
+// Universe and the most accurate height source resort-wide.
+// ---------------------------------------------------------------------------
+const TridionTextField = z
+  .object({ Values: listOf(z.string()), KeywordValues: listOf(TridionKeyword) })
+  .partial()
+  .passthrough();
+
+const UniversalUtilityFeature = z
+  .object({
+    Fields: z
+      .object({
+        icon: TridionTextField.optional(),
+        heading: TridionTextField.optional(),
+        description: TridionTextField.optional(),
+      })
+      .partial()
+      .optional(),
+  })
+  .partial()
+  .passthrough();
+
+export const UniversalRidePageSchema = z.object({
+  ComponentPresentations: z
+    .array(
+      z
+        .object({
+          Component: z
+            .object({
+              Schema: z
+                .object({ Id: z.string().optional(), Title: z.string().optional() })
+                .partial()
+                .optional(),
+              Fields: z
+                .object({
+                  heading: TridionTextField.optional(),
+                  categoryLabel: TridionTextField.optional(),
+                  featureList: z
+                    .object({
+                      LinkedComponentValues: z
+                        .array(
+                          z
+                            .object({
+                              Fields: z
+                                .object({
+                                  feature: z
+                                    .object({
+                                      LinkedComponentValues: z
+                                        .array(UniversalUtilityFeature)
+                                        .default([]),
+                                    })
+                                    .partial()
+                                    .optional(),
+                                })
+                                .partial()
+                                .optional(),
+                            })
+                            .passthrough(),
+                        )
+                        .default([]),
+                    })
+                    .partial()
+                    .optional(),
+                })
+                .partial()
+                .optional(),
+            })
+            .partial()
+            .passthrough()
+            .nullable()
+            .optional(),
+        })
+        .partial(),
+    )
+    .default([]),
+});
+export type UniversalRidePage = z.infer<typeof UniversalRidePageSchema>;

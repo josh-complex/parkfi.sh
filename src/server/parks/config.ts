@@ -48,6 +48,30 @@ export const config = {
   universalStoreUrl: process.env.UNIVERSAL_STORE_URL ?? "https://www.universalorlando.com",
   /** Universal commerce API host (gettickets + priceAndInventory/v2 live here). */
   universalApiBase: process.env.UNIVERSAL_API_BASE ?? "https://api.universalparks.com",
+  /**
+   * Universal's Tridion content host. `/contentdata/<path>/index.html` returns
+   * the raw page model as JSON for anything in the website sitemap, to a plain
+   * cookieless GET — no Browserless, no session (see `universal-menu.ts` and
+   * `sources/universal-content.ts`).
+   */
+  universalContentBase:
+    process.env.UNIVERSAL_CONTENTDATA_BASE ?? "https://www.universalorlando.com/contentdata",
+  /** Universal's public website origin (sitemap + resolved detail-page URLs). */
+  universalWebBase: process.env.UNIVERSAL_WEB_BASE ?? "https://www.universalorlando.com",
+  /**
+   * Universal's mobile-app services host — the typed POI/Venues catalog
+   * (`sources/universal-mobile.ts`). Gated by a STATIC client credential pair
+   * that universalorlando.com publishes in its own JS bundle (`mobileServicesApi`
+   * in `/web/main-*.js`), not a reversed secret: without the headers every path
+   * 401s. Treat as breakable — if the pair is rotated, the geo cron's ride
+   * enrichment degrades to the contentdata ride pages (which cover heights,
+   * ride type and Express) and the typed POI layers simply go stale.
+   */
+  universalServicesBase:
+    process.env.UNIVERSAL_SERVICES_BASE ?? "https://services.universalorlando.com/api",
+  universalServicesApiKey: process.env.UNIVERSAL_SERVICES_API_KEY ?? "WebServicePortal",
+  universalServicesToken:
+    process.env.UNIVERSAL_SERVICES_TOKEN ?? "020B07FD-C5CC-412F-BBCC-F94B16BE7A3F",
 
   /**
    * Browserless v2 instance (separate Railway service). Universal's feeds are

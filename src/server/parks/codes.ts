@@ -673,6 +673,144 @@ export function universalMealPeriod(time: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Universal mobile-services (services.universalorlando.com) helpers — the typed
+// POI/venue catalog. See research/universal-content-parity.md §2.3.
+// ---------------------------------------------------------------------------
+
+/**
+ * Height requirement as the display string the ride card already renders, in
+ * the exact shape the Disney finder publishes (`40" (102cm) or taller`) so both
+ * operators read identically. `0` inches is the operator's explicit "no minimum"
+ * and renders as Disney's own "Any Height"; `null` in means null out (unknown).
+ */
+export function heightRequirementLabel(
+  minInches?: number | null,
+  maxInches?: number | null,
+): string | null {
+  const cm = (inches: number) => Math.round(inches * 2.54);
+  if (minInches != null && minInches > 0) {
+    return `${minInches}" (${cm(minInches)}cm) or taller`;
+  }
+  if (maxInches != null && maxInches > 0) {
+    return `${maxInches}" (${cm(maxInches)}cm) or shorter`;
+  }
+  return minInches === 0 || maxInches === 0 ? "Any Height" : null;
+}
+
+/**
+ * Inverse of `heightRequirementLabel` — pull numeric inches back out of a stored
+ * `height_requirement` string. Used to backfill the numeric columns for the WDW
+ * rows the Disney finder only gives us prose for, so the height-band filter is
+ * one comparison across both operators. "Any Height" is a real Disney value
+ * meaning no requirement, so it yields `{ min: 0 }` — the reason the filter
+ * tests `min_height_in`, not `height_requirement IS NULL`.
+ */
+export function parseHeightRequirementInches(label?: string | null): {
+  min: number | null;
+  max: number | null;
+} {
+  const text = (label ?? "").trim();
+  if (!text) return { min: null, max: null };
+  if (/^any height$/i.test(text)) return { min: 0, max: null };
+  const inches = /(\d+(?:\.\d+)?)\s*["”″]/.exec(text);
+  if (!inches) return { min: null, max: null };
+  const n = Math.round(Number.parseFloat(inches[1]));
+  if (!Number.isFinite(n)) return { min: null, max: null };
+  return /shorter|under|maximum|below/i.test(text) ? { min: null, max: n } : { min: n, max: null };
+}
+
+/** "KidFriendly" / "Video3D4D" / "HHNHouse" -> "Kid Friendly" / "3D/4D" / "HHN House". */
+const UNIVERSAL_TYPE_LABELS: Record<string, string> = {
+  Video3D4D: "3D/4D",
+  HHNHouse: "Haunted House",
+  WaterThrill: "Water Thrill",
+  WaterFamily: "Water Family",
+  WaterRelax: "Water Relax",
+  WaterKids: "Water Kids",
+};
+
+/**
+ * Humanize the `RideTypes` / `ShowTypes` PascalCase vocabulary into the display
+ * tags `attraction_meta.tags` already carries for WDW ("Thrill Rides", …).
+ */
+export function universalTypeLabels(types?: Array<string> | null): Array<string> {
+  const out: Array<string> = [];
+  for (const raw of types ?? []) {
+    const type = raw.trim();
+    if (!type) continue;
+    const label = UNIVERSAL_TYPE_LABELS[type] ?? type.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
+    if (!out.includes(label)) out.push(label);
+  }
+  return out;
+}
+
+/**
+ * Humanize the `AccessibilityOptions` vocabulary. The `InApp*` variants are the
+ * Universal app's own assistive features — kept, but labelled so they read as
+ * device features rather than in-queue accommodations.
+ */
+const UNIVERSAL_ACCESSIBILITY_LABELS: Record<string, string> = {
+  ClosedCaption: "Closed captioning",
+  StandardWheelchair: "Standard wheelchair accessible",
+  AnyWheelchair: "Any wheelchair accessible",
+  StationarySeating: "Stationary seating available",
+  WheelchairMustTransfer: "Must transfer from wheelchair",
+  ECVMustTransfer: "Must transfer from ECV",
+  TestSeat: "Test seat available",
+  AssistiveListening: "Assistive listening",
+  InAppAssistiveListening: "Assistive listening (app)",
+  InAppClosedCaptions: "Closed captioning (app)",
+  InAppDescriptiveAudio: "Descriptive audio (app)",
+  InAppMultilanguageAudio: "Multi-language audio (app)",
+  ParentalDiscretionAdvised: "Parental discretion advised",
+  // Universal's catch-all "see the rider's guide" marker — no guest-facing
+  // meaning on its own, so it's dropped rather than labelled.
+  ExtraInfo: "",
+};
+
+export function universalAccessibilityLabels(options?: Array<string> | null): Array<string> {
+  const out: Array<string> = [];
+  for (const raw of options ?? []) {
+    const key = raw.trim();
+    if (!key) continue;
+    const label =
+      key in UNIVERSAL_ACCESSIBILITY_LABELS
+        ? UNIVERSAL_ACCESSIBILITY_LABELS[key]
+        : key.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
+    if (label && !out.includes(label)) out.push(label);
+  }
+  return out;
+}
+
+/**
+ * The POI feed's amenity/entertainment buckets -> a `park_poi` row's
+ * (`poi_type`, `category`) pair. `category` stays in the four-value client
+ * vocabulary the map layers already switch on (`PoiCategory`), while `poi_type`
+ * carries the specific kind — which is exactly the typing UOR was missing (every
+ * amenity place used to land as an untyped `info` row).
+ *
+ * Buckets deliberately absent: `Rides`/`Shows`/`Parades` enrich `attractions`
+ * and their own entertainment rows (handled separately), `DiningLocations` /
+ * `Shops` / `Hotels` have their own catalog dims.
+ */
+export const UNIVERSAL_POI_BUCKETS: Record<string, { poiType: string; category: PoiCategory }> = {
+  Restrooms: { poiType: "restroom", category: "info" },
+  Lockers: { poiType: "locker", category: "info" },
+  Atms: { poiType: "atm", category: "info" },
+  FirstAidStations: { poiType: "first-aid", category: "info" },
+  LostAndFoundStations: { poiType: "lost-and-found", category: "info" },
+  GuestServices: { poiType: "guest-services", category: "info" },
+  ServiceAnimalRestAreas: { poiType: "service-animal-area", category: "info" },
+  SmokingAreas: { poiType: "smoking-area", category: "info" },
+  FamilyServices: { poiType: "family-services", category: "info" },
+  ChargingStations: { poiType: "charging-station", category: "info" },
+  Rentals: { poiType: "rental", category: "info" },
+  GeneralLocations: { poiType: "general", category: "info" },
+  NightlifeLocations: { poiType: "nightlife", category: "entertainment" },
+  Games: { poiType: "game", category: "entertainment" },
+};
+
+// ---------------------------------------------------------------------------
 // Universal Orlando web-store (api.universalparks.com) helpers
 // ---------------------------------------------------------------------------
 

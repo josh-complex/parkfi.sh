@@ -209,6 +209,11 @@ export const parksRouter = {
       meta_detail_url: string | null;
       meta_land: string | null;
       meta_height_requirement: string | null;
+      meta_min_height_in: number | null;
+      meta_express_pass: boolean | null;
+      meta_single_rider: boolean | null;
+      meta_child_swap: boolean | null;
+      meta_virtual_line: boolean | null;
       meta_tags: Array<string> | null;
       hours_today: Array<{ type: string | null; start: string | null; end: string | null }> | null;
       is_open: boolean | null;
@@ -301,6 +306,11 @@ export const parksRouter = {
                m.detail_url AS meta_detail_url,
                m.land AS meta_land,
                m.height_requirement AS meta_height_requirement,
+               m.min_height_in AS meta_min_height_in,
+               m.express_pass AS meta_express_pass,
+               m.single_rider AS meta_single_rider,
+               m.child_swap AS meta_child_swap,
+               m.virtual_line AS meta_virtual_line,
                m.tags AS meta_tags,
                (SELECT is_open FROM park_open) AS is_open,
                (SELECT has_schedule FROM park_open) AS has_schedule
@@ -365,6 +375,11 @@ export const parksRouter = {
               detailUrl: r.meta_detail_url,
               land: r.meta_land,
               heightRequirement: r.meta_height_requirement,
+              minHeightIn: r.meta_min_height_in,
+              expressPass: r.meta_express_pass,
+              singleRider: r.meta_single_rider,
+              childSwap: r.meta_child_swap,
+              virtualLine: r.meta_virtual_line,
               tags: r.meta_tags ?? [],
             }
           : null,
@@ -564,6 +579,10 @@ export const parksRouter = {
       operator_name: string | null;
       meta_land: string | null;
       meta_height_requirement: string | null;
+      meta_min_height_in: number | null;
+      meta_express_pass: boolean | null;
+      meta_single_rider: boolean | null;
+      meta_child_swap: boolean | null;
       meta_image_thumb_url: string | null;
       meta_image_hero_url: string | null;
       meta_image_alt: string | null;
@@ -601,6 +620,10 @@ export const parksRouter = {
              p.slug AS park_slug, p.name AS park_name,
              o.slug AS operator_slug, o.name AS operator_name,
              m.land AS meta_land, m.height_requirement AS meta_height_requirement,
+             m.min_height_in AS meta_min_height_in,
+             m.express_pass AS meta_express_pass,
+             m.single_rider AS meta_single_rider,
+             m.child_swap AS meta_child_swap,
              m.image_thumb_url AS meta_image_thumb_url,
              m.image_hero_url AS meta_image_hero_url,
              m.image_alt AS meta_image_alt,
@@ -632,6 +655,10 @@ export const parksRouter = {
         operatorName: r.operator_name,
         land: r.meta_land,
         heightRequirement: r.meta_height_requirement,
+        minHeightIn: r.meta_min_height_in,
+        expressPass: r.meta_express_pass,
+        singleRider: r.meta_single_rider,
+        childSwap: r.meta_child_swap,
         imageThumbUrl: r.meta_image_thumb_url,
         // Card-sized (600px) variant for the ride shelves; falls back to the
         // hero, then the raw thumb, for non-Disney assets that lack the resize
@@ -819,6 +846,14 @@ export const parksRouter = {
         meta_detail_url: string | null;
         meta_land: string | null;
         meta_height_requirement: string | null;
+        meta_min_height_in: number | null;
+        meta_max_height_in: number | null;
+        meta_express_pass: boolean | null;
+        meta_single_rider: boolean | null;
+        meta_child_swap: boolean | null;
+        meta_virtual_line: boolean | null;
+        meta_accessibility: Array<string> | null;
+        meta_fun_fact: string | null;
         meta_tags: Array<string> | null;
         meta_description: string | null;
         meta_hero_media: Array<ParkHeroSlide> | null;
@@ -891,6 +926,14 @@ export const parksRouter = {
                m.detail_url AS meta_detail_url,
                m.land AS meta_land,
                m.height_requirement AS meta_height_requirement,
+               m.min_height_in AS meta_min_height_in,
+               m.max_height_in AS meta_max_height_in,
+               m.express_pass AS meta_express_pass,
+               m.single_rider AS meta_single_rider,
+               m.child_swap AS meta_child_swap,
+               m.virtual_line AS meta_virtual_line,
+               m.accessibility AS meta_accessibility,
+               m.fun_fact AS meta_fun_fact,
                m.tags AS meta_tags,
                m.description AS meta_description,
                m.hero_media AS meta_hero_media,
@@ -988,6 +1031,14 @@ export const parksRouter = {
                 detailUrl: r.meta_detail_url,
                 land: r.meta_land,
                 heightRequirement: r.meta_height_requirement,
+                minHeightIn: r.meta_min_height_in,
+                maxHeightIn: r.meta_max_height_in,
+                expressPass: r.meta_express_pass,
+                singleRider: r.meta_single_rider,
+                childSwap: r.meta_child_swap,
+                virtualLine: r.meta_virtual_line,
+                accessibility: r.meta_accessibility ?? [],
+                funFact: r.meta_fun_fact,
                 tags: r.meta_tags ?? [],
                 // Official marketing copy (plan item 2.3) — the About section.
                 description: suppressed.has("description") ? null : r.meta_description,

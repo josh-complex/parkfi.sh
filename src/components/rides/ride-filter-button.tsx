@@ -12,7 +12,12 @@ import {
 } from "#/components/ui/drawer.tsx";
 import { cn } from "#/lib/utils.ts";
 
-import { EMPTY_RIDE_FILTER, MAX_WAIT_OPTIONS, useRideFilter } from "./ride-filter.tsx";
+import {
+  EMPTY_RIDE_FILTER,
+  HEIGHT_BAND_OPTIONS,
+  MAX_WAIT_OPTIONS,
+  useRideFilter,
+} from "./ride-filter.tsx";
 
 /**
  * The map's filter-pill look, shared verbatim by every mobile filter/sort FAB so
@@ -83,6 +88,45 @@ export function RideFilterControls() {
         </div>
       </div>
 
+      <div className="flex flex-col gap-2 border-t pt-4">
+        <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+          Rider height
+        </span>
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Chip
+            active={!filter.noHeightReq && filter.heightBand == null}
+            onClick={() => setFilter((f) => ({ ...f, noHeightReq: false, heightBand: null }))}
+          >
+            Any
+          </Chip>
+          <Chip
+            active={filter.noHeightReq}
+            onClick={() =>
+              setFilter((f) => ({ ...f, noHeightReq: !f.noHeightReq, heightBand: null }))
+            }
+          >
+            No minimum
+          </Chip>
+          {/* "Rides my 42-incher can get on" — the band is the rider's height,
+              so it matches every ride whose minimum is at or below it. */}
+          {HEIGHT_BAND_OPTIONS.map((h) => (
+            <Chip
+              key={h}
+              active={filter.heightBand === h}
+              onClick={() =>
+                setFilter((f) => ({
+                  ...f,
+                  heightBand: f.heightBand === h ? null : h,
+                  noHeightReq: false,
+                }))
+              }
+            >
+              {h}&quot;
+            </Chip>
+          ))}
+        </div>
+      </div>
+
       <div className="flex flex-wrap gap-2 border-t pt-4">
         <Chip
           active={filter.openOnly}
@@ -90,11 +134,26 @@ export function RideFilterControls() {
         >
           Open now
         </Chip>
+        {/* Universal publishes these three; Disney publishes none of them, so a
+            row with no data never matches and the chips simply find nothing at
+            a WDW park rather than lying about it. */}
         <Chip
-          active={filter.noHeightReq}
-          onClick={() => setFilter((f) => ({ ...f, noHeightReq: !f.noHeightReq }))}
+          active={filter.expressPass}
+          onClick={() => setFilter((f) => ({ ...f, expressPass: !f.expressPass }))}
         >
-          No height requirement
+          Express Pass
+        </Chip>
+        <Chip
+          active={filter.singleRider}
+          onClick={() => setFilter((f) => ({ ...f, singleRider: !f.singleRider }))}
+        >
+          Single rider
+        </Chip>
+        <Chip
+          active={filter.childSwap}
+          onClick={() => setFilter((f) => ({ ...f, childSwap: !f.childSwap }))}
+        >
+          Child swap
         </Chip>
       </div>
     </div>

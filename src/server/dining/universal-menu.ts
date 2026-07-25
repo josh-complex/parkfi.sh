@@ -33,8 +33,7 @@ import type { DiningMenuItemRow } from "./disney-dining-detail.ts";
  * therefore "no menu page", never retried.
  */
 
-const CONTENTDATA_BASE =
-  process.env.UNIVERSAL_CONTENTDATA_BASE ?? "https://www.universalorlando.com/contentdata";
+const CONTENTDATA_BASE = config.universalContentBase;
 
 // The "K2 Restaurant Menu" component schema — the stable id is the primary
 // match (per plan: parse by schema id + field names, never positionally); the

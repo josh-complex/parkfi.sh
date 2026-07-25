@@ -19,6 +19,16 @@
  *      detail URL, land, tags) — the UOR analog of the Disney finder, joined on
  *      the shared `place_id` / TP `externalId` namespace. Skipped when Browserless
  *      isn't configured.
+ *   5. Universal parks only, layered onto step 4 (research/universal-content-
+ *      parity.md): the mobile-services POI + Venues feeds and the contentdata
+ *      `filtersdata` tiles / per-ride pages. These fill the attributes the
+ *      places feed has no field for — numeric heights (the reason the
+ *      `noHeightReq` chip was dead for every UOR ride), Express Pass, single
+ *      rider, child swap, virtual line, accessibility, fun facts and real image
+ *      alt text — plus the typed services/entertainment `park_poi` layers. Three
+ *      GETs plus a serial crawl of ~61 ride pages; no Browserless and no
+ *      session, so step 5 still runs when step 4 is skipped. Park geometry is
+ *      NOT taken from it — see `ingestUniversalVenueGeo`.
  *
  * Run:  bun run cron:geo
  */
@@ -48,6 +58,7 @@ import {
   universalPlaceImages,
   universalPlaceTags,
   type MapCategory,
+  type PoiCategory,
 } from "#/server/parks/codes.ts";
 import { config } from "#/server/parks/config.ts";
 import { fillMissingThumbhashes } from "#/server/parks/thumbhash.ts";
@@ -58,8 +69,31 @@ import {
   normalizeParkName,
 } from "#/server/parks/sources/osm-boundaries.ts";
 import { fetchChildren } from "#/server/parks/sources/themeparks.ts";
+import {
+  fetchAllUniversalRideFacts,
+  fetchUniversalFiltersData,
+  tileInfo,
+} from "#/server/parks/sources/universal-content.ts";
+import {
+  fetchUniversalPois,
+  fetchUniversalVenues,
+} from "#/server/parks/sources/universal-mobile.ts";
 import { fetchUniversalPlaces } from "#/server/parks/sources/universal-places.ts";
-import type { UniversalPlace, UniversalPlaces } from "#/server/parks/schemas.ts";
+import {
+  buildUniversalContentIndex,
+  rideJoinKey,
+  resolveUniversalRideAttrs,
+  UNIVERSAL_VENUE_ID_BY_SLUG,
+  venueBoundary,
+  type TypedUniversalPoi,
+  type UniversalContentIndex,
+} from "#/server/parks/universal-index.ts";
+import type {
+  UniversalPlace,
+  UniversalPlaces,
+  UniversalVenue,
+  UniversalVenues,
+} from "#/server/parks/schemas.ts";
 
 const KIND_ATTRACTION = "attraction";
 const KIND_PARK = "park";
@@ -204,6 +238,20 @@ async function upsertAttractionMeta(
           land: sql`excluded.land`,
           heightRequirement: sql`excluded.height_requirement`,
           tags: sql`excluded.tags`,
+          // Ride attributes (universal-content-parity §3). Coalesced like the
+          // copy fields: a UOR run that couldn't reach the mobile services host
+          // must leave the last good values in place rather than blank the
+          // height chip out. WDW rows never carry these, so `min_height_in` /
+          // `max_height_in` keep whatever the prose backfill derived.
+          minHeightIn: sql`coalesce(excluded.min_height_in, attraction_meta.min_height_in)`,
+          maxHeightIn: sql`coalesce(excluded.max_height_in, attraction_meta.max_height_in)`,
+          expressPass: sql`coalesce(excluded.express_pass, attraction_meta.express_pass)`,
+          singleRider: sql`coalesce(excluded.single_rider, attraction_meta.single_rider)`,
+          childSwap: sql`coalesce(excluded.child_swap, attraction_meta.child_swap)`,
+          virtualLine: sql`coalesce(excluded.virtual_line, attraction_meta.virtual_line)`,
+          funFact: sql`coalesce(excluded.fun_fact, attraction_meta.fun_fact)`,
+          accessibility: sql`case when cardinality(excluded.accessibility) > 0
+            then excluded.accessibility else attraction_meta.accessibility end`,
           // Never null out copy/media a re-crawl didn't carry (stale beats
           // none) — a failed per-attraction detail fetch leaves both null.
           description: sql`coalesce(excluded.description, attraction_meta.description)`,
@@ -683,12 +731,28 @@ interface PlaceIndex {
   landById: Map<string, string>;
   // venue_id -> the `Park`-type place (carries the park's own hero photo + logo).
   parkByVenue: Map<string, UniversalPlace>;
-  // venue_id -> its Shopping / Amenity places (plan item 2.2). In-park venues
-  // only get consumed (the per-park enrichment passes its own venue), so
-  // CityWalk/hotel entries sit here unused until a park-less home exists.
+  // venue_id -> its Shop / Amenity / Entertainment / Events places (plan item
+  // 2.2). In-park venues only get consumed (the per-park enrichment passes its
+  // own venue), so CityWalk/hotel entries sit here unused until a park-less
+  // home exists.
   shopsByVenue: Map<string, Array<UniversalPlace>>;
-  amenitiesByVenue: Map<string, Array<UniversalPlace>>;
+  // Every place that becomes a `park_poi` row, pre-typed: Amenity -> services,
+  // Entertainment -> the Live layer, Events -> Tours.
+  poiPlacesByVenue: Map<
+    string,
+    Array<{ place: UniversalPlace; poiType: string; category: PoiCategory }>
+  >;
 }
+
+// places `place_type.type` -> the (poi_type, category) it lands as. NB the
+// retail type is "Shop", NOT "Shopping" — the original literal never matched,
+// which is why `shop_dim` held zero Universal rows despite 102 shops in the
+// feed, and why the map's Shops layer was empty at UOR.
+const UNIVERSAL_PLACE_POI: Record<string, { poiType: string; category: PoiCategory }> = {
+  Amenity: { poiType: "amenity", category: "info" },
+  Entertainment: { poiType: "entertainment", category: "entertainment" },
+  Events: { poiType: "events-tours", category: "tour" },
+};
 
 /** Enrichment richness — prefer the place carrying the most card metadata. */
 function placeRichness(place: UniversalPlace): number {
@@ -705,7 +769,10 @@ function buildPlaceIndex(places: UniversalPlaces): PlaceIndex {
   const landById = new Map<string, string>();
   const parkByVenue = new Map<string, UniversalPlace>();
   const shopsByVenue = new Map<string, Array<UniversalPlace>>();
-  const amenitiesByVenue = new Map<string, Array<UniversalPlace>>();
+  const poiPlacesByVenue = new Map<
+    string,
+    Array<{ place: UniversalPlace; poiType: string; category: PoiCategory }>
+  >();
   for (const { place } of places.results) {
     if (place.place_type?.type === "Land" && place.name) {
       landById.set(place.place_id, place.name);
@@ -719,15 +786,17 @@ function buildPlaceIndex(places: UniversalPlaces): PlaceIndex {
     if (place.place_type?.type === "Land" || place.place_type?.type === "Park") continue;
     const venue = place.venue_id;
     if (!venue || !place.name) continue;
-    // Shops + amenities land in their own catalogs (plan item 2.2).
-    if (place.place_type?.type === "Shopping") {
+    // Shops + POI places land in their own catalogs (plan item 2.2).
+    if (place.place_type?.type === "Shop") {
       const list = shopsByVenue.get(venue) ?? [];
       if (!shopsByVenue.has(venue)) shopsByVenue.set(venue, list);
       list.push(place);
-    } else if (place.place_type?.type === "Amenity") {
-      const list = amenitiesByVenue.get(venue) ?? [];
-      if (!amenitiesByVenue.has(venue)) amenitiesByVenue.set(venue, list);
-      list.push(place);
+    }
+    const poiType = UNIVERSAL_PLACE_POI[place.place_type?.type ?? ""];
+    if (poiType) {
+      const list = poiPlacesByVenue.get(venue) ?? [];
+      if (!poiPlacesByVenue.has(venue)) poiPlacesByVenue.set(venue, list);
+      list.push({ place, ...poiType });
     }
     const names = byVenueName.get(venue) ?? new Map<string, UniversalPlace>();
     if (!byVenueName.has(venue)) byVenueName.set(venue, names);
@@ -735,7 +804,7 @@ function buildPlaceIndex(places: UniversalPlaces): PlaceIndex {
     const existing = names.get(key);
     if (!existing || placeRichness(place) > placeRichness(existing)) names.set(key, place);
   }
-  return { byVenueName, landById, parkByVenue, shopsByVenue, amenitiesByVenue };
+  return { byVenueName, landById, parkByVenue, shopsByVenue, poiPlacesByVenue };
 }
 
 /**
@@ -744,17 +813,33 @@ function buildPlaceIndex(places: UniversalPlaces): PlaceIndex {
  * `attraction_meta` (images, detail URL, land, tags). Mirrors `enrichDisneyPark`;
  * the places feed is shared across all UOR parks (fetched once), so it's passed
  * in as a prebuilt index.
+ *
+ * Layered on top: the mobile-services POI feed + the per-ride contentdata pages
+ * + `filtersdata` tiles (`content`, resolved through
+ * `resolveUniversalRideAttrs`). Those supply everything the places feed drops —
+ * numeric heights, Express/single-rider/child-swap/virtual-line, accessibility,
+ * fun facts and real image alt text. They're merged into the SAME meta rows
+ * rather than upserted separately, because the upsert overwrites the image and
+ * tag columns wholesale; two passes would have the second blank the first.
  */
-async function enrichUniversalPark(park: ParkRow, index: PlaceIndex): Promise<void> {
+async function enrichUniversalPark(
+  park: ParkRow,
+  index: PlaceIndex | null,
+  content: UniversalContentIndex | null,
+): Promise<void> {
   const venue = UNIVERSAL_VENUE_BY_SLUG[park.slug];
-  const names = venue ? index.byVenueName.get(venue) : undefined;
-  if (!names) {
-    console.warn(`[geo] ${park.slug}: no Universal venue mapping — skipping places enrichment`);
+  const venueId = UNIVERSAL_VENUE_ID_BY_SLUG[park.slug] ?? null;
+  // Either index alone is enough to enrich: the places feed needs Browserless
+  // and a guest session, the content feeds need neither, so a run with
+  // Browserless unconfigured still lands heights and the typed POI layers.
+  const names = venue && index ? index.byVenueName.get(venue) : undefined;
+  if (!names && !content) {
+    console.warn(`[geo] ${park.slug}: no Universal feed available — skipping enrichment`);
     return;
   }
 
   // Park-level hero photo from the Park-type place (its `heroImage`).
-  const parkPlace = venue ? index.parkByVenue.get(venue) : undefined;
+  const parkPlace = venue && index ? index.parkByVenue.get(venue) : undefined;
   if (parkPlace) {
     const img = universalPlaceImages(parkPlace.images, parkPlace.name);
     if (img.hero) await updateParkImage(park.id, { url: img.hero, alt: img.alt });
@@ -763,45 +848,79 @@ async function enrichUniversalPark(park: ParkRow, index: PlaceIndex): Promise<vo
   const attractions = await resolveParkAttractions(park.id);
   const overrides: Array<{ id: number; category: MapCategory }> = [];
   const metaRows: Array<typeof attractionMeta.$inferInsert> = [];
+  // Join keys the attraction list already covers — Shows/Parades outside this
+  // set become the entertainment POI layer instead of being dropped.
+  const claimedNames = new Set<string>();
+  let heights = 0;
   for (const attraction of attractions) {
-    const place = names.get(normalizeUniversalName(attraction.name));
-    if (!place) continue;
+    const place = names?.get(normalizeUniversalName(attraction.name));
+    const attrs = content ? resolveUniversalRideAttrs(content, venueId, attraction.name) : null;
+    if (!place && !attrs?.matched) continue;
+    claimedNames.add(rideJoinKey(attraction.name));
 
-    const cat = categoryFromUniversalPlace(place.place_type?.type, place.place_type?.categories);
+    // Places `place_type` leads; the POI feed's `RideTypes` refine what it
+    // can't see (a Volcano Bay slide reads as a generic attraction there but
+    // carries "Water Thrill" here).
+    const cat =
+      categoryFromUniversalPlace(place?.place_type?.type, place?.place_type?.categories) ??
+      categoryFromUniversalPlace(null, attrs?.tags);
     if (cat) overrides.push({ id: attraction.id, category: cat });
 
-    const images = universalPlaceImages(place.images, place.name);
+    const images = universalPlaceImages(place?.images, place?.name ?? attraction.name);
+    if (attrs?.minHeightIn != null) heights++;
     metaRows.push({
       attractionId: attraction.id,
-      imageThumbUrl: images.thumb,
-      imageHeroUrl: images.hero,
-      imageAlt: images.alt,
-      detailUrl: universalDetailUrl(place.urls),
+      // Places artwork stays the primary (it's the same CDN the rest of the UOR
+      // surfaces use); the POI/tile images only fill a gap.
+      imageThumbUrl: images.thumb ?? attrs?.imageThumbUrl ?? null,
+      imageHeroUrl: images.hero ?? attrs?.imageHeroUrl ?? null,
+      // Real alt text from the tile feed, which is the only UOR source that has
+      // any — `universalPlaceImages` can only echo the venue name.
+      imageAlt: attrs?.imageAlt ?? images.alt,
+      detailUrl: universalDetailUrl(place?.urls),
       // Prefer the feed's own Land-place name; fall back to the slug label.
       land:
-        (place.land_id ? index.landById.get(place.land_id) : null) ??
-        universalLandLabel(place.land_id),
-      // Universal places carry no height-requirement field — leave null.
-      heightRequirement: null,
-      tags: universalPlaceTags(place.place_type?.categories),
+        (place?.land_id ? index?.landById.get(place.land_id) : null) ??
+        universalLandLabel(place?.land_id) ??
+        attrs?.land ??
+        null,
+      heightRequirement: attrs?.heightRequirement ?? null,
+      minHeightIn: attrs?.minHeightIn ?? null,
+      maxHeightIn: attrs?.maxHeightIn ?? null,
+      expressPass: attrs?.expressPass ?? null,
+      singleRider: attrs?.singleRider ?? null,
+      childSwap: attrs?.childSwap ?? null,
+      virtualLine: attrs?.virtualLine ?? null,
+      accessibility: attrs?.accessibility ?? [],
+      funFact: attrs?.funFact ?? null,
+      tags: [
+        ...new Set([...universalPlaceTags(place?.place_type?.categories), ...(attrs?.tags ?? [])]),
+      ],
       // Official copy the feed already carries (plan item 2.3) — prefer the
       // richer long_description.
-      description: place.long_description?.trim() || place.short_description?.trim() || null,
+      description:
+        place?.long_description?.trim() ||
+        place?.short_description?.trim() ||
+        attrs?.description ||
+        null,
       source: Source.UNIVERSAL_DIRECT,
     });
   }
   if (overrides.length > 0) await overrideCategories(overrides);
   if (metaRows.length > 0) await upsertAttractionMeta(metaRows);
+  console.log(
+    `[geo] ${park.slug}: ${heights}/${metaRows.length} attractions have a published height`,
+  );
 
   // Shops + amenity POIs (plan item 2.2) — in-park scope only: this runs per
   // park venue, so CityWalk/hotel places never reach it (park_poi.park_id is
   // NOT NULL; the park-less home is a phase-2 decision recorded in the plan).
-  const shopCount = await upsertUniversalShops(park, venue!, index);
-  const poiCount = await upsertUniversalAmenities(park, venue!, index);
+  const shopCount = index ? await upsertUniversalShops(park, venue!, index) : 0;
+  const poiCount = await upsertUniversalPoi(park, venueId, index, content, claimedNames);
 
   console.log(
     `[geo] ${park.slug}: ${overrides.length} categories enriched, ${metaRows.length}/${attractions.length} meta rows, ` +
-      `${shopCount} shops, ${poiCount} amenity POIs from Universal places`,
+      `${shopCount} shops, ${poiCount} POIs from Universal feeds`,
   );
 }
 
@@ -812,7 +931,7 @@ function placeLatLng(place: UniversalPlace): { lat: number | null; lng: number |
 }
 
 /**
- * `Shopping` places → `shop_dim` (source UNIVERSAL_DIRECT) — the UOR analog of
+ * `Shop` places → `shop_dim` (source UNIVERSAL_DIRECT) — the UOR analog of
  * the WDW shops point-crawl, riding the same places feed the geo cron already
  * fetches. Slug comes from the official detail URL's last path segment; land
  * resolves through the feed's own Land places. Soft-delete is scoped to
@@ -835,7 +954,7 @@ async function upsertUniversalShops(
       latitude: lat,
       longitude: lng,
       mapPin: "shop",
-      land: (p.land_id ? index.landById.get(p.land_id) : null) ?? universalLandLabel(p.land_id),
+      land: (p.land_id ? index?.landById.get(p.land_id) : null) ?? universalLandLabel(p.land_id),
       landId: p.land_id ?? null,
       parkResort: park.name,
       parkResortId: venue,
@@ -891,24 +1010,40 @@ async function upsertUniversalShops(
 }
 
 /**
- * `Amenity` places → `park_poi` (services layer) — restrooms, first aid,
- * lockers, guest services. All land in the `info` map category (the Disney
- * guest-services analog); `poi_type` is the literal "amenity" so UOR rows are
- * distinguishable from the finder marker types.
+ * UOR `park_poi` rows — the services / entertainment layers, which were the two
+ * map layers UOR had nothing to fill.
+ *
+ * Two sources, merged by `poi_id` (they share the `uor.*` place-id namespace):
+ *   • places-feed `Amenity` entries, all untyped `info` — the old behaviour,
+ *     kept because it's the only amenity source that reaches Epic Universe
+ *     (the mobile feed publishes no EU amenities at all);
+ *   • the mobile POI feed's typed buckets, which win on conflict: restrooms,
+ *     lockers, ATMs, first aid, lost & found, smoking areas, service-animal
+ *     areas and rentals get a real `poi_type` instead of a flat "amenity",
+ *     plus the entertainment layer (shows/parades our attraction list doesn't
+ *     already carry, nightlife, arcades) and weather shelters.
+ *
+ * `claimedNames` is the set of attraction join keys this park already plots as
+ * rides/shows, so a stage show never appears twice — once as a ride marker and
+ * once as an entertainment pin.
  */
-async function upsertUniversalAmenities(
+async function upsertUniversalPoi(
   park: ParkRow,
-  venue: string,
-  index: PlaceIndex,
+  venueId: number | null,
+  index: PlaceIndex | null,
+  content: UniversalContentIndex | null,
+  claimedNames: Set<string>,
 ): Promise<number> {
-  const places = index.amenitiesByVenue.get(venue) ?? [];
-  const rows = places.map((p) => {
+  const venue = UNIVERSAL_VENUE_BY_SLUG[park.slug];
+  const byId = new Map<string, typeof parkPoi.$inferInsert>();
+
+  for (const { place: p, poiType, category } of index?.poiPlacesByVenue.get(venue) ?? []) {
     const { lat, lng } = placeLatLng(p);
-    return {
+    byId.set(p.place_id, {
       poiId: p.place_id,
       parkId: park.id,
-      poiType: "amenity",
-      category: "info",
+      poiType,
+      category,
       mapPin: null,
       name: p.name ?? p.place_id,
       entityName: null,
@@ -916,14 +1051,64 @@ async function upsertUniversalAmenities(
       urlFriendlyId: null,
       latitude: lat,
       longitude: lng,
-      land: (p.land_id ? index.landById.get(p.land_id) : null) ?? universalLandLabel(p.land_id),
-      // Amenity images are mostly flat icons — mirror the Disney guest-services
-      // rule and let the client render the category glyph instead.
-      imageUrl: null,
+      land: (p.land_id ? index?.landById.get(p.land_id) : null) ?? universalLandLabel(p.land_id),
+      // Amenity artwork is mostly flat icons — mirror the Disney guest-services
+      // rule and let the client render the category glyph instead. Real
+      // entertainment/event photos are worth showing.
+      imageUrl: category === "info" ? null : universalPlaceImages(p.images, p.name).hero,
       detailUrl: universalDetailUrl(p.urls),
       source: Source.UNIVERSAL_DIRECT,
-    };
-  });
+    });
+  }
+
+  if (content && venueId != null) {
+    const typed: Array<TypedUniversalPoi> = [...(content.poisByVenue.get(venueId) ?? [])];
+    // Shows and parades the attraction list doesn't already carry become the
+    // entertainment layer (street entertainment, character encounters, the
+    // shows TP.wiki doesn't list).
+    for (const [key, record] of content.ridesByVenue.get(venueId) ?? []) {
+      if (claimedNames.has(key)) continue;
+      const isShow = record.Category === "Shows" || record.Category === "Parades";
+      if (!isShow) continue;
+      const meetAndGreet =
+        (record as { ShowTypes?: Array<string> }).ShowTypes?.includes("Character") ||
+        /^meet\b/i.test(record.MblDisplayName ?? "");
+      typed.push({
+        poi: record,
+        poiType: record.Category === "Parades" ? "parade" : meetAndGreet ? "character" : "show",
+        category: meetAndGreet ? "character" : "entertainment",
+      });
+    }
+
+    for (const { poi, poiType, category } of typed) {
+      // Not every record carries a place id (Volcano Bay rides and the arcade
+      // entries publish none), so the numeric `Id` is the stable fallback key.
+      const poiId =
+        poi.ExternalIds?.PlaceId?.trim() || (poi.Id != null ? `uor.poi.${poi.Id}` : null);
+      if (!poiId) continue;
+      byId.set(poiId, {
+        poiId,
+        parkId: park.id,
+        poiType,
+        category,
+        mapPin: null,
+        name: poi.MblDisplayName ?? poiId,
+        entityName: null,
+        entityId: poi.Id != null ? String(poi.Id) : null,
+        urlFriendlyId: null,
+        latitude: poi.Latitude ?? null,
+        longitude: poi.Longitude ?? null,
+        land: poi.LandId != null ? (content.landById.get(poi.LandId) ?? null) : null,
+        // Services keep the glyph (their artwork is flat icons); real
+        // entertainment gets its photo, like the Disney POI rule.
+        imageUrl: category === "info" ? null : (poi.ListImage ?? poi.ThumbnailImage ?? null),
+        detailUrl: poi.SiteUrl ?? null,
+        source: Source.UNIVERSAL_DIRECT,
+      });
+    }
+  }
+
+  const rows = [...byId.values()];
   if (rows.length > 0) await upsertParkPoi(rows);
   await deactivateStaleParkPoi(
     park.id,
@@ -931,6 +1116,71 @@ async function upsertUniversalAmenities(
     Source.UNIVERSAL_DIRECT,
   );
   return rows.length;
+}
+
+// --- Universal venue geometry (mobile /api/Venues) ------------------------
+
+/**
+ * Step 0b (Universal only): a LAST-RESORT park outline from `GpsBoundary`, for
+ * a UOR park that has no boundary at all.
+ *
+ * It is not an upgrade over OSM and must never overwrite one. Universal
+ * publishes a coarse containing hull — 4–9 vertices per park — where the OSM
+ * `tourism=theme_park` way traces the real perimeter in 100–350 points. Writing
+ * the hull over OSM (which this step originally did) drew a polygon that
+ * visibly swallowed roads and parking outside the park. So the only case it
+ * earns its keep is a park OSM can't match by name, where a rough outline beats
+ * none.
+ *
+ * Centre, bounds and zoom are deliberately untouched for the same reason: the
+ * child-coordinate centroid from `ingestChildren` is derived from where the
+ * rides actually are, which frames the park better than a hull's bounding
+ * circle, and it keeps UOR consistent with WDW (whose `map_zoom` is null and
+ * whose camera fits `lat/lng_min/max`).
+ */
+async function ingestUniversalVenueGeo(
+  venues: UniversalVenues,
+  parks: Array<ParkRow>,
+): Promise<void> {
+  const byId = new Map<number, UniversalVenue>();
+  for (const venue of venues.Results) if (venue.Id != null) byId.set(venue.Id, venue);
+
+  // Read the *stored* boundary rather than tracking what OSM matched this run:
+  // if the Overpass step failed, the previously-stored outline is still good
+  // and a fallback hull would be a downgrade.
+  const missing = await db.execute<{ id: string }>(sql`
+    SELECT id FROM parks WHERE active = true AND boundary IS NULL
+  `);
+  const needsOutline = new Set(missing.rows.map((r) => Number(r.id)));
+  if (needsOutline.size === 0) return;
+
+  let outlined = 0;
+  for (const park of parks) {
+    if (!needsOutline.has(park.id)) continue;
+    const venue = byId.get(UNIVERSAL_VENUE_ID_BY_SLUG[park.slug] ?? -1);
+    const boundary = venue ? venueBoundary(venue) : null;
+    if (!boundary) continue;
+    await db.execute(
+      sql`UPDATE parks SET boundary = ${JSON.stringify(boundary)}::jsonb WHERE id = ${park.id}`,
+    );
+    console.warn(
+      `[geo] ${park.slug}: no OSM outline — fell back to Universal's ${boundary.coordinates[0].length}-point hull`,
+    );
+    outlined++;
+  }
+  console.log(`[geo] universal venues: ${outlined} fallback outlines written`);
+}
+
+/** Every land across every venue, flattened for the content index's labels. */
+function universalLands(venues: UniversalVenues): Array<{ id: number; name: string }> {
+  const out: Array<{ id: number; name: string }> = [];
+  for (const venue of venues.Results) {
+    for (const land of venue.ContainedLands) {
+      if (land.Id != null && land.MblDisplayName)
+        out.push({ id: land.Id, name: land.MblDisplayName });
+    }
+  }
+  return out;
 }
 
 // --- orchestration --------------------------------------------------------
@@ -959,8 +1209,11 @@ async function main() {
   // The Universal "places" feed is resort-wide — fetch + index it once, then
   // enrich every UOR park from it (mirrors how the Disney destinations feed is
   // fetched once). Skipped silently when Browserless isn't configured.
+  const universalParks = parks.filter((p) => p.operatorSlug === "universal");
   let universalIndex: PlaceIndex | null = null;
-  if (parks.some((p) => p.operatorSlug === "universal")) {
+  let universalContent: UniversalContentIndex | null = null;
+  let venues: UniversalVenues | null = null;
+  if (universalParks.length > 0) {
     await runStep("universal places", async () => {
       if (!browserlessConfigured()) {
         console.warn(
@@ -971,6 +1224,42 @@ async function main() {
       const places = await fetchUniversalPlaces(AbortSignal.timeout(config.browserlessTimeoutMs));
       universalIndex = buildPlaceIndex(places);
       console.log(`[geo] universal: ${places.results.length} places fetched`);
+    });
+
+    // The content-parity feeds (universal-content-parity.md §7 items 1–3, 5):
+    // three cookieless/keyed GETs plus a serial crawl of the ~61 ride pages.
+    // Each is isolated — a rotated mobile credential costs us the typed POI
+    // layers, not the run, and the ride pages still cover heights.
+    await runStep("universal venues", async () => {
+      venues = await fetchUniversalVenues(AbortSignal.timeout(config.fetchTimeoutMs));
+    });
+    await runStep("universal content", async () => {
+      const [pois, tiles, rideFacts] = await Promise.all([
+        fetchUniversalPois(AbortSignal.timeout(config.fetchTimeoutMs)).catch((err) => {
+          reportServiceError("geo", "universal pois", err);
+          return null;
+        }),
+        fetchUniversalFiltersData()
+          .then((data) => data.Tiles.map(tileInfo))
+          .catch((err) => {
+            reportServiceError("geo", "universal filtersdata", err);
+            return [];
+          }),
+        fetchAllUniversalRideFacts(AbortSignal.timeout(config.fetchTimeoutMs)).catch((err) => {
+          reportServiceError("geo", "universal ride pages", err);
+          return [];
+        }),
+      ]);
+      universalContent = buildUniversalContentIndex({
+        pois,
+        tiles,
+        rideFacts,
+        lands: venues ? universalLands(venues) : [],
+      });
+      console.log(
+        `[geo] universal content: ${pois?.Rides.length ?? 0} rides, ${tiles.length} tiles, ` +
+          `${rideFacts.length} ride pages`,
+      );
     });
   }
 
@@ -985,11 +1274,20 @@ async function main() {
       await runStep(`disney enrich ${park.slug}`, () =>
         enrichDisneyPark(park, numericToAttraction, today),
       );
-    } else if (park.operatorSlug === "universal" && universalIndex) {
+    } else if (park.operatorSlug === "universal" && (universalIndex || universalContent)) {
       await runStep(`universal enrich ${park.slug}`, () =>
-        enrichUniversalPark(park, universalIndex as PlaceIndex),
+        enrichUniversalPark(park, universalIndex, universalContent),
       );
     }
+  }
+
+  // Universal's own park outline + centre + zoom, applied LAST: it supersedes
+  // both the OSM boundary from step 0 and the child-centroid bounds `ingest
+  // Children` derives, and either would otherwise overwrite it.
+  if (venues && universalParks.length > 0) {
+    await runStep("universal venue geo", () =>
+      ingestUniversalVenueGeo(venues as UniversalVenues, universalParks),
+    );
   }
 
   // ThumbHash placeholders for any artwork that's new or changed this run

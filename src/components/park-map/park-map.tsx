@@ -46,11 +46,13 @@ import {
   openAttractionCard,
   ORLANDO_CENTER,
   ORLANDO_ZOOM,
+  POI_STALE_MS,
   poiCardBodyHtml,
   poiKind,
   poiPressTarget,
   saveRoamCamera,
   showCardBodyHtml,
+  showsLit,
   SPREAD_ZOOM,
   waitLabelFor,
   wireCardWalkTime,
@@ -592,7 +594,9 @@ export function ParkMap({
   // the user is actually waiting on — win the browser's connection budget and
   // render first, then shops/eats stream in behind them.
   const layers = filter?.layers;
-  const POI_STALE_MS = 30 * 60 * 1000;
+  // The Shows chip drives both show-categorised ride markers and the board's
+  // showtime markers (see `showsLit`).
+  const showsOn = showsLit(filter);
   const poisEnabled = !!effectiveSlug && boardQ.isSuccess;
   const diningQ = useQuery({
     ...trpc.parks.dining.queryOptions(),
@@ -1209,6 +1213,10 @@ export function ParkMap({
               status: a.status,
               standbyWait: a.standbyWait,
               heightRequirement: a.meta?.heightRequirement ?? null,
+              minHeightIn: a.meta?.minHeightIn ?? null,
+              expressPass: a.meta?.expressPass ?? null,
+              singleRider: a.meta?.singleRider ?? null,
+              childSwap: a.meta?.childSwap ?? null,
             },
             filter,
             // On the roam map, once the user has turned on another layer
@@ -1315,16 +1323,21 @@ export function ParkMap({
         // exist upstream, so "today" is the only signal we have); event-named
         // POIs are hidden outright; everything else (year-round streetmosphere
         // the live feed doesn't track) keeps its plain pin.
-        const showNameKeys: Array<string> = [];
+        //
+        // "Where one renders" is now the Shows chip, not this layer: an act
+        // that's performing only yields its POI pin while Shows is actually
+        // drawing the showtime marker that supersedes it. With Shows off, the
+        // pin is all the map has for that act, so it stays.
+        const supersededKeys: Array<string> = [];
         const todayShows: Array<{ lngLat: [number, number]; words: Set<string> }> = [];
         if (layers?.entertainment && !navDest) {
           for (const a of board ?? []) {
             if (a.entityType !== "SHOW") continue;
-            showNameKeys.push(squashName(a.name));
-            if (a.showtimes.length === 0) continue;
+            const performing = a.showtimes.length > 0 && parseShowtimes(a.showtimes).length > 0;
+            if (!performing || showsOn) supersededKeys.push(squashName(a.name));
+            if (!performing || !showsOn) continue;
             if (a.latitude == null || a.longitude == null) continue;
             if (!pointInPolygon([a.longitude, a.latitude], boundary)) continue;
-            if (parseShowtimes(a.showtimes).length === 0) continue;
             todayShows.push({ lngLat: [a.longitude, a.latitude], words: nameWords(a.name) });
           }
         }
@@ -1339,7 +1352,7 @@ export function ParkMap({
           // ≥6-char guard keeps short names from matching inside longer ones.
           const key = squashName(p.name);
           if (
-            showNameKeys.some(
+            supersededKeys.some(
               (k) =>
                 k === key ||
                 (key.length >= 6 && k.includes(key)) ||
@@ -1501,12 +1514,14 @@ export function ParkMap({
           });
         });
 
-        // Live SHOW entities as entertainment markers (plan item 1.1): the card
-        // leads with the next showtime and presses to the show's detail page.
-        // Gated on the entertainment layer (alongside the park_poi entertainment
-        // POIs) and hidden while navigating. Show ids are offset far negative to
-        // stay clear of both the attraction id space and the POI ids above.
-        if (layers?.entertainment && !navDest) {
+        // Live SHOW entities as showtime markers (plan item 1.1): the card leads
+        // with the next showtime and presses to the show's detail page. Gated on
+        // the Shows chip — nearly every show is a SHOW row rather than a show-
+        // categorised ATTRACTION, so hanging these off the Live layer left Shows
+        // drawing nothing at nine of ten parks. Hidden while navigating. Show ids
+        // are offset far negative to stay clear of both the attraction id space
+        // and the POI ids above.
+        if (showsOn && !navDest) {
           const tz =
             parksRef.current?.find((p) => p.slug === effectiveSlug)?.timezone ?? "America/New_York";
           (board ?? []).forEach((a, i) => {

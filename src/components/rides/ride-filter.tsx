@@ -36,6 +36,19 @@ export interface RideFilter {
   maxWait: number | null;
   /** Only rides with no height requirement (ride-anything-with-the-kids). */
   noHeightReq: boolean;
+  /**
+   * "What can a rider this tall get on" — inches. Mutually exclusive with
+   * `noHeightReq` in the UI (that's just the 0" case, phrased for parents of
+   * toddlers). Rides whose minimum height we don't know are excluded rather
+   * than assumed rideable.
+   */
+  heightBand: number | null;
+  /** Only rides that accept Universal Express Pass. */
+  expressPass: boolean;
+  /** Only rides with a single rider line. */
+  singleRider: boolean;
+  /** Only rides that offer child swap / rider switch. */
+  childSwap: boolean;
   /** Optional map overlay layers (map surface only). */
   layers: MapLayers;
 }
@@ -45,6 +58,10 @@ export const EMPTY_RIDE_FILTER: RideFilter = {
   openOnly: false,
   maxWait: null,
   noHeightReq: false,
+  heightBand: null,
+  expressPass: false,
+  singleRider: false,
+  childSwap: false,
   layers: {
     dining: false,
     quickService: false,
@@ -69,6 +86,10 @@ export const RIDE_CATEGORIES: ReadonlyArray<{ key: string; label: string; emoji:
 /** The standby thresholds offered by the "max wait" control. */
 export const MAX_WAIT_OPTIONS: ReadonlyArray<number> = [15, 30, 45, 60];
 
+/** Rider heights (inches) offered by the height-band control — the operators'
+ *  own published bands, so each one is a real cut-off somewhere. */
+export const HEIGHT_BAND_OPTIONS: ReadonlyArray<number> = [36, 40, 42, 44, 48, 52];
+
 /** True when any optional POI overlay layer (dining/shops/services/…) is on. */
 export function anyMapLayerActive(layers: MapLayers): boolean {
   return (
@@ -82,7 +103,16 @@ export function anyMapLayerActive(layers: MapLayers): boolean {
 }
 
 export function rideFilterActive(f: RideFilter): boolean {
-  return f.categories.size > 0 || f.openOnly || f.maxWait != null || f.noHeightReq;
+  return (
+    f.categories.size > 0 ||
+    f.openOnly ||
+    f.maxWait != null ||
+    f.noHeightReq ||
+    f.heightBand != null ||
+    f.expressPass ||
+    f.singleRider ||
+    f.childSwap
+  );
 }
 
 /** Does a ride pass the filter? Fields are normalized so both the map's
@@ -98,6 +128,10 @@ export function rideMatchesFilter(
     status: string | null;
     standbyWait: number | null;
     heightRequirement: string | null;
+    minHeightIn?: number | null;
+    expressPass?: boolean | null;
+    singleRider?: boolean | null;
+    childSwap?: boolean | null;
   },
   f: RideFilter,
   opts?: { emptyCategoriesMatchNone?: boolean },
@@ -107,7 +141,22 @@ export function rideMatchesFilter(
   } else if (r.category == null || !f.categories.has(r.category)) return false;
   if (f.openOnly && r.status !== "OPERATING") return false;
   if (f.maxWait != null && (r.standbyWait == null || r.standbyWait > f.maxWait)) return false;
-  if (f.noHeightReq && r.heightRequirement != null) return false;
+  // `minHeightIn` is the answer whenever we have it — including the explicit 0
+  // that Disney publishes as the prose "Any Height", which the old
+  // `heightRequirement != null` test wrongly read as *having* a requirement.
+  // Rides with neither field fall back to the old behaviour (treated as no
+  // requirement) so nothing that used to show up disappears.
+  if (f.noHeightReq) {
+    const known = r.minHeightIn ?? null;
+    if (known != null ? known > 0 : r.heightRequirement != null) return false;
+  }
+  // Height bands are the opposite: an unknown minimum is excluded rather than
+  // presented to a parent as "your 42-incher can ride this".
+  if (f.heightBand != null && (r.minHeightIn == null || r.minHeightIn > f.heightBand)) return false;
+  // The operator-attribute chips only ever narrow to a published `true`.
+  if (f.expressPass && r.expressPass !== true) return false;
+  if (f.singleRider && r.singleRider !== true) return false;
+  if (f.childSwap && r.childSwap !== true) return false;
   return true;
 }
 

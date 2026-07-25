@@ -282,6 +282,30 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
                 {ride.meta.heightRequirement}
               </Badge>
             )}
+            {/* Operator-published ride attributes (Universal only today — the
+                Disney finder publishes none of them, so these stay null and
+                nothing renders). A `false` is a published "no", which is not
+                worth a badge; only the affirmatives get one. */}
+            {ride.meta?.expressPass === true && (
+              <Badge variant="outline" className="font-normal">
+                Express Pass
+              </Badge>
+            )}
+            {ride.meta?.singleRider === true && (
+              <Badge variant="outline" className="font-normal">
+                Single rider
+              </Badge>
+            )}
+            {ride.meta?.childSwap === true && (
+              <Badge variant="outline" className="font-normal">
+                Child swap
+              </Badge>
+            )}
+            {ride.meta?.virtualLine === true && (
+              <Badge variant="outline" className="font-normal">
+                Virtual line
+              </Badge>
+            )}
             {ride.meta?.tags?.map((t) => (
               <Badge key={t} variant="outline" className="font-normal">
                 {t}
@@ -391,6 +415,25 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
         <section className="flex flex-col gap-1.5">
           <h2 className="text-lg font-semibold tracking-tight">About</h2>
           <p className="max-w-prose text-sm text-muted-foreground">{ride.meta.description}</p>
+        </section>
+      )}
+
+      {/* Universal publishes a trivia blurb per ride; Disney publishes none. */}
+      {ride.meta?.funFact && (
+        <section className="flex flex-col gap-1.5">
+          <h2 className="text-lg font-semibold tracking-tight">Did you know?</h2>
+          <p className="max-w-prose text-sm text-muted-foreground">{ride.meta.funFact}</p>
+        </section>
+      )}
+
+      {(ride.meta?.accessibility?.length ?? 0) > 0 && (
+        <section className="flex flex-col gap-1.5">
+          <h2 className="text-lg font-semibold tracking-tight">Accessibility</h2>
+          <ul className="max-w-prose list-inside list-disc text-sm text-muted-foreground">
+            {ride.meta?.accessibility?.map((a) => (
+              <li key={a}>{a}</li>
+            ))}
+          </ul>
         </section>
       )}
 

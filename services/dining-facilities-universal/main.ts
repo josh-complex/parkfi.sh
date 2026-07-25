@@ -46,6 +46,7 @@ import {
   universalPlaceImages,
 } from "#/server/parks/codes.ts";
 import { config } from "#/server/parks/config.ts";
+import { toNum } from "#/server/parks/sources/disney-finder.ts";
 import type { DiningMenuItemRow } from "#/server/dining/disney-dining-detail.ts";
 import { persistMenuGenerations } from "#/server/dining/menu-persist.ts";
 import {
@@ -127,6 +128,11 @@ async function main() {
         priceRange: null,
         parkResort: venueLabel(p.venue_id),
         parkResortId: p.venue_id ?? null,
+        // Map coordinates. The places feed carries geometry on all 191 venues
+        // and always has; leaving them null kept every UOR restaurant off the
+        // map, because `parks.dining` only plots rows with a latitude.
+        latitude: toNum(p.geometry?.locations?.[0]?.lat_lng?.lat),
+        longitude: toNum(p.geometry?.locations?.[0]?.lat_lng?.lng),
         // Official copy the places feed already carries (plan item 2.3) —
         // prefer the richer long_description.
         description: p.long_description?.trim() || p.short_description?.trim() || null,
@@ -165,6 +171,8 @@ async function main() {
           experienceType: sql`excluded.experience_type`,
           parkResort: sql`excluded.park_resort`,
           parkResortId: sql`excluded.park_resort_id`,
+          latitude: sql`coalesce(excluded.latitude, restaurant_dim.latitude)`,
+          longitude: sql`coalesce(excluded.longitude, restaurant_dim.longitude)`,
           bookable: sql`excluded.bookable`,
           description: sql`coalesce(excluded.description, restaurant_dim.description)`,
           phone: sql`excluded.phone`,

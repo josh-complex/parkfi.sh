@@ -34,6 +34,7 @@ import {
   buildPoiEl,
   buildUserLocationEl,
   isRestroomPoi,
+  POI_STALE_MS,
   poiCardBodyHtml,
   poiKind,
   poiPressTarget,
@@ -340,7 +341,6 @@ export function ParkMapLeaflet({
   // focused and the board has loaded, then clipped to the park boundary at
   // render; a long staleTime keeps them warm as the user roams.
   const layers = filter?.layers;
-  const POI_STALE_MS = 30 * 60 * 1000;
   const poisEnabled = !!effectiveSlug && boardQ.isSuccess;
   const diningQ = useQuery({
     ...trpc.parks.dining.queryOptions(),
@@ -659,6 +659,10 @@ export function ParkMapLeaflet({
               status: a.status,
               standbyWait: a.standbyWait,
               heightRequirement: a.meta?.heightRequirement ?? null,
+              minHeightIn: a.meta?.minHeightIn ?? null,
+              expressPass: a.meta?.expressPass ?? null,
+              singleRider: a.meta?.singleRider ?? null,
+              childSwap: a.meta?.childSwap ?? null,
             },
             filter,
             // On the roam map, once the user has turned on another layer
