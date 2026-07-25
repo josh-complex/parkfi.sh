@@ -54,7 +54,6 @@ import {
   SPREAD_ZOOM,
   waitLabelFor,
   wireCardWalkTime,
-  wireHoverLabelFlip,
   wireMarkerFadeIn,
 } from "./shared.tsx";
 
@@ -623,7 +622,6 @@ export function ParkMapLeaflet({
         if (shouldFade) wireMarkerFadeIn(detail);
         const marker = L.marker(latLng, { icon: pointIcon(el) }).addTo(map);
         const raise = makeRaise(el, marker);
-        if (containerRef.current) wireHoverLabelFlip(el, containerRef.current);
         markersRef.current.push(marker);
         items.push({
           id: p.id,
@@ -681,7 +679,6 @@ export function ParkMapLeaflet({
         const waitLabel = waitLabelFor(a);
         const marker = L.marker(latLng, { icon: pointIcon(el) }).addTo(map);
         const raise = makeRaise(el, marker);
-        if (containerRef.current) wireHoverLabelFlip(el, containerRef.current);
         markersRef.current.push(marker);
         markerElsRef.current.set(a.id, detail);
         items.push({
@@ -808,7 +805,6 @@ export function ParkMapLeaflet({
           if (navDest && !sameCoords(lngLat, navDest)) el.style.opacity = "0.6";
           const marker = L.marker(latLng, { icon: pointIcon(el) }).addTo(map);
           const raise = makeRaise(el, marker);
-          if (containerRef.current) wireHoverLabelFlip(el, containerRef.current);
           markersRef.current.push(marker);
           items.push({
             id: -(i + 1),

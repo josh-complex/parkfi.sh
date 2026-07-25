@@ -56,7 +56,6 @@ import {
   SPREAD_ZOOM,
   waitLabelFor,
   wireCardWalkTime,
-  wireHoverLabelFlip,
   wireMarkerFadeIn,
   type PoiItem,
 } from "./shared.tsx";
@@ -1172,7 +1171,6 @@ export function ParkMap({
         const { el, detail } = buildParkBadgeEl(p);
         if (shouldFade) wireMarkerFadeIn(detail);
         const raise = makeRaise(el);
-        if (containerRef.current) wireHoverLabelFlip(el, containerRef.current);
         const marker = new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map);
         markersRef.current.push(marker);
         items.push({
@@ -1233,7 +1231,6 @@ export function ParkMap({
         const { el, detail } = buildAttractionEl(a, a.id === selectedIdRef.current);
         if (shouldFade) wireMarkerFadeIn(detail);
         const raise = makeRaise(el);
-        if (containerRef.current) wireHoverLabelFlip(el, containerRef.current);
         const waitLabel = waitLabelFor(a);
         const marker = new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map);
         markersRef.current.push(marker);
@@ -1447,7 +1444,6 @@ export function ParkMap({
           // The mid-walk restrooms read as background context, not destinations.
           if (navDest && !sameCoords(lngLat, navDest)) el.style.opacity = "0.6";
           const raise = makeRaise(el);
-          if (containerRef.current) wireHoverLabelFlip(el, containerRef.current);
           const marker = new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map);
           markersRef.current.push(marker);
           items.push({
@@ -1553,7 +1549,6 @@ export function ParkMap({
             const { el, detail } = buildPoiEl(showPoi);
             if (shouldFade) wireMarkerFadeIn(detail);
             const raise = makeRaise(el);
-            if (containerRef.current) wireHoverLabelFlip(el, containerRef.current);
             const marker = new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map);
             markersRef.current.push(marker);
             const showItemId = -100_000 - i;

@@ -144,16 +144,14 @@ export function declutterSizeForZoom(zoom: number): number {
 const SELECTED_CLASSES = ["ring-2", "ring-primary", "ring-offset-1"];
 
 /**
- * Mark a marker selected/deselected: ring highlight on, and its hover label
- * suppressed (the charted ride is already identified — no need to expand it).
- * While a marker's card is expanded (`data-card-open`) the ring is suppressed —
- * the card itself is the selection indicator, and the disc has flown up into the
- * card header, so a ring around the empty footprint would just float untethered.
+ * Mark a marker selected/deselected: ring highlight on. While a marker's card is
+ * expanded (`data-card-open`) the ring is suppressed — the card itself is the
+ * selection indicator, and the disc has flown up into the card header, so a ring
+ * around the empty footprint would just float untethered.
  */
 export function applySelected(detail: HTMLElement, on: boolean): void {
   const open = detail.hasAttribute("data-card-open");
   for (const c of SELECTED_CLASSES) detail.classList.toggle(c, on && !open);
-  detail.querySelector<HTMLElement>("[data-label]")?.classList.toggle("hidden", on || open);
 }
 
 /** Escape user-facing strings before injecting into marker/popup innerHTML. */
@@ -265,12 +263,16 @@ export function waitLabelFor(a: BoardItem): string {
           : "Closed";
 }
 
+// The pill look every marker chip shares (wait / name / capacity) minus the
+// display mode, so each chip can pick its own box while staying pixel-identical.
+const PILL_CLASS =
+  "whitespace-nowrap rounded-full border border-white bg-neutral-900 px-1.5 py-0.5 text-[10px] leading-none font-bold text-white shadow";
+
 // The live wait pill's appearance, shared verbatim by the marker badge (anchored
 // under the disc) and the expanded card's wait line, so the chip that flies from
 // one to the other on expand is pixel-identical at both ends. Positioning classes
 // (`absolute -bottom-2 …`) live only on the marker instance.
-const WAIT_CHIP_CLASS =
-  "inline-flex items-center whitespace-nowrap rounded-full border border-white bg-neutral-900 px-1.5 py-0.5 text-[10px] leading-none font-bold text-white shadow";
+const WAIT_CHIP_CLASS = `inline-flex items-center ${PILL_CLASS}`;
 
 /**
  * Inner markup of a wait chip: the bold minutes plus a collapsible subtext (the
@@ -293,30 +295,86 @@ function waitChipInner(minutes: number, label: string, expanded: boolean): strin
   )}</span>`;
 }
 
-/** Clamp a label to `max` characters, appending an ellipsis when it's cut so a
- *  long ride/park title stays a compact one-line chip. */
-function truncateLabel(s: string, max: number): string {
-  return s.length > max ? `${s.slice(0, max - 1).trimEnd()}…` : s;
+// The name chip's resting clamp: a long name is ellipsised at 7.5rem so it stays
+// a compact one-line pill. Hover opens it to the name's *measured* width instead
+// of a second class (see `wireNameChipHover`) — a `group-hover:max-w-…` cap would
+// only look smooth in one direction, because the pill's used width is
+// min(text, cap): easing the cap from 7.5rem up to some generous ceiling races
+// past the text width in the first frames (a pop), while easing it back down
+// doesn't start moving the pill until the cap dips under the text again. An
+// exact target makes both directions the same 200ms glide.
+const NAME_CHIP_WIDTH_CLASS = "max-w-[7.5rem] transition-[max-width] duration-200 ease-out";
+
+// Ceiling for the hover-opened pill: never wider than 16rem, nor 60% of the
+// viewport, so a very long name can't run off a narrow map.
+const NAME_CHIP_MAX_PX = 256;
+const NAME_CHIP_MAX_VW = 0.6;
+
+/**
+ * Ease a name chip open to exactly the width its full name needs, or leave it
+ * alone when nothing is actually clipped. The inner span is looked up per call,
+ * never captured: the card morph replaces it (`textContent = fullName`) and
+ * `finalize` rebuilds it from saved markup, so a reference held across an
+ * open/close cycle points at a detached node that measures 0 — which read as
+ * "nothing clipped" and killed hover for the rest of the marker's life.
+ */
+function expandNameChip(chip: HTMLElement): void {
+  const inner = chip.firstElementChild;
+  if (!(inner instanceof HTMLElement)) return;
+  // Full pill width = the name's unclipped text width + the pill's own chrome
+  // (padding + border). `scrollWidth` rounds to an integer, so allow a pixel of
+  // slop before deciding a chip is clipped at all.
+  const full = inner.scrollWidth + (chip.offsetWidth - inner.offsetWidth);
+  if (full <= chip.offsetWidth + 1) return; // nothing clipped — nothing to open
+  chip.style.maxWidth = `${Math.min(full + 1, NAME_CHIP_MAX_PX, window.innerWidth * NAME_CHIP_MAX_VW)}px`;
 }
 
-/** Max characters a marker's name chip shows before it's ellipsised. */
-const NAME_CHIP_MAX = 20;
+/**
+ * Open a marker's name chip on hover, collapse it on exit. Pointer devices only
+ * — `(hover: hover)` is checked live so a touch tap (which synthesizes a
+ * `mouseenter`) never sticks a marker open. An open card's flown title is left
+ * alone in both directions: it's mid-morph on its own inline geometry, and
+ * clearing its width there would clamp the flying card title (see
+ * `openAttractionCard`, which re-opens the chip itself on close if the pointer
+ * never left).
+ *
+ * Takes `detail` (which owns the chip) separately from the hover target `el`,
+ * because the builders wire this up *before* they append `detail` to `el` — a
+ * lookup through `el` would find nothing and silently no-op.
+ */
+function wireNameChipHover(el: HTMLElement, detail: HTMLElement): void {
+  const chip = detail.querySelector<HTMLElement>("[data-name-chip]");
+  if (!chip) return;
+  el.addEventListener("mouseenter", () => {
+    if (!window.matchMedia("(hover: hover)").matches) return;
+    if (chip.closest("[data-card-open]")) return;
+    expandNameChip(chip);
+  });
+  el.addEventListener("mouseleave", () => {
+    if (chip.closest("[data-card-open]")) return;
+    chip.style.maxWidth = ""; // back to the resting class clamp, same easing
+  });
+}
 
 /**
  * A persistent name pill under a marker — same pill design as the wait chip
- * (`WAIT_CHIP_CLASS`). When the marker carries a wait badge (`underWait`) the
- * name stacks right beneath it (`top-full mt-2.5`); with no wait badge it takes
- * the wait badge's own slot (`-bottom-2`) so the label never floats lower than a
- * neighbour's. The title is truncated so a long name never blows the chip out to
- * full width. `pointer-events-none` so an overhanging label never eats a map drag
- * or a click meant for a neighbour. Lives inside the disc wrap as a badge, so the
- * card-morph's badge-hiding (see `openAttractionCard`) tucks it away on expand.
+ * (`PILL_CLASS`). When the marker carries a wait badge (`underWait`) the name
+ * stacks right beneath it (`top-full mt-2`); with no wait badge it takes the wait
+ * badge's own slot (`-bottom-2`) so the label never floats lower than a
+ * neighbour's. The full name is always in the DOM — the clamp is CSS (`max-width`
+ * + ellipsis on the inner span), so hover (`wireNameChipHover`) just eases that
+ * clamp open instead of revealing a second element. The chip stays centred as it grows
+ * (`-translate-x-1/2`), and the marker's hover z-lift (`makeRaise`) keeps the
+ * widened pill above its neighbours. `pointer-events-none` so an overhanging
+ * label never eats a map drag or a click meant for a neighbour. Lives inside the
+ * disc wrap as a badge, so the card-morph's badge-hiding (see
+ * `openAttractionCard`) tucks it away on expand.
  */
 function nameChipMarkup(name: string, underWait: boolean): string {
   const pos = underWait ? "top-full mt-2" : "-bottom-2";
-  return `<span data-name-chip class="pointer-events-none absolute ${pos} left-1/2 -translate-x-1/2 ${WAIT_CHIP_CLASS}">${escapeHtml(
-    truncateLabel(name, NAME_CHIP_MAX),
-  )}</span>`;
+  return `<span data-name-chip class="pointer-events-none absolute ${pos} left-1/2 -translate-x-1/2 ${NAME_CHIP_WIDTH_CLASS} ${WAIT_CHIP_CLASS}"><span class="min-w-0 overflow-hidden text-ellipsis">${escapeHtml(
+    name,
+  )}</span></span>`;
 }
 
 /**
@@ -762,7 +820,6 @@ export function openAttractionCard(opts: {
   wrap.style.opacity = "1";
   wrap.style.transition = "";
   const fill = wrap.querySelector<HTMLElement>("[data-face-fill]"); // photo / icon face
-  const label = detail.querySelector<HTMLElement>("[data-label]");
   const size = wrap.offsetWidth || 52;
 
   // The live wait chip doesn't just vanish on expand — it's the shared element that
@@ -782,10 +839,17 @@ export function openAttractionCard(opts: {
   // the card's title slot and restyles from the compact dark pill into the big card
   // name (see the name-chip flight below). Snapshot it and its resting box now,
   // before the disc mutates, plus everything needed to drop it back on close. Its
-  // truncated label is remembered so close can recollapse it from the full title.
+  // resting *markup* is remembered (not just the text) because the chip clamps its
+  // name with an inner ellipsised span — the flight replaces that with the bare
+  // full name, so close has to put the span back, not a flat string.
   const nameEl = wrap.querySelector<HTMLElement>("[data-name-chip]");
   const nameStart = nameEl?.getBoundingClientRect() ?? null;
-  const nameChipText = nameEl?.textContent ?? "";
+  const nameChipHtml = nameEl?.innerHTML ?? "";
+  // On a pointer device the marker is *hovered* at the moment it's clicked, so the
+  // chip usually carries the hover-opened inline `max-width` (`expandNameChip`).
+  // Drop it now that its box is measured: otherwise the snapshot below preserves
+  // that one name's width and `finalize` writes it back as a permanent override.
+  if (nameEl) nameEl.style.maxWidth = "";
   const nameRestore = nameEl
     ? {
         next: nameEl.nextSibling,
@@ -972,6 +1036,11 @@ export function openAttractionCard(opts: {
       left: `${startLeft}px`,
       top: `${startTop}px`,
       width: `${startW}px`,
+      // The resting chip clamps itself with a max-width (and grows it on hover);
+      // both would cap the flight short of the card title's width, so the flown
+      // pill drives its own explicit width instead. The class cap comes back with
+      // the style reset in `finalize`.
+      maxWidth: "none",
       margin: "0",
       zIndex: "47",
       transform: "none",
@@ -1005,9 +1074,9 @@ export function openAttractionCard(opts: {
       });
     };
     unflyName = () => {
-      // Re-truncate immediately as the close begins, so the compact chip — not the
+      // Re-clamp immediately as the close begins, so the compact chip — not the
       // full name — is what flies home over the shrinking disc.
-      nameEl.textContent = nameChipText;
+      nameEl.innerHTML = nameChipHtml;
       // Geometry rides back with the card (CARD_MS); the pill dressing snaps back
       // fast (CARD_CLOSE_FX_MS) so no oversized name lingers over the shrinking disc.
       nameEl.style.transition = [
@@ -1070,7 +1139,6 @@ export function openAttractionCard(opts: {
     close();
   });
   detail.append(closeBtn);
-  label?.classList.add("hidden");
 
   // The one animated box-shadow: disc colour ring → card drop shadow. Kept to three
   // layers on both ends so it interpolates smoothly (no layer-count mismatch jump).
@@ -1225,10 +1293,10 @@ export function openAttractionCard(opts: {
       waitEl.setAttribute("style", waitRestore.style);
       restoreBadge(waitEl, waitRestore.next);
     }
-    // Same for the name pill: its truncated label, class and inline style all
+    // Same for the name pill: its clamped label markup, class and inline style all
     // reset to the resting chip.
     if (nameEl && nameRestore) {
-      nameEl.textContent = nameChipText;
+      nameEl.innerHTML = nameChipHtml;
       nameEl.className = nameRestore.cls;
       nameEl.setAttribute("style", nameRestore.style);
       restoreBadge(nameEl, nameRestore.next);
@@ -1238,7 +1306,12 @@ export function openAttractionCard(opts: {
     detail.style.width = "";
     detail.style.height = "";
     if (wasSelected) applySelected(detail, true);
-    else label?.classList.remove("hidden");
+    // The chip is back at its resting clamp, but if the cursor sat on the marker
+    // through the whole open/close there's no fresh `mouseenter` coming to open it
+    // again — so re-open it here rather than leave it collapsed under the pointer.
+    // (Dispatching a synthetic `mouseenter` would also re-fire the z-lift, which
+    // counts enters and leaves and would end up stuck raised.)
+    if (nameEl && detail.parentElement?.matches(":hover")) expandNameChip(nameEl);
   }
 
   const handle = { close };
@@ -1248,8 +1321,8 @@ export function openAttractionCard(opts: {
 
 // The wrapper that the cluster controller hides / translates / highlights: a
 // disc-sized box (so the marker's footprint is just the photo, centered on the
-// point) holding the photo plus an absolutely-positioned label that slides out on
-// hover. `will-change-transform` keeps the declutter nudge translate smooth.
+// point) holding the photo plus its absolutely-positioned chips.
+// `will-change-transform` keeps the declutter nudge translate smooth.
 // Opacity transitions too: the cluster pass fades markers out before hiding them
 // (and in on reveal) instead of popping them — keep its duration in sync with
 // DECLUTTER_FADE_MS in declutter.ts.
@@ -1378,40 +1451,6 @@ function capacityChipMarkup(level: CapacityLevel): string {
   )}</span>`;
 }
 
-/**
- * The hover-revealed label: a card pill anchored to the photo's right edge,
- * clipped to zero width at rest and expanding on `group-hover`. Its width is
- * capped at the smaller of 13rem and 50vw so it never overflows a narrow (mobile)
- * map, and the title wraps to two lines (`line-clamp-2`) instead of being cut off.
- * Carries `flip` variants so a renderer can re-anchor it to the LEFT (via
- * `wireHoverLabelFlip`) when the marker is near the container's right edge.
- * `pointer-events-none` so it never eats a click meant for the photo/map.
- * `subtitle` is pre-escaped markup; `title` is plain text.
- */
-function labelMarkup(title: string, subtitle: string): string {
-  return `<span data-label class="pointer-events-none absolute top-1/2 left-full z-20 ml-1.5 flex w-max max-w-0 -translate-y-1/2 flex-col items-start overflow-hidden rounded-xl bg-card/95 px-0 py-0 text-left leading-tight opacity-0 shadow-lg ring-1 ring-black/5 backdrop-blur transition-all duration-200 ease-out group-hover:max-w-[min(10rem,45vw)] group-hover:px-2.5 group-hover:py-1 group-hover:opacity-100 [&.flip]:left-auto [&.flip]:right-full [&.flip]:ml-0 [&.flip]:mr-1.5 [&.flip]:items-end [&.flip]:text-right"><span class="line-clamp-2 text-[11px] font-medium text-card-foreground">${escapeHtml(
-    title,
-  )}</span><span class="whitespace-nowrap text-[10px] font-normal text-muted-foreground">${subtitle}</span></span>`;
-}
-
-/**
- * On hover, flip a marker's label to the left when expanding it rightward would
- * spill past the map container's right edge (and there's room on the left).
- * Measured live since the marker's screen position changes with pan/zoom.
- */
-export function wireHoverLabelFlip(el: HTMLElement, container: HTMLElement): void {
-  const label = el.querySelector<HTMLElement>("[data-label]");
-  if (!label) return;
-  el.addEventListener("mouseenter", () => {
-    // Flip to the left whenever the marker sits in the right half of the map:
-    // the label (capped at min(13rem, 50vw)) always fits the wider side, so this
-    // keeps it on-screen without depending on a fragile width estimate.
-    const c = container.getBoundingClientRect();
-    const r = el.getBoundingClientRect();
-    label.classList.toggle("flip", (r.left + r.right) / 2 > c.left + c.width / 2);
-  });
-}
-
 /** The "you are here" marker: a solid blue dot with a soft pulsing halo, plus a
  *  facing cone. Built as plain DOM so both engines can drop it on the map like
  *  any other marker. Call {@link setUserHeading} to point/hide the cone. */
@@ -1490,16 +1529,15 @@ export function setUserHeading(el: HTMLElement, deg: number | null): void {
 }
 
 /**
- * One park badge for the overview map: just the park photo at rest, expanding on
- * hover to reveal the name + live "N open · Ym avg" line. The caller wires the
- * click (navigate) and a hover z-lift so the expanded panel clears its neighbors.
+ * One park badge for the overview map: the park photo under its name chip (plus
+ * an Express capacity chip when there is one), matching the ride/POI markers. The
+ * caller wires the click (navigate) and a hover z-lift so a widened name chip
+ * clears its neighbors.
  */
 export function buildParkBadgeEl(p: {
   name: string;
   slug: string;
   operatorSlug: string | null;
-  operating: number;
-  avgWait: number | null;
   imageUrl?: string | null;
   imageAlt?: string | null;
   /** Today's Universal Express capacity (plan item 3.1); null → no chip. */
@@ -1510,7 +1548,6 @@ export function buildParkBadgeEl(p: {
   el.setAttribute("aria-label", p.name);
   el.className = "group relative block cursor-pointer";
   const color = operatorColor(p.operatorSlug);
-  const wait = p.avgWait != null ? `${p.avgWait}m avg` : "—";
   const disc = discMarkup({
     url: p.imageUrl ?? null,
     alt: p.imageAlt ?? p.name,
@@ -1522,11 +1559,13 @@ export function buildParkBadgeEl(p: {
       p.expressCapacity ? capacityChipMarkup(p.expressCapacity) : ""
     }`,
   });
-  const subtitle = `${p.operating} open · ${escapeHtml(wait)}`;
   const detail = document.createElement("div");
   detail.className = DETAIL_CLASS;
-  detail.innerHTML = `${disc}${labelMarkup(p.name, subtitle)}`;
+  // No side tooltip on any marker: the name chip under the disc is the label, and
+  // it opens to the full name on hover (see `nameChipMarkup`).
+  detail.innerHTML = disc;
   wireFaceFadeIn(detail);
+  wireNameChipHover(el, detail);
   el.append(detail);
   return { el, detail };
 }
@@ -1654,10 +1693,10 @@ const POI_COLOR: Record<string, string> = {
 
 /**
  * Build a dining/shop POI marker: a colour-ringed photo disc (or category icon)
- * with a hover label of its name + land. Same 52px disc as a ride marker so the
- * POI layers sit as equal citizens on the map. Folded into the ride cluster by
- * the renderer, so overlapping markers group + collision-avoid together. Returns
- * the root plus the `detail` layer (for the hover-label flip), like the others.
+ * under a name chip. Same 52px disc as a ride marker so the POI layers sit as
+ * equal citizens on the map. Folded into the ride cluster by the renderer, so
+ * overlapping markers group + collision-avoid together. Returns the root plus the
+ * `detail` layer, like the others.
  */
 /**
  * Shrink a Disney `mwImage` CDN url to a disc-sized thumbnail by rewriting the
@@ -1716,8 +1755,11 @@ export function buildPoiEl(poi: PoiItem): { el: HTMLButtonElement; detail: HTMLD
     px,
     badge: nameChipMarkup(poi.name, false),
   });
-  detail.innerHTML = `${disc}${labelMarkup(poi.name, escapeHtml(poi.land ?? ""))}`;
+  // No side tooltip: the name chip under the disc *is* the label, and it opens to
+  // the full name on hover (see `nameChipMarkup`). The land shows in the card.
+  detail.innerHTML = disc;
   wireFaceFadeIn(detail);
+  wireNameChipHover(el, detail);
   el.append(detail);
   return { el, detail };
 }
@@ -1786,7 +1828,7 @@ export function buildAttractionEl(
   el.className = "group relative block cursor-pointer";
 
   // `detail` is the wrapper the controller clusters/translates/highlights: the
-  // ride photo at rest, with a label that slides out on hover.
+  // ride photo plus its chips.
   const detail = document.createElement("div");
   detail.className = DETAIL_CLASS;
   // Wait time reads as a larger chip anchored to the disc's bottom edge — kept
@@ -1811,8 +1853,11 @@ export function buildAttractionEl(
     px: 52,
     badge: `${waitBadge}${nameChipMarkup(a.name, Boolean(waitBadge))}`,
   });
-  detail.innerHTML = `${disc}${labelMarkup(a.name, escapeHtml(waitLabelFor(a)))}`;
+  // No side tooltip: the wait chip + name chip under the disc already carry both
+  // lines it used to show, and the name opens out in place on hover.
+  detail.innerHTML = disc;
   wireFaceFadeIn(detail);
+  wireNameChipHover(el, detail);
   applySelected(detail, selected);
 
   el.append(detail);
