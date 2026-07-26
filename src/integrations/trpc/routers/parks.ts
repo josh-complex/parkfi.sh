@@ -1464,6 +1464,215 @@ export const parksRouter = {
     }),
 
   /**
+   * Per-ride Lightning Lane / Virtual Line **drop** analytics.
+   *
+   * A "drop" is the operator putting inventory back after the line had sold out:
+   * a `queue_obs.state` transition SOLD_OUT -> AVAILABLE/LIMITED. These are real
+   * upstream events, not poll noise — the feed's own `last_updated` advances
+   * across every one of them, and each carries a different `return_start`.
+   *
+   * Three rollups, all over 30 days, all grouped in the park's local timezone:
+   *  - `byHour`   — when drops land (hour-of-day rhythm).
+   *  - `openLen`  — how many minutes the line stayed bookable afterwards, which
+   *                 is the closest proxy we have for *how much* was released.
+   *                 Disney publishes no slot counts, so depth is not directly
+   *                 observable; a bigger release takes longer to sell out.
+   *  - `leadTime` — how far ahead the offered return window is at the moment the
+   *                 drop lands ("catch this at 11am and you ride at ~9pm").
+   *                 Deliberately a first-order figure: an earlier iteration
+   *                 charted the window against the previous drop's window, which
+   *                 tested as unreadable — it asked the reader to remember a drop
+   *                 they never saw. The better/worse framing is kept only in
+   *                 `research/lightning-lane-drop-alerts.md` as the rationale for
+   *                 filtering drop alerts.
+   *
+   * The `spells` CTE collapses consecutive same-state samples into one row per
+   * availability spell, so `open_mins` is a real duration rather than a sample
+   * count of a carried-forward value.
+   */
+  llDrops: publicProcedure
+    .input(
+      z.object({
+        attractionId: z.number().int().positive(),
+        queueType: z.union([
+          z.literal(QueueType.RETURN_TIME),
+          z.literal(QueueType.PAID_RETURN_TIME),
+        ]),
+      }),
+    )
+    .query(async ({ input }) => {
+      const { attractionId: id, queueType: qt } = input;
+      const meta = await db.execute<{ timezone: string }>(sql`
+        SELECT p.timezone
+        FROM attractions a JOIN parks p ON p.id = a.park_id
+        WHERE a.id = ${id}
+        LIMIT 1
+      `);
+      const tz = meta.rows[0]?.timezone ?? "UTC";
+      const empty = {
+        timezone: tz,
+        byHour: [] as Array<{ hour: number; drops: number }>,
+        openLen: [] as Array<{ mins: number; drops: number }>,
+        leadTime: [] as Array<{ hours: number; drops: number }>,
+        summary: { drops: 0, medianOpenMins: 0, medianLeadHours: 0 },
+      };
+      if (!meta.rows[0]) return empty;
+
+      // One row per drop: the local hour it landed, how long it stayed open, and
+      // how far ahead the return window it offered was.
+      const drops = await db.execute<{
+        hour: number;
+        open_mins: number;
+        lead_h: string | null;
+      }>(sql`
+        WITH obs AS (
+          SELECT observed_at, state, return_start,
+                 lag(state)        OVER w AS prev_state,
+                 lag(return_start) OVER w AS prev_ret
+          FROM queue_obs
+          WHERE attraction_id = ${id} AND queue_type = ${qt}
+            AND observed_at >= now() - INTERVAL '30 days'
+          WINDOW w AS (ORDER BY observed_at)
+        ), marked AS (
+          SELECT *, sum(CASE WHEN state IS DISTINCT FROM prev_state THEN 1 ELSE 0 END)
+                      OVER (ORDER BY observed_at) AS grp
+          FROM obs
+        ), spells AS (
+          SELECT grp,
+                 min(observed_at) AS opened_at,
+                 count(*)::int    AS open_mins,
+                 (array_agg(return_start ORDER BY observed_at))[1] AS first_window,
+                 bool_or(prev_state = ${QueueState.SOLD_OUT}) AS from_soldout
+          FROM marked
+          WHERE state IN (${QueueState.AVAILABLE}, ${QueueState.LIMITED})
+          GROUP BY grp
+        )
+        SELECT extract(hour FROM opened_at AT TIME ZONE ${tz})::int AS hour,
+               open_mins,
+               CASE WHEN first_window IS NOT NULL
+                 THEN round((extract(epoch FROM (first_window - opened_at)) / 3600.0)::numeric, 2)
+               END AS lead_h
+        FROM spells
+        WHERE from_soldout
+        ORDER BY hour
+      `);
+
+      const rows = drops.rows.map((r) => ({
+        hour: Number(r.hour),
+        openMins: Number(r.open_mins),
+        leadH: r.lead_h == null ? null : Number(r.lead_h),
+      }));
+
+      const tally = <K extends number>(keys: Array<K>) => {
+        const m = new Map<K, number>();
+        for (const k of keys) m.set(k, (m.get(k) ?? 0) + 1);
+        return m;
+      };
+
+      // Bucket the open-window histogram at 1-minute steps, pooling the long
+      // tail at 45+ so an all-day availability spell doesn't flatten the mode.
+      const OPEN_CAP = 45;
+      const openM = tally(rows.map((r) => Math.min(r.openMins, OPEN_CAP)));
+      // Lead time in half-hour steps, pooled at 12h+. A handful of drops post a
+      // window a minute or two in the past ("return now"), so clamp at 0 rather
+      // than carrying a negative bucket nobody can act on.
+      const LEAD_CAP = 12;
+      const leads = rows.filter((r) => r.leadH != null).map((r) => r.leadH!);
+      const leadM = tally(leads.map((h) => Math.min(LEAD_CAP, Math.max(0, Math.round(h * 2) / 2))));
+
+      const median = (xs: Array<number>) =>
+        xs.length ? (xs.slice().sort((a, b) => a - b)[Math.floor(xs.length / 2)] ?? 0) : 0;
+
+      return {
+        timezone: tz,
+        byHour: Array.from(tally(rows.map((r) => r.hour)), ([hour, drops]) => ({
+          hour,
+          drops,
+        })).sort((a, b) => a.hour - b.hour),
+        openLen: Array.from(openM, ([mins, drops]) => ({ mins, drops })).sort(
+          (a, b) => a.mins - b.mins,
+        ),
+        leadTime: Array.from(leadM, ([hours, drops]) => ({ hours, drops })).sort(
+          (a, b) => a.hours - b.hours,
+        ),
+        summary: {
+          drops: rows.length,
+          medianOpenMins: median(rows.map((r) => r.openMins)),
+          medianLeadHours: median(leads),
+        },
+      };
+    }),
+
+  /**
+   * Park-wide Lightning Lane / Virtual Line drop rollup: a ride x hour-of-day
+   * grid over 30 days, plus each ride's total. Same SOLD_OUT -> AVAILABLE edge
+   * as `llDrops`, but it only needs the transition count, so it skips the spell
+   * collapse and stays a single pass over the park's paid-queue observations.
+   *
+   * Rides with no paid line simply produce no rows — the caller renders an empty
+   * state rather than a grid of zeros.
+   */
+  parkLlDrops: publicProcedure
+    .input(z.object({ parkSlug: z.string().min(1) }))
+    .query(async ({ input }) => {
+      const meta = await db.execute<{ id: string; timezone: string }>(sql`
+        SELECT id::text, timezone FROM parks WHERE slug = ${input.parkSlug} LIMIT 1
+      `);
+      const park = meta.rows[0];
+      const tz = park?.timezone ?? "UTC";
+      if (!park) {
+        return {
+          timezone: tz,
+          cells: [] as Array<{ name: string; hour: number; drops: number }>,
+          rides: [] as Array<{ name: string; queueType: number; drops: number }>,
+        };
+      }
+
+      const res = await db.execute<{
+        name: string;
+        queue_type: number;
+        hour: number;
+        drops: number;
+      }>(sql`
+        WITH obs AS (
+          SELECT q.attraction_id, q.queue_type, q.observed_at, q.state, a.name,
+                 lag(q.state) OVER w AS prev_state
+          FROM queue_obs q
+          JOIN attractions a ON a.id = q.attraction_id
+          WHERE a.park_id = ${Number(park.id)}
+            AND q.queue_type IN (${QueueType.RETURN_TIME}, ${QueueType.PAID_RETURN_TIME})
+            AND q.observed_at >= now() - INTERVAL '30 days'
+          WINDOW w AS (PARTITION BY q.attraction_id, q.queue_type ORDER BY q.observed_at)
+        )
+        SELECT name, queue_type,
+               extract(hour FROM observed_at AT TIME ZONE ${tz})::int AS hour,
+               count(*)::int AS drops
+        FROM obs
+        WHERE prev_state = ${QueueState.SOLD_OUT}
+          AND state IN (${QueueState.AVAILABLE}, ${QueueState.LIMITED})
+        GROUP BY 1, 2, 3
+        ORDER BY 1, 3
+      `);
+
+      const cells = res.rows.map((r) => ({
+        name: r.name,
+        hour: Number(r.hour),
+        drops: Number(r.drops),
+      }));
+      const totals = new Map<string, { name: string; queueType: number; drops: number }>();
+      for (const r of res.rows) {
+        const prev = totals.get(r.name);
+        const drops = Number(r.drops) + (prev?.drops ?? 0);
+        totals.set(r.name, { name: r.name, queueType: Number(r.queue_type), drops });
+      }
+      return {
+        timezone: tz,
+        cells,
+        rides: [...totals.values()].sort((a, b) => b.drops - a.drops),
+      };
+    }),
+
+  /**
    * Whole-park bucketed history for one queue type, pivoted per attraction.
    *
    * Powers the multi-series park chart (one togglable line per ride) and the

@@ -20,6 +20,7 @@ import { ToggleGroup, ToggleGroupItem } from "#/components/ui/toggle-group.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
 import { isSingleRiderName } from "./lightning-lane.ts";
+import { ParkLlDropsHeatmap } from "./ll-drops.tsx";
 import { rideColor } from "./ride-colors.ts";
 import {
   AnalyticsCard,
@@ -1117,6 +1118,7 @@ export function ParkAnalytics({ parkSlug }: { parkSlug: string | null }) {
         </p>
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
+        <LlDropsCard parkSlug={parkSlug} />
         <AnalyticsCard
           title="Average wait trend"
           description="Whole-park hourly average standby · 7 days"
@@ -1141,5 +1143,40 @@ export function ParkAnalytics({ parkSlug }: { parkSlug: string | null }) {
         <PlaceholderCell />
       </div>
     </section>
+  );
+}
+
+/**
+ * Park-wide Lightning Lane drop grid. Its own query (not part of `analytics`)
+ * because the SOLD_OUT -> AVAILABLE scan is a different shape and cost from the
+ * standby rollups, and a park with no paid line shouldn't pay for it.
+ *
+ * Leads the analytics grid as a full-width row: it's the most actionable card
+ * here (it answers "when can I get on this ride"), where everything below it is
+ * historical standby context. Renders nothing at all for parks with no paid line
+ * — an empty placeholder in the lead slot would read as a broken page.
+ */
+function LlDropsCard({ parkSlug }: { parkSlug: string }) {
+  const trpc = useTRPC();
+  const q = useQuery({
+    ...trpc.parks.parkLlDrops.queryOptions({ parkSlug }),
+    enabled: !!parkSlug,
+  });
+
+  if (q.isLoading) {
+    return <Skeleton className="h-[296px] w-full rounded-2xl lg:col-span-2" />;
+  }
+  if ((q.data?.cells ?? []).length === 0) return null;
+
+  const total = (q.data?.rides ?? []).reduce((s, r) => s + r.drops, 0);
+  return (
+    <div className="lg:col-span-2">
+      <AnalyticsCard
+        title="Lightning Lane drops"
+        description={`When each ride's line comes back after selling out · ${total.toLocaleString()} drops · 30 days`}
+      >
+        <ParkLlDropsHeatmap data={q.data?.cells ?? []} />
+      </AnalyticsCard>
+    </div>
   );
 }

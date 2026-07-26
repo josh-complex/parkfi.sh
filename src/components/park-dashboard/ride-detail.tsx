@@ -1,6 +1,5 @@
 "use client";
 
-import * as React from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeftIcon, ExternalLinkIcon } from "lucide-react";
@@ -25,29 +24,27 @@ import { showClock } from "#/lib/showtimes.ts";
 
 import { formatPriceCents, isUniversal, paidLineInfo, paidLineProduct } from "./lightning-lane.ts";
 import { LightningLaneAvailability } from "./ll-availability.tsx";
+import { LightningLaneDrops } from "./ll-drops.tsx";
 import { RideAnalytics } from "./ride-analytics.tsx";
+import { rideTagGroups } from "./ride-tags.ts";
 import { ShowtimesCard } from "./showtimes-card.tsx";
 
-const STATUS_BADGE: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-  OPERATING: "secondary",
-  DOWN: "destructive",
-  REFURBISHMENT: "destructive",
-  CLOSED: "outline",
-  UNKNOWN: "outline",
+/** Hero status pill: plain words + a colour dot, legible over any photo. */
+const STATUS_LABEL: Record<string, string> = {
+  OPERATING: "Open",
+  DOWN: "Temporarily down",
+  REFURBISHMENT: "Refurbishment",
+  CLOSED: "Closed",
+  UNKNOWN: "Status unknown",
 };
 
-function StatCard({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <Card size="sm">
-      <CardContent className="flex flex-col gap-1">
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          {label}
-        </span>
-        <span className="text-2xl font-bold tabular-nums">{children}</span>
-      </CardContent>
-    </Card>
-  );
-}
+const STATUS_DOT: Record<string, string> = {
+  OPERATING: "bg-emerald-400",
+  DOWN: "bg-red-400",
+  REFURBISHMENT: "bg-amber-400",
+  CLOSED: "bg-white/60",
+  UNKNOWN: "bg-white/40",
+};
 
 type CoasterStats = {
   trackLengthM: number | null;
@@ -166,8 +163,8 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
   if (rideQ.isLoading) {
     return (
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 py-6 lg:px-6">
-        <Skeleton className="h-56 w-full rounded-2xl" />
-        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-64 w-full rounded-2xl sm:h-80" />
+        <Skeleton className="h-6 w-72" />
         <Skeleton className="h-32 w-full rounded-2xl" />
       </div>
     );
@@ -216,6 +213,46 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
   const subtitleParts = [ride.park.name, ride.meta?.land].filter(Boolean);
   const status = ride.status ?? "UNKNOWN";
 
+  // One wait number, not two: an operating ride shows what the line is RIGHT
+  // NOW, and everything else falls back to the 24–48h typical. Rides that
+  // report neither (shows, parades) get no chip at all.
+  const isOpen = status === "OPERATING";
+  const liveWait = isOpen ? ride.standbyWait : null;
+  const waitValue = liveWait ?? ride.histStandbyWait;
+  const waitIsLive = liveWait != null;
+
+  // Today's windows, split: the Early Entry flag is a badge of its own
+  // (rope-drop gold), the rest read as plain clock ranges.
+  const earlyEntry = ride.hoursToday.some((h) => h.type === "Early Entry");
+  const hourLines = ride.hoursToday
+    .filter((h) => h.type !== "Early Entry")
+    .map(
+      (h) =>
+        `${h.type && h.type !== "Operating" ? `${h.type}: ` : ""}${showClock(h.start!, ride.park.timezone)}${
+          h.end ? ` – ${showClock(h.end, ride.park.timezone)}` : ""
+        }`,
+    );
+
+  // Operator descriptors, regrouped: one age chip instead of four age labels,
+  // alias forms folded together, perks split from plain descriptors.
+  const { ageLabel, perks, descriptors } = rideTagGroups(ride.meta?.tags ?? []);
+  // Booleans we store as columns are the same kind of fact as the perk tags, so
+  // they share the row — de-duped, since Disney publishes "Single Rider Offered"
+  // as a tag while Universal publishes it as a flag.
+  const essentials = [
+    ride.meta?.heightRequirement,
+    ageLabel,
+    ride.meta?.expressPass === true ? "Express Pass" : null,
+    ride.meta?.singleRider === true ? "Single rider" : null,
+    ride.meta?.childSwap === true ? "Child swap" : null,
+    ride.meta?.virtualLine === true ? "Virtual line" : null,
+    ...perks,
+  ].filter((v): v is string => !!v);
+  const essentialChips = [...new Set(essentials)];
+
+  const hasAbout = !!ride.meta?.description || !!ride.meta?.funFact;
+  const hasAccessibility = (ride.meta?.accessibility?.length ?? 0) > 0;
+
   // Return to wherever the user last was on the map (the free-roam map at its
   // remembered camera, or a park dashboard) rather than always the park page.
   const back = getLastMapView();
@@ -245,140 +282,139 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
       </div>
 
       <header className="flex flex-col gap-4">
-        {(heroImage || heroVideo) && (
-          <div className="relative h-56 w-full overflow-hidden rounded-2xl bg-muted sm:h-72">
-            {heroImage && (
-              <Image
-                src={disneyResizeUrl(heroImage, HERO_IMAGE.resizeWidth)}
-                alt={ride.meta?.imageAlt ?? ride.name}
-                className="size-full object-cover"
-                loading="eager"
-                fetchPriority="high"
-                sizes={HERO_IMAGE.sizes}
-                quality={HERO_IMAGE.quality}
-                placeholder={ride.meta?.imageThumbhash}
-              />
-            )}
-            {/* Ambient hero loop (plan item 1.9, ride-level): fades in over
-                the still once it can play; never mounts under
-                prefers-reduced-motion. Video-less rides crossfade their
-                gallery stills instead. */}
-            {heroVideo ? (
-              <AmbientHeroVideo src={heroVideo.url} poster={heroVideo.poster ?? null} />
-            ) : (
-              <HeroCrossfade slides={heroSlides} />
-            )}
-          </div>
-        )}
-        <div className="flex flex-col gap-2">
-          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{ride.name}</h1>
-          {subtitleParts.length > 0 && (
-            <p className="text-muted-foreground">{subtitleParts.join(" · ")}</p>
+        {/* Identity hero, matching the park pages: name + location overlaid at
+            the bottom, live state at the top. Rides with no published photo get
+            the same layout over a neutral gradient rather than a second,
+            differently-shaped header. */}
+        <div
+          className={cn(
+            "relative isolate h-64 w-full overflow-hidden rounded-2xl shadow-sm sm:h-80",
+            heroImage || heroVideo
+              ? "bg-muted"
+              : "bg-gradient-to-br from-slate-600 via-slate-800 to-slate-900",
           )}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Badge variant={STATUS_BADGE[status] ?? "outline"}>{status.toLowerCase()}</Badge>
-            {ride.meta?.heightRequirement && (
-              <Badge variant="outline" className="font-normal">
-                {ride.meta.heightRequirement}
-              </Badge>
-            )}
-            {/* Operator-published ride attributes (Universal only today — the
-                Disney finder publishes none of them, so these stay null and
-                nothing renders). A `false` is a published "no", which is not
-                worth a badge; only the affirmatives get one. */}
-            {ride.meta?.expressPass === true && (
-              <Badge variant="outline" className="font-normal">
-                Express Pass
-              </Badge>
-            )}
-            {ride.meta?.singleRider === true && (
-              <Badge variant="outline" className="font-normal">
-                Single rider
-              </Badge>
-            )}
-            {ride.meta?.childSwap === true && (
-              <Badge variant="outline" className="font-normal">
-                Child swap
-              </Badge>
-            )}
-            {ride.meta?.virtualLine === true && (
-              <Badge variant="outline" className="font-normal">
-                Virtual line
-              </Badge>
-            )}
-            {ride.meta?.tags?.map((t) => (
-              <Badge key={t} variant="outline" className="font-normal">
-                {t}
-              </Badge>
+        >
+          {heroImage && (
+            <Image
+              src={disneyResizeUrl(heroImage, HERO_IMAGE.resizeWidth)}
+              alt={ride.meta?.imageAlt ?? ride.name}
+              className="size-full object-cover"
+              loading="eager"
+              fetchPriority="high"
+              sizes={HERO_IMAGE.sizes}
+              quality={HERO_IMAGE.quality}
+              placeholder={ride.meta?.imageThumbhash}
+            />
+          )}
+          {/* Ambient hero loop (plan item 1.9, ride-level): fades in over
+              the still once it can play; never mounts under
+              prefers-reduced-motion. Video-less rides crossfade their
+              gallery stills instead. */}
+          {heroVideo ? (
+            <AmbientHeroVideo src={heroVideo.url} poster={heroVideo.poster ?? null} />
+          ) : (
+            <HeroCrossfade slides={heroSlides} />
+          )}
+          {/* Scrim: heavy at the bottom for the title, light at the top so the
+              overlay chips keep their contrast without flattening the photo. */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/40" />
+
+          {/* The headline number. Live standby when the ride is running,
+              otherwise the 24–48h typical — never both. */}
+          {waitValue != null && (
+            <div className="absolute left-4 top-4 flex items-center gap-2 rounded-2xl bg-black/75 px-3.5 py-2 text-white shadow-lg backdrop-blur-sm">
+              <span className="text-3xl font-bold leading-none tabular-nums sm:text-4xl">
+                {waitValue}
+              </span>
+              <span className="flex flex-col text-[10px] font-semibold uppercase leading-tight tracking-wide">
+                <span>min</span>
+                <span className="text-white/70">{waitIsLive ? "wait now" : "typical"}</span>
+              </span>
+            </div>
+          )}
+
+          {/* Live state + today's windows, opposite the wait so neither crowds
+              the title underneath. */}
+          <div className="absolute right-4 top-4 flex max-w-[60%] flex-col items-end gap-1.5 text-right">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm">
+              <span className={cn("size-1.5 rounded-full", STATUS_DOT[status] ?? "bg-white/40")} />
+              {STATUS_LABEL[status] ?? "Status unknown"}
+            </span>
+            {/* Per-entity hours today (plan item 1.4) — only published when the
+                ride's windows differ from park hours. */}
+            {hourLines.map((line) => (
+              <span
+                key={line}
+                className="rounded-full bg-black/60 px-2.5 py-1 text-[11px] text-white/90 backdrop-blur-sm"
+              >
+                {line}
+              </span>
             ))}
+            {earlyEntry && (
+              <span className="rounded-full bg-amber-400/90 px-2.5 py-1 text-[11px] font-semibold text-amber-950 backdrop-blur-sm">
+                Open during Early Entry
+              </span>
+            )}
           </div>
-          {/* Walking-nav entry point (§4.2) — routes to this ride on the map. */}
-          <WalkThereButton
-            id={ride.id}
-            name={ride.name}
-            latitude={ride.latitude}
-            longitude={ride.longitude}
-            className="mt-1 w-fit"
-          />
-          {ride.meta?.detailUrl && (
-            <a
-              href={ride.meta.detailUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex w-fit items-center gap-1.5 text-sm text-primary hover:underline"
-            >
-              View on the official site
-              <ExternalLinkIcon className="size-3.5" />
-            </a>
+
+          <div className="absolute inset-x-0 bottom-0 flex flex-col gap-1 p-4 sm:p-6">
+            <h1 className="truncate text-2xl font-bold tracking-tight text-white drop-shadow-md sm:whitespace-normal sm:text-3xl">
+              {ride.name}
+            </h1>
+            {subtitleParts.length > 0 && (
+              <p className="truncate text-sm text-white/85 sm:whitespace-normal">
+                {subtitleParts.join(" · ")}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          {/* Row 1 — the facts that decide whether you can and should ride:
+              height, the collapsed age range, and the perks (Express, single
+              rider, PhotoPass…). Filled chips, so they read ahead of row 2. */}
+          {essentialChips.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {essentialChips.map((t) => (
+                <Badge key={t} variant="secondary">
+                  {t}
+                </Badge>
+              ))}
+            </div>
           )}
+          {/* Row 2 — what the ride is like: format first, then themes, then any
+              operator label we don't have a category for. */}
+          {descriptors.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {descriptors.map((t) => (
+                <Badge key={t} variant="outline" className="font-normal">
+                  {t}
+                </Badge>
+              ))}
+            </div>
+          )}
+          <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-2">
+            {/* Walking-nav entry point (§4.2) — routes to this ride on the map. */}
+            <WalkThereButton
+              id={ride.id}
+              name={ride.name}
+              latitude={ride.latitude}
+              longitude={ride.longitude}
+            />
+            {ride.meta?.detailUrl && (
+              <a
+                href={ride.meta.detailUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+              >
+                View on the official site
+                <ExternalLinkIcon className="size-3.5" />
+              </a>
+            )}
+          </div>
         </div>
       </header>
-
-      <div className="grid grid-cols-2 gap-3 sm:gap-4">
-        <StatCard label="Standby">
-          {ride.standbyWait == null ? (
-            <span className="text-muted-foreground">—</span>
-          ) : (
-            <>
-              {ride.standbyWait}
-              <span className="text-sm font-normal text-muted-foreground"> min</span>
-            </>
-          )}
-        </StatCard>
-        <StatCard label="Typical (24–48h)">
-          {ride.histStandbyWait == null ? (
-            <span className="text-muted-foreground">—</span>
-          ) : (
-            <>
-              {ride.histStandbyWait}
-              <span className="text-sm font-normal text-muted-foreground"> min</span>
-            </>
-          )}
-        </StatCard>
-      </div>
-
-      {/* Per-entity hours today (plan item 1.4) — only interesting when the
-          ride's windows differ from park hours, which is exactly when Disney
-          posts them. Early Entry windows get their own badge (rope-drop gold). */}
-      {ride.hoursToday.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
-          {ride.hoursToday.map((h) => (
-            <span key={`${h.type}-${h.start}`} className="inline-flex items-center gap-1.5">
-              {h.type === "Early Entry" ? (
-                <Badge className="bg-amber-400/20 text-amber-700 hover:bg-amber-400/20 dark:text-amber-400">
-                  Open during Early Entry
-                </Badge>
-              ) : (
-                <span>
-                  {h.type && h.type !== "Operating" ? `${h.type}: ` : "Hours today: "}
-                  {showClock(h.start!, ride.park.timezone)}
-                  {h.end ? ` – ${showClock(h.end, ride.park.timezone)}` : ""}
-                </span>
-              )}
-            </span>
-          ))}
-        </div>
-      )}
 
       {/* Boarding-group range + allocation state (plan item 1.5). */}
       {(ride.boardingGroup != null || ride.boardingAllocation != null) && (
@@ -410,32 +446,50 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
         </Card>
       )}
 
-      {/* Official marketing copy (plan item 2.3). */}
-      {ride.meta?.description && (
-        <section className="flex flex-col gap-1.5">
-          <h2 className="text-lg font-semibold tracking-tight">About</h2>
-          <p className="max-w-prose text-sm text-muted-foreground">{ride.meta.description}</p>
-        </section>
+      {/* Prose and accessibility share a row — both are short, read-once
+          reference text, and stacking them pushed everything below the fold.
+          Falls back to a single full-width column when only one is published. */}
+      {(hasAbout || hasAccessibility) && (
+        <div
+          className={cn("grid gap-6", hasAbout && hasAccessibility && "md:grid-cols-2 md:gap-8")}
+        >
+          {hasAbout && (
+            <div className="flex flex-col gap-4">
+              {/* Official marketing copy (plan item 2.3). */}
+              {ride.meta?.description && (
+                <section className="flex flex-col gap-1.5">
+                  <h2 className="text-lg font-semibold tracking-tight">About</h2>
+                  <p className="max-w-prose text-sm text-muted-foreground">
+                    {ride.meta.description}
+                  </p>
+                </section>
+              )}
+              {/* Universal publishes a trivia blurb per ride; Disney publishes none. */}
+              {ride.meta?.funFact && (
+                <section className="flex flex-col gap-1.5">
+                  <h2 className="text-lg font-semibold tracking-tight">Did you know?</h2>
+                  <p className="max-w-prose text-sm text-muted-foreground">{ride.meta.funFact}</p>
+                </section>
+              )}
+            </div>
+          )}
+          {hasAccessibility && (
+            <section className="flex flex-col gap-1.5">
+              <h2 className="text-lg font-semibold tracking-tight">Accessibility</h2>
+              <ul className="max-w-prose list-inside list-disc text-sm text-muted-foreground">
+                {ride.meta?.accessibility?.map((a) => (
+                  <li key={a}>{a}</li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </div>
       )}
 
-      {/* Universal publishes a trivia blurb per ride; Disney publishes none. */}
-      {ride.meta?.funFact && (
-        <section className="flex flex-col gap-1.5">
-          <h2 className="text-lg font-semibold tracking-tight">Did you know?</h2>
-          <p className="max-w-prose text-sm text-muted-foreground">{ride.meta.funFact}</p>
-        </section>
-      )}
-
-      {(ride.meta?.accessibility?.length ?? 0) > 0 && (
-        <section className="flex flex-col gap-1.5">
-          <h2 className="text-lg font-semibold tracking-tight">Accessibility</h2>
-          <ul className="max-w-prose list-inside list-disc text-sm text-muted-foreground">
-            {ride.meta?.accessibility?.map((a) => (
-              <li key={a}>{a}</li>
-            ))}
-          </ul>
-        </section>
-      )}
+      {/* Published coaster facts sit directly under the prose — they're the
+          same kind of reference detail, and they read better beside the
+          accessibility list than buried under the Lightning Lane charts. */}
+      {ride.coasterStats && <CoasterStatsCard stats={ride.coasterStats} attractionId={ride.id} />}
 
       {ride.showtimes.length > 0 && (
         <ShowtimesCard showtimes={ride.showtimes} timeZone={ride.park.timezone} />
@@ -498,7 +552,16 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
         />
       )}
 
-      {ride.coasterStats && <CoasterStatsCard stats={ride.coasterStats} attractionId={ride.id} />}
+      {/* Drop analysis sits under the timeline: the strip shows *today*, these
+          charts show the 30-day pattern behind it. Self-hides when the ride has
+          never sold out and come back. */}
+      {ll.has && (
+        <LightningLaneDrops
+          attractionId={ride.id}
+          queueType={ll.kind === "Single" ? QueueType.PAID_RETURN_TIME : QueueType.RETURN_TIME}
+          product={paidLineProduct(operatorSlug)}
+        />
+      )}
 
       <RideAnalytics attractionId={ride.id} timezone={ride.park.timezone} />
     </div>
