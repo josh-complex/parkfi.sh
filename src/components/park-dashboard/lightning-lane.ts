@@ -9,9 +9,14 @@ import type { BoardItem } from "./types.ts";
  *  - **Disney** → Lightning Lane. Most rides are LL **Multi** (a RETURN_TIME
  *    queue, bundled price); a few premium rides are LL **Single** (a
  *    PAID_RETURN_TIME queue, à-la-carte with a price).
- *  - **Universal** → labeled "Express". The per-ride signal we get is the
- *    RETURN_TIME (Virtual Line) queue; true Universal Express is a *park-wide*
- *    paid product whose pricing lives on the tickets page.
+ *  - **Universal** → two DIFFERENT products, which this used to conflate. The
+ *    free **Virtual Line** is the per-ride RETURN_TIME/BOARDING_GROUP queue.
+ *    **Express** is a separate park-wide paid add-on whose per-ride eligibility
+ *    Universal publishes itself (`attraction_meta.express_pass`) and whose
+ *    pricing lives on the tickets page. Labelling the Virtual Line "Express"
+ *    both mislabelled the 28 rides that have a virtual queue and hid Express
+ *    from the 64 rides that accept it. `expressPass` is now read as its own
+ *    signal.
  *
  * `has` comes from authoritative capability (`supportsQueueTypes`), so it's true
  * even when no return time is posted right now. `state` is the current, fresh
@@ -26,6 +31,13 @@ export interface PaidLineInfo {
   priceCents: number | null;
   returnStart: string | null;
   returnEnd: string | null;
+  /**
+   * Universal only: the ride accepts Express Pass, per the operator's own feed.
+   * Independent of `has` — Express is a park-wide paid add-on, not this ride's
+   * queue — so a ride can accept Express with no virtual line, and vice versa.
+   * Null at Disney and wherever Universal publishes nothing (never "false").
+   */
+  expressPass: boolean | null;
 }
 
 /**
@@ -36,7 +48,7 @@ export interface PaidLineInfo {
 export type PaidLineSource = Pick<
   BoardItem,
   "supportsQueueTypes" | "returnTimeState" | "returnTimeWindow" | "lightningLane"
->;
+> & { meta?: { expressPass?: boolean | null } | null };
 
 const EMPTY: PaidLineInfo = {
   has: false,
@@ -47,6 +59,7 @@ const EMPTY: PaidLineInfo = {
   priceCents: null,
   returnStart: null,
   returnEnd: null,
+  expressPass: null,
 };
 
 export function isUniversal(operatorSlug: string | null | undefined): boolean {
@@ -81,7 +94,7 @@ export function normalizeRideName(name: string): string {
 
 /** Human label for an operator's per-ride line product. */
 export function paidLineProduct(operatorSlug: string | null | undefined): string {
-  return isUniversal(operatorSlug) ? "Express" : "Lightning Lane";
+  return isUniversal(operatorSlug) ? "Virtual Line" : "Lightning Lane";
 }
 
 export function paidLineInfo(
@@ -92,19 +105,23 @@ export function paidLineInfo(
   const sold = (s: string | null) => s === "SOLD_OUT";
 
   if (isUniversal(operatorSlug)) {
-    // Universal: free Virtual Line (RETURN_TIME / BOARDING_GROUP capability).
+    // Universal: the free Virtual Line (RETURN_TIME / BOARDING_GROUP capability)
+    // and Express Pass eligibility are separate facts — carry both, and don't
+    // call one by the other's name.
+    const expressPass = item.meta?.expressPass ?? null;
     const has =
       supports.includes(QueueType.RETURN_TIME) || supports.includes(QueueType.BOARDING_GROUP);
-    if (!has) return EMPTY;
+    if (!has) return { ...EMPTY, expressPass };
     return {
       has: true,
-      product: "Express",
+      product: "Virtual Line",
       kind: null,
       state: item.returnTimeState,
       soldOut: sold(item.returnTimeState),
       priceCents: null,
       returnStart: item.returnTimeWindow.start,
       returnEnd: item.returnTimeWindow.end,
+      expressPass,
     };
   }
 
@@ -122,6 +139,7 @@ export function paidLineInfo(
       priceCents: item.lightningLane.priceCents,
       returnStart: item.lightningLane.returnStart,
       returnEnd: item.lightningLane.returnEnd,
+      expressPass: null,
     };
   }
   return {
@@ -133,6 +151,7 @@ export function paidLineInfo(
     priceCents: null,
     returnStart: item.returnTimeWindow.start,
     returnEnd: item.returnTimeWindow.end,
+    expressPass: null,
   };
 }
 

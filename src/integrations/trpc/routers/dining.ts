@@ -264,10 +264,11 @@ export const diningRouter = {
       disney_favorites: string[] | null;
       source: number;
       experience_type: string | null;
+      entity_type: string;
     }>(sql`
       SELECT facility_id, name, cuisine, park_resort, park_resort_id, price_range, image_url, image_thumbhash, detail_url,
              character_dining, fine_dining, bookable, mobile_order,
-             dining_interests, disney_favorites, source, experience_type
+             dining_interests, disney_favorites, source, experience_type, entity_type
       FROM restaurant_dim
       WHERE source IN (3, 4) AND active = true
       ORDER BY name
@@ -293,6 +294,7 @@ export const diningRouter = {
       disneyFavorites: r.disney_favorites ?? [],
       universal: r.source === 4,
       experienceType: r.experience_type,
+      diningEvent: r.entity_type === "dining-event",
     }));
     type Venue = (typeof venues)[number];
 
@@ -334,7 +336,10 @@ export const diningRouter = {
         key: "events",
         title: "Dining Events",
         subtitle: "Dessert parties, brunches & more",
-        match: (v) => v.diningInterests.includes("dining-events-rec"),
+        // The finder's own entity type is the authoritative signal — the
+        // `dining-events-rec` taxonomy tag is only set on a handful of rows
+        // (4 of 27), so keying on it alone missed every fireworks dessert party.
+        match: (v) => v.diningEvent || v.diningInterests.includes("dining-events-rec"),
       },
       // Universal shelves (source UNIVERSAL_DIRECT) — keyed on location +
       // verified bookability since UOR has no finder-style taxonomy arrays.

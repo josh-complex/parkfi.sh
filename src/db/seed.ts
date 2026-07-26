@@ -89,6 +89,7 @@ async function seedReference() {
       { id: Source.UNIVERSAL_DIRECT, code: "universal_direct" },
       { id: Source.OPENWEATHER, code: "openweather" },
       { id: Source.MANUAL_SEED, code: "manual_seed" },
+      { id: Source.OSM, code: "osm" },
     ])
     .onConflictDoNothing();
 }

@@ -13,7 +13,7 @@ import type {
   UniversalPoiRide,
   UniversalVenue,
 } from "./schemas.ts";
-import type { GeoPolygon } from "#/db/schema.ts";
+import type { GeoPolygon, ParkPoiShowtime } from "#/db/schema.ts";
 
 /**
  * Merge layer for the three Universal content feeds
@@ -289,6 +289,36 @@ export function resolveUniversalRideAttrs(
     land: tile?.land ?? (poi?.LandId != null ? (index.landById.get(poi.LandId) ?? null) : null),
     matched: true,
   };
+}
+
+// --- showtimes ------------------------------------------------------------
+
+/**
+ * Today's performances for a Universal show/parade POI, in the shared
+ * `park_poi.schedule` shape. The feed publishes the same list twice —
+ * `StartDateTimes` as dated ISO strings and `StartTimes` as bare wall clocks —
+ * so we prefer the dated form and fall back to the other. No end times: the
+ * mobile feed's `EndDateTimes` is empty in practice for the show buckets, and a
+ * continuous act ("until park close") has no meaningful one.
+ *
+ * Null when nothing is published, so the POI upsert's coalesce keeps the last
+ * good list rather than blanking a parade's times out.
+ */
+export function universalShowtimes(poi: UniversalPoi): Array<ParkPoiShowtime> | null {
+  const record = poi as { StartDateTimes?: Array<string>; StartTimes?: Array<string> };
+  const out: Array<ParkPoiShowtime> = [];
+  for (const raw of record.StartDateTimes ?? []) {
+    const [date, time] = raw.split("T");
+    if (!time) continue;
+    out.push({ type: "Performance Time", date: date || null, start: time.slice(0, 8), end: null });
+  }
+  if (out.length === 0) {
+    for (const time of record.StartTimes ?? []) {
+      if (!time.trim()) continue;
+      out.push({ type: "Performance Time", date: null, start: time.trim(), end: null });
+    }
+  }
+  return out.length > 0 ? out : null;
 }
 
 // --- venue geometry -------------------------------------------------------

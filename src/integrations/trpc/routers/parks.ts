@@ -394,6 +394,13 @@ export const parksRouter = {
    * 'characters'), downgraded to 'quick-service' for non-bookable venues
    * (counter-service restaurants and snack carts/kiosks) so the map can offer
    * them as a separate layer from reservable table-service dining.
+   *
+   * `dining-event` rows (dessert parties, festival concert/fireworks dining
+   * packages) are excluded: Disney gives every event the HOST VENUE's marker,
+   * so they stack a half-dozen pins on one point — and some aren't even there
+   * ("…with Plaza Garden Viewing" sits on Tomorrowland Terrace's coordinate).
+   * They're products, not places; the dining list/detail/search surfaces carry
+   * them, the map doesn't.
    */
   dining: publicProcedure.query(async () => {
     const result = await db.execute<{
@@ -411,7 +418,8 @@ export const parksRouter = {
       SELECT facility_id, name, url_friendly_id, latitude, longitude, land, map_pin, bookable,
              image_url, detail_url
       FROM restaurant_dim
-      WHERE active = true AND latitude IS NOT NULL AND longitude IS NOT NULL
+      WHERE active = true AND entity_type <> 'dining-event'
+        AND latitude IS NOT NULL AND longitude IS NOT NULL
       ORDER BY name
     `);
     return result.rows.map((r) => ({

@@ -650,7 +650,18 @@ export function wireCardWalkTime(
  */
 function paidLineCardHtml(a: BoardItem, operatorSlug: string | null): string {
   const ll = paidLineInfo(a, operatorSlug);
-  if (!ll.has) return "";
+  // Universal publishes Express eligibility per ride, independently of whether
+  // the ride has a Virtual Line — so an Express ride with no virtual queue
+  // (36 of them) still earns this row.
+  const expressHtml =
+    ll.expressPass === true
+      ? `<span class="rounded-md border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">Express</span>`
+      : "";
+  if (!ll.has) {
+    return expressHtml
+      ? `<div class="mt-2 flex flex-wrap items-center gap-1.5 text-[12px]">${expressHtml}</div>`
+      : "";
+  }
   const price = formatPriceCents(ll.priceCents, a.lightningLane.currency);
   // Sold out reads destructive; any other live state reads as the secondary
   // chip; a capability-only line with no posted state reads as a plain "offered".
@@ -667,7 +678,7 @@ function paidLineCardHtml(a: BoardItem, operatorSlug: string | null): string {
     : "";
   return `<div class="mt-2 flex flex-wrap items-center gap-1.5 text-[12px]"><span class="font-medium text-muted-foreground">${escapeHtml(
     paidLineProduct(operatorSlug),
-  )}</span>${pill}${priceHtml}${kindHtml}</div>`;
+  )}</span>${pill}${priceHtml}${kindHtml}${expressHtml}</div>`;
 }
 
 // Most tag chips a card shows inline before the rest collapse into a "+N"

@@ -42,6 +42,14 @@ export const Source = {
   OPENWEATHER: 5,
   // Hand-curated figures with no upstream feed (services/coaster-stats seed.csv).
   MANUAL_SEED: 6,
+  /**
+   * OpenStreetMap (Overpass). Park outlines have always come from here; it is
+   * also the only source that maps in-park amenities individually — both
+   * operators publish one representative location per service per park (Epic
+   * Universe publishes none at all). Community-maintained and ODbL-licensed, so
+   * these rows carry their own source and NEVER overwrite an operator's.
+   */
+  OSM: 7,
 } as const;
 export type SourceCode = (typeof Source)[keyof typeof Source];
 
@@ -404,6 +412,148 @@ export function disneyEntityHeroSlides(
     });
   }
   return out.length > 0 ? out : null;
+}
+
+// ---------------------------------------------------------------------------
+// Disney typed facet slugs (`list-ancestor-entities/.../attractions`) — the
+// data version of the prose labels `parseDisneyFacets` reads off a map marker.
+// See research/disney-content-parity.md §2. Pure mappers over one result's
+// `facets` record plus the feed's own `flatFacets` label dictionary.
+// ---------------------------------------------------------------------------
+
+/** Facet groups that describe *what a ride is*, in the order we want them read. */
+const DISNEY_TAG_GROUPS = ["thrillFactor", "interests", "entertainmentType", "age"] as const;
+
+/** Facet groups that describe *who can ride and how* — the accessibility strip. */
+const DISNEY_ACCESSIBILITY_GROUPS = [
+  "mobilityDisabilities",
+  "hearingandVisualDisability",
+  "serviceAnimals",
+  "physicalConsiderations",
+] as const;
+
+/**
+ * Slug -> label dictionary built from the feed's own `filters.flatFacets`
+ * (60 entries across the 9 groups we read). Disney publishes far more slug
+ * values than it defines here — `interests` alone carries values the dictionary
+ * never lists — so callers fall back to `humanizeDisneyFacetSlug`.
+ */
+export function disneyFacetLabels(
+  defs?: Array<{ urlFriendlyId: string; value?: string | null }> | null,
+): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const d of defs ?? []) {
+    const label = d.value?.trim();
+    if (d.urlFriendlyId && label) out.set(d.urlFriendlyId, label);
+  }
+  return out;
+}
+
+/**
+ * Last-resort humanization for a slug the dictionary doesn't define:
+ * `animal-encounters-attractions` -> "Animal Encounters". The trailing
+ * `-attractions` / `-entertainments` / `-events` qualifier is Disney's way of
+ * scoping the same interest to an entity type, and `-rec` marks a
+ * recommendation bucket — neither belongs in a guest-facing chip.
+ */
+const FACET_ACRONYMS = new Set(["atm", "aed", "ecv", "vip", "dvc", "vq", "3d", "4d"]);
+const FACET_STOPWORDS = new Set(["a", "an", "and", "at", "for", "in", "of", "or", "the", "to"]);
+
+export function humanizeDisneyFacetSlug(slug: string): string {
+  const trimmed = slug
+    .trim()
+    .replace(/-(attractions|entertainments|events|dining|wdw)$/i, "")
+    .replace(/-rec$/i, "");
+  if (!trimmed) return "";
+  return trimmed
+    .split("-")
+    .filter(Boolean)
+    .map((word, i) => {
+      const w = word.toLowerCase();
+      if (FACET_ACRONYMS.has(w)) return w.toUpperCase();
+      if (i > 0 && FACET_STOPWORDS.has(w)) return w;
+      return w[0].toUpperCase() + w.slice(1);
+    })
+    .join(" ");
+}
+
+function facetLabelList(
+  facets: Record<string, Array<string>> | null | undefined,
+  groups: ReadonlyArray<string>,
+  labels: Map<string, string>,
+): Array<string> {
+  const out: Array<string> = [];
+  for (const group of groups) {
+    for (const slug of facets?.[group] ?? []) {
+      const label = labels.get(slug) ?? humanizeDisneyFacetSlug(slug);
+      if (label && !out.includes(label)) out.push(label);
+    }
+  }
+  return out;
+}
+
+/**
+ * Ride/show descriptors for `attraction_meta.tags` — the typed replacement for
+ * the prose labels the map marker carries. PhotoPass is folded in as a tag
+ * rather than a column: it's a single boolean-ish fact with no filter of its own
+ * yet, and `tags` is already the chip source both operators share.
+ */
+export function disneyFacetTags(
+  facets?: Record<string, Array<string>> | null,
+  labels: Map<string, string> = new Map(),
+): Array<string> {
+  const out = facetLabelList(facets, DISNEY_TAG_GROUPS, labels);
+  const photoPass = (facets?.photoPassAvailable ?? []).length > 0;
+  if (photoPass && !out.includes("PhotoPass")) out.push("PhotoPass");
+  return out;
+}
+
+/**
+ * Accessibility strip for `attraction_meta.accessibility` — the WDW counterpart
+ * to `universalAccessibilityLabels`. Disney splits the same information across
+ * four facet groups (mobility, hearing/visual, service animals, physical
+ * considerations); we flatten them in that order, which is how the operator's
+ * own detail modal groups them.
+ */
+export function disneyAccessibilityLabels(
+  facets?: Record<string, Array<string>> | null,
+  labels: Map<string, string> = new Map(),
+): Array<string> {
+  return facetLabelList(facets, DISNEY_ACCESSIBILITY_GROUPS, labels);
+}
+
+/**
+ * Numeric height bounds from the typed `height` facet. Slugs are
+ * `any-height` | `NN-inches-MMM-cm-or-taller` | `NN-inches-MMM-cm-or-shorter`,
+ * so this needs no prose parsing and — unlike Universal's cumulative buckets —
+ * a ride carries exactly its own rule. `any-height` yields `{ min: 0 }`, the
+ * value the no-height-requirement filter tests.
+ *
+ * A ride can carry both directions (a kiddie ride with a floor and a ceiling);
+ * when several "or taller" slugs appear we keep the LOWEST, since that is the
+ * one that admits the most guests and matches the operator's own slider.
+ */
+export function disneyHeightsFromFacets(heightSlugs?: Array<string> | null): {
+  min: number | null;
+  max: number | null;
+} {
+  let min: number | null = null;
+  let max: number | null = null;
+  for (const raw of heightSlugs ?? []) {
+    const slug = raw.trim().toLowerCase();
+    if (!slug) continue;
+    if (slug === "any-height") {
+      min = min == null ? 0 : Math.min(min, 0);
+      continue;
+    }
+    const m = /^(\d+)-inches\b/.exec(slug);
+    if (!m) continue;
+    const inches = Number(m[1]);
+    if (!Number.isFinite(inches)) continue;
+    if (slug.endsWith("-or-shorter")) max = max == null ? inches : Math.max(max, inches);
+    else if (slug.endsWith("-or-taller")) min = min == null ? inches : Math.min(min, inches);
+  }
+  return { min, max };
 }
 
 export interface DisneyFacetInfo {
@@ -809,6 +959,93 @@ export const UNIVERSAL_POI_BUCKETS: Record<string, { poiType: string; category: 
   NightlifeLocations: { poiType: "nightlife", category: "entertainment" },
   Games: { poiType: "game", category: "entertainment" },
 };
+
+/**
+ * Disney guest-service entity name -> the SAME `poi_type` vocabulary
+ * `UNIVERSAL_POI_BUCKETS` writes, so a services pin means the same thing at
+ * both resorts (the Disney finder types its guest-service markers only as
+ * `guest-services`, where Universal's feed is bucketed by kind).
+ *
+ * Matched against the marker's generic `card.name` ("Restrooms"), not the
+ * location-specific marker name ("Bayou Restrooms"), and by substring so the
+ * handful of decorated variants land too. Order matters — first hit wins, so
+ * the more specific patterns are listed first.
+ */
+const DISNEY_POI_TYPE_PATTERNS: Array<[RegExp, string]> = [
+  [/\brestroom/i, "restroom"],
+  [/\bwater bottle refill|\bdrinking (water|fountain)/i, "water-refill"],
+  [/\baed\b|defibrillator/i, "aed"],
+  [/first aid/i, "first-aid"],
+  [/\batm\b|\bbanking\b/i, "atm"],
+  [/locker/i, "locker"],
+  [/lost and found/i, "lost-and-found"],
+  [/smoking/i, "smoking-area"],
+  [/service animal/i, "service-animal-area"],
+  [/baby care|nursing|companion restroom/i, "family-services"],
+  [/charging (station|service)|phone charging/i, "charging-station"],
+  [/picture spot|photopass/i, "photo-spot"],
+  [/pressed (coin|penny)/i, "pressed-coin"],
+  [/rental|rentals/i, "rental"],
+  [
+    /parking|monorail|skyliner|bus service|water transportation|minnie van|car (care|rental)|transportation/i,
+    "transportation",
+  ],
+  [/guest relations|guest services|disability access/i, "guest-services"],
+];
+
+export function disneyPoiType(entityName?: string | null, fallbackName?: string | null): string {
+  const name = (entityName ?? fallbackName ?? "").trim();
+  if (!name) return "general";
+  for (const [re, type] of DISNEY_POI_TYPE_PATTERNS) if (re.test(name)) return type;
+  return "general";
+}
+
+/**
+ * OpenStreetMap amenity tag -> the same shared `poi_type` vocabulary.
+ *
+ * Deliberately narrow: only tags whose meaning is unambiguous in a theme park.
+ * `amenity=shelter` is excluded even though it is the densest tag in the WDW
+ * bbox (133) — most of those are bus-stop and queue shelters, which would bury
+ * the pins that matter.
+ */
+const OSM_POI_TYPES: Record<string, string> = {
+  toilets: "restroom",
+  drinking_water: "water-refill",
+  water_point: "water-refill",
+  atm: "atm",
+  bank: "atm",
+  bureau_de_change: "atm",
+  first_aid: "first-aid",
+  charging_station: "charging-station",
+  locker: "locker",
+  smoking_area: "smoking-area",
+  baby_hatch: "family-services",
+  nursery: "family-services",
+};
+
+export function osmPoiType(tags?: Record<string, string> | null): string | null {
+  const amenity = tags?.amenity ?? "";
+  if (amenity && amenity in OSM_POI_TYPES) return OSM_POI_TYPES[amenity];
+  // `healthcare=first_aid` is the newer tagging for the same thing.
+  if (tags?.healthcare === "first_aid") return "first-aid";
+  return null;
+}
+
+/** Guest-facing name for an OSM amenity pin (OSM rarely names these nodes). */
+const OSM_POI_LABELS: Record<string, string> = {
+  restroom: "Restrooms",
+  "water-refill": "Drinking Water",
+  atm: "ATM",
+  "first-aid": "First Aid",
+  "charging-station": "Charging Station",
+  locker: "Lockers",
+  "smoking-area": "Designated Smoking Area",
+  "family-services": "Baby Care",
+};
+
+export function osmPoiName(poiType: string, tags?: Record<string, string> | null): string {
+  return tags?.name?.trim() || OSM_POI_LABELS[poiType] || "Guest Service";
+}
 
 // ---------------------------------------------------------------------------
 // Universal Orlando web-store (api.universalparks.com) helpers

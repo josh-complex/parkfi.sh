@@ -2,8 +2,10 @@ import type { ParkHeroSlide } from "../../../db/schema.ts";
 import { disneyEntityHeroSlides, stripInlineHtml } from "../codes.ts";
 import { config } from "../config.ts";
 import {
+  DisneyAttractionListSchema,
   DisneyDiningDetailSchema,
   DisneyParkDetailSchema,
+  type DisneyAttractionList,
   type DisneyParkDetail,
 } from "../schemas.ts";
 import { UpstreamError } from "./themeparks.ts";
@@ -45,6 +47,34 @@ export async function fetchParkDetail(
 ): Promise<DisneyParkDetail> {
   const url = `${config.disneyFinderBase}/details-entity-simple/wdw/${finderSlug}/${date}/`;
   return DisneyParkDetailSchema.parse(await getJson(url, signal));
+}
+
+/**
+ * The WDW destination entity every `list-ancestor-entities` catalog hangs off
+ * (the same id `services/dining-facilities` and the resort catalog generator
+ * use). One call under it returns the whole resort, not one park.
+ */
+export const DISNEY_DESTINATION_ID =
+  process.env.DISNEY_DESTINATION_ID ?? "80007798;entityType=destination";
+
+/**
+ * Every WDW attraction + entertainment entity in ONE destination-wide GET
+ * (research/disney-content-parity.md §2) — Disney's typed facet slugs, map
+ * markers, alt text and today's performance times. Supersedes what the six
+ * per-park `details-entity-simple` marker sweeps could tell us about facets,
+ * and is the only place the accessibility taxonomy is published as data rather
+ * than prose. Same endpoint family, trust level and cookielessness as the
+ * dining/shops catalogs.
+ */
+export async function fetchDestinationAttractions(
+  date: string,
+  signal: AbortSignal,
+  destinationId: string = DISNEY_DESTINATION_ID,
+): Promise<DisneyAttractionList> {
+  const url = `${config.disneyFinderBase}/list-ancestor-entities/wdw/${encodeURIComponent(
+    destinationId,
+  )}/${date}/attractions`;
+  return DisneyAttractionListSchema.parse(await getJson(url, signal));
 }
 
 export interface DisneyEntityDetail {

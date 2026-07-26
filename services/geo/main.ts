@@ -41,7 +41,15 @@ import { flushTelemetry, reportServiceError } from "../shared/telemetry.ts";
 import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
-import { attractionMeta, externalIds, parkPoi, shopDim, type ParkHeroSlide } from "#/db/schema.ts";
+import {
+  attractionMeta,
+  externalIds,
+  parkPoi,
+  shopDim,
+  type GeoPolygon,
+  type ParkHeroSlide,
+  type ParkPoiShowtime,
+} from "#/db/schema.ts";
 import {
   categoryFromDisneyPin,
   categoryFromDisneyPoi,
@@ -50,6 +58,7 @@ import {
   disneyHeroUrl,
   disneyParkHero,
   disneyParkHeroSlides,
+  disneyPoiType,
   normalizeUniversalName,
   parseDisneyFacets,
   Source,
@@ -61,9 +70,23 @@ import {
   type PoiCategory,
 } from "#/server/parks/codes.ts";
 import { config } from "#/server/parks/config.ts";
+import {
+  buildDisneyEntityIndex,
+  disneyEntityAttrs,
+  disneyEntityPoiId,
+  disneyEntityPoint,
+  disneyEntityShowtimes,
+  resolveDisneyEntity,
+} from "#/server/parks/disney-index.ts";
 import { fillMissingThumbhashes } from "#/server/parks/thumbhash.ts";
 import { browserlessConfigured } from "#/server/parks/sources/browserless.ts";
-import { fetchEntityDetail, fetchParkDetail, toNum } from "#/server/parks/sources/disney-finder.ts";
+import {
+  fetchDestinationAttractions,
+  fetchEntityDetail,
+  fetchParkDetail,
+  toNum,
+} from "#/server/parks/sources/disney-finder.ts";
+import { fetchOsmAmenities, pointInGeometry } from "#/server/parks/sources/osm-amenities.ts";
 import {
   fetchThemeParkBoundaries,
   normalizeParkName,
@@ -84,6 +107,7 @@ import {
   rideJoinKey,
   resolveUniversalRideAttrs,
   UNIVERSAL_VENUE_ID_BY_SLUG,
+  universalShowtimes,
   venueBoundary,
   type TypedUniversalPoi,
   type UniversalContentIndex,
@@ -198,6 +222,39 @@ async function writeAttractionGeo(rows: Array<AttractionGeo>): Promise<void> {
   }
 }
 
+/**
+ * Persist Disney's numeric facility id as a first-class `external_ids` row.
+ *
+ * Every Disney enrichment used to hang off a `Map` rebuilt from the TP.wiki
+ * `externalId` on each run, so the id existed only for the length of one cron
+ * and nothing else could join on it. Writing it down makes the destination-wide
+ * catalog joinable by id instead of by display name — the difference between
+ * 187/247 and near-total coverage, since Disney decorates live names
+ * ("… — New!", sponsor tails) that our board rows never carry.
+ */
+async function persistDisneyFacilityIds(
+  rows: Array<{ attractionId: number; externalId: string }>,
+): Promise<void> {
+  for (let i = 0; i < rows.length; i += 500) {
+    await db
+      .insert(externalIds)
+      .values(
+        rows.slice(i, i + 500).map((r) => ({
+          entityKind: KIND_ATTRACTION,
+          entityId: r.attractionId,
+          source: Source.DISNEY_DIRECT,
+          externalId: r.externalId,
+        })),
+      )
+      // PK is (source, entity_kind, external_id) — a re-run is a no-op, and a
+      // facility id that moved to another attraction row follows it.
+      .onConflictDoUpdate({
+        target: [externalIds.source, externalIds.entityKind, externalIds.externalId],
+        set: { entityId: sql`excluded.entity_id` },
+      });
+  }
+}
+
 /** Override `category` for the given attraction ids (Disney pin enrichment). */
 async function overrideCategories(
   rows: Array<{ id: number; category: MapCategory }>,
@@ -297,6 +354,9 @@ async function upsertParkPoi(rows: Array<typeof parkPoi.$inferInsert>): Promise<
           land: sql`excluded.land`,
           imageUrl: sql`excluded.image_url`,
           detailUrl: sql`excluded.detail_url`,
+          // Never blank published times out on a run that didn't carry them
+          // (a fetch racing midnight, or a feed that only posts them same-day).
+          schedule: sql`coalesce(excluded.schedule, park_poi.schedule)`,
           source: sql`excluded.source`,
           active: sql`true`,
           lastSeenAt: sql`now()`,
@@ -517,17 +577,28 @@ async function ingestChildren(park: ParkRow): Promise<Map<string, number>> {
 
   const geoRows: Array<AttractionGeo> = [];
   const parkCoords: Array<{ lat: number; lng: number }> = [];
+  const operatorIds: Array<{ attractionId: number; externalId: string }> = [];
   for (const child of payload.children) {
+    const attractionId = idMap.get(child.id);
     const lat = toNum(child.location?.latitude);
     const lng = toNum(child.location?.longitude);
-    if (lat == null || lng == null) continue;
-    parkCoords.push({ lat, lng });
-    const attractionId = idMap.get(child.id);
+    if (lat != null && lng != null) parkCoords.push({ lat, lng });
     if (attractionId == null) continue;
     // The TP externalId carries a ";entityType=…" suffix; the Disney card.id
     // uses the same numeric prefix but a (sometimes different) suffix, so join on
     // the numeric prefix only.
-    if (child.externalId) numericToAttraction.set(child.externalId.split(";")[0], attractionId);
+    //
+    // Registered BEFORE the coordinate check: an ungeocoded child used to be
+    // `continue`d past this line, so it could never be reached by the finder
+    // enrichment either — which is most of the WDW attractions that had neither
+    // a point nor a meta row, and 12 UOR ones. The operator's own feed usually
+    // publishes the coordinate `/children` is missing.
+    if (child.externalId) {
+      const numeric = child.externalId.split(";")[0];
+      numericToAttraction.set(numeric, attractionId);
+      operatorIds.push({ attractionId, externalId: numeric });
+    }
+    if (lat == null || lng == null) continue;
     geoRows.push({
       id: attractionId,
       lat,
@@ -537,6 +608,9 @@ async function ingestChildren(park: ParkRow): Promise<Map<string, number>> {
   }
 
   if (geoRows.length > 0) await writeAttractionGeo(geoRows);
+  if (park.operatorSlug === "disney" && operatorIds.length > 0) {
+    await persistDisneyFacilityIds(operatorIds);
+  }
   await deactivateStaleAttractions(park.id, [...idMap.values()]);
 
   const bounds = computeBounds(parkCoords);
@@ -597,7 +671,14 @@ async function enrichDisneyPark(
       poiById.set(poiId, {
         poiId,
         parkId: park.id,
-        poiType: marker.type ?? "",
+        // Guest services carry the shared kind vocabulary (`restroom`, `atm`,
+        // `first-aid`, …) the Universal buckets and the OSM amenities write, so
+        // a services pin means the same thing at both resorts. Entertainment and
+        // events-tours keep the finder's own marker type.
+        poiType:
+          marker.type === "guest-services"
+            ? disneyPoiType(marker.card?.name, marker.name)
+            : (marker.type ?? ""),
         category: categoryFromDisneyPoi(marker.pin, marker.type),
         mapPin: marker.pin ?? null,
         name: marker.name ?? marker.card?.name ?? poiId,
@@ -685,6 +766,256 @@ async function enrichDisneyPark(
     `[geo] ${park.slug}: ${overrides.length} categories enriched, ${metaRows.length} meta rows ` +
       `(${descOk} descriptions, ${descErr} failed), ${poiRows.length} POIs from Disney finder`,
   );
+}
+
+// --- Disney typed-facet enrichment (step 3b, WDW only, resort-wide) --------
+
+interface DisneyAttractionRow {
+  id: number;
+  parkId: number;
+  name: string;
+  facilityId: string | null;
+  hasCoords: boolean;
+}
+
+/** Active WDW attractions with their persisted Disney facility id, if any. */
+async function resolveDisneyAttractions(
+  parkIds: Array<number>,
+): Promise<Array<DisneyAttractionRow>> {
+  if (parkIds.length === 0) return [];
+  const result = await db.execute<{
+    id: string;
+    park_id: string;
+    name: string;
+    facility_id: string | null;
+    has_coords: boolean;
+  }>(sql`
+    SELECT a.id, a.park_id, a.name, e.external_id AS facility_id,
+           (a.latitude IS NOT NULL AND a.longitude IS NOT NULL) AS has_coords
+    FROM attractions a
+    LEFT JOIN external_ids e
+      ON e.entity_kind = ${KIND_ATTRACTION} AND e.entity_id = a.id
+     AND e.source = ${Source.DISNEY_DIRECT}
+    WHERE a.active = true AND a.park_id IN (${sql.join(
+      parkIds.map((id) => sql`${id}`),
+      sql`, `,
+    )})
+  `);
+  return result.rows.map((r) => ({
+    id: Number(r.id),
+    parkId: Number(r.park_id),
+    name: r.name,
+    facilityId: r.facility_id,
+    hasCoords: r.has_coords,
+  }));
+}
+
+/**
+ * Write ONLY the columns the typed-facet feed owns. Deliberately not
+ * `upsertAttractionMeta`: that one refreshes every field from its own row shape,
+ * so reusing it here would blank the images, copy and hero media the per-park
+ * sweep and the detail pass had just written.
+ */
+async function upsertDisneyFacetMeta(
+  rows: Array<{
+    attractionId: number;
+    accessibility: Array<string>;
+    tags: Array<string>;
+    minHeightIn: number | null;
+    maxHeightIn: number | null;
+    heightRequirement: string | null;
+    imageAlt: string | null;
+  }>,
+): Promise<void> {
+  for (let i = 0; i < rows.length; i += 500) {
+    await db
+      .insert(attractionMeta)
+      .values(rows.slice(i, i + 500).map((r) => ({ ...r, source: Source.DISNEY_DIRECT })))
+      .onConflictDoUpdate({
+        target: attractionMeta.attractionId,
+        set: {
+          // Typed slugs beat the prose the marker facets carry, but an entity
+          // the feed says nothing about keeps what it had.
+          accessibility: sql`case when cardinality(excluded.accessibility) > 0
+            then excluded.accessibility else attraction_meta.accessibility end`,
+          tags: sql`case when cardinality(excluded.tags) > 0
+            then excluded.tags else attraction_meta.tags end`,
+          minHeightIn: sql`coalesce(excluded.min_height_in, attraction_meta.min_height_in)`,
+          maxHeightIn: sql`coalesce(excluded.max_height_in, attraction_meta.max_height_in)`,
+          // The operator's own prose is better copy than our regenerated label,
+          // so this only fills a row that never had one.
+          heightRequirement: sql`coalesce(attraction_meta.height_requirement,
+            excluded.height_requirement)`,
+          imageAlt: sql`coalesce(attraction_meta.image_alt, excluded.image_alt)`,
+          updatedAt: sql`now()`,
+        },
+      });
+  }
+}
+
+/** Fill lat/lng for attractions `/children` never geocoded. */
+async function fillMissingAttractionCoords(
+  rows: Array<{ id: number; lat: number; lng: number }>,
+): Promise<void> {
+  for (let i = 0; i < rows.length; i += 500) {
+    const values = sql.join(
+      rows
+        .slice(i, i + 500)
+        .map((r) => sql`(${r.id}::bigint, ${r.lat}::double precision, ${r.lng}::double precision)`),
+      sql`, `,
+    );
+    await db.execute(sql`
+      UPDATE attractions AS a
+      SET latitude = v.lat, longitude = v.lng
+      FROM (VALUES ${values}) AS v(id, lat, lng)
+      WHERE a.id = v.id AND (a.latitude IS NULL OR a.longitude IS NULL)
+    `);
+  }
+}
+
+/**
+ * Attach published performance times to the POI pins that have them. Only rows
+ * that already exist are touched — the feed lists entities from the whole
+ * resort, most of which are rides or POIs in parks we don't plot.
+ */
+async function writePoiSchedules(
+  rows: Array<{ poiId: string; schedule: Array<ParkPoiShowtime> }>,
+  source: number,
+): Promise<number> {
+  let written = 0;
+  for (let i = 0; i < rows.length; i += 500) {
+    const values = sql.join(
+      rows
+        .slice(i, i + 500)
+        .map((r) => sql`(${r.poiId}::text, ${JSON.stringify(r.schedule)}::jsonb)`),
+      sql`, `,
+    );
+    const res = await db.execute(sql`
+      UPDATE park_poi AS p
+      SET schedule = v.schedule, updated_at = now()
+      FROM (VALUES ${values}) AS v(poi_id, schedule)
+      WHERE p.poi_id = v.poi_id AND p.source = ${source}
+    `);
+    written += res.rowCount ?? 0;
+  }
+  return written;
+}
+
+/**
+ * Step 3b (WDW only): Disney's own typed facet slugs, in ONE destination-wide
+ * GET (research/disney-content-parity.md §2). Fills the accessibility strip
+ * (published as data here, prose everywhere else), re-types the ride tags off
+ * `thrillFactor`/`interests`, takes numeric heights straight from the slug —
+ * including the `-or-shorter` maxima the prose has no form for — fills the
+ * coordinates `/children` is missing, and attaches today's performance times to
+ * the entertainment pins.
+ *
+ * Runs after the per-park sweep so its typed values win, and after the POI rows
+ * it attaches schedules to exist. Lightning Lane and single rider are NOT read
+ * here — see `disney-index.ts`.
+ */
+async function enrichDisneyFacets(parks: Array<ParkRow>, today: string): Promise<void> {
+  const list = await fetchDestinationAttractions(today, AbortSignal.timeout(config.fetchTimeoutMs));
+  const index = buildDisneyEntityIndex(list);
+  const attractions = await resolveDisneyAttractions(parks.map((p) => p.id));
+
+  const metaRows: Array<Parameters<typeof upsertDisneyFacetMeta>[0][number]> = [];
+  const coordRows: Array<{ id: number; lat: number; lng: number }> = [];
+  let byId = 0;
+  let unmatched = 0;
+  for (const row of attractions) {
+    const entity = resolveDisneyEntity(index, row.facilityId, row.name);
+    if (!entity) {
+      unmatched++;
+      continue;
+    }
+    if (row.facilityId && index.byFacilityId.has(row.facilityId)) byId++;
+    metaRows.push({ attractionId: row.id, ...disneyEntityAttrs(entity, index.labels) });
+    if (!row.hasCoords) {
+      const point = disneyEntityPoint(entity);
+      if (point) coordRows.push({ id: row.id, lat: point.lat, lng: point.lng });
+    }
+  }
+
+  const scheduleRows: Array<{ poiId: string; schedule: Array<ParkPoiShowtime> }> = [];
+  for (const entity of list.results) {
+    const poiId = disneyEntityPoiId(entity);
+    const schedule = disneyEntityShowtimes(entity);
+    if (poiId && schedule) scheduleRows.push({ poiId, schedule });
+  }
+
+  if (metaRows.length > 0) await upsertDisneyFacetMeta(metaRows);
+  if (coordRows.length > 0) await fillMissingAttractionCoords(coordRows);
+  const scheduled = await writePoiSchedules(scheduleRows, Source.DISNEY_DIRECT);
+  console.log(
+    `[geo] disney facets: ${list.results.length} entities -> ${metaRows.length}/${attractions.length} ` +
+      `attractions enriched (${byId} by facility id, ${unmatched} unmatched), ` +
+      `${coordRows.length} coordinates filled, ${scheduled} POI schedules`,
+  );
+}
+
+// --- OpenStreetMap amenities (both operators) ------------------------------
+
+/**
+ * In-park amenity pins from OSM, assigned to parks by point-in-polygon against
+ * the boundary the same cron just wrote. This is the one layer where we can beat
+ * both operators: Disney plots a single representative pin per service per park
+ * and Epic Universe publishes no amenities at all, while OSM maps them
+ * individually (30 toilets inside Magic Kingdom alone).
+ *
+ * Written under `Source.OSM`, so the soft-delete stays scoped to OSM rows and a
+ * community-mapped pin can never overwrite an operator-published one.
+ */
+async function ingestOsmAmenities(parks: Array<ParkRow>): Promise<void> {
+  const amenities = await fetchOsmAmenities(
+    ORLANDO_BBOX,
+    AbortSignal.timeout(config.overpassTimeoutMs),
+  );
+  // A query that comes back empty is an upstream problem, not an empty world —
+  // returning here keeps the soft-delete below from wiping every OSM pin we
+  // have on the strength of one bad Overpass response.
+  if (amenities.length === 0) {
+    console.warn("[geo] osm amenities: query returned nothing — leaving existing pins alone");
+    return;
+  }
+  const result = await db.execute<{ id: string; slug: string; boundary: GeoPolygon | null }>(sql`
+    SELECT id, slug, boundary FROM parks WHERE active = true AND boundary IS NOT NULL
+  `);
+
+  let total = 0;
+  for (const park of result.rows) {
+    const parkId = Number(park.id);
+    if (!parks.some((p) => p.id === parkId) || !park.boundary) continue;
+    const inside = amenities.filter((a) => pointInGeometry(a, park.boundary as GeoPolygon));
+    const rows = inside.map((a) => ({
+      poiId: a.id,
+      parkId,
+      poiType: a.poiType,
+      category: "info" as PoiCategory,
+      mapPin: null,
+      name: a.name,
+      // OSM nodes are anonymous points — the type IS the identity, so there's no
+      // generic entity name or operator detail page to link.
+      entityName: null,
+      entityId: null,
+      urlFriendlyId: null,
+      latitude: a.lat,
+      longitude: a.lng,
+      land: null,
+      imageUrl: null,
+      detailUrl: null,
+      source: Source.OSM,
+    }));
+    if (rows.length > 0) await upsertParkPoi(rows);
+    await deactivateStaleParkPoi(
+      parkId,
+      rows.map((r) => r.poiId),
+      Source.OSM,
+    );
+    total += rows.length;
+    console.log(`[geo] ${park.slug}: ${rows.length} OSM amenities`);
+  }
+  console.log(`[geo] osm amenities: ${amenities.length} fetched, ${total} assigned to parks`);
 }
 
 // --- Universal places enrichment (step 4, UOR only) -----------------------
@@ -1103,6 +1434,7 @@ async function upsertUniversalPoi(
         // entertainment gets its photo, like the Disney POI rule.
         imageUrl: category === "info" ? null : (poi.ListImage ?? poi.ThumbnailImage ?? null),
         detailUrl: poi.SiteUrl ?? null,
+        schedule: universalShowtimes(poi),
         source: Source.UNIVERSAL_DIRECT,
       });
     }
@@ -1281,6 +1613,16 @@ async function main() {
     }
   }
 
+  // Disney's typed facets, resort-wide — one GET for all four theme parks and
+  // both water parks. Runs AFTER the per-park sweep (its typed slugs supersede
+  // the prose the markers carry) and after the POI rows its schedules attach to.
+  const disneyParks = parks.filter(
+    (p) => p.operatorSlug === "disney" && DISNEY_FINDER_SLUGS.has(p.slug),
+  );
+  if (disneyParks.length > 0) {
+    await runStep("disney facets", () => enrichDisneyFacets(disneyParks, today));
+  }
+
   // Universal's own park outline + centre + zoom, applied LAST: it supersedes
   // both the OSM boundary from step 0 and the child-centroid bounds `ingest
   // Children` derives, and either would otherwise overwrite it.
@@ -1289,6 +1631,12 @@ async function main() {
       ingestUniversalVenueGeo(venues as UniversalVenues, universalParks),
     );
   }
+
+  // Community-mapped amenities for BOTH operators — the only services source
+  // that maps each restroom/locker/ATM individually, and the only one that
+  // reaches Epic Universe at all. Assigned by point-in-polygon, so it runs after
+  // every step that can write a `parks.boundary`.
+  await runStep("osm amenities", () => ingestOsmAmenities(parks));
 
   // ThumbHash placeholders for any artwork that's new or changed this run
   // (the meta upsert NULLs the hash when a thumb URL changes). Also serves as

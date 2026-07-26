@@ -183,6 +183,17 @@ export interface ParkHeroSlide {
   alt: string | null;
 }
 
+/** One published performance window on `park_poi.schedule` (park-local times). */
+export interface ParkPoiShowtime {
+  /** Operator's own label — "Performance Time", "Operating", … */
+  type: string | null;
+  /** ISO `YYYY-MM-DD`, or null when the feed publishes a bare wall-clock time. */
+  date: string | null;
+  /** `HH:MM:SS` local. */
+  start: string;
+  end: string | null;
+}
+
 /** GeoJSON geometry stored on `parks.boundary` — a park's outline in [lng,lat]. */
 export type GeoPolygon =
   | { type: "Polygon"; coordinates: Array<Array<[number, number]>> }
@@ -888,6 +899,16 @@ export const parkPoi = pgTable(
     imageThumbhash: text("image_thumbhash"),
     imageThumbhashSrc: text("image_thumbhash_src"),
     detailUrl: text("detail_url"),
+    /**
+     * Today's published performances for an entertainment/character POI —
+     * parade, fireworks and meet-and-greet times. Both operators publish these
+     * and both were being dropped: Disney's in the destination attractions feed
+     * (`schedule.schedules[]`), Universal's in the mobile POI feed
+     * (`StartDateTimes[]`). Null means "none published"; the upsert coalesces,
+     * so a fetch that races midnight leaves the last good list in place rather
+     * than blanking the pin's times.
+     */
+    schedule: jsonb("schedule").$type<Array<ParkPoiShowtime>>(),
     source: smallint("source")
       .notNull()
       .default(3)

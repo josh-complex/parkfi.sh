@@ -446,6 +446,123 @@ const DisneyMerchandiseEntitySchema = z
   .passthrough();
 export type DisneyMerchandiseEntity = z.infer<typeof DisneyMerchandiseEntitySchema>;
 
+// ---------------------------------------------------------------------------
+// Disney attractions + entertainment catalog — the SAME public
+// `list-ancestor-entities` endpoint the dining/shops/resort catalogs use, with
+// `attractions` as the type (research/disney-content-parity.md §2). One
+// destination-wide GET returns every WDW attraction and entertainment entity
+// with Disney's own typed facet slugs, a map marker, alt text and today's
+// performance times — the WDW analog of Universal's `filtersdata` + mobile POI
+// feeds. Tolerant: every field optional, facets read by group name.
+//
+// Deliberately NOT read from here: Lightning Lane (`eA`) and single rider
+// (`interests`). Both are already modelled from live queue capability, which
+// agrees with these facets on every joinable ride and additionally carries
+// state and price — see §3.1.
+// ---------------------------------------------------------------------------
+
+/** One `{urlFriendlyId, value, group}` entry of the feed's label dictionary. */
+const DisneyFacetDefSchema = z
+  .object({
+    urlFriendlyId: z.string(),
+    value: z.string().nullable().optional(),
+    group: z.string().nullable().optional(),
+    /** Only on `heightFilter.facets`: the height as a label (`44"`). */
+    height: z.string().nullable().optional(),
+  })
+  .passthrough();
+export type DisneyFacetDef = z.infer<typeof DisneyFacetDefSchema>;
+
+/** One performance/operating window from a result's `schedule.schedules[]`. */
+const DisneyEntityScheduleSchema = z
+  .object({
+    type: z.string().nullable().optional(),
+    date: z.string().nullable().optional(),
+    startTime: z.string().nullable().optional(),
+    endTime: z.string().nullable().optional(),
+    isClosed: z.boolean().nullable().optional(),
+  })
+  .passthrough();
+
+const DisneyAttractionEntitySchema = z
+  .object({
+    facilityId: z.string(),
+    id: z.string().optional(),
+    /** 'Attraction' | 'Entertainment'. */
+    entityType: z.string().nullable().optional(),
+    name: z.string().nullable().optional(),
+    urlFriendlyId: z.string().nullable().optional(),
+    url: z.string().nullable().optional(),
+    locationName: z.string().nullable().optional(),
+    parkIds: z.array(z.string()).default([]),
+    landId: z.string().nullable().optional(),
+    // Facet groups are marketing taxonomy and DO churn, so this stays an open
+    // record keyed by group name — unknown groups fall through to tags rather
+    // than failing the row.
+    facets: z.record(z.string(), z.array(z.string())).nullable().optional(),
+    media: z
+      .object({
+        finderStandardThumb: DisneyFinderMedia.optional(),
+        mapBubbleThumbLarge: DisneyFinderMedia.optional(),
+        mapBubbleThumbSmall: DisneyFinderMedia.optional(),
+      })
+      .partial()
+      .passthrough()
+      .nullable()
+      .optional(),
+    schedule: z
+      .object({
+        timeZone: z.string().nullable().optional(),
+        schedules: z.array(DisneyEntityScheduleSchema).default([]),
+      })
+      .partial()
+      .passthrough()
+      .nullable()
+      .optional(),
+    marker: z
+      .object({
+        lat: z.number().nullable().optional(),
+        lng: z.number().nullable().optional(),
+        /** The physical `point-of-interest` id — `park_poi.poi_id`'s key. */
+        id: z.string().nullable().optional(),
+        pin: z.string().nullable().optional(),
+        card: z
+          .object({ land: z.string().nullable().optional() })
+          .partial()
+          .passthrough()
+          .nullable()
+          .optional(),
+      })
+      .partial()
+      .passthrough()
+      .nullable()
+      .optional(),
+  })
+  .passthrough();
+export type DisneyAttractionEntity = z.infer<typeof DisneyAttractionEntitySchema>;
+
+export const DisneyAttractionListSchema = z.object({
+  results: z.array(DisneyAttractionEntitySchema).default([]),
+  locations: z.array(DisneyDiningLocationSchema).default([]),
+  filters: z
+    .object({
+      // 60 slug -> label pairs across the 9 groups we read; the authoritative
+      // humanization for accessibility and thrill chips.
+      flatFacets: z.array(DisneyFacetDefSchema).default([]),
+      heightFilter: z
+        .object({ facets: z.array(DisneyFacetDefSchema).default([]) })
+        .partial()
+        .passthrough()
+        .nullable()
+        .optional(),
+    })
+    .partial()
+    .passthrough()
+    .nullable()
+    .optional(),
+});
+export type DisneyAttractionList = z.infer<typeof DisneyAttractionListSchema>;
+
 export const DisneyMerchandiseListSchema = z.object({
   results: z.array(DisneyMerchandiseEntitySchema).default([]),
   locations: z.array(DisneyDiningLocationSchema).default([]),
