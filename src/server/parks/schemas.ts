@@ -1445,6 +1445,45 @@ export type UniversalVenues = z.infer<typeof UniversalVenuesSchema>;
 export type UniversalVenue = UniversalVenues["Results"][number];
 
 // ---------------------------------------------------------------------------
+// `/api/Queues` — the Virtual Line queue registry on the same mobile-services
+// host and the same static credential pair (~13 KB, 45 queues). This is the ONLY
+// unauthenticated surface that carries per-ride Virtual Line state: the public
+// CDN wait-time feed exposes STANDBY/EXPRESS/SINGLE and no virtual queue at all,
+// and ThemeParks.wiki's UOR `RETURN_TIME.state` is a stuck `TEMP_FULL` constant
+// (verified 2026-07-28: 11,601 samples across 28 rides, 100% one value, null
+// return windows). Booking — actual return times — still needs the app's OIDC
+// session, so this gives operational state, not appointments.
+//
+// `PlaceId` is the `uor.<venue>.rides.<slug>` namespace we join Universal
+// content on. Loose object: unknown keys must never fail a tick.
+// ---------------------------------------------------------------------------
+export const UniversalQueuesSchema = z.object({
+  Results: z
+    .array(
+      z
+        .object({
+          Id: z.number().optional(),
+          PlaceId: z.string().nullable().optional(),
+          Name: z.string().nullable().optional(),
+          /** Virtual Line is switched on for this ride. */
+          IsEnabled: z.boolean().nullable().optional(),
+          /** Switched on but not currently taking guests. */
+          IsUnavailable: z.boolean().nullable().optional(),
+          MaxAppointmentSize: z.number().nullable().optional(),
+          /** "00:30:00" on all but Jimmy Fallon ("01:00:00"). */
+          AppointmentDuration: z.string().nullable().optional(),
+          GracePeriodInMin: z.number().nullable().optional(),
+          QueueEntityId: z.number().nullable().optional(),
+          QueueEntityType: z.string().nullable().optional(),
+        })
+        .passthrough(),
+    )
+    .default([]),
+});
+export type UniversalQueues = z.infer<typeof UniversalQueuesSchema>;
+export type UniversalQueue = UniversalQueues["Results"][number];
+
+// ---------------------------------------------------------------------------
 // `contentdata/uor/en/us/api/filtersdata/index.html` — the tile database behind
 // universalorlando.com's own filter UI (§2.1). One cookieless GET, ~1.4 MB,
 // 339 tiles. Each tile carries card copy WITH alt text and a `Meta` block of

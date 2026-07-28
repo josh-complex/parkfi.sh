@@ -132,6 +132,25 @@ export function LightningLaneAvailability({
   // At least one live (non-empty) reading is needed for the strip to say anything.
   const hasLive = grid.some((b) => classifyState(b.availState) !== "none");
 
+  // A timeline of ONE state isn't a timeline — it's a flat bar, and a card whose
+  // only content is "nothing changed" is worse than no card. So the whole card
+  // is withheld rather than rendered empty.
+  //
+  // This is self-scoping rather than an operator special case: measured
+  // 2026-07-28, 0 of the 50 Disney rides that render this card are flat, while
+  // 28 of 28 Universal rides are — because UOR's upstream RETURN_TIME node is
+  // pinned to TEMP_FULL (→ LIMITED) on every ride, every poll. As soon as a
+  // ride's paid line genuinely varies, its card comes back on its own.
+  const observed = React.useMemo(() => {
+    const seen = new Set<AvailState>();
+    for (const b of grid) {
+      const cls = classifyState(b.availState);
+      if (cls !== "none") seen.add(cls);
+    }
+    return seen.size;
+  }, [grid]);
+  if (!q.isLoading && observed <= 1 && hasLive) return null;
+
   return (
     <Card>
       <CardHeader>

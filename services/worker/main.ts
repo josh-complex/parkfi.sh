@@ -48,6 +48,7 @@ async function tick(): Promise<void> {
     let entities = 0;
     let statusChanges = 0;
     let queueRows = 0;
+    let virtualLineRows = 0;
     let degraded = 0;
     let errors = 0;
 
@@ -57,6 +58,7 @@ async function tick(): Promise<void> {
         entities += r.entities;
         statusChanges += r.statusChanges;
         queueRows += r.queueRows;
+        virtualLineRows += r.virtualLineRows;
         if (r.degraded) degraded++;
         if (r.error) {
           errors++;
@@ -95,7 +97,7 @@ async function tick(): Promise<void> {
     lastTickOk = Date.now();
     const ms = lastTickOk - started;
     console.log(
-      `[tick] parks=${parkIds.length} entities=${entities} statusΔ=${statusChanges} queueRows=${queueRows} alerts=${alertsFired} degraded=${degraded} errors=${errors}${darkness} ${ms}ms`,
+      `[tick] parks=${parkIds.length} entities=${entities} statusΔ=${statusChanges} queueRows=${queueRows} vline=${virtualLineRows} alerts=${alertsFired} degraded=${degraded} errors=${errors}${darkness} ${ms}ms`,
     );
   } catch (err) {
     reportServiceError("worker", "tick", err);

@@ -1,8 +1,10 @@
 import { config } from "../config.ts";
 import {
   UniversalPoiFeedSchema,
+  UniversalQueuesSchema,
   UniversalVenuesSchema,
   type UniversalPoiFeed,
+  type UniversalQueues,
   type UniversalVenues,
 } from "../schemas.ts";
 import { UpstreamError } from "./themeparks.ts";
@@ -55,4 +57,15 @@ export async function fetchUniversalPois(signal: AbortSignal): Promise<Universal
  */
 export async function fetchUniversalVenues(signal: AbortSignal): Promise<UniversalVenues> {
   return UniversalVenuesSchema.parse(await get("/Venues?city=Orlando&pageSize=All", signal));
+}
+
+/**
+ * The Virtual Line queue registry (~13 KB) — the only unauthenticated source of
+ * per-ride VL state. Unlike the two catalog calls above this one runs on the
+ * *ingest* path, once per tick for the whole resort rather than once per park,
+ * so it must stay small and its failures must be non-fatal (see
+ * `universal-virtual-line.ts`, which owns the caching and the degradation).
+ */
+export async function fetchUniversalQueues(signal: AbortSignal): Promise<UniversalQueues> {
+  return UniversalQueuesSchema.parse(await get("/Queues?city=Orlando&pageSize=All", signal));
 }

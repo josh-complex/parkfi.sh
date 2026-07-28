@@ -8,6 +8,7 @@ import {
   attractions,
   diningWalkupLive,
   externalIds,
+  operators,
   parks,
   queueObs,
 } from "#/db/schema.ts";
@@ -17,6 +18,7 @@ import { config } from "./config.ts";
 import { normalizeLive, type NormalizedEntity } from "./normalize.ts";
 import { fetchQueueTimes } from "./sources/queue-times.ts";
 import { fetchLive } from "./sources/themeparks.ts";
+import { applyVirtualLineStates, virtualLineStates } from "./universal-virtual-line.ts";
 
 const KIND_ATTRACTION = "attraction";
 
@@ -26,6 +28,8 @@ export interface IngestResult {
   entities: number;
   statusChanges: number;
   queueRows: number;
+  /** Rides whose virtual-line state came from Universal's registry, not TP.wiki. */
+  virtualLineRows: number;
   degraded: boolean;
   error?: string;
 }
@@ -136,6 +140,26 @@ async function parkExternalId(parkId: number, source: number): Promise<string | 
 }
 
 /**
+ * Park slug + operator, cached: every tick needs it to decide whether the
+ * Universal virtual-line overlay applies, and parks change about once a year.
+ */
+const parkMetaCache = new Map<number, { slug: string; operatorSlug: string }>();
+
+async function parkMeta(parkId: number): Promise<{ slug: string; operatorSlug: string } | null> {
+  const hit = parkMetaCache.get(parkId);
+  if (hit) return hit;
+  const [row] = await db
+    .select({ slug: parks.slug, operatorSlug: operators.slug })
+    .from(parks)
+    .innerJoin(operators, eq(operators.id, parks.operatorId))
+    .where(eq(parks.id, parkId))
+    .limit(1);
+  if (!row) return null;
+  parkMetaCache.set(parkId, row);
+  return row;
+}
+
+/**
  * Poll one park: fetch -> validate -> normalize -> persist -> (status on change).
  * Falls back to queue-times (waits only) when ThemeParks.wiki fails.
  */
@@ -155,6 +179,7 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
       entities: 0,
       statusChanges: 0,
       queueRows: 0,
+      virtualLineRows: 0,
       degraded: false,
       error: "no themeparks_wiki external id for park",
     };
@@ -173,6 +198,7 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
         entities: 0,
         statusChanges: 0,
         queueRows: 0,
+        virtualLineRows: 0,
         degraded: false,
         error: err instanceof Error ? err.message : String(err),
       };
@@ -206,6 +232,17 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
       diningWaits: [],
       operatorExternalId: null,
     }));
+  }
+
+  // Universal only: TP.wiki's UOR `RETURN_TIME.state` is a stuck `TEMP_FULL`
+  // constant, so the operator's own Virtual Line registry supersedes it before
+  // anything is written — one overlay point keeps `queue_obs`, the
+  // `attraction_live` mirror and the alert evaluator telling the same story.
+  // Isolated and non-fatal: on any failure TP.wiki's value simply stands.
+  let virtualLineRows = 0;
+  const meta = await parkMeta(parkId);
+  if (meta?.operatorSlug === "universal") {
+    virtualLineRows = applyVirtualLineStates(normalized, meta.slug, await virtualLineStates());
   }
 
   const idMap = await resolveAttractions(parkId, source, normalized);
@@ -386,6 +423,7 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
     entities: normalized.length,
     statusChanges: statusRows.length,
     queueRows: queueRows.length,
+    virtualLineRows,
     degraded,
   };
 }
