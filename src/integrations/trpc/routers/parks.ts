@@ -1357,9 +1357,27 @@ export const parksRouter = {
                avg(price_cents)::int AS avg_price,
                count(*) FILTER (WHERE state = 3) AS sold_out_samples,
                count(*)              AS samples,
-               -- The bucket's representative paid-line state (most frequent),
-               -- powering the ride page's Lightning Lane availability timeline.
-               mode() WITHIN GROUP (ORDER BY state) AS avail_state
+               -- The bucket's representative paid-line state, powering the ride
+               -- page's Lightning Lane availability timeline. Unanimity-or-mixed,
+               -- NOT the modal state: a bucket is AVAILABLE or SOLD_OUT only if
+               -- every sample in it agreed, and anything else — a drop, a
+               -- sell-out, a genuine LIMITED reading — resolves to LIMITED. A
+               -- majority vote instead erased the transitions outright (at a 60s
+               -- poll, a 15-min bucket outvoted anything shorter than ~7 min),
+               -- which are the events the timeline exists to show. PAUSED and
+               -- NOT_OFFERED aren't availability, so they're ignored in the mix
+               -- and only surface when nothing else was recorded.
+               CASE
+                 WHEN count(*) FILTER (WHERE state = ${QueueState.AVAILABLE}) > 0
+                  AND count(*) FILTER (WHERE state IN (${QueueState.LIMITED}, ${QueueState.SOLD_OUT})) = 0
+                   THEN ${QueueState.AVAILABLE}::smallint
+                 WHEN count(*) FILTER (WHERE state = ${QueueState.SOLD_OUT}) > 0
+                  AND count(*) FILTER (WHERE state IN (${QueueState.AVAILABLE}, ${QueueState.LIMITED})) = 0
+                   THEN ${QueueState.SOLD_OUT}::smallint
+                 WHEN count(*) FILTER (WHERE state IN (${QueueState.AVAILABLE}, ${QueueState.LIMITED}, ${QueueState.SOLD_OUT})) > 0
+                   THEN ${QueueState.LIMITED}::smallint
+                 ELSE mode() WITHIN GROUP (ORDER BY state)
+               END AS avail_state
         FROM queue_obs
         WHERE attraction_id = ${input.attractionId}
           AND queue_type = ${input.queueType}

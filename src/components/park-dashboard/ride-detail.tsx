@@ -46,6 +46,29 @@ const STATUS_DOT: Record<string, string> = {
   UNKNOWN: "bg-white/40",
 };
 
+/**
+ * Mobile full-bleed hero: the photo runs to the device's top and side edges,
+ * under the floating search header. The upward pull is exactly the header's
+ * locked height (`--safe-top + --app-header-h` — see SiteHeader) plus this
+ * page's own `pt-2`, so it provably reaches the top edge on every device; the
+ * box grows by the identical amount so the photo *below* the header keeps its
+ * designed height. Gated on `md` (not `sm`), because the floating header mounts
+ * below 768px. Desktop keeps the rounded card nested in the content column.
+ */
+const HERO_BLEED = [
+  // The width must be stated, not implied: negative margins only *shift* a
+  // `w-full` box (it stays pinned to the container's content width and hangs off
+  // one side), so the box has to claim the gutters back explicitly.
+  "-mx-4 w-[calc(100%_+_2rem)] md:mx-0 md:w-full",
+  "-mt-[calc(var(--safe-top)_+_var(--app-header-h)_+_0.5rem)] rounded-none",
+  "h-[calc(16rem_+_var(--safe-top)_+_var(--app-header-h)_+_0.5rem)]",
+  "sm:h-[calc(20rem_+_var(--safe-top)_+_var(--app-header-h)_+_0.5rem)]",
+  "md:mt-0 md:h-80 md:rounded-2xl",
+].join(" ");
+
+/** Top-pinned hero overlays, dropped clear of the floating search pill. */
+const HERO_OVERLAY_TOP = "top-[calc(var(--safe-top)_+_var(--app-header-h))] md:top-4";
+
 type CoasterStats = {
   trackLengthM: number | null;
   topSpeedKmh: number | null;
@@ -162,8 +185,9 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
 
   if (rideQ.isLoading) {
     return (
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 py-6 lg:px-6">
-        <Skeleton className="h-64 w-full rounded-2xl sm:h-80" />
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 pt-2 pb-6 lg:px-6">
+        {/* Same bleed as the real hero, so data landing doesn't shift the page. */}
+        <Skeleton className={HERO_BLEED} />
         <Skeleton className="h-6 w-72" />
         <Skeleton className="h-32 w-full rounded-2xl" />
       </div>
@@ -288,7 +312,8 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
             differently-shaped header. */}
         <div
           className={cn(
-            "relative isolate h-64 w-full overflow-hidden rounded-2xl shadow-sm sm:h-80",
+            "relative isolate overflow-hidden md:shadow-sm",
+            HERO_BLEED,
             heroImage || heroVideo
               ? "bg-muted"
               : "bg-gradient-to-br from-slate-600 via-slate-800 to-slate-900",
@@ -302,6 +327,7 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
               loading="eager"
               fetchPriority="high"
               sizes={HERO_IMAGE.sizes}
+              widths={HERO_IMAGE.widths}
               quality={HERO_IMAGE.quality}
               placeholder={ride.meta?.imageThumbhash}
             />
@@ -322,7 +348,12 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
           {/* The headline number. Live standby when the ride is running,
               otherwise the 24–48h typical — never both. */}
           {waitValue != null && (
-            <div className="absolute left-4 top-4 flex items-center gap-2 rounded-2xl bg-black/75 px-3.5 py-2 text-white shadow-lg backdrop-blur-sm">
+            <div
+              className={cn(
+                "absolute left-4 flex items-center gap-2 rounded-2xl bg-black/75 px-3.5 py-2 text-white shadow-lg backdrop-blur-sm",
+                HERO_OVERLAY_TOP,
+              )}
+            >
               <span className="text-3xl font-bold leading-none tabular-nums sm:text-4xl">
                 {waitValue}
               </span>
@@ -335,7 +366,12 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
 
           {/* Live state + today's windows, opposite the wait so neither crowds
               the title underneath. */}
-          <div className="absolute right-4 top-4 flex max-w-[60%] flex-col items-end gap-1.5 text-right">
+          <div
+            className={cn(
+              "absolute right-4 flex max-w-[60%] flex-col items-end gap-1.5 text-right",
+              HERO_OVERLAY_TOP,
+            )}
+          >
             <span className="inline-flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm">
               <span className={cn("size-1.5 rounded-full", STATUS_DOT[status] ?? "bg-white/40")} />
               {STATUS_LABEL[status] ?? "Status unknown"}

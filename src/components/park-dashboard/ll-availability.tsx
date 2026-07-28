@@ -19,11 +19,22 @@ import { cn } from "#/lib/utils.ts";
 // Lane: each 15-minute bucket is a coloured tick showing whether the LL was
 // available, limited, or sold out then — the same categorical states the board
 // pills show, laid out over time (no percentages).
+//
+// 15 minutes (the `history` default) is a rendering constraint as much as a
+// data one: 96 ticks are individually legible across the strip, where a finer
+// grid collapses into an unreadable smear. The resolution the wider bucket
+// would otherwise cost is recovered by the server's reducer instead — a bucket
+// is green or red only if every sample in it agreed, so amber marks a bucket
+// the LL changed within rather than a state it sat in.
 const BUCKET_MS = 15 * 60_000;
 
 type AvailState = "available" | "limited" | "sold-out" | "paused" | "none";
 
-/** Map a queue-state code to a coarse availability class for the timeline. */
+/**
+ * Map a queue-state code to a coarse availability class for the timeline.
+ * LIMITED carries a second meaning here beyond the upstream state of the same
+ * name: the server also resolves any bucket whose samples disagreed to it.
+ */
 function classifyState(state: number | null): AvailState {
   switch (state) {
     case QueueState.AVAILABLE:
@@ -42,7 +53,7 @@ function classifyState(state: number | null): AvailState {
 
 const STATE_STYLE: Record<AvailState, { fill: string; label: string }> = {
   available: { fill: "bg-emerald-500 dark:bg-emerald-400", label: "Available" },
-  limited: { fill: "bg-amber-500 dark:bg-amber-400", label: "Limited" },
+  limited: { fill: "bg-amber-500 dark:bg-amber-400", label: "Limited or changing" },
   "sold-out": { fill: "bg-rose-500 dark:bg-rose-400", label: "Sold out" },
   paused: { fill: "bg-slate-400 dark:bg-slate-500", label: "Paused" },
   none: { fill: "bg-muted", label: "No data" },

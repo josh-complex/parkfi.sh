@@ -147,6 +147,7 @@ function RideCard({ ride, eager }: { ride: Ride; eager?: boolean }) {
     const { src, srcSet } = resolveImageUrls(heroSrc, {
       cf,
       sizes: HERO_IMAGE.sizes,
+      widths: HERO_IMAGE.widths,
       quality: HERO_IMAGE.quality,
       dataSaver,
     });

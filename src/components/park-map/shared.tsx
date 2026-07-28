@@ -37,6 +37,8 @@ import {
   paidLineProduct,
 } from "#/components/park-dashboard/lightning-lane.ts";
 
+import { cfImagesStore } from "#/integrations/posthog/feature-flags.ts";
+import { cfImageUrl } from "#/lib/image.ts";
 import { formatParkName } from "#/lib/parks.ts";
 import { capacityLabel, type CapacityLevel } from "#/lib/ticket-scarcity.ts";
 import { pointInPolygon } from "#/server/living/geofence.ts";
@@ -1730,6 +1732,64 @@ function mwImageThumb(url: string | null): string | null {
   return url.replace(m[0], `${m[1]}${Math.round(w * scale)}/${Math.round(h * scale)}${m[4]}`);
 }
 
+/** The asset a Disney CDN url points at, with its resize segment stripped — two
+ *  urls sharing this are the *same photo* at different sizes, so swapping one for
+ *  the other can't re-frame anything. Null for non-mwImage hosts. */
+function mwImageAsset(url: string | null): string | null {
+  const m = url?.match(/\/resize\/mwImage\/\d+\/\d+\/\d+\/\d+(\/.*)$/);
+  return m ? m[1] : null;
+}
+
+/** Widths (CSS px × ~2–3 for density) the two tiers of a marker photo render at:
+ *  a 52px disc, then the {@link CARD_W}-wide card header it grows into. */
+const DISC_SRC_W = 160;
+const CARD_SRC_W = CARD_W * 2;
+
+/** Route a marker photo through Cloudflare's resizer at `width`. Width-only, so
+ *  `fit=scale-down` keeps the source's aspect (and never upscales) — the crop is
+ *  untouched, which is the whole point here. Passes the url through unchanged
+ *  when the `cf-images` flag is off or we're on `vp dev` (where `/cdn-cgi/image/`
+ *  404s), exactly like `<Image>`'s own guard. */
+function cfMarkerUrl(url: string, width: number): string {
+  if (!cfImagesStore.state || import.meta.env.DEV) return url;
+  return cfImageUrl(url, { width, quality: 60 });
+}
+
+/**
+ * The disc + card-header photo pair for a marker, guaranteed to be two renditions
+ * of *one* asset — same photo, same crop, same aspect — so the hi-res upgrade on
+ * card open (see `openAttractionCard`) only sharpens the header instead of
+ * re-framing it.
+ *
+ * Disney's stored pair already is that: both urls are `/resize/mwImage/1/…` of the
+ * same master, and mode 1 preserves aspect (the 90/90 and 800/450 requests come
+ * back as a 100px and a 500px copy of the same square), so the swap is invisible.
+ * Universal's pair is not: the feed's list image is a 3:2 crop (`…-c.jpg`,
+ * 750×500) while the hero is an ultra-wide 2.33:1 one (`…-a.jpg`, 2268×972) of the
+ * same shot — different framing, so upgrading visibly popped the open card's photo.
+ *
+ * So: keep the two-tier load when both urls are the same asset, and otherwise pick
+ * a single asset (the list crop when there is one — at 750–1200px it already
+ * out-resolves the {@link CARD_W} header on a 2× screen, at a fraction of the
+ * hero's bytes) and derive the disc's copy from it by resize alone.
+ */
+function markerPhotoUrls(
+  thumb: string | null | undefined,
+  hero: string | null | undefined,
+): { url: string | null; hiResUrl: string | null } {
+  const asset = mwImageAsset(thumb ?? null);
+  if (thumb && hero && asset && asset === mwImageAsset(hero)) return { url: thumb, hiResUrl: hero };
+  const source = thumb ?? hero ?? null;
+  if (!source) return { url: null, hiResUrl: null };
+  // Same-crop renditions: Disney's own resize segment where it has one, ours
+  // otherwise. When neither is available the disc just loads the full asset and
+  // there's nothing to upgrade to — the pre-existing behaviour for those urls.
+  const mw = mwImageThumb(source);
+  const disc = mw ?? cfMarkerUrl(source, DISC_SRC_W);
+  const hiRes = mw ? source : cfMarkerUrl(source, CARD_SRC_W);
+  return { url: disc, hiResUrl: hiRes === disc ? null : hiRes };
+}
+
 export function buildPoiEl(poi: PoiItem): { el: HTMLButtonElement; detail: HTMLDivElement } {
   // Normalize the finder pin to a CATEGORY_ICON key ("characters" -> "character").
   const iconKey = poi.category === "characters" ? "character" : poi.category;
@@ -1749,16 +1809,13 @@ export function buildPoiEl(poi: PoiItem): { el: HTMLButtonElement; detail: HTMLD
   const iconOnly = !poi.imageUrl;
   const px = iconOnly ? 28 : 52;
   // Two-tier image load (same as the ride markers): the disc loads a small,
-  // fast-decoding thumb; the full-size photo is fetched only when a card opens.
-  // Feeds that set `hiResUrl` (shows) already split upstream; the single-url
-  // feeds (dining/shops/overlay POIs) carry an 800x450 Disney asset, so derive
-  // the disc thumb here and keep the full size as the hi-res swap. Non-mwImage
-  // urls (Universal) fall back to loading the one url for both.
-  const hiResUrl = poi.hiResUrl ?? poi.imageUrl;
-  const discUrl = poi.hiResUrl ? poi.imageUrl : (mwImageThumb(poi.imageUrl) ?? poi.imageUrl);
+  // fast-decoding copy; the card-header-sized one is fetched only when a card
+  // opens. Both are renditions of a single asset, so the upgrade can't re-frame
+  // the photo — see `markerPhotoUrls`.
+  const photo = markerPhotoUrls(poi.imageUrl, poi.hiResUrl);
   const disc = discMarkup({
-    url: discUrl,
-    hiResUrl: hiResUrl !== discUrl ? hiResUrl : null,
+    url: photo.url,
+    hiResUrl: photo.hiResUrl,
     alt: poi.name,
     fallbackSvg: categoryIconSvg(iconKey, iconOnly ? 13 : 14),
     ring: color,
@@ -1854,9 +1911,13 @@ export function buildAttractionEl(
           false,
         )}</span>`
       : "";
+  // Disc thumb + the copy the open card upgrades to, always the same asset at two
+  // sizes (see `markerPhotoUrls`) — a *different* crop here is what made Universal
+  // cards visibly re-frame on open where Disney's never did.
+  const photo = markerPhotoUrls(a.meta?.imageThumbUrl, a.meta?.imageHeroUrl);
   const disc = discMarkup({
-    url: a.meta?.imageThumbUrl ?? a.meta?.imageHeroUrl ?? null,
-    hiResUrl: a.meta?.imageHeroUrl ?? null,
+    url: photo.url,
+    hiResUrl: photo.hiResUrl,
     alt: a.meta?.imageAlt ?? a.name,
     fallbackSvg: categoryIconSvg(a.category),
     ring: color,

@@ -71,11 +71,36 @@ export const DEFAULT_TILE_WIDTH = 448;
 /**
  * Transform a full-bleed detail-page hero applies to its (Disney) source:
  * upsize to {@link disneyResizeUrl} `resizeWidth`, then render at `sizes`/
- * `quality`. Shared so an intent-preload can reproduce the *exact* URL the hero
- * `<Image>` will fetch — a warm is only a cache hit if it matches. Heroes with a
- * non-100vw layout (e.g. the shop hero) don't use this.
+ * `widths`/`quality`. Shared so an intent-preload can reproduce the *exact* URL
+ * the hero `<Image>` will fetch — a warm is only a cache hit if it matches.
+ * Heroes with a non-100vw layout (e.g. the shop hero) don't use this.
+ *
+ * `sizes` is deliberately >100vw on phones. The hero box is fixed-height, so
+ * `object-cover` scales the 16:9 source to the box's *height* and crops the
+ * sides — the browser needs a render wider than the viewport, not equal to it.
+ * Since the ride hero went full-bleed (edge-to-edge, and tall enough to tuck
+ * under the floating header) that box is roughly square, so it overscans ~1.8×;
+ * the 640–767 band keeps the taller box at a wider viewport (~1.15×), and from
+ * `md` the hero is a wide strip inside the content column, where 100vw is
+ * already generous. Under-declaring this is what makes a cropped hero look soft.
+ *
+ * No `aspect` (server-side crop) on purpose: mobile wants a near-square crop and
+ * desktop a ~2.5:1 strip, and one URL ladder serves both — cropping to either
+ * starves the other. The overscan pays for that in bytes we can measure instead.
  */
-export const HERO_IMAGE = { resizeWidth: 1600, sizes: "100vw", quality: 80 } as const;
+export const HERO_IMAGE = {
+  resizeWidth: 1600,
+  sizes: "(max-width: 639px) 180vw, (max-width: 767px) 115vw, 100vw",
+  /**
+   * Heroes — and only heroes — buy one rung past the shared ladder. With the
+   * overscan above, the 1280 cap lands ~730 real pixels across a ~390px box;
+   * the Disney master carries 1600 of genuine detail (see `disneyResizeUrl`),
+   * so the extra rung is the difference between a soft hero and a sharp one.
+   * List tiles keep {@link DEFAULT_IMAGE_WIDTHS} — they never crop this hard.
+   */
+  widths: [...DEFAULT_IMAGE_WIDTHS, 1600] as const,
+  quality: 80,
+} as const;
 
 /**
  * The Disney CDN's own resize segment (`/resize/mwImage/1/{w}/{h}/75/`). Mirrors
