@@ -18,6 +18,7 @@ import { distanceMeters, pointInPolygon } from "#/server/living/geofence.ts";
 import type { GeoPolygon } from "#/db/schema.ts";
 import { reportError } from "#/lib/report-error.ts";
 
+import { launchRideFlight, rideFlightSeed } from "./card-flight.ts";
 import { MarkerCluster, type DeclutterItem } from "./declutter.ts";
 import { fusedHeadingStore } from "./heading-store.ts";
 import { roundCoord, routeBearingAt } from "./nav-geometry.ts";
@@ -1261,8 +1262,18 @@ export function ParkMap({
               bodyHtml: attractionCardBodyHtml(a, waitLabel, operatorSlug),
               wasSelected,
               onClose: () => raise.pinTop(false),
-              // The whole card is a button now — tapping it opens the ride page.
-              onPress: () => {
+              // The whole card is a button now — tapping it opens the ride page,
+              // flying the card's photo, wait chip and title on to that page's
+              // hero (and seeding it, so there's a hero to land on right away).
+              onPress: (nodes) => {
+                launchRideFlight(
+                  rideFlightSeed({
+                    parkSlug: effectiveSlug,
+                    parkName: parksRef.current?.find((p) => p.slug === effectiveSlug)?.name ?? null,
+                    ride: a,
+                  }),
+                  nodes,
+                );
                 void navigate({
                   to: "/park/$slug/ride/$rideSlug",
                   params: { slug: effectiveSlug, rideSlug: a.slug },
@@ -1585,7 +1596,16 @@ export function ParkMap({
                   }),
                   wasSelected: false,
                   onClose: () => raise.pinTop(false),
-                  onPress: () => {
+                  onPress: (nodes) => {
+                    launchRideFlight(
+                      rideFlightSeed({
+                        parkSlug: effectiveSlug,
+                        parkName:
+                          parksRef.current?.find((p) => p.slug === effectiveSlug)?.name ?? null,
+                        ride: a,
+                      }),
+                      nodes,
+                    );
                     void navigate({
                       to: "/park/$slug/ride/$rideSlug",
                       params: { slug: effectiveSlug, rideSlug: a.slug },

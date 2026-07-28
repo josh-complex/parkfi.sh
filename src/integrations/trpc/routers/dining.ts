@@ -691,11 +691,18 @@ export const diningRouter = {
         added_titles: string[] | null;
       }>(sql`
         WITH activity AS (
-          SELECT facility_id, title, changed_at, 'price' AS kind
+          -- UNION (not ALL) collapses the per-menu-group rows the diff logs —
+          -- an item added under both "Draft Beer" and "Bottle & Can" counts
+          -- once. The dedupe key (kind, facility, period, title, changed_at,
+          -- and the move itself for price rows — group_name deliberately
+          -- absent) must mirror the client-side feed collapse in
+          -- menu-content.tsx's recentChanges memo, so the badge count matches
+          -- the entries the Updates panel shows.
+          SELECT facility_id, title, changed_at, 'price' AS kind, meal_period, old_price, new_price
           FROM dining_menu_price_change
           WHERE changed_at >= now() - make_interval(days => ${sinceDays})
-          UNION ALL
-          SELECT facility_id, title, changed_at, change_type AS kind
+          UNION
+          SELECT facility_id, title, changed_at, change_type AS kind, meal_period, NULL, NULL
           FROM dining_menu_event
           WHERE changed_at >= now() - make_interval(days => ${sinceDays})
         )

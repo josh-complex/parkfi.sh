@@ -2,9 +2,15 @@
 
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect, type CSSProperties } from "react";
 import { ArrowLeftIcon, ExternalLinkIcon } from "lucide-react";
 
 import { AmbientHeroVideo, HeroCrossfade } from "#/components/hero-media.tsx";
+import {
+  releaseRideFlight,
+  rideFlightKey,
+  useRideFlight,
+} from "#/components/park-map/card-flight.ts";
 import { getLastMapView } from "#/components/park-map/map-stage.tsx";
 import { WalkThereButton } from "#/components/park-map/walk-there-button.tsx";
 import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
@@ -173,6 +179,241 @@ function CoasterStatsCard({ stats, attractionId }: { stats: CoasterStats; attrac
 }
 
 /**
+ * The identity hero, shared by the loaded page and its loading state.
+ *
+ * Both render it in the *same* configuration — same bleed, same overlay
+ * positions, same type — because arriving from a map card lands three flown
+ * clones on it (see `card-flight.ts`) and they need real boxes to land on. The
+ * loading state fills it from the card's own seed rather than grey blocks, so
+ * data landing changes no geometry at all; only the parts the card couldn't
+ * know (hours, gallery, ambient loop) fade in afterwards.
+ *
+ * `flying` means those clones are still in the air: the three landing targets
+ * stay transparent (but laid out, so they can be measured) and the flight
+ * reveals them itself when it settles.
+ */
+function RideHero({
+  heroKey,
+  name,
+  subtitle,
+  image,
+  underlay,
+  imageAlt,
+  thumbhash,
+  video,
+  slides,
+  waitValue,
+  waitIsLive,
+  status,
+  hourLines,
+  earlyEntry,
+  flying,
+  entrance,
+  waitFlown,
+}: {
+  heroKey: string;
+  name: string;
+  subtitle: string | null;
+  image: string | null;
+  /** The hero-crop preview the flight fades to in mid-air — see the layer below. */
+  underlay?: string | null;
+  imageAlt?: string | null;
+  thumbhash?: string | null;
+  video?: { url: string; poster?: string | null } | null;
+  slides?: Array<{ url: string; alt: string | null }>;
+  waitValue: number | null;
+  waitIsLive: boolean;
+  status: string | null;
+  hourLines?: string[];
+  earlyEntry?: boolean;
+  flying: boolean;
+  /** Opened via a map-card flight (whether or not clones are still airborne):
+   *  the overlay chips that aren't landing targets stagger in after touchdown. */
+  entrance: boolean;
+  /** The wait chip is one of the flight's landing targets (the card flew its
+   *  own chip here), so it reveals under the dissolving clone instead. */
+  waitFlown: boolean;
+}) {
+  // Transparent, not unmounted: the flight measures these boxes to land on.
+  const hidden = flying ? { opacity: 0 } : undefined;
+  /**
+   * Entrance for the overlay chips that *aren't* landing targets (status, hours,
+   * Early Entry — and the wait chip when the card didn't fly one). Arriving from
+   * a map card they hold invisible while the clones are in the air, then stagger
+   * in top-first with a short fade-down once the flight settles. Delay and
+   * fill-mode ride inline so each chip waits its turn unseen; chips the query
+   * adds later simply join the cascade at their own slot when they mount.
+   */
+  const chipFx = (i: number): { className?: string; style?: CSSProperties } => {
+    if (!entrance) return {};
+    if (flying) return { style: { opacity: 0 } };
+    return {
+      className: "animate-in fade-in slide-in-from-top-2 duration-300 motion-reduce:animate-none",
+      style: { animationDelay: `${i * 70}ms`, animationFillMode: "backwards" },
+    };
+  };
+  const waitFx: { className?: string; style?: CSSProperties } = waitFlown
+    ? { style: hidden }
+    : chipFx(0);
+  const earlyFx = chipFx(1 + (hourLines?.length ?? 0));
+  return (
+    <div
+      data-ride-hero={heroKey}
+      className={cn(
+        "relative isolate overflow-hidden md:shadow-sm",
+        HERO_BLEED,
+        image || video ? "bg-muted" : "bg-gradient-to-br from-slate-600 via-slate-800 to-slate-900",
+      )}
+    >
+      {/* The photo, its ambient loop and its gallery crossfade travel together
+          as one layer — that whole stack is what the card's header flies into,
+          so it hides and reveals as a unit. */}
+      <div data-ride-hero-image className="absolute inset-0" style={hidden}>
+        {/* A light copy of the photo in the hero's *own* crop, held underneath
+            for the life of the page — the same rendition the flight fades to in
+            mid-air, so it's already decoded when it gets here. It gives the
+            <Image> above something correctly-framed to fade in over: anything
+            that makes that element replay its fade (a src resolving differently
+            once the query lands, or the thumbhash arriving and restructuring it)
+            becomes a crossfade between two identical framings rather than a
+            blink through an empty box. */}
+        {underlay && (
+          <img
+            src={underlay}
+            alt=""
+            aria-hidden
+            className="absolute inset-0 size-full object-cover"
+          />
+        )}
+        {image && (
+          <Image
+            src={disneyResizeUrl(image, HERO_IMAGE.resizeWidth)}
+            alt={imageAlt ?? name}
+            className="size-full object-cover"
+            loading="eager"
+            fetchPriority="high"
+            sizes={HERO_IMAGE.sizes}
+            widths={HERO_IMAGE.widths}
+            quality={HERO_IMAGE.quality}
+            // A thumbhash placeholder switches `Image` to its wrapper-span
+            // structure, so passing one only *after* the query lands would
+            // remount the <img> and replay its blur/scale fade-in — the shift
+            // this underlay exists to remove. With a real photo already beneath,
+            // the hash has nothing left to stand in for.
+            placeholder={underlay ? undefined : (thumbhash ?? undefined)}
+          />
+        )}
+        {/* Ambient hero loop (plan item 1.9, ride-level): fades in over
+            the still once it can play; never mounts under
+            prefers-reduced-motion. Video-less rides crossfade their
+            gallery stills instead. */}
+        {video ? (
+          <AmbientHeroVideo src={video.url} poster={video.poster ?? null} />
+        ) : (
+          <HeroCrossfade slides={slides ?? []} />
+        )}
+      </div>
+      {/* Scrim: heavy at the bottom for the title, light at the top so the
+          overlay chips keep their contrast without flattening the photo.
+          Tagged so the card flight can copy this exact gradient onto the
+          flying photo and fade it in en route (see `flyPhoto`). */}
+      <div
+        data-ride-hero-scrim
+        className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/40"
+      />
+
+      {/* The headline number. Live standby when the ride is running,
+          otherwise the 24–48h typical — never both. */}
+      {waitValue != null && (
+        <div
+          data-ride-hero-wait
+          style={waitFx.style}
+          className={cn(
+            "absolute left-4 flex items-center gap-2 rounded-2xl bg-black/75 px-3.5 py-2 text-white shadow-lg backdrop-blur-sm",
+            HERO_OVERLAY_TOP,
+            waitFx.className,
+          )}
+        >
+          {/* Tagged because the flight morphs the card pill's own number
+              straight onto this one rather than crossfading past it. */}
+          <span
+            data-ride-hero-wait-num
+            className="text-3xl font-bold leading-none tabular-nums sm:text-4xl"
+          >
+            {waitValue}
+          </span>
+          <span className="flex flex-col text-[10px] font-semibold uppercase leading-tight tracking-wide">
+            <span>min</span>
+            <span className="text-white/70">{waitIsLive ? "wait now" : "typical"}</span>
+          </span>
+        </div>
+      )}
+
+      {/* Live state + today's windows, opposite the wait so neither crowds
+          the title underneath. */}
+      <div
+        className={cn(
+          "absolute right-4 flex max-w-[60%] flex-col items-end gap-1.5 text-right",
+          HERO_OVERLAY_TOP,
+        )}
+      >
+        {status && (
+          <span
+            style={chipFx(0).style}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm",
+              chipFx(0).className,
+            )}
+          >
+            <span className={cn("size-1.5 rounded-full", STATUS_DOT[status] ?? "bg-white/40")} />
+            {STATUS_LABEL[status] ?? "Status unknown"}
+          </span>
+        )}
+        {/* Per-entity hours today (plan item 1.4) — only published when the
+            ride's windows differ from park hours. */}
+        {(hourLines ?? []).map((line, i) => (
+          <span
+            key={line}
+            style={chipFx(i + 1).style}
+            className={cn(
+              "rounded-full bg-black/60 px-2.5 py-1 text-[11px] text-white/90 backdrop-blur-sm",
+              chipFx(i + 1).className,
+            )}
+          >
+            {line}
+          </span>
+        ))}
+        {earlyEntry && (
+          <span
+            style={earlyFx.style}
+            className={cn(
+              "rounded-full bg-amber-400/90 px-2.5 py-1 text-[11px] font-semibold text-amber-950 backdrop-blur-sm",
+              earlyFx.className,
+            )}
+          >
+            Open during Early Entry
+          </span>
+        )}
+      </div>
+
+      <div className="absolute inset-x-0 bottom-0 flex flex-col gap-1 p-4 sm:p-6">
+        <h1
+          data-ride-hero-title
+          style={hidden}
+          className="truncate text-2xl font-bold tracking-tight text-white drop-shadow-md sm:whitespace-normal sm:text-3xl"
+        >
+          {name}
+        </h1>
+        {/* Always one line, even before the park name is known: the title's box
+            is a landing target, and a subtitle that appeared later would shift
+            it up out from under the clone that just landed on it. */}
+        <p className="truncate text-sm text-white/85 sm:whitespace-normal">{subtitle || " "}</p>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Standalone attraction detail page: live status + standby wait + paid-line
  * (Lightning Lane / Express) state for one ride, with a 24h standby trend and a
  * link back to the park board. Sourced from `parks.attraction`.
@@ -182,14 +423,49 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
   const native = useIsNative();
   const rideQ = useQuery(trpc.parks.attraction.queryOptions({ parkSlug, rideSlug }));
   const ride = rideQ.data;
+  // Set when this page was opened by tapping a map card: the card's own name,
+  // photo and wait, plus whether its three flown clones are still in the air.
+  const flight = useRideFlight(parkSlug, rideSlug);
+  const heroKey = rideFlightKey(parkSlug, rideSlug);
+  // Drop the seed on the way out, so coming back later from somewhere that
+  // isn't the map doesn't paint a stale hero from it.
+  useEffect(() => () => releaseRideFlight(parkSlug, rideSlug), [parkSlug, rideSlug]);
 
   if (rideQ.isLoading) {
     return (
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 pt-2 pb-6 lg:px-6">
-        {/* Same bleed as the real hero, so data landing doesn't shift the page. */}
-        <Skeleton className={HERO_BLEED} />
-        <Skeleton className="h-6 w-72" />
-        <Skeleton className="h-32 w-full rounded-2xl" />
+      /* This shell mirrors the loaded return exactly — same outer classes, a
+         placeholder where the desktop nav row will be (same h-8 as its button),
+         same <header> wrapper — so React reconciles the hero into the *same*
+         DOM node when the query lands. The query usually resolves mid-flight,
+         and a hero that remounted then would replay its image fade, orphan the
+         flight's settle listeners, and replay the chips' entrance stagger. */
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 pt-2 pb-6 lg:px-6">
+        <div className="hidden h-8 md:block" />
+        <header className="flex flex-col gap-4">
+          {/* Arriving from a map card, the hero is already known — paint it from
+              the card's seed rather than a grey block, so the flown clones land
+              on the real thing and the query resolving shifts nothing. */}
+          {flight ? (
+            <RideHero
+              heroKey={heroKey}
+              name={flight.seed.name}
+              subtitle={flight.seed.subtitle}
+              image={flight.seed.imageUrl}
+              underlay={flight.seed.previewImageUrl ?? flight.seed.cardImageUrl}
+              waitValue={flight.seed.waitMinutes}
+              waitIsLive={flight.seed.waitMinutes != null}
+              status={flight.seed.status}
+              flying={flight.flying}
+              entrance
+              waitFlown={flight.seed.waitMinutes != null}
+            />
+          ) : (
+            /* Same bleed as the real hero, so data landing doesn't shift the page. */
+            <Skeleton className={HERO_BLEED} />
+          )}
+          <Skeleton className="h-6 w-72" />
+          <Skeleton className="h-32 w-full rounded-2xl" />
+        </header>
       </div>
     );
   }
@@ -310,100 +586,27 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
             the bottom, live state at the top. Rides with no published photo get
             the same layout over a neutral gradient rather than a second,
             differently-shaped header. */}
-        <div
-          className={cn(
-            "relative isolate overflow-hidden md:shadow-sm",
-            HERO_BLEED,
-            heroImage || heroVideo
-              ? "bg-muted"
-              : "bg-gradient-to-br from-slate-600 via-slate-800 to-slate-900",
-          )}
-        >
-          {heroImage && (
-            <Image
-              src={disneyResizeUrl(heroImage, HERO_IMAGE.resizeWidth)}
-              alt={ride.meta?.imageAlt ?? ride.name}
-              className="size-full object-cover"
-              loading="eager"
-              fetchPriority="high"
-              sizes={HERO_IMAGE.sizes}
-              widths={HERO_IMAGE.widths}
-              quality={HERO_IMAGE.quality}
-              placeholder={ride.meta?.imageThumbhash}
-            />
-          )}
-          {/* Ambient hero loop (plan item 1.9, ride-level): fades in over
-              the still once it can play; never mounts under
-              prefers-reduced-motion. Video-less rides crossfade their
-              gallery stills instead. */}
-          {heroVideo ? (
-            <AmbientHeroVideo src={heroVideo.url} poster={heroVideo.poster ?? null} />
-          ) : (
-            <HeroCrossfade slides={heroSlides} />
-          )}
-          {/* Scrim: heavy at the bottom for the title, light at the top so the
-              overlay chips keep their contrast without flattening the photo. */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/40" />
-
-          {/* The headline number. Live standby when the ride is running,
-              otherwise the 24–48h typical — never both. */}
-          {waitValue != null && (
-            <div
-              className={cn(
-                "absolute left-4 flex items-center gap-2 rounded-2xl bg-black/75 px-3.5 py-2 text-white shadow-lg backdrop-blur-sm",
-                HERO_OVERLAY_TOP,
-              )}
-            >
-              <span className="text-3xl font-bold leading-none tabular-nums sm:text-4xl">
-                {waitValue}
-              </span>
-              <span className="flex flex-col text-[10px] font-semibold uppercase leading-tight tracking-wide">
-                <span>min</span>
-                <span className="text-white/70">{waitIsLive ? "wait now" : "typical"}</span>
-              </span>
-            </div>
-          )}
-
-          {/* Live state + today's windows, opposite the wait so neither crowds
-              the title underneath. */}
-          <div
-            className={cn(
-              "absolute right-4 flex max-w-[60%] flex-col items-end gap-1.5 text-right",
-              HERO_OVERLAY_TOP,
-            )}
-          >
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm">
-              <span className={cn("size-1.5 rounded-full", STATUS_DOT[status] ?? "bg-white/40")} />
-              {STATUS_LABEL[status] ?? "Status unknown"}
-            </span>
-            {/* Per-entity hours today (plan item 1.4) — only published when the
-                ride's windows differ from park hours. */}
-            {hourLines.map((line) => (
-              <span
-                key={line}
-                className="rounded-full bg-black/60 px-2.5 py-1 text-[11px] text-white/90 backdrop-blur-sm"
-              >
-                {line}
-              </span>
-            ))}
-            {earlyEntry && (
-              <span className="rounded-full bg-amber-400/90 px-2.5 py-1 text-[11px] font-semibold text-amber-950 backdrop-blur-sm">
-                Open during Early Entry
-              </span>
-            )}
-          </div>
-
-          <div className="absolute inset-x-0 bottom-0 flex flex-col gap-1 p-4 sm:p-6">
-            <h1 className="truncate text-2xl font-bold tracking-tight text-white drop-shadow-md sm:whitespace-normal sm:text-3xl">
-              {ride.name}
-            </h1>
-            {subtitleParts.length > 0 && (
-              <p className="truncate text-sm text-white/85 sm:whitespace-normal">
-                {subtitleParts.join(" · ")}
-              </p>
-            )}
-          </div>
-        </div>
+        <RideHero
+          heroKey={heroKey}
+          name={ride.name}
+          subtitle={subtitleParts.join(" · ")}
+          image={heroImage}
+          // Identical expression to the loading shell's, so the underlay <img>
+          // keeps its src (and stays decoded) across the query landing.
+          underlay={flight ? (flight.seed.previewImageUrl ?? flight.seed.cardImageUrl) : null}
+          imageAlt={ride.meta?.imageAlt}
+          thumbhash={ride.meta?.imageThumbhash}
+          video={heroVideo}
+          slides={heroSlides}
+          waitValue={waitValue}
+          waitIsLive={waitIsLive}
+          status={status}
+          hourLines={hourLines}
+          earlyEntry={earlyEntry}
+          flying={flight?.flying ?? false}
+          entrance={!!flight}
+          waitFlown={flight?.seed.waitMinutes != null}
+        />
 
         <div className="flex flex-col gap-2">
           {/* Row 1 — the facts that decide whether you can and should ride:

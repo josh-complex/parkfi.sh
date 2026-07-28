@@ -37,6 +37,7 @@ import {
   paidLineProduct,
 } from "#/components/park-dashboard/lightning-lane.ts";
 
+import type { CardFlightNodes } from "#/components/park-map/card-flight.ts";
 import { cfImagesStore } from "#/integrations/posthog/feature-flags.ts";
 import { cfImageUrl } from "#/lib/image.ts";
 import { formatParkName } from "#/lib/parks.ts";
@@ -814,8 +815,10 @@ export function openAttractionCard(opts: {
   wasSelected: boolean;
   /** Fired once when the card begins closing — e.g. to drop the marker's z-lift. */
   onClose?: () => void;
-  /** Fired when the card is tapped as a button (opens the detail page). */
-  onPress?: () => void;
+  /** Fired when the card is tapped as a button (opens the detail page). Handed
+   *  the card's shared elements (photo header, wait chip, title) so the press
+   *  can fly them on to the destination page's hero — see `card-flight.ts`. */
+  onPress?: (nodes: CardFlightNodes) => void;
 }): { card: HTMLElement; close: () => void } {
   openCard?.close();
 
@@ -1125,9 +1128,28 @@ export function openAttractionCard(opts: {
   // way we stop propagation so the click doesn't bubble to the marker's own
   // handler (which would re-fire activate). The flown name/wait chips are
   // `pointer-events-none`, so taps over them fall through to the card beneath.
+  /**
+   * Hand the card off to a shared-element flight (see `card-flight.ts`). The
+   * flight has already cloned the card's pixels into a fixed overlay, so the
+   * original is hidden outright rather than animated away — otherwise a card
+   * collapsing back to a disc would play *underneath* the copy flying off it.
+   * The normal `close()` still runs, out of sight, so the marker is a resting
+   * disc again by the time the user navigates back to the map.
+   */
+  const dismiss = () => {
+    detail.style.visibility = "hidden";
+    close();
+    window.setTimeout(() => {
+      detail.style.visibility = "";
+    }, CARD_MS + 20);
+  };
+
   const stopProp = (e: Event) => {
     e.stopPropagation();
-    onPress?.();
+    // Hand over the three shared elements as they stand *now* — the wait chip
+    // and name pill have already flown into their card positions, so their
+    // boxes are the card's, which is exactly where the next flight starts.
+    onPress?.({ fill, waitEl, nameEl, dismiss });
   };
   wrap.style.cursor = "pointer";
   wrap.addEventListener("click", stopProp);

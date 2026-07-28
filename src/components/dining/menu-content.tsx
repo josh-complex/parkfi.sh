@@ -115,6 +115,13 @@ export interface MenuChangeEntry {
   newPrice: number | null;
   currency: string | null;
   mealPeriod: string;
+  /**
+   * Menu group(s) the change touched. A venue often lists one item under
+   * several groups (a cider under both "Draft Beer" and "Bottle & Can"), and
+   * the diff logs one event per group — those collapse into a single feed
+   * entry carrying every group name.
+   */
+  groups: string[];
   changedAt: string;
 }
 
@@ -340,6 +347,13 @@ function RecentChangeRow({ change, facilityId }: { change: MenuChangeEntry; faci
   const slug = slugifyMenuItem(change.title);
   const addedPrice = change.kind === "added" ? formatPrice(change.price, change.currency) : null;
   const newPrice = change.kind === "price" ? formatPrice(change.newPrice, change.currency) : null;
+  // Menu group(s) the change touched, e.g. "Draft Beer, Bottle & Can". Long
+  // parenthetical suffixes ("Tinto / Red Wine (Available in 5-oz or 8-oz
+  // pours)") are trimmed, and a group merely restating the meal period is
+  // dropped as noise.
+  const groupList = [...new Set(change.groups.map((g) => g.replace(/\s*\(.*\)\s*$/, "").trim()))]
+    .filter((g) => g && g !== change.mealPeriod)
+    .join(", ");
   return (
     <div className="flex items-start justify-between gap-3 border-b border-border/40 py-3 last:border-0">
       <div className="min-w-0 flex-1">
@@ -351,7 +365,9 @@ function RecentChangeRow({ change, facilityId }: { change: MenuChangeEntry; faci
           {change.title}
         </Link>
         <p className="mt-0.5 text-xs text-muted-foreground/70">
-          {change.mealPeriod} · {formatDistanceToNowStrict(new Date(change.changedAt))} ago
+          {change.mealPeriod}
+          {groupList && <> · {groupList}</>} ·{" "}
+          {formatDistanceToNowStrict(new Date(change.changedAt))} ago
         </p>
       </div>
       {(addedPrice || change.kind === "price") && (
@@ -789,6 +805,7 @@ export function useMenuState(facilityId: string, open: boolean, targetItemSlug?:
       newPrice: c.newPrice,
       currency: c.currency,
       mealPeriod: c.mealPeriod,
+      groups: c.groupName ? [c.groupName] : [],
       changedAt: c.changedAt,
     }));
     const eventEntries: Array<MenuChangeEntry> = (eventsQ.data ?? []).map((e) => ({
@@ -799,11 +816,36 @@ export function useMenuState(facilityId: string, open: boolean, targetItemSlug?:
       newPrice: null,
       currency: e.currency,
       mealPeriod: e.mealPeriod,
+      groups: e.groupName ? [e.groupName] : [],
       changedAt: e.changedAt,
     }));
-    return [...priceEntries, ...eventEntries].sort(
-      (a, b) => Date.parse(b.changedAt) - Date.parse(a.changedAt),
-    );
+    // The diff logs one row per menu group, so an item listed under several
+    // groups (a cider under both "Draft Beer" and "Bottle & Can") arrives as
+    // otherwise-identical entries. Collapse those into one entry accumulating
+    // the group names. Keying on the exact `changedAt` keeps the merge within
+    // a single cron batch — a remove-then-re-add on different days stays two
+    // entries — and the price key includes the move itself so two tiers moving
+    // differently in the same batch don't fuse. This key must mirror the
+    // UNION dedupe in the `recentlyUpdated` rollup (dining.ts router), which
+    // computes the "N updates" badge — the badge and this feed must agree.
+    const merged = new Map<string, MenuChangeEntry>();
+    for (const e of [...priceEntries, ...eventEntries]) {
+      const key = [
+        e.kind,
+        e.mealPeriod,
+        e.title,
+        e.changedAt,
+        e.kind === "price" ? `${e.oldPrice}\u0001${e.newPrice}` : "",
+      ].join("\u0001");
+      const prev = merged.get(key);
+      if (!prev) {
+        merged.set(key, e);
+        continue;
+      }
+      for (const g of e.groups) if (!prev.groups.includes(g)) prev.groups.push(g);
+      if (prev.price === null) prev.price = e.price;
+    }
+    return [...merged.values()].sort((a, b) => Date.parse(b.changedAt) - Date.parse(a.changedAt));
   }, [changesQ.data, eventsQ.data]);
 
   const sectionRefs = React.useRef<Map<string, HTMLElement>>(new Map());
