@@ -4,9 +4,9 @@ import * as React from "react";
 import { getRouteApi, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { ArrowLeftIcon, ExternalLinkIcon, MapPinIcon, PhoneIcon } from "lucide-react";
+import { ArrowLeftIcon, ExternalLinkIcon, PhoneIcon } from "lucide-react";
 
-import { AmbientHeroVideo, HeroCrossfade } from "#/components/hero-media.tsx";
+import { DetailHero, HERO_BLEED, HERO_OVERLAY_TOP } from "#/components/detail-hero.tsx";
 import { DiningAlertButton } from "#/components/dining/dining-alert-button.tsx";
 import { taxonomyLabel } from "#/components/dining/dining-filters.ts";
 import { diningTrail } from "#/components/dining/dining-search-params.ts";
@@ -26,11 +26,15 @@ import {
   useMenuState,
 } from "#/components/dining/menu-content.tsx";
 import { LocationMap } from "#/components/maps/location-map.tsx";
+import {
+  heroFlightKey,
+  launchHeroReturn,
+  releaseHeroFlight,
+  useHeroFlight,
+} from "#/components/park-map/card-flight.ts";
 import { WalkThereButton } from "#/components/park-map/walk-there-button.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
-import { Image } from "#/components/ui/image.tsx";
-import { disneyResizeUrl } from "#/lib/image.ts";
 import { Card } from "#/components/ui/card.tsx";
 import { DatePicker } from "#/components/ui/date-picker.tsx";
 import {
@@ -130,26 +134,150 @@ function VenueBadges({
   );
 }
 
-/** Open-now / closing-soon / closed chip for a venue's schedule today. */
-function HoursChip({ schedules }: { schedules: Array<ScheduleEntry> }) {
+/**
+ * The venue page's identity hero: the shared `DetailHero` shell plus dining's
+ * own overlay chips — the live walk-up wait as the headline number on the left,
+ * today's open state and the menu-freshness chip stacked on the right. Rendered
+ * identically by the loaded page and the seeded loading state (see
+ * `DetailHero` for why both configurations must match).
+ */
+function DiningHero({
+  heroKey,
+  name,
+  subtitle,
+  image,
+  underlay,
+  thumbhash,
+  video,
+  slides,
+  flying,
+  entrance,
+  walkupWaitMin,
+  walkupDetail,
+  schedules,
+  freshness,
+  onFreshnessPress,
+}: {
+  heroKey: string;
+  name: string;
+  subtitle: string | null;
+  image: string | null;
+  /** The hero-crop preview the flight fades to in mid-air — see `DetailHero`. */
+  underlay?: string | null;
+  thumbhash?: string | null;
+  video?: { url: string; poster?: string | null } | null;
+  slides?: Array<{ url: string; alt: string | null }>;
+  flying: boolean;
+  entrance: boolean;
+  /** Live walk-up minutes (signature TS venues) — the hero's headline number. */
+  walkupWaitMin?: number | null;
+  /** Per-party-size breakdown behind the walk-up chip's tooltip. */
+  walkupDetail?: string;
+  schedules?: Array<ScheduleEntry>;
+  /** "Newly added" (new venue) vs "Freshly updated" (recent menu change). */
+  freshness?: "new" | "updated" | null;
+  /** Jump-to-item handler behind the "Freshly updated" chip. */
+  onFreshnessPress?: () => void;
+}) {
   const nowMin = parkNowMinutes();
-  const status = openStatus(schedules, nowMin);
-  const label = hoursLabel(schedules);
-  if (!label) return null;
+  const sched = schedules ?? [];
+  const hoursText = sched.length > 0 ? hoursLabel(sched) : null;
+  const status = sched.length > 0 ? openStatus(sched, nowMin) : null;
   const isOpen = status === "open" || status === "closes-soon";
   return (
-    <Badge
-      variant="secondary"
-      title={openStatusDetail(schedules, nowMin)}
-      className={cn(
-        "font-normal",
-        isOpen
-          ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
-          : "text-muted-foreground",
-      )}
-    >
-      {isOpen ? "Open" : "Closed"} · {label}
-    </Badge>
+    <DetailHero
+      heroKey={heroKey}
+      name={name}
+      subtitle={subtitle}
+      image={image}
+      underlay={underlay}
+      thumbhash={thumbhash}
+      video={video}
+      slides={slides}
+      flying={flying}
+      entrance={entrance}
+      overlays={({ chipFx }) => {
+        const freshFx = chipFx(hoursText ? 1 : 0);
+        return (
+          <>
+            {/* The headline number: the live walk-up list, when one is posted —
+                dining's analogue of the ride hero's standby block. Not a flight
+                landing target (POI cards fly no wait chip), so it just joins
+                the entrance cascade. */}
+            {walkupWaitMin != null && (
+              <div
+                style={chipFx(0).style}
+                title={walkupDetail || undefined}
+                className={cn(
+                  "absolute left-4 flex items-center gap-2 rounded-2xl bg-black/75 px-3.5 py-2 text-white shadow-lg backdrop-blur-sm",
+                  HERO_OVERLAY_TOP,
+                  chipFx(0).className,
+                )}
+              >
+                <span className="text-3xl font-bold leading-none tabular-nums sm:text-4xl">
+                  {walkupWaitMin}
+                </span>
+                <span className="flex flex-col text-[10px] font-semibold uppercase leading-tight tracking-wide">
+                  <span>min</span>
+                  <span className="text-white/70">walk-up</span>
+                </span>
+              </div>
+            )}
+
+            {/* Open state + freshness, opposite the walk-up number. */}
+            <div
+              className={cn(
+                "absolute right-4 flex max-w-[60%] flex-col items-end gap-1.5 text-right",
+                HERO_OVERLAY_TOP,
+              )}
+            >
+              {hoursText && (
+                <span
+                  style={chipFx(0).style}
+                  title={openStatusDetail(sched, nowMin)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm",
+                    chipFx(0).className,
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "size-1.5 rounded-full",
+                      isOpen ? "bg-emerald-400" : "bg-white/60",
+                    )}
+                  />
+                  {isOpen ? "Open" : "Closed"} · {hoursText}
+                </span>
+              )}
+              {freshness === "new" && (
+                <span
+                  style={freshFx.style}
+                  className={cn(
+                    "rounded-full bg-emerald-400/90 px-2.5 py-1 text-[11px] font-semibold text-emerald-950 backdrop-blur-sm",
+                    freshFx.className,
+                  )}
+                >
+                  Newly added
+                </span>
+              )}
+              {freshness === "updated" && (
+                <button
+                  type="button"
+                  onClick={onFreshnessPress}
+                  style={freshFx.style}
+                  className={cn(
+                    "cursor-pointer rounded-full bg-emerald-400/90 px-2.5 py-1 text-[11px] font-semibold text-emerald-950 backdrop-blur-sm",
+                    freshFx.className,
+                  )}
+                >
+                  Freshly updated
+                </button>
+              )}
+            </div>
+          </>
+        );
+      }}
+    />
   );
 }
 
@@ -359,6 +487,19 @@ export function DiningVenueDetail({
   const venue = venueQ.data;
   const hoursQ = useQuery(trpc.dining.hours.queryOptions({}));
   const state = useMenuState(facilityId, true, targetItemSlug);
+  // Set when this page was opened by tapping a map POI card: the card's own
+  // name, subtitle and photo, plus whether its flown clones are still in the
+  // air (see `card-flight.ts`).
+  const heroKey = heroFlightKey("dining", facilityId);
+  const flight = useHeroFlight(heroKey);
+  // Heading back to a map view, pop the hero down into its marker. A *layout*
+  // effect, deliberately: its cleanup runs while the page is still in the DOM
+  // (so the hero can be measured and cloned) but with history already pointing
+  // at the destination (so the flight knows this exit is map-bound).
+  React.useLayoutEffect(() => () => launchHeroReturn(heroKey), [heroKey]);
+  // Drop the seed on the way out, so coming back later from somewhere that
+  // isn't the map doesn't paint a stale hero from it.
+  React.useEffect(() => () => releaseHeroFlight(heroKey), [heroKey]);
 
   // A bare `#menu` deep link (recently-updated shelf) scrolls to the menu
   // section once the venue + menu have rendered — a native hash jump would fire
@@ -377,6 +518,14 @@ export function DiningVenueDetail({
       ? resortSlugByName(venue.parkResort)
       : null;
   const subtitleRest = venue ? (venue.experienceType ?? venue.cuisine) : null;
+  // The hero's overlaid one-liner, mirroring the ride hero's "Park · Land" (and
+  // the flight seed's construction of the same, so a map-launched hero doesn't
+  // reword when the venue query lands).
+  const heroSubtitle = venue
+    ? [venue.parkResort, venue.land && venue.land !== venue.parkResort ? venue.land : null]
+        .filter(Boolean)
+        .join(" · ")
+    : null;
 
   const schedules = hoursQ.data?.find((h) => h.facilityId === facilityId)?.schedules ?? [];
 
@@ -475,13 +624,33 @@ export function DiningVenueDetail({
         />
       </div>
 
-      {/* Header */}
+      {/* Header. The loading shell mirrors the loaded branch — same <header>
+          wrapper, hero first — so React reconciles the hero into the *same*
+          DOM node when the venue query lands mid-flight (a remount would
+          replay the image fade and orphan the flight's settle listeners). */}
       {venueQ.isLoading ? (
-        <div className="flex flex-col gap-3">
-          <Skeleton className="h-48 w-full rounded-2xl" />
-          <Skeleton className="h-7 w-64" />
+        <header className="flex flex-col gap-4">
+          {/* Arriving from a map POI card, the hero is already known — paint it
+              from the card's seed rather than a grey block, so the flown clones
+              land on the real thing. */}
+          {flight ? (
+            <DiningHero
+              heroKey={heroKey}
+              name={flight.seed.name}
+              subtitle={flight.seed.subtitle}
+              image={flight.seed.imageUrl}
+              underlay={flight.seed.previewImageUrl ?? flight.seed.cardImageUrl}
+              flying={flight.flying}
+              entrance
+              schedules={schedules}
+            />
+          ) : (
+            /* Same bleed as the real hero, so data landing doesn't shift the page. */
+            <Skeleton className={HERO_BLEED} />
+          )}
+          <Skeleton className="h-6 w-64" />
           <Skeleton className="h-4 w-40" />
-        </div>
+        </header>
       ) : !venue ? (
         <div className="rounded-2xl border bg-muted/30 py-16 text-center">
           <p className="text-lg font-semibold">Restaurant not found</p>
@@ -495,88 +664,52 @@ export function DiningVenueDetail({
         </div>
       ) : (
         <header className="flex flex-col gap-4">
-          {(venue.imageUrl || venueHeroVideo) && (
-            <div className="relative h-40 w-full overflow-hidden rounded-2xl bg-muted sm:h-56 lg:h-64">
-              {venue.imageUrl && (
-                <Image
-                  src={disneyResizeUrl(venue.imageUrl, 1600)}
-                  alt={venue.name}
-                  className="size-full object-cover"
-                  loading="eager"
-                  fetchPriority="high"
-                  sizes="100vw"
-                  quality={80}
-                  // Box is h-40/sm:h-56/lg:h-64 at full width — worst case ~2.4:1
-                  // on a small phone. Same banner crop as the park-dashboard hero.
-                  aspect={12 / 5}
-                  placeholder={venue.imageThumbhash}
-                />
-              )}
-              {/* Ambient loop / stills crossfade from the venue's mediaEngine
-                  collection (plan item 1.9 follow-up). */}
-              {venueHeroVideo ? (
-                <AmbientHeroVideo src={venueHeroVideo.url} poster={venueHeroVideo.poster ?? null} />
-              ) : (
-                <HeroCrossfade slides={venueHeroSlides} />
-              )}
-            </div>
-          )}
+          {/* Identity hero, matching the ride pages: full-bleed photo (or
+              gradient), name + location overlaid, live walk-up wait and open
+              state on top. The old in-flow name/location/hours rows all live on
+              the hero now; only what the hero can't carry stays below. */}
+          <DiningHero
+            heroKey={heroKey}
+            name={venue.name}
+            subtitle={heroSubtitle}
+            image={venue.imageUrl}
+            // Identical expression to the loading shell's, so the underlay
+            // <img> keeps its src (and stays decoded) across the query landing.
+            underlay={flight ? (flight.seed.previewImageUrl ?? flight.seed.cardImageUrl) : null}
+            thumbhash={venue.imageThumbhash}
+            video={venueHeroVideo}
+            slides={venueHeroSlides}
+            flying={flight?.flying ?? false}
+            entrance={!!flight}
+            walkupWaitMin={venue.walkupWaitMin}
+            walkupDetail={(venue.walkupPartySizes ?? [])
+              .filter((p) => p.waitMin != null)
+              .map((p) => `Party of ${p.partySize}: ~${p.waitMin} min`)
+              .join(" · ")}
+            schedules={schedules}
+            freshness={isNewVenue ? "new" : freshChange ? "updated" : null}
+            onFreshnessPress={jumpToFreshItem}
+          />
           <div className="flex flex-col gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{venue.name}</h1>
-              {isNewVenue ? (
-                <Badge className="bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-400">
-                  Newly added
-                </Badge>
-              ) : freshChange ? (
-                <button type="button" onClick={jumpToFreshItem} className="cursor-pointer">
-                  <Badge className="bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-400">
-                    Freshly updated
-                  </Badge>
-                </button>
-              ) : null}
-            </div>
-            {(venue.parkResort || subtitleRest) && (
+            {/* The hero subtitle already names the park/resort and land; this
+                row adds what it can't — the resort cross-link and the cuisine /
+                experience type. */}
+            {(resortSlug || subtitleRest) && (
               <p className="text-muted-foreground flex flex-wrap items-center gap-x-1.5">
-                {venue.parkResort &&
-                  (resortSlug ? (
-                    <Link
-                      to="/resort/$slug"
-                      params={{ slug: resortSlug }}
-                      className="hover:text-foreground hover:underline"
-                    >
-                      {venue.parkResort}
-                    </Link>
-                  ) : (
-                    <span>{venue.parkResort}</span>
-                  ))}
-                {venue.parkResort && subtitleRest && <span aria-hidden>·</span>}
+                {resortSlug && (
+                  <Link
+                    to="/resort/$slug"
+                    params={{ slug: resortSlug }}
+                    className="hover:text-foreground hover:underline"
+                  >
+                    {venue.parkResort}
+                  </Link>
+                )}
+                {resortSlug && subtitleRest && <span aria-hidden>·</span>}
                 {subtitleRest && <span>{subtitleRest}</span>}
               </p>
             )}
-            {venue.land && venue.land !== venue.parkResort && (
-              <p className="inline-flex items-center gap-1 text-sm text-muted-foreground">
-                <MapPinIcon className="size-3.5" />
-                {venue.land}
-              </p>
-            )}
-            <div className="flex flex-wrap items-center gap-1.5">
-              {schedules.length > 0 && <HoursChip schedules={schedules} />}
-              {/* Live walk-up waitlist (plan item 1.2) — signature TS venues. */}
-              {venue.walkupWaitMin != null && (
-                <Badge
-                  variant="secondary"
-                  className="bg-sky-500/15 font-normal text-sky-700 dark:text-sky-400"
-                  title={(venue.walkupPartySizes ?? [])
-                    .filter((p) => p.waitMin != null)
-                    .map((p) => `Party of ${p.partySize}: ~${p.waitMin} min`)
-                    .join(" · ")}
-                >
-                  Walk-up ~{venue.walkupWaitMin} min
-                </Badge>
-              )}
-              <VenueBadges venue={venue} />
-            </div>
+            <VenueBadges venue={venue} />
             {taxonomy.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5">
                 {taxonomy.map((label) => (

@@ -1,13 +1,21 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { isServer, useQuery } from "@tanstack/react-query";
-import { ArrowLeftIcon, ExternalLinkIcon, MapPinIcon, ShoppingBagIcon } from "lucide-react";
+import { useEffect, useLayoutEffect } from "react";
+import { ArrowLeftIcon, ExternalLinkIcon, ShoppingBagIcon } from "lucide-react";
 
+import { DetailHero, HERO_OVERLAY_TOP } from "#/components/detail-hero.tsx";
+import {
+  heroFlightKey,
+  launchHeroReturn,
+  releaseHeroFlight,
+  useHeroFlight,
+} from "#/components/park-map/card-flight.ts";
 import { WalkThereButton } from "#/components/park-map/walk-there-button.tsx";
 import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
-import { Image } from "#/components/ui/image.tsx";
-import { disneyResizeUrl } from "#/lib/image.ts";
+import { Badge } from "#/components/ui/badge.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { seo } from "#/lib/seo.ts";
+import { cn } from "#/lib/utils.ts";
 
 /** "gateway-gifts" -> "Gateway Gifts" for a readable, indexable fallback title. */
 function titleizeSlug(slug: string): string {
@@ -59,84 +67,89 @@ function ShopPage() {
   const { slug } = Route.useParams();
   const trpc = useTRPC();
   const { data: shop } = useQuery(trpc.parks.shop.queryOptions({ slug }));
+  // Set when this page was opened by tapping a map POI card: the card's own
+  // name, subtitle and photo, plus whether its flown clones are still in the
+  // air (see `card-flight.ts`).
+  const heroKey = heroFlightKey("shop", slug);
+  const flight = useHeroFlight(heroKey);
+  // Heading back to a map view, pop the hero down into its marker — a layout
+  // effect so the cleanup can still measure the hero (see the ride page).
+  useLayoutEffect(() => () => launchHeroReturn(heroKey), [heroKey]);
+  useEffect(() => () => releaseHeroFlight(heroKey), [heroKey]);
 
-  const name = shop?.name ?? titleizeSlug(slug);
-  const location = [shop?.land, shop?.parkResort].filter(Boolean).join(" · ");
+  // Data → seed → titleized slug: the seeded values keep a map-launched hero
+  // painted (and the flown clones honest) while the query is still in flight.
+  const name = shop?.name ?? flight?.seed.name ?? titleizeSlug(slug);
+  const subtitle = shop
+    ? [shop.parkResort, shop.land && shop.land !== shop.parkResort ? shop.land : null]
+        .filter(Boolean)
+        .join(" · ")
+    : (flight?.seed.subtitle ?? null);
 
   return (
-    <div className="mx-auto w-full max-w-2xl p-4 sm:p-6">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <Link
-          to="/map"
-          className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm font-medium transition-colors max-md:text-white/90 max-md:hover:text-white"
-        >
-          <ArrowLeftIcon className="size-4" />
-          Back to map
-        </Link>
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 pt-2 pb-6 lg:px-6">
+      <div className="hidden items-center justify-between gap-3 md:flex">
+        <nav className="text-sm text-muted-foreground">
+          <Link to="/map" className="-m-2 inline-flex items-center gap-1.5 p-2 hover:underline">
+            <ArrowLeftIcon className="size-3.5" />
+            Back to map
+          </Link>
+        </nav>
         {shop && (
           <RemovalRequestDialog entityType="shop" entityId={shop.id} entityName={shop.name} />
         )}
       </div>
 
-      {/* Self-contained card so the page reads correctly on any inset surface
-          (the mobile dashboard gutter is colored; bg-card owns its own contrast). */}
-      <article className="overflow-hidden rounded-3xl border bg-card text-card-foreground shadow-sm">
-        {/* Hero — the shop's photo, or a themed placeholder when the finder feed
-            carries no media (many carts/kiosks and smaller shops don't). */}
-        {shop?.imageUrl ? (
-          <Image
-            src={disneyResizeUrl(shop.imageUrl, 1600)}
-            alt={name}
-            className="aspect-[16/9] w-full object-cover"
-            loading="eager"
-            fetchPriority="high"
-            sizes="(min-width: 768px) 42rem, 100vw"
-            quality={80}
-            placeholder={shop.imageThumbhash}
-          />
-        ) : (
-          <div className="from-muted to-muted/40 flex aspect-[16/9] w-full items-center justify-center bg-gradient-to-br">
-            <ShoppingBagIcon className="text-muted-foreground/40 size-16" />
-          </div>
-        )}
-
-        <div className="space-y-5 p-5 sm:p-6">
-          <div className="space-y-1.5">
-            <span className="text-muted-foreground inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide">
+      <header className="flex flex-col gap-4">
+        {/* Identity hero, matching the ride/dining pages: the shop's photo (or
+            a neutral gradient — many carts/kiosks publish no media), name +
+            location overlaid, with a kind chip in place of live state. */}
+        <DetailHero
+          heroKey={heroKey}
+          name={name}
+          subtitle={subtitle}
+          image={shop?.imageUrl ?? flight?.seed.imageUrl ?? null}
+          // Identical across the seeded and loaded renders, so the underlay
+          // <img> keeps its src (and stays decoded) across the query landing.
+          underlay={flight ? (flight.seed.previewImageUrl ?? flight.seed.cardImageUrl) : null}
+          thumbhash={shop?.imageThumbhash}
+          flying={flight?.flying ?? false}
+          entrance={!!flight}
+          overlays={({ chipFx }) => (
+            <span
+              style={chipFx(0).style}
+              className={cn(
+                "absolute right-4 inline-flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm",
+                HERO_OVERLAY_TOP,
+                chipFx(0).className,
+              )}
+            >
               <ShoppingBagIcon className="size-3.5" />
               Shop
             </span>
-            <h1 className="text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">
-              {name}
-            </h1>
-            {location && (
-              <p className="text-muted-foreground flex items-center gap-1.5 text-sm">
-                <MapPinIcon className="size-4 shrink-0" />
-                {location}
-              </p>
-            )}
-            {/* Official marketing copy (plan item 2.3). */}
-            {shop?.description && (
-              <p className="text-muted-foreground max-w-prose text-sm">{shop.description}</p>
-            )}
-          </div>
+          )}
+        />
 
+        <div className="flex flex-col gap-3">
+          {/* Official marketing copy (plan item 2.3). */}
+          {shop?.description && (
+            <p className="text-muted-foreground max-w-prose text-sm">{shop.description}</p>
+          )}
           {shop && shop.merchandise.length > 0 && (
-            <div className="space-y-2">
+            <div className="flex flex-col gap-2">
               <h2 className="text-muted-foreground text-xs font-semibold uppercase tracking-wide">
                 What you'll find
               </h2>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
                 {shop.merchandise.map((m) => (
-                  <span key={m} className="bg-muted rounded-full px-3 py-1 text-xs font-medium">
+                  <Badge key={m} variant="secondary">
                     {humanizeFacet(m)}
-                  </span>
+                  </Badge>
                 ))}
               </div>
             </div>
           )}
-
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-2">
             {/* Walking-nav entry point (§4.2) — routes to this shop on the map. */}
             {shop && (
               <WalkThereButton
@@ -150,15 +163,15 @@ function ShopPage() {
                 href={shop.detailUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="btn-3d-outline border-3d shadow-3d inline-flex items-center gap-2 rounded-full bg-background px-4 py-2.5 text-sm font-medium transition active:scale-95 dark:border-[color-mix(in_oklch,var(--border),white_25%)]"
+                className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
               >
-                <ExternalLinkIcon className="size-4" />
                 View on the official site
+                <ExternalLinkIcon className="size-3.5" />
               </a>
             )}
           </div>
         </div>
-      </article>
+      </header>
     </div>
   );
 }

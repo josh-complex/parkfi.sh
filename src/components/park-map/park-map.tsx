@@ -18,7 +18,7 @@ import { distanceMeters, pointInPolygon } from "#/server/living/geofence.ts";
 import type { GeoPolygon } from "#/db/schema.ts";
 import { reportError } from "#/lib/report-error.ts";
 
-import { launchHeroFlight, rideFlightSeed } from "./card-flight.ts";
+import { launchHeroFlight, poiFlightSeed, rideFlightSeed } from "./card-flight.ts";
 import { MarkerCluster, type DeclutterItem } from "./declutter.ts";
 import { fusedHeadingStore } from "./heading-store.ts";
 import { roundCoord, routeBearingAt } from "./nav-geometry.ts";
@@ -1472,22 +1472,49 @@ export function ParkMap({
               // /dining/$facilityId, overlay POIs → the operator's page in a new
               // tab. `poiPressTarget` centralizes where each kind leads.
               const press = poiPressTarget(poi);
+              // Warm the destination page's data as the card opens (mirrors the
+              // ride card's prefetch), so pressing it navigates instantly.
+              if (press?.kind === "dining") {
+                void queryClient.prefetchQuery(
+                  trpc.dining.venue.queryOptions({ facilityId: press.facilityId }),
+                );
+                void queryClient.prefetchQuery(trpc.dining.hours.queryOptions({}));
+              } else if (press?.kind === "shop") {
+                void queryClient.prefetchQuery(trpc.parks.shop.queryOptions({ slug: press.slug }));
+              }
               const { card, close } = openAttractionCard({
                 detail,
                 container: containerRef.current,
                 bodyHtml: poiCardBodyHtml(poi),
                 wasSelected: false,
                 onClose: () => raise.pinTop(false),
+                // In-app destinations fly the card on to the page's hero (and
+                // seed it) — same grammar as the ride cards; external targets
+                // just open in a new tab, with nothing to fly to.
                 onPress: press
-                  ? () => {
-                      if (press.kind === "shop")
+                  ? (nodes) => {
+                      const seedOpts = {
+                        poi,
+                        parkSlug: effectiveSlug,
+                        parkName:
+                          parksRef.current?.find((p) => p.slug === effectiveSlug)?.name ?? null,
+                      };
+                      if (press.kind === "shop") {
+                        launchHeroFlight(
+                          poiFlightSeed({ kind: "shop", id: press.slug, ...seedOpts }),
+                          nodes,
+                        );
                         void navigate({ to: "/shop/$slug", params: { slug: press.slug } });
-                      else if (press.kind === "dining")
+                      } else if (press.kind === "dining") {
+                        launchHeroFlight(
+                          poiFlightSeed({ kind: "dining", id: press.facilityId, ...seedOpts }),
+                          nodes,
+                        );
                         void navigate({
                           to: "/dining/$facilityId",
                           params: { facilityId: press.facilityId },
                         });
-                      else window.open(press.url, "_blank", "noopener,noreferrer");
+                      } else window.open(press.url, "_blank", "noopener,noreferrer");
                     }
                   : undefined,
               });

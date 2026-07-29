@@ -246,6 +246,39 @@ export function rideFlightSeed(opts: {
 }
 
 /**
+ * Build the seed for a dining/shop POI card press, matching what the
+ * destination hero renders — the same "Park · Land" subtitle and the same feed
+ * photo (`restaurant_dim` / `shop_dim` `image_url`, which the `dining.venue` /
+ * `parks.shop` queries also serve), so the seeded hero and the loaded page
+ * agree. POI cards carry no live wait or status, so those legs stay empty.
+ */
+export function poiFlightSeed(opts: {
+  /** Destination page kind — also the flight-key namespace. */
+  kind: "dining" | "shop";
+  /** Route id: the dining facility id, or the shop's finder slug. */
+  id: string;
+  poi: { id: string; name: string; land: string | null; imageUrl: string | null };
+  parkSlug: string;
+  parkName: string | null;
+}): HeroFlightSeed {
+  const { kind, id, poi, parkSlug, parkName } = opts;
+  return {
+    key: heroFlightKey(kind, id),
+    markerKey: poiMarkerKey(poi.id),
+    // POI layers only draw on park map views (boundary-clipped), reached from
+    // either the roam map or the park's own map view.
+    returnPaths: ["/map", `/park/${parkSlug}`],
+    name: poi.name,
+    subtitle: [parkName, poi.land].filter(Boolean).join(" · "),
+    waitMinutes: null,
+    status: null,
+    imageUrl: poi.imageUrl,
+    cardImageUrl: null,
+    previewImageUrl: heroPreviewUrl(poi.imageUrl),
+  };
+}
+
+/**
  * Drop this page's seed (on unmount), so navigating back to the same page later
  * from somewhere that *isn't* the map doesn't paint a stale hero from it.
  */
