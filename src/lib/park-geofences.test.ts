@@ -44,6 +44,34 @@ describe("parkGeofencesFromParks", () => {
     expect(huge.radiusM).toBe(2_500);
   });
 
+  it("prefers the real-footprint fence bbox over the attraction hull", () => {
+    // Tight attraction hull (would floor to the 200 m minimum) + a fence bbox
+    // ~3× wider — the circle must derive from the fence.
+    const park: ParkGeoInput = {
+      ...boxPark(5, -81.581, 28.418, 0.003),
+      fence: {
+        latMin: 28.418 - 0.009,
+        latMax: 28.418 + 0.009,
+        lngMin: -81.581 - 0.009,
+        lngMax: -81.581 + 0.009,
+      },
+    };
+    const [f] = parkGeofencesFromParks([park], null);
+    const [hullOnly] = parkGeofencesFromParks([boxPark(5, -81.581, 28.418, 0.003)], null);
+    expect(f.radiusM).toBeGreaterThan(hullOnly.radiusM);
+    // Half-diagonal of an ~2 km-wide box + the 150 m buffer lands well past 1 km.
+    expect(f.radiusM).toBeGreaterThan(1_000);
+    expect(f.lat).toBeCloseTo(28.418, 5);
+    expect(f.lng).toBeCloseTo(-81.581, 5);
+  });
+
+  it("falls back to the hull bbox when fence is null", () => {
+    const park: ParkGeoInput = { ...boxPark(6, -81.5, 28.4), fence: null };
+    const [withNullFence] = parkGeofencesFromParks([park], null);
+    const [plain] = parkGeofencesFromParks([boxPark(6, -81.5, 28.4)], null);
+    expect(withNullFence).toEqual(plain);
+  });
+
   it("falls back to the stored centroid when there's no bbox", () => {
     const noBox: ParkGeoInput = {
       id: 3,

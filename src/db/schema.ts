@@ -2299,3 +2299,35 @@ export const userRideEvent = pgTable(
     index("user_ride_event_user_attraction_idx").on(t.userId, t.attractionId),
   ],
 );
+
+/**
+ * Geofence transition audit log (W2 Phase A of the park-tracking fixes): every
+ * client-reported park ENTER/EXIT, verbatim. Deliberately carries **no stat
+ * credit** — it's the diagnostic record of how native geofencing behaves in
+ * prod (spam rate, enter/exit flapping, platform asymmetry) and the
+ * corroboration input for the Phase B fence-only crediting rule. `at` is the
+ * client's claimed transition time (bounded server-side), `createdAt` the
+ * server receipt time — the skew between them is itself signal (retained
+ * events consumed on app resume arrive late by design).
+ */
+export const userParkTransition = pgTable(
+  "user_park_transition",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    parkId: bigint("park_id", { mode: "number" })
+      .notNull()
+      .references(() => parks.id),
+    transition: text("transition").notNull(), // 'enter' | 'exit'
+    at: timestamp("at", { withTimezone: true }).notNull(),
+    source: text("source").notNull().default("geofence"),
+    platform: text("platform"), // 'ios' | 'android' | null (unreported)
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("user_park_transition_user_idx").on(t.userId, t.at.desc()),
+    index("user_park_transition_park_idx").on(t.parkId, t.at.desc()),
+  ],
+);

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "#/db/index.ts";
 import { UOR_PARKS } from "#/lib/parks.ts";
 import { capacityFromUnits, type CapacityLevel } from "#/lib/ticket-scarcity.ts";
+import { geofenceBounds } from "#/server/achievements/geo.ts";
 import { buildLightningLaneDeepLink } from "#/server/notifications/lightningLaneDeepLink.ts";
 import { disneyCardUrl, QueueState, QueueType } from "#/server/parks/codes.ts";
 import { config } from "#/server/parks/config.ts";
@@ -75,28 +76,38 @@ export const parksRouter = {
       WHERE p.active = true
       ORDER BY r.name, p.name
     `);
-    return result.rows.map((p) => ({
-      id: Number(p.id),
-      slug: p.slug,
-      name: p.name,
-      timezone: p.timezone,
-      operatorSlug: p.operator_slug,
-      operatorName: p.operator_name,
-      resortName: p.resort_name,
-      latitude: p.latitude,
-      longitude: p.longitude,
-      bounds:
+    return result.rows.map((p) => {
+      const bounds =
         p.lat_min != null && p.lat_max != null && p.lng_min != null && p.lng_max != null
           ? { latMin: p.lat_min, latMax: p.lat_max, lngMin: p.lng_min, lngMax: p.lng_max }
-          : null,
-      mapZoom: p.map_zoom,
-      boundary: p.boundary,
-      imageUrl: p.image_url,
-      imageAlt: p.image_alt,
-      imageThumbhash: p.image_thumbhash,
-      // Full hero carousel slides (plan item 1.9) — Disney parks only for now.
-      heroMedia: p.hero_media ?? [],
-    }));
+          : null;
+      return {
+        id: Number(p.id),
+        slug: p.slug,
+        name: p.name,
+        timezone: p.timezone,
+        operatorSlug: p.operator_slug,
+        operatorName: p.operator_name,
+        resortName: p.resort_name,
+        latitude: p.latitude,
+        longitude: p.longitude,
+        bounds,
+        // Geofence bbox from the real park footprint (OSM boundary polygon
+        // first, attraction hull fallback — same derivation the ping engine
+        // uses). `bounds` above stays the tight attraction hull: it's
+        // load-bearing for map camera fit. This one is for geofence circles
+        // and near-park tests (W4/W1) — MK's hull is ~580 m across where the
+        // real footprint is ~3× that.
+        fence: bounds ? geofenceBounds(bounds, p.boundary) : null,
+        mapZoom: p.map_zoom,
+        boundary: p.boundary,
+        imageUrl: p.image_url,
+        imageAlt: p.image_alt,
+        imageThumbhash: p.image_thumbhash,
+        // Full hero carousel slides (plan item 1.9) — Disney parks only for now.
+        heroMedia: p.hero_media ?? [],
+      };
+    });
   }),
 
   /**

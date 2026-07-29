@@ -93,6 +93,42 @@ export function distanceToBoundary(point: LngLat, geo: GeoPolygon | null | undef
   return best;
 }
 
+/**
+ * Grace ring outside a park's boundary polygon that still counts as in-park.
+ * The OSM outlines are tight to the fence line, and several parks queue rides
+ * within ~20–45 m of it (all of Volcano Bay's slides, EPCOT's France pavilion)
+ * — without the buffer, ordinary GPS drift there reads as a park exit, which
+ * resets the queue-dwell anchor and counts toward the ride-recorder disarm.
+ */
+export const GEOFENCE_BUFFER_M = 30;
+
+/**
+ * The bbox prefilter for one park's geofence. The stored lat/lng min/max are
+ * the min/max hull of the park's *attraction* coordinates (services/geo
+ * `computeBounds` over the children feed) — far tighter than the park itself,
+ * and requiring them alongside the boundary polygon dead-zoned 30–70% of every
+ * park's walkable area (entrances, rim paths). The OSM boundary is the
+ * authoritative outline, so when a park has one the prefilter derives from it;
+ * the stored hull is only the fallback for a park the OSM outline step hasn't
+ * covered yet. Either box is padded by GEOFENCE_BUFFER_M so it never clips the
+ * buffered polygon test in parkForPoint. Shared by the ping engine and the
+ * `parks.list` router (the client geofence circles derive from this too — W4).
+ */
+export function geofenceBounds(
+  stored: { latMin: number; latMax: number; lngMin: number; lngMax: number },
+  boundary: GeoPolygon | null,
+): { latMin: number; latMax: number; lngMin: number; lngMax: number } {
+  const box = polygonBbox(boundary) ?? stored;
+  const latPad = GEOFENCE_BUFFER_M / 111_320;
+  const lngPad = latPad / Math.cos((box.latMin * Math.PI) / 180);
+  return {
+    latMin: box.latMin - latPad,
+    latMax: box.latMax + latPad,
+    lngMin: box.lngMin - lngPad,
+    lngMax: box.lngMax + lngPad,
+  };
+}
+
 /** Equirectangular-approx distance in meters — fine at theme-park scale. */
 export function distanceMeters(a: LngLat, b: LngLat): number {
   const R = 6_371_000;

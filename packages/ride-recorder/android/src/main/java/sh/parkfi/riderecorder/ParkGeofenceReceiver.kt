@@ -52,10 +52,35 @@ class ParkGeofenceReceiver : BroadcastReceiver() {
                 // Backgrounded FGS-start blocked (Android 12+) — the JS event
                 // still lands, so monitoring arms when the app next resumes.
             }
-            postParkEntryNotification(context)
+            maybePostParkEntryNotification(context)
         } else {
             context.stopService(Intent(context, RideMonitorService::class.java))
         }
+    }
+
+    /**
+     * Notification etiquette (W3). The arming and the JS forward above are
+     * unconditional — only the *notification* is gated:
+     *  1. never while the app is foreground (the in-app UI covers it; a
+     *     geofence-restarted process defaults `appActive` to false);
+     *  2. never within [INITIAL_TRIGGER_SUPPRESS_MS] of registration — that's
+     *     `INITIAL_TRIGGER_ENTER`'s synthetic firing on every cold start
+     *     inside a park, the source of the field-test spam;
+     *  3. at most once per device-local day.
+     */
+    private fun maybePostParkEntryNotification(context: Context) {
+        if (RideMonitorService.appActive) return
+        val prefs = RecorderPrefs.get(context)
+        val registeredAt = prefs.getLong(RecorderPrefs.KEY_REGISTERED_AT, 0L)
+        if (registeredAt > 0 &&
+            System.currentTimeMillis() - registeredAt < INITIAL_TRIGGER_SUPPRESS_MS
+        ) {
+            return
+        }
+        val today = RecorderPrefs.today()
+        if (prefs.getString(RecorderPrefs.KEY_ENTRY_NOTIFIED_DAY, null) == today) return
+        prefs.edit().putString(RecorderPrefs.KEY_ENTRY_NOTIFIED_DAY, today).apply()
+        postParkEntryNotification(context)
     }
 
     private fun postParkEntryNotification(context: Context) {
@@ -73,5 +98,9 @@ class ParkGeofenceReceiver : BroadcastReceiver() {
 
     companion object {
         const val PARK_ENTRY_ID = 4203
+
+        // ENTERs this soon after registration are INITIAL_TRIGGER_ENTER
+        // synthetics, not a walk through the gate.
+        const val INITIAL_TRIGGER_SUPPRESS_MS = 30_000L
     }
 }

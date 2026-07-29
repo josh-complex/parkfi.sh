@@ -1,6 +1,6 @@
 import type { ParkGeofence } from "#/lib/ride-recorder-client.ts";
 
-/** The subset of a `parks.list` row this needs — centroid + bounding box. */
+/** The subset of a `parks.list` row this needs — centroid + bounding box(es). */
 export interface ParkGeoInput {
   id: number;
   latitude: number | null;
@@ -9,6 +9,13 @@ export interface ParkGeoInput {
   latMax: number | null;
   lngMin: number | null;
   lngMax: number | null;
+  /**
+   * Real-footprint bbox (`parks.list`'s `fence`, boundary-polygon-first). When
+   * present it wins over the lat/lng min/max hull: the hull is the *attraction*
+   * bbox, which under-covers every park (MK's is ~580 m across against a
+   * ~1.7 km footprint) and made rim/entrance walking flap EXIT/ENTER all day.
+   */
+  fence?: { latMin: number; latMax: number; lngMin: number; lngMax: number } | null;
 }
 
 // iOS monitors at most 20 regions per app; keep the nearest ones.
@@ -50,15 +57,19 @@ export function parkGeofencesFromParks(
   const fences: (ParkGeofence & { _center: [number, number] })[] = [];
 
   for (const p of parks) {
-    const hasBox = p.latMin != null && p.latMax != null && p.lngMin != null && p.lngMax != null;
+    const box =
+      p.fence ??
+      (p.latMin != null && p.latMax != null && p.lngMin != null && p.lngMax != null
+        ? { latMin: p.latMin, latMax: p.latMax, lngMin: p.lngMin, lngMax: p.lngMax }
+        : null);
     let center: [number, number] | null = null;
     let radiusM = MIN_RADIUS_M;
 
-    if (hasBox) {
-      const latMid = (p.latMin! + p.latMax!) / 2;
-      const lngMid = (p.lngMin! + p.lngMax!) / 2;
+    if (box) {
+      const latMid = (box.latMin + box.latMax) / 2;
+      const lngMid = (box.lngMin + box.lngMax) / 2;
       center = [lngMid, latMid];
-      const halfDiagM = haversineM([p.lngMin!, p.latMin!], [p.lngMax!, p.latMax!]) / 2;
+      const halfDiagM = haversineM([box.lngMin, box.latMin], [box.lngMax, box.latMax]) / 2;
       radiusM = halfDiagM + RADIUS_BUFFER_M;
     } else if (p.latitude != null && p.longitude != null) {
       center = [p.longitude, p.latitude];

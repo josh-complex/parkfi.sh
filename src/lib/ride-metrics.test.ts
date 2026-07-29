@@ -47,7 +47,26 @@ describe("hasRideSignature", () => {
   });
 
   it("accepts maxG exactly at the threshold, rejects just below with nothing else", () => {
+    // Baseline durationS (45) clears maxGMinDurationS, so maxG is the only gate.
     expect(hasRideSignature(metrics({ maxG: RIDE_SIGNATURE.minMaxG }))).toBe(true);
     expect(hasRideSignature(metrics({ maxG: RIDE_SIGNATURE.minMaxG - 0.01 }))).toBe(false);
+  });
+
+  it("rejects a walking-band maxG spike (W5: 1.8 sat inside 1.5–2.5 g step impacts)", () => {
+    expect(hasRideSignature(metrics({ maxG: 2.0 }))).toBe(false);
+  });
+
+  it("requires sustained duration for a maxG-only signature", () => {
+    // A short high-g burst (phone handling, a stumble) is not a ride…
+    expect(
+      hasRideSignature(metrics({ maxG: 3.0, durationS: RIDE_SIGNATURE.maxGMinDurationS - 1 })),
+    ).toBe(false);
+    // …but the same g sustained past the duration floor is.
+    expect(
+      hasRideSignature(metrics({ maxG: 3.0, durationS: RIDE_SIGNATURE.maxGMinDurationS })),
+    ).toBe(true);
+    // The duration floor only applies to maxG-only evidence: a short trace with
+    // a real drop still passes.
+    expect(hasRideSignature(metrics({ dropCount: 1, durationS: 25 }))).toBe(true);
   });
 });

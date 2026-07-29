@@ -11,6 +11,7 @@ import {
   userAchievement,
   userGeoState,
   userParkDay,
+  userParkTransition,
   userRideEvent,
   userStat,
 } from "#/db/schema.ts";
@@ -106,6 +107,50 @@ export const achievementsRouter = {
     .mutation(async ({ ctx, input }) => {
       const result = await reconcileDaySteps(ctx.userId, input.parkId, input.day, input.steps);
       return result ?? { newlyUnlocked: [], xp: 0, level: levelForXp(0), steps: null };
+    }),
+
+  /**
+   * Geofence transition audit (W2 Phase A, park-tracking fixes): record every
+   * client-reported park ENTER/EXIT verbatim into `user_park_transition`.
+   * Deliberately NO stat credit — fences are larger than the park (W4), so a
+   * bare ENTER can be a drive-by; this is the diagnostic record that shows how
+   * geofencing behaves in prod and the corroboration input for Phase B.
+   * `at` (epoch ms) is the client's claimed transition time — clamped to a
+   * sane window (48 h past … 5 min future) so a bad clock can't scatter the
+   * audit trail; out-of-window claims fall back to server receipt time.
+   */
+  reportParkTransition: protectedProcedure
+    .input(
+      z.object({
+        parkId: z.number().int().positive(),
+        transition: z.enum(["enter", "exit"]),
+        at: z.number().int().positive().optional(),
+        platform: z.enum(["ios", "android", "web"]).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const now = Date.now();
+      const at =
+        input.at != null && input.at >= now - 48 * 60 * 60 * 1000 && input.at <= now + 5 * 60 * 1000
+          ? new Date(input.at)
+          : new Date(now);
+      // Unknown parkId (a stale client fence set after a park is retired)
+      // must not 500 into the client's failure telemetry as a server error —
+      // verify the FK target first and report a clean no-op.
+      const [park] = await db
+        .select({ id: parks.id })
+        .from(parks)
+        .where(eq(parks.id, input.parkId));
+      if (!park) return { recorded: false };
+      await db.insert(userParkTransition).values({
+        userId: ctx.userId,
+        parkId: input.parkId,
+        transition: input.transition,
+        at,
+        source: "geofence",
+        platform: input.platform ?? null,
+      });
+      return { recorded: true };
     }),
 
   /** Allowlisted client event (pin scan, alert created, …). */

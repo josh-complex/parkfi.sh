@@ -181,18 +181,19 @@ class RideRecorderPlugin : Plugin() {
     fun setParkGeofences(call: PluginCall) {
         val regions = call.getArray("regions", JSArray()) ?: JSArray()
         val fences = ArrayList<Geofence>()
+        val canonicalParts = ArrayList<String>()
         for (i in 0 until regions.length()) {
             val obj = regions.getJSONObject(i)
             val id = obj.optString("id", "")
             if (id.isEmpty()) continue
+            val lat = obj.optDouble("lat")
+            val lng = obj.optDouble("lng")
+            val radiusM = obj.optDouble("radiusM")
+            canonicalParts.add("$id:$lat:$lng:$radiusM")
             fences.add(
                 Geofence.Builder()
                     .setRequestId(id)
-                    .setCircularRegion(
-                        obj.optDouble("lat"),
-                        obj.optDouble("lng"),
-                        obj.optDouble("radiusM").toFloat()
-                    )
+                    .setCircularRegion(lat, lng, radiusM.toFloat())
                     .setExpirationDuration(Geofence.NEVER_EXPIRE)
                     .setTransitionTypes(
                         Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_EXIT
@@ -204,8 +205,26 @@ class RideRecorderPlugin : Plugin() {
             call.resolve()
             return
         }
+        // Skip-unchanged (W3): every cold start re-registered the same set,
+        // and INITIAL_TRIGGER_ENTER fired a synthetic ENTER each app open
+        // inside a park. If the fence set is byte-identical AND the device
+        // hasn't rebooted since (Play Services drops geofences on reboot,
+        // so an unchanged set must still re-register then), leave the live
+        // registration alone. bootCount -1 (unreadable) always re-registers.
+        val canonical = canonicalParts.sorted().joinToString(";")
+        val prefs = RecorderPrefs.get(context)
+        val bootCount = RecorderPrefs.bootCount(context)
+        if (canonical == prefs.getString(RecorderPrefs.KEY_GEOFENCE_SET, null) &&
+            bootCount != -1 &&
+            bootCount == prefs.getInt(RecorderPrefs.KEY_GEOFENCE_BOOT_COUNT, -2)
+        ) {
+            call.resolve()
+            return
+        }
         val request = GeofencingRequest.Builder()
             // Fire immediately if we're *already* inside a park when registering.
+            // The receiver suppresses the *notification* for ENTERs within 30 s
+            // of KEY_REGISTERED_AT (the synthetic), but still arms + forwards.
             .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER)
             .addGeofences(fences)
             .build()
@@ -213,7 +232,14 @@ class RideRecorderPlugin : Plugin() {
             // Replace the set: drop everything, then add the new fences.
             geofencingClient.removeGeofences(geofencePendingIntent)
             geofencingClient.addGeofences(request, geofencePendingIntent)
-                .addOnSuccessListener { call.resolve() }
+                .addOnSuccessListener {
+                    prefs.edit()
+                        .putString(RecorderPrefs.KEY_GEOFENCE_SET, canonical)
+                        .putInt(RecorderPrefs.KEY_GEOFENCE_BOOT_COUNT, bootCount)
+                        .putLong(RecorderPrefs.KEY_REGISTERED_AT, System.currentTimeMillis())
+                        .apply()
+                    call.resolve()
+                }
                 .addOnFailureListener { e -> call.reject("geofence add failed", e) }
         } catch (e: SecurityException) {
             // Background-location grant missing — geofences only run while in use.
@@ -223,6 +249,12 @@ class RideRecorderPlugin : Plugin() {
 
     @PluginMethod
     fun clearParkGeofences(call: PluginCall) {
+        // Drop the stored set too, so the skip-unchanged check in
+        // setParkGeofences can't mistake a cleared registration for a live one.
+        RecorderPrefs.get(context).edit()
+            .remove(RecorderPrefs.KEY_GEOFENCE_SET)
+            .remove(RecorderPrefs.KEY_GEOFENCE_BOOT_COUNT)
+            .apply()
         geofencingClient.removeGeofences(geofencePendingIntent)
             .addOnCompleteListener { call.resolve() }
     }

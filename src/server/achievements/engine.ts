@@ -40,10 +40,15 @@ import { Source } from "#/server/parks/codes.ts";
 import {
   distanceMeters,
   distanceToBoundary,
+  GEOFENCE_BUFFER_M,
+  geofenceBounds,
   pointInPolygon,
-  polygonBbox,
   type LngLat,
 } from "./geo.ts";
+
+// Re-exported for the engine tests, which exercise the prefilter/park-point
+// pipeline through this module.
+export { geofenceBounds } from "./geo.ts";
 import {
   advanceTransitState,
   aggregateDisneyDayStats,
@@ -61,12 +66,6 @@ const PING_MAX_GAP_S = 300; // deltas older than this don't accrue distance/queu
 const WALK_SPEED_CAP_MS = 2.5; // m/s — clamps GPS jumps & vehicle travel
 const QUEUE_ENTER_RADIUS_M = 40; // anchor to an attraction within this
 const QUEUE_EXIT_RADIUS_M = 60; // hysteresis: keep anchor until beyond this
-// Grace ring outside a park's boundary polygon that still counts as in-park.
-// The OSM outlines are tight to the fence line, and several parks queue rides
-// within ~20–45 m of it (all of Volcano Bay's slides, EPCOT's France pavilion)
-// — without the buffer, ordinary GPS drift there reads as a park exit, which
-// resets the queue-dwell anchor and counts toward the ride-recorder disarm.
-const GEOFENCE_BUFFER_M = 30;
 const QUEUE_MIN_DWELL_S = 480; // ≥8 min anchored ⇒ it was a queue ⇒ +1 ride
 // Steps-per-second plausibility ceiling for a client-reported pedometer delta —
 // a flat-out run is ~3/s; anything past this is a spoofed or corrupt counter.
@@ -144,32 +143,6 @@ async function getParks(): Promise<CachedPark[]> {
     .map((r) => ({ ...r, ...geofenceBounds(r, r.boundary ?? null), boundary: r.boundary ?? null }));
   parksCache = { at: Date.now(), data };
   return data;
-}
-
-/**
- * The bbox prefilter for one park's geofence. The stored lat/lng min/max are
- * the min/max hull of the park's *attraction* coordinates (services/geo
- * `computeBounds` over the children feed) — far tighter than the park itself,
- * and requiring them alongside the boundary polygon dead-zoned 30–70% of every
- * park's walkable area (entrances, rim paths). The OSM boundary is the
- * authoritative outline, so when a park has one the prefilter derives from it;
- * the stored hull is only the fallback for a park the OSM outline step hasn't
- * covered yet. Either box is padded by GEOFENCE_BUFFER_M so it never clips the
- * buffered polygon test in parkForPoint. Exported for tests.
- */
-export function geofenceBounds(
-  stored: { latMin: number; latMax: number; lngMin: number; lngMax: number },
-  boundary: GeoPolygon | null,
-): { latMin: number; latMax: number; lngMin: number; lngMax: number } {
-  const box = polygonBbox(boundary) ?? stored;
-  const latPad = GEOFENCE_BUFFER_M / 111_320;
-  const lngPad = latPad / Math.cos((box.latMin * Math.PI) / 180);
-  return {
-    latMin: box.latMin - latPad,
-    latMax: box.latMax + latPad,
-    lngMin: box.lngMin - lngPad,
-    lngMax: box.lngMax + lngPad,
-  };
 }
 
 interface CachedAttraction {

@@ -49,8 +49,14 @@ class RideMonitorService : Service() {
         r.onRideDetected = { result ->
             // Local notification is the user-visible half when the WebView is
             // suspended; skip it when the app is foreground (the in-app recap
-            // toast covers that case). The JS forward always happens.
-            if (!appActive) postRecapNotification(result)
+            // toast covers that case), and gate it on the ride signature (W3)
+            // so walking traces stop notifying — the raw detector's variance
+            // trigger fires on queue shuffling/phone handling. The JS forward
+            // always happens (the debug ring and PostHog need suppressed
+            // traces too).
+            if (!appActive && RideSignature.hasSignature(result.metrics)) {
+                postRecapNotification(result)
+            }
             rideDetectedCb?.invoke(result)
         }
         recorder = r
@@ -142,8 +148,12 @@ class RideMonitorService : Service() {
 
         // Toggled by the plugin's resume/pause lifecycle so the service knows
         // whether to post the local recap notification (skip when foreground).
+        // Defaults to FALSE: a geofence-restarted process without a resumed
+        // activity is not foreground — the old `true` default suppressed
+        // recaps after process death, the exact case the notification exists
+        // for (and let the entry notification skip its foreground check).
         @Volatile
-        var appActive: Boolean = true
+        var appActive: Boolean = false
 
         // Live instance for the plugin's manual start/stop-recording delegation.
         @Volatile

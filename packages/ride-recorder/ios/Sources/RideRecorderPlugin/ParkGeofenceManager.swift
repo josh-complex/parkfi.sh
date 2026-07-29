@@ -17,8 +17,16 @@ import CoreLocation
 final class ParkGeofenceManager: NSObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
 
-    /// (regionId, "enter"|"exit") — wired by the plugin to notify JS / arm.
-    var onTransition: ((String, String) -> Void)?
+    /// Regions currently known to contain the device — dedupes the overlap
+    /// between `didEnterRegion` and `didDetermineState(.inside)` (a real
+    /// boundary crossing can fire both) so JS sees one `enter` per entry.
+    private var knownInside = Set<String>()
+
+    /// (regionId, "enter"|"exit", notifyEligible) — wired by the plugin to
+    /// notify JS / arm. `notifyEligible` is false for state-synthesized enters
+    /// (W3): opening the app already inside a park must arm and forward, but
+    /// never post the "you're in the park" notification.
+    var onTransition: ((String, String, Bool) -> Void)?
 
     override init() {
         super.init()
@@ -65,6 +73,12 @@ final class ParkGeofenceManager: NSObject, CLLocationManagerDelegate {
             region.notifyOnEntry = true
             region.notifyOnExit = true
             manager.startMonitoring(for: region)
+            // W3: region monitoring only reports *crossings* — an app opened
+            // already inside a park never got an enter, so geofence arming
+            // never happened on iOS. requestState answers via
+            // didDetermineState below, which synthesizes a non-notifying
+            // enter for `.inside`.
+            manager.requestState(for: region)
         }
     }
 
@@ -72,13 +86,34 @@ final class ParkGeofenceManager: NSObject, CLLocationManagerDelegate {
         for region in manager.monitoredRegions {
             manager.stopMonitoring(for: region)
         }
+        knownInside.removeAll()
     }
 
     func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
-        onTransition?(region.identifier, "enter")
+        knownInside.insert(region.identifier)
+        onTransition?(region.identifier, "enter", true)
     }
 
     func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
-        onTransition?(region.identifier, "exit")
+        knownInside.remove(region.identifier)
+        onTransition?(region.identifier, "exit", true)
+    }
+
+    func locationManager(
+        _ manager: CLLocationManager, didDetermineState state: CLRegionState, for region: CLRegion
+    ) {
+        switch state {
+        case .inside:
+            // Synthesize an enter for arming + the JS forward — but only when
+            // it's news (didEnterRegion may have just fired for the same
+            // crossing), and never notification-eligible.
+            guard !knownInside.contains(region.identifier) else { return }
+            knownInside.insert(region.identifier)
+            onTransition?(region.identifier, "enter", false)
+        case .outside:
+            knownInside.remove(region.identifier)
+        case .unknown:
+            break
+        }
     }
 }

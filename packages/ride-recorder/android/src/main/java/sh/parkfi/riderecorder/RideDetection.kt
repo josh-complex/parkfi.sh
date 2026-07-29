@@ -42,6 +42,47 @@ object RideConst {
     const val INVERSION_COOLDOWN_S = 1.5
     const val BARO_EMA_TAU_S = 1.0
     const val GRAVITY_EMA_TAU_S = 5.0
+
+    // Ride-signature thresholds — mirror of RIDE_SIGNATURE in
+    // src/lib/ride-metrics.ts (and the iOS RideConst). W3 gates the local
+    // recap notification on the same rule the JS/server gates use, so walking
+    // traces stop notifying natively. Keep all three in lock-step.
+    const val SIG_MIN_DROP_COUNT = 1
+    const val SIG_MIN_AIRTIME_S = 0.5
+    const val SIG_MIN_MAX_G = 2.3
+    const val SIG_MAX_G_MIN_DURATION_S = 40.0
+    const val SIG_MIN_INVERSIONS = 1
+}
+
+/**
+ * Mirror of `hasRideSignature` in src/lib/ride-metrics.ts — whether a trace
+ * shows coaster-like evidence rather than walking jitter. A maxG-only
+ * signature additionally requires a sustained ride: step impacts read
+ * 1.5–2.5 g in the 0.4 s windowed median but spike briefly, where launch/helix
+ * g is sustained. Parity-tested against the TS numbers in RideSignatureTest.
+ */
+object RideSignature {
+    fun hasSignature(
+        dropCount: Int,
+        airtimeS: Double,
+        maxG: Double,
+        inversions: Int,
+        durationS: Double,
+    ): Boolean =
+        dropCount >= RideConst.SIG_MIN_DROP_COUNT ||
+            airtimeS >= RideConst.SIG_MIN_AIRTIME_S ||
+            inversions >= RideConst.SIG_MIN_INVERSIONS ||
+            (maxG >= RideConst.SIG_MIN_MAX_G && durationS >= RideConst.SIG_MAX_G_MIN_DURATION_S)
+
+    /** Metrics-map overload for the service's recap gate. Missing/non-numeric
+     *  fields read as zero, which can only suppress, never over-notify. */
+    fun hasSignature(metrics: Map<String, Any?>): Boolean = hasSignature(
+        (metrics["dropCount"] as? Number)?.toInt() ?: 0,
+        (metrics["airtimeS"] as? Number)?.toDouble() ?: 0.0,
+        (metrics["maxG"] as? Number)?.toDouble() ?: 0.0,
+        (metrics["inversions"] as? Number)?.toInt() ?: 0,
+        (metrics["durationS"] as? Number)?.toDouble() ?: 0.0,
+    )
 }
 
 /** One captured motion sample (device-independent units). */

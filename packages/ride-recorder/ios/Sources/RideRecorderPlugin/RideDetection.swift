@@ -34,6 +34,45 @@ enum RideConst {
     static let inversionCooldownS = 1.5
     static let baroEmaTauS = 1.0            // altitude smoothing time constant
     static let gravityEmaTauS = 5.0        // inversion baseline
+
+    // Ride-signature thresholds — mirror of RIDE_SIGNATURE in
+    // src/lib/ride-metrics.ts (and the Android RideConst). W3 gates the local
+    // recap notification on the same rule the JS/server gates use, so walking
+    // traces stop notifying natively. Keep all three in lock-step.
+    static let sigMinDropCount = 1
+    static let sigMinAirtimeS = 0.5
+    static let sigMinMaxG = 2.3
+    static let sigMaxGMinDurationS = 40.0
+    static let sigMinInversions = 1
+}
+
+/// Mirror of `hasRideSignature` in src/lib/ride-metrics.ts — whether a trace
+/// shows coaster-like evidence rather than walking jitter. A maxG-only
+/// signature additionally requires a sustained ride: step impacts read
+/// 1.5–2.5 g in the 0.4 s windowed median but spike briefly, where
+/// launch/helix g is sustained. Android parity is unit-tested
+/// (RideSignatureTest.kt); this mirror is checked manually.
+enum RideSignature {
+    static func hasSignature(
+        dropCount: Int, airtimeS: Double, maxG: Double, inversions: Int, durationS: Double
+    ) -> Bool {
+        return dropCount >= RideConst.sigMinDropCount
+            || airtimeS >= RideConst.sigMinAirtimeS
+            || inversions >= RideConst.sigMinInversions
+            || (maxG >= RideConst.sigMinMaxG && durationS >= RideConst.sigMaxGMinDurationS)
+    }
+
+    /// Metrics-dict overload for the recap gate. Missing/non-numeric fields
+    /// read as zero, which can only suppress, never over-notify.
+    static func hasSignature(_ metrics: [String: Any]) -> Bool {
+        return hasSignature(
+            dropCount: (metrics["dropCount"] as? NSNumber)?.intValue ?? 0,
+            airtimeS: (metrics["airtimeS"] as? NSNumber)?.doubleValue ?? 0,
+            maxG: (metrics["maxG"] as? NSNumber)?.doubleValue ?? 0,
+            inversions: (metrics["inversions"] as? NSNumber)?.intValue ?? 0,
+            durationS: (metrics["durationS"] as? NSNumber)?.doubleValue ?? 0
+        )
+    }
 }
 
 /// One captured motion sample (device-independent units).

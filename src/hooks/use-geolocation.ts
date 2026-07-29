@@ -41,18 +41,25 @@ export type GeoState =
  */
 export type GeoProfile = "nav" | "high" | "low";
 
-const GEO_PROFILES: Record<GeoProfile, PositionOptions> = {
+export const GEO_PROFILES: Record<GeoProfile, PositionOptions> = {
   nav: { enableHighAccuracy: true, timeout: 10_000, maximumAge: 1_500 },
   high: { enableHighAccuracy: true, timeout: 10_000, maximumAge: 15_000 },
   low: { enableHighAccuracy: false, timeout: 20_000, maximumAge: 30_000 },
 };
 
 /**
- * Last known fix from any consumer this session, [lng, lat] + accuracy. Lets
- * far-away UI (a ride page's "Walk there · 6 min" CTA) estimate a walk without
- * owning a watch — reading it never prompts. Null until something locates.
+ * Last known fix from any consumer this session, [lng, lat] + accuracy +
+ * capture time. Lets far-away UI (a ride page's "Walk there · 6 min" CTA)
+ * estimate a walk without owning a watch — reading it never prompts. Null until
+ * something locates. `capturedAt` (epoch ms) lets consumers judge freshness —
+ * the achievement tracker's best-fix selection prefers a recent, more accurate
+ * fix from another watch (the map's nav watch) over its own low-power one.
  */
-export const lastFixStore = new Store<{ coords: [number, number]; accuracy: number } | null>(null);
+export const lastFixStore = new Store<{
+  coords: [number, number];
+  accuracy: number;
+  capturedAt: number;
+} | null>(null);
 
 /**
  * Count of live, granted geolocation watches across every hook instance. Lets a
@@ -199,6 +206,9 @@ export function useGeolocation(opts?: {
       if (rememberActive && !activeWrittenRef.current) {
         activeWrittenRef.current = true;
         writeActiveFlag(true);
+        // Positive counterpart to `geolocation_denied` — the location funnel's
+        // conversion edge (once per activation, not per fix).
+        posthog.capture("geolocation_granted");
       }
       // First fix from a live watch: announce it to the shared count. One-shot
       // (`watch: false`) fixes don't keep delivering, so they never count.
@@ -207,10 +217,19 @@ export function useGeolocation(opts?: {
         activeWatchesStore.setState((n) => n + 1);
       }
       const { coords, accuracy, heading } = fix;
+      // Identical re-deliveries (cached maximumAge fixes while stationary) keep
+      // the same object so subscribers don't re-render ~1×/s — but refresh
+      // `capturedAt` once it's grown stale enough to matter for the tracker's
+      // 60 s freshness window, so a stationary-but-live watch doesn't read as
+      // a dead fix.
       lastFixStore.setState((f) =>
-        f && f.coords[0] === coords[0] && f.coords[1] === coords[1] && f.accuracy === accuracy
+        f &&
+        f.coords[0] === coords[0] &&
+        f.coords[1] === coords[1] &&
+        f.accuracy === accuracy &&
+        Date.now() - f.capturedAt < 30_000
           ? f
-          : { coords, accuracy },
+          : { coords, accuracy, capturedAt: Date.now() },
       );
       // A fix identical to the last one (common while stationary: cached
       // `maximumAge` re-delivery, wifi positioning) bails the update — the map
@@ -291,6 +310,7 @@ export function useGeolocation(opts?: {
       lastFixStore.setState(() => ({
         coords: [simCoords.lng, simCoords.lat],
         accuracy: simCoords.accuracy,
+        capturedAt: Date.now(),
       }));
   }, [simCoords]);
   const effectiveState: GeoState =

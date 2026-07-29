@@ -41,32 +41,42 @@ export interface RideTrace {
 /**
  * Ride-signature thresholds. A trace must clear at least one of these to be
  * treated as a coaster ride rather than ordinary movement (walking, a bus, an
- * elevator). Kept in one place so field-tuning is a one-file change.
+ * elevator). Kept in one place so field-tuning is a one-file change. Mirrored
+ * into the native `RideConst` on both platforms (W3 gates the local recap
+ * notification on the same rule) — keep the three in lock-step.
  *
- * These are starting points that have never seen a real accelerometer trace —
- * expect to re-cut them from field data (see FOLLOWUP.md Part 3).
+ * 2026-07-29 (W5 provisional, from the WDW field test): `minMaxG` raised
+ * 1.8 → 2.3 — `computeMaxG`'s 0.4 s windowed median reads 1.5–2.5 g from
+ * ordinary step impacts (queue shuffling, phone handling), so 1.8 sat inside
+ * the walking band and let walking traces through. A maxG-only signature now
+ * also requires a sustained ride (`maxGMinDurationS`): step impacts are brief,
+ * launch/helix g is sustained. Revisit both against ride_trace_* field data.
  */
 export const RIDE_SIGNATURE = {
   /** Any detected barometric descent counts. */
   minDropCount: 1,
   /** Cumulative airtime (|a| < 0.4 g), in seconds. */
   minAirtimeS: 0.5,
-  /** Peak windowed-median g — walking never sustains this. */
-  minMaxG: 1.8,
+  /** Peak windowed-median g — above the walking-impact band (1.5–2.5 g). */
+  minMaxG: 2.3,
+  /** A maxG-only signature (no drop/airtime/inversion evidence) must also last
+   *  this long — walking impacts spike briefly; real g-force is sustained. */
+  maxGMinDurationS: 40,
   /** Any gyroscope-confirmed inversion counts. */
   minInversions: 1,
 } as const;
 
 /**
  * Whether a trace shows coaster-like evidence, not just walking jitter. Pure and
- * shared by both the client suppression gate (`achievement-tracker.tsx`) and the
- * authoritative server gate (`ingestRideTrace`).
+ * shared by the client suppression gate (`use-detected-ride.ts`), the
+ * authoritative server gate (`ingestRideTrace`), and — as a native mirror —
+ * the local recap-notification gate on both platforms.
  */
 export function hasRideSignature(m: RideMetrics): boolean {
   return (
     m.dropCount >= RIDE_SIGNATURE.minDropCount ||
     m.airtimeS >= RIDE_SIGNATURE.minAirtimeS ||
-    m.maxG >= RIDE_SIGNATURE.minMaxG ||
-    m.inversions >= RIDE_SIGNATURE.minInversions
+    m.inversions >= RIDE_SIGNATURE.minInversions ||
+    (m.maxG >= RIDE_SIGNATURE.minMaxG && m.durationS >= RIDE_SIGNATURE.maxGMinDurationS)
   );
 }

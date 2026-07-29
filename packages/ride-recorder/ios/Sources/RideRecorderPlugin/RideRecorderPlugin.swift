@@ -29,11 +29,13 @@ public class RideRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     /// always forwarded to JS (retained) so the ping loop reconciles on resume.
     private lazy var geofences: ParkGeofenceManager = {
         let g = ParkGeofenceManager()
-        g.onTransition = { [weak self] regionId, transition in
+        g.onTransition = { [weak self] regionId, transition, notifyEligible in
             guard let self else { return }
             if transition == "enter" {
                 self.recorder.startMonitoring(imuHz: RideConst.monitorHz, baroHz: 1.0)
-                self.postParkEntryIfBackgrounded()
+                // State-synthesized enters (opened the app already inside the
+                // park — W3) arm and forward but never notify.
+                if notifyEligible { self.postParkEntryIfBackgrounded() }
             } else {
                 self.recorder.stopMonitoring()
             }
@@ -55,9 +57,14 @@ public class RideRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
             // W11: a local notification is the user-visible half when the WebView
             // is backgrounded/suspended (the natural moment — phone out of pocket
             // after the ride). Skipped when the app is active (in-app recap toast
-            // covers it). retainUntilConsumed so the JS submit still fires on
-            // resume even if no listener is attached right now.
-            self?.postRecapIfBackgrounded(result.metrics)
+            // covers it), and gated on the ride signature (W3) so walking traces
+            // stop notifying — the raw variance trigger fires on queue shuffling
+            // and phone handling. The JS forward always happens (the debug ring
+            // and PostHog need suppressed traces too); retainUntilConsumed so the
+            // submit still fires on resume even if no listener is attached now.
+            if RideSignature.hasSignature(result.metrics) {
+                self?.postRecapIfBackgrounded(result.metrics)
+            }
             self?.notifyListeners(
                 "rideDetected",
                 data: ["metrics": result.metrics, "samples": result.samples],
@@ -89,12 +96,30 @@ public class RideRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    /// UserDefaults key for the per-day entry-notification dedupe (W3).
+    private static let entryNotifiedDayKey = "sh.parkfi.riderecorder.lastEntryNotifiedDay"
+
+    /// Device-local calendar day — park-local would need timezone plumbing for
+    /// no real gain; the dedupe just needs "roughly once a day".
+    private static func today() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f.string(from: Date())
+    }
+
     /// Lock-screen "you're in the park" cue when a region-enter wakes the app in
-    /// the background. Silent when active (the in-app UI covers it). Shares the
-    /// notification grant with push/ride-recaps; no-ops if it wasn't granted.
+    /// the background. Silent when active (the in-app UI covers it), and posted
+    /// at most once per device-local day (W3) — fence re-crossings on a rim
+    /// walk must not re-notify. Shares the notification grant with
+    /// push/ride-recaps; no-ops if it wasn't granted.
     private func postParkEntryIfBackgrounded() {
         DispatchQueue.main.async {
             guard UIApplication.shared.applicationState != .active else { return }
+            let today = Self.today()
+            let defaults = UserDefaults.standard
+            guard defaults.string(forKey: Self.entryNotifiedDayKey) != today else { return }
+            defaults.set(today, forKey: Self.entryNotifiedDayKey)
             let content = UNMutableNotificationContent()
             content.title = "You're in the park 🎢"
             content.body = "ParkFi is counting your day — miles, queues, and rides."

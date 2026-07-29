@@ -8,9 +8,21 @@
  * against the app's `RideMetrics`/`RideTrace` contract in `ride-metrics.ts`.
  */
 import { registerPlugin, type PluginListenerHandle } from "@capacitor/core";
+import posthog from "posthog-js";
 
 import { isNative } from "#/lib/platform.ts";
 import type { RideTrace } from "#/lib/ride-metrics.ts";
+
+/** Best-effort failure telemetry for the swallowed native-bridge errors below.
+ *  These paths deliberately never throw (sensor achievements are best-effort),
+ *  which historically also made their failures invisible in the field — every
+ *  catch now emits an event so silent degradation shows up in PostHog. */
+function captureBridgeFailure(op: string, e: unknown): void {
+  posthog.capture("ride_recorder_bridge_failed", {
+    op,
+    message: e instanceof Error ? e.message : String(e),
+  });
+}
 
 type MotionPermissionState = "granted" | "denied" | "prompt";
 type LocationPermissionState = "granted" | "denied" | "prompt";
@@ -67,8 +79,10 @@ export async function armRideMonitoring(): Promise<void> {
       await RideRecorder.requestPermissions();
     }
     await RideRecorder.startMonitoring();
-  } catch {
-    /* sensors unavailable — non-fatal */
+  } catch (e) {
+    /* sensors unavailable — non-fatal, but a lost arm means a lost park day
+       of sensor coverage: worth counting. */
+    captureBridgeFailure("armRideMonitoring", e);
   }
 }
 
@@ -158,7 +172,8 @@ export async function addRideDetectedListener(
   if (!isNative()) return null;
   try {
     return await RideRecorder.addListener("rideDetected", cb);
-  } catch {
+  } catch (e) {
+    captureBridgeFailure("addRideDetectedListener", e);
     return null;
   }
 }
@@ -175,8 +190,12 @@ export async function requestBackgroundLocation(): Promise<LocationPermissionSta
   if (!isNative()) return "denied";
   try {
     const { location } = await RideRecorder.requestBackgroundLocation();
+    // The background grant is the gate for all pocketed-visit detection —
+    // a stable funnel event either way, for conversion analysis.
+    posthog.capture("bg_location_permission", { location });
     return location;
-  } catch {
+  } catch (e) {
+    captureBridgeFailure("requestBackgroundLocation", e);
     return "denied";
   }
 }
@@ -191,8 +210,13 @@ export async function setParkGeofences(regions: ParkGeofence[]): Promise<void> {
   if (!isNative() || regions.length === 0) return;
   try {
     await RideRecorder.setParkGeofences({ regions });
-  } catch {
+    // Registration succeeded — the precondition for every geofence enter/exit
+    // event downstream; counting it lets "enters per registered device" mean
+    // something in PostHog.
+    posthog.capture("park_geofences_set", { regions: regions.length });
+  } catch (e) {
     /* background location not granted, or plugin unavailable — best-effort */
+    captureBridgeFailure("setParkGeofences", e);
   }
 }
 
@@ -217,7 +241,8 @@ export async function addParkTransitionListener(
   if (!isNative()) return null;
   try {
     return await RideRecorder.addListener("parkTransition", cb);
-  } catch {
+  } catch (e) {
+    captureBridgeFailure("addParkTransitionListener", e);
     return null;
   }
 }
