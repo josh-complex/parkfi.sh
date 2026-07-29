@@ -1595,8 +1595,8 @@ export function buildParkBadgeEl(p: {
   el.type = "button";
   el.setAttribute("aria-label", p.name);
   el.className = "group relative block cursor-pointer";
-  // Return-flight landing pad (see `launchHeroReturn`) — unused until the park
-  // page flies, but stamped now so the pad contract is uniform.
+  // Landing pad for the park page's *return* flight (see `launchHeroReturn`):
+  // its hero pops back down onto this badge's face/name-chip when backing out.
   el.dataset.markerKey = parkMarkerKey(p.slug);
   const color = operatorColor(p.operatorSlug);
   const disc = discMarkup({

@@ -52,6 +52,13 @@ export const RESORT_DEFAULT_SLUG: Record<string, string> = {
 };
 
 /**
+ * The park page's hero subtitle. Also baked into the map's park-badge flight
+ * seed (`parkFlightSeed`), so the seeded hero and the loaded page paint the
+ * same line and nothing re-lays-out when the queries land.
+ */
+export const PARK_TAGLINE = "Live wait times, ride status, and Lightning Lane availability.";
+
+/**
  * Display name for a park, trimmed of the operator prefix and the redundant
  * "Theme Park" / "Water Park" / "Park" suffix the source feeds tack on — e.g.
  * "Disney's Animal Kingdom Theme Park" → "Animal Kingdom", "Disney's Blizzard

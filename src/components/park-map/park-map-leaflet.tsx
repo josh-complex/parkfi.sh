@@ -19,7 +19,13 @@ import { useTRPC } from "#/integrations/trpc/react.ts";
 import { preferredRouteLanguage, preferredUnitSystem, valhallaUnits } from "#/lib/units.ts";
 import { pointInPolygon } from "#/server/living/geofence.ts";
 
-import { launchHeroFlight, poiFlightSeed, rideFlightSeed } from "./card-flight.ts";
+import {
+  launchHeroFlight,
+  launchHeroFlightFromMarker,
+  parkFlightSeed,
+  poiFlightSeed,
+  rideFlightSeed,
+} from "./card-flight.ts";
 import { MarkerCluster, type DeclutterItem } from "./declutter.ts";
 import { fusedHeadingStore } from "./heading-store.ts";
 import { roundCoord } from "./nav-geometry.ts";
@@ -631,10 +637,14 @@ export function ParkMapLeaflet({
           raise,
           onActivate: () => {
             // Roam: a tap flies into the park (its rides reveal by zoom) —
-            // `flyToPark` sets the focus itself. Otherwise open the park page.
+            // `flyToPark` sets the focus itself. Otherwise open the park page,
+            // flying the badge onto its hero: park badges never stage a card,
+            // so the flight leaves from the marker at rest (disc face → hero
+            // photo, name chip → hero title).
             if (roam) {
               flyToPark(p.slug);
             } else {
+              launchHeroFlightFromMarker(parkFlightSeed(p), el);
               void navigate({ to: "/park/$slug", params: { slug: p.slug } });
             }
           },

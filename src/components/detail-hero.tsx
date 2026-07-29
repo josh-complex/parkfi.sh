@@ -84,7 +84,9 @@ export function DetailHero({
 }: {
   heroKey: string;
   name: string;
-  subtitle: string | null;
+  /** One line under the title. A node is allowed (the park page appends its
+   *  "Updated x ago" span) but must stay a single line — see the <p> below. */
+  subtitle: ReactNode;
   image: string | null;
   /** The hero-crop preview the flight fades to in mid-air — see the layer below. */
   underlay?: string | null;

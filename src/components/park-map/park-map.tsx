@@ -18,7 +18,13 @@ import { distanceMeters, pointInPolygon } from "#/server/living/geofence.ts";
 import type { GeoPolygon } from "#/db/schema.ts";
 import { reportError } from "#/lib/report-error.ts";
 
-import { launchHeroFlight, poiFlightSeed, rideFlightSeed } from "./card-flight.ts";
+import {
+  launchHeroFlight,
+  launchHeroFlightFromMarker,
+  parkFlightSeed,
+  poiFlightSeed,
+  rideFlightSeed,
+} from "./card-flight.ts";
 import { MarkerCluster, type DeclutterItem } from "./declutter.ts";
 import { fusedHeadingStore } from "./heading-store.ts";
 import { roundCoord, routeBearingAt } from "./nav-geometry.ts";
@@ -1179,15 +1185,16 @@ export function ParkMap({
           point: () => map.project(lngLat),
           detail,
           raise,
-          // Roam: a tap flies into the park (zoom reveals its rides) without
-          // leaving the map. Otherwise navigate to the park page as before.
           onActivate: () => {
             // Roam: a tap flies into the park (zoom reveals its rides) without
             // leaving the map — `flyToPark` sets the focus itself. Otherwise
-            // navigate to the park page as before.
+            // navigate to the park page, flying the badge onto its hero: park
+            // badges never stage a card, so the flight leaves from the marker
+            // at rest (disc face → hero photo, name chip → hero title).
             if (roam) {
               flyToPark(p.slug);
             } else {
+              launchHeroFlightFromMarker(parkFlightSeed(p), el);
               void navigate({ to: "/park/$slug", params: { slug: p.slug } });
             }
           },

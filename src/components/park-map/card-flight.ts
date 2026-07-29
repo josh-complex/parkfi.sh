@@ -2,6 +2,7 @@ import * as React from "react";
 
 import { cfImagesStore } from "#/integrations/posthog/feature-flags.ts";
 import { cfImageUrl, disneyResizeUrl } from "#/lib/image.ts";
+import { formatParkName, PARK_TAGLINE } from "#/lib/parks.ts";
 
 /**
  * Cross-route shared-element flight: the open map card → a detail page's hero.
@@ -279,6 +280,35 @@ export function poiFlightSeed(opts: {
 }
 
 /**
+ * Build the seed for a park-badge tap on the overview map, matching what the
+ * park page's hero renders — the same `formatParkName` display name (the badge's
+ * chip already shows it) and the same `parks.image_url` asset both the overview
+ * and `parks.list` publish, plus the page's static tagline as the subtitle. Park
+ * badges carry no live wait or status.
+ */
+export function parkFlightSeed(park: {
+  slug: string;
+  name: string;
+  imageUrl?: string | null;
+}): HeroFlightSeed {
+  const imageUrl = park.imageUrl ?? null;
+  return {
+    key: heroFlightKey("park", park.slug),
+    markerKey: parkMarkerKey(park.slug),
+    // Park badges only exist on the zoomed-out overview, so the launch site is
+    // the one place the return can land — capture wherever that is right now.
+    returnPaths: [window.location.pathname],
+    name: formatParkName(park.name),
+    subtitle: PARK_TAGLINE,
+    waitMinutes: null,
+    status: null,
+    imageUrl,
+    cardImageUrl: null,
+    previewImageUrl: heroPreviewUrl(imageUrl),
+  };
+}
+
+/**
  * Drop this page's seed (on unmount), so navigating back to the same page later
  * from somewhere that *isn't* the map doesn't paint a stale hero from it.
  */
@@ -432,20 +462,32 @@ function cloneWaitChip(src: HTMLElement | null): Flown | null {
  * subtitle before the dissolve tidies it — but that's at the very end, over a
  * name whose first line already reads correctly, where taking the hero's
  * `truncate` instead would re-flow the title in the first frame of the flight.
+ *
+ * `pill` is the marker-rest launch (see `launchHeroFlightFromMarker`): the
+ * source is the marker's resting name chip, still wearing its pill dressing —
+ * so the box carries that dressing (background, border, radius, shadow) and
+ * `flyTitle`'s moveBox sheds it across the flight, the exact mirror of the
+ * return leg's `dressHome` gathering it back. Shedding it at frame zero
+ * instead would strand white 10px text over the open map for the whole
+ * flight. The card path keeps its bare box: `openAttractionCard` already
+ * stripped the chip down to the card title before handing it over.
  */
-function cloneTitle(src: HTMLElement | null): Flown | null {
+function cloneTitle(src: HTMLElement | null, pill = false): Flown | null {
   if (!src) return null;
   const rect = src.getBoundingClientRect();
   if (!rect.width || !rect.height) return null;
   const cs = getComputedStyle(src);
-  const box = document.createElement("div");
+  const box = pill ? pillBox(rect, cs) : document.createElement("div");
   Object.assign(box.style, {
     position: "fixed",
     left: `${rect.left}px`,
     top: `${rect.top}px`,
     width: `${rect.width}px`,
     height: `${rect.height}px`,
-    overflow: "visible",
+    // The pill clips (a clamped name may wrap once its nowrap is lifted below;
+    // the second line has no business peeking out of a half-shed pill). The
+    // card title overhangs freely, as before.
+    overflow: pill ? "hidden" : "visible",
     transition: "none",
   });
 
@@ -464,10 +506,21 @@ function cloneTitle(src: HTMLElement | null): Flown | null {
     // The box already starts at the translated rect, so the copy inside rides
     // untransformed — with it, the title lands offset by the marker→card delta.
     transform: "none",
+    // The *resting* chip centres itself with Tailwind's `-translate-x-1/2`,
+    // which rides the CSS `translate` property — `transform: none` doesn't
+    // touch it (see the return leg's wait copy for the same gotcha). The card
+    // path never hits this (`openAttractionCard` strips the class), but the
+    // marker-rest launch clones the chip as it sits.
+    translate: "none",
     display: "block",
     width: "100%",
     margin: "0",
-    padding: "0",
+    // The pill's padding is part of its resting look — it rides along and
+    // `flyTitle` eases it to the hero title's bare box. Already 0 on the card
+    // path, so the transition there is a no-op.
+    padding: pill
+      ? `${cs.paddingTop} ${cs.paddingRight} ${cs.paddingBottom} ${cs.paddingLeft}`
+      : "0",
     border: "0",
     maxWidth: "none",
     whiteSpace: "normal",
@@ -490,9 +543,12 @@ function cloneTitle(src: HTMLElement | null): Flown | null {
  * A travelling copy of the card's photo header. The box reproduces the card's
  * clip — rounded on top (the card's own corners), square at the bottom where
  * the body meets it — and the image fills it `object-cover`, so growing the box
- * re-frames the crop continuously instead of stretching the photo.
+ * re-frames the crop continuously instead of stretching the photo. A
+ * marker-rest launch (`round`) starts from the disc instead, whose clip is
+ * round on all four corners — the card's square bottom would clip a wedge off
+ * the disc on the first frame.
  */
-function clonePhoto(fill: HTMLElement | null, preview: string | null): Flown | null {
+function clonePhoto(fill: HTMLElement | null, preview: string | null, round = false): Flown | null {
   if (!fill) return null;
   const rect = fill.getBoundingClientRect();
   if (!rect.width || !rect.height) return null;
@@ -504,7 +560,11 @@ function clonePhoto(fill: HTMLElement | null, preview: string | null): Flown | n
     top: `${rect.top}px`,
     width: `${rect.width}px`,
     height: `${rect.height}px`,
-    borderRadius: wrap ? `${wrap.borderTopLeftRadius} ${wrap.borderTopRightRadius} 0px 0px` : "0px",
+    borderRadius: !wrap
+      ? "0px"
+      : round
+        ? "50%"
+        : `${wrap.borderTopLeftRadius} ${wrap.borderTopRightRadius} 0px 0px`,
     overflow: "hidden",
     backgroundColor: getComputedStyle(fill).backgroundColor,
     transition: "none",
@@ -592,12 +652,23 @@ function scrubTarget(el: HTMLElement): void {
 
 let teardown: (() => void) | null = null;
 
+type HeroFlightOpts = {
+  /** Launching from a *resting marker* (park badges never stage a card): the
+   *  photo box starts fully round (the disc, not a card header) and the title
+   *  clone keeps its pill dressing to shed in flight. */
+  fromMarker?: boolean;
+};
+
 /**
  * Snapshot the open card and start the flight. Call this immediately *before*
  * `navigate()` — the card is still laid out at that point, and the seed has to
  * be published before the destination route's first render reads it.
  */
-export function launchHeroFlight(input: HeroFlightSeed, nodes: CardFlightNodes): void {
+export function launchHeroFlight(
+  input: HeroFlightSeed,
+  nodes: CardFlightNodes,
+  opts?: HeroFlightOpts,
+): void {
   if (typeof window === "undefined") return;
   teardown?.();
   const key = input.key;
@@ -615,9 +686,9 @@ export function launchHeroFlight(input: HeroFlightSeed, nodes: CardFlightNodes):
   }
 
   const flown = [
-    clonePhoto(nodes.fill, seed.previewImageUrl),
+    clonePhoto(nodes.fill, seed.previewImageUrl, opts?.fromMarker),
     cloneWaitChip(nodes.waitEl),
-    cloneTitle(nodes.nameEl),
+    cloneTitle(nodes.nameEl, opts?.fromMarker),
   ];
   const [photo, wait, title] = flown;
   // Copies made — the card can go. From here the clones are the only visible
@@ -831,7 +902,9 @@ export function launchHeroFlight(input: HeroFlightSeed, nodes: CardFlightNodes):
     moveBox(f.box, tr, cs.borderRadius, cs);
   };
 
-  /** Title: one element, type morphing card-title → headline. No second copy. */
+  /** Title: one element, type morphing card-title → headline. No second copy.
+   *  Padding rides the same clock — a marker-rest launch starts from the name
+   *  chip's padded pill; the card path starts (and stays) at 0. */
   const flyTitle = (f: Flown | null, target: HTMLElement | null) => {
     if (!f) return;
     if (!target) return orphan(f);
@@ -843,6 +916,7 @@ export function launchHeroFlight(input: HeroFlightSeed, nodes: CardFlightNodes):
       "letter-spacing",
       "color",
       "filter",
+      "padding",
     ]
       .map((p) => `${p} ${FLIGHT_MS}ms ${FLIGHT_EASE}`)
       .join(", ");
@@ -853,6 +927,7 @@ export function launchHeroFlight(input: HeroFlightSeed, nodes: CardFlightNodes):
       letterSpacing: cs.letterSpacing,
       color: cs.color,
       filter: cs.filter === "none" ? "" : cs.filter,
+      padding: "0px",
     });
     moveBox(f.box, target.getBoundingClientRect(), "0px");
   };
@@ -902,6 +977,31 @@ export function launchHeroFlight(input: HeroFlightSeed, nodes: CardFlightNodes):
     raf = requestAnimationFrame(tick);
   };
   raf = requestAnimationFrame(tick);
+}
+
+/**
+ * The marker-direct launch (park badges): there's no card stage — `onActivate`
+ * navigates straight away — so the flight leaves from the marker *at rest*: the
+ * 64px disc face flies onto the hero's photo, the name chip onto its title.
+ * This wrapper locates those pads itself (`[data-face-fill]` /
+ * `[data-name-chip]`, the same sub-targets the return leg lands on) and hides
+ * the whole marker for the trip — same discipline as the return's `hideMarker`:
+ * a marker seen resting under its own airborne clones reads as a duplicate. No
+ * un-hide is needed: the park-context switch the navigation triggers rebuilds
+ * the marker set from scratch.
+ */
+export function launchHeroFlightFromMarker(seed: HeroFlightSeed, markerEl: HTMLElement): void {
+  if (typeof window === "undefined") return;
+  launchHeroFlight(
+    seed,
+    {
+      fill: markerEl.querySelector<HTMLElement>("[data-face-fill]"),
+      waitEl: null,
+      nameEl: markerEl.querySelector<HTMLElement>("[data-name-chip]"),
+      dismiss: () => markerEl.style.setProperty("visibility", "hidden"),
+    },
+    { fromMarker: true },
+  );
 }
 
 // --- the return flight ------------------------------------------------------

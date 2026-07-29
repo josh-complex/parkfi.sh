@@ -7,18 +7,23 @@ import { useQuery } from "@tanstack/react-query";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { showClock } from "#/lib/showtimes.ts";
 
-import { HeroCrossfade } from "#/components/hero-media.tsx";
+import { DetailHero, HERO_OVERLAY_TOP } from "#/components/detail-hero.tsx";
 import { MapSlot } from "#/components/park-map/map-stage.tsx";
+import {
+  heroFlightKey,
+  launchHeroReturn,
+  releaseHeroFlight,
+  useHeroFlight,
+} from "#/components/park-map/card-flight.ts";
 import { NotificationPrompt } from "#/components/notifications/notification-prompt.tsx";
 import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
 import { ChartErrorBoundary } from "#/components/chart-error-boundary.tsx";
 import { lazyWithReload } from "#/lib/lazy-with-reload.tsx";
 import { useHydrated } from "#/lib/use-hydrated.ts";
 
-import { Image } from "#/components/ui/image.tsx";
-import { disneyResizeUrl } from "#/lib/image.ts";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
-import { formatParkName } from "#/lib/parks.ts";
+import { formatParkName, PARK_TAGLINE } from "#/lib/parks.ts";
+import { cn } from "#/lib/utils.ts";
 
 import { EntertainmentRail } from "./entertainment-rail.tsx";
 import { ParkBoardTable } from "./park-board-table.tsx";
@@ -131,6 +136,20 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
   const operatorSlug = park?.operatorSlug;
   const timezone = park?.timezone;
 
+  // Set when this page was opened by tapping a park badge on the overview map:
+  // the badge's own name and photo, plus whether its flown clones (disc face →
+  // hero photo, name chip → hero title) are still in the air. Park badges never
+  // stage a card, so the seed carries no wait/status (see `parkFlightSeed`).
+  const heroKey = heroFlightKey("park", parkSlug);
+  const flight = useHeroFlight(heroKey);
+  // Heading back to the overview map, pop the hero down into its badge — a
+  // *layout* effect, so the cleanup can still measure the hero while history
+  // already points at the destination (see the ride page).
+  React.useLayoutEffect(() => () => launchHeroReturn(heroKey), [heroKey]);
+  // Drop the seed on the way out, so coming back later from somewhere that
+  // isn't the map doesn't paint a stale hero from it.
+  React.useEffect(() => () => releaseHeroFlight(heroKey), [heroKey]);
+
   // "Updated x ago" is computed from the current clock, so the server HTML and
   // the first client render would disagree and trip a hydration mismatch. Only
   // render it once we've hydrated on the client.
@@ -181,48 +200,56 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
       className="flex flex-col gap-4 pb-4 pt-2 md:gap-4 lg:gap-6 md:pb-6 md:pt-4 lg:pt-6"
       style={{ paddingBottom: "calc(var(--safe-bottom) + 1.5rem)" }}
     >
-      {heroUrl ? (
+      {heroUrl || flight ? (
         /* Park hero photo at the head of the page — carries the park identity on
            both mobile and desktop (name + subtitle overlaid), so it replaces the
-           plain text header below when an image is available. */
+           plain text header below when an image is available. The shared
+           `DetailHero` (full-bleed on mobile, rounded card on md+) makes it the
+           landing pad for the overview badge's flight; arriving mid-flight, the
+           seed paints it before `parks.list` resolves, so the clones land on
+           the real thing. Once a flight seeded this page, keep the hero branch
+           for the page's whole life even if the park turns out photo-less —
+           `DetailHero`'s gradient fallback covers it, where dropping to the
+           plain header would yank the landing pad out from under the clones. */
         <div className="px-4 lg:px-6">
-          {/* Floating hero (no card chrome) — matches the image treatment on the
-              resort/venue pages, keeping the text overlay. */}
-          <div className="relative isolate overflow-hidden rounded-2xl shadow-sm">
-            <Image
-              src={disneyResizeUrl(heroUrl, 1600)}
-              alt={park?.imageAlt ?? parkName ?? ""}
-              className="h-40 w-full object-cover md:h-56"
-              loading="eager"
-              fetchPriority="high"
-              sizes="100vw"
-              quality={80}
-              // Box is h-40/md:h-56 at full width — never narrower than ~2.4:1
-              // (a 390px phone shows 390×160). Cropping the 16:9 source to the
-              // box's worst-case ratio cuts ~38% of hero bytes (the strip
-              // object-cover was discarding) without starving any viewport.
-              aspect={12 / 5}
-              placeholder={park?.imageThumbhash}
-            />
-            <HeroCrossfade slides={heroSlides} />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent" />
-            <div className="absolute inset-x-0 bottom-0 flex flex-wrap items-end justify-between gap-3 p-4 lg:p-6">
-              <div className="flex min-w-0 flex-col gap-1">
-                <h1 className="truncate text-2xl font-semibold tracking-tight text-white drop-shadow-md md:text-3xl">
-                  {parkName}
-                </h1>
-                <p className="text-sm text-white/85">
-                  Live wait times, ride status, and Lightning Lane availability.
-                  {updatedLabel}
-                </p>
+          <DetailHero
+            heroKey={heroKey}
+            name={parkName ?? flight?.seed.name ?? ""}
+            // One line under the title, exactly what the flight seed carries
+            // (`PARK_TAGLINE`); the "Updated x ago" span joins it once the
+            // board lands — hydration-gated anyway, so it never shifts a
+            // just-landed clone.
+            subtitle={
+              <>
+                {PARK_TAGLINE}
+                {updatedLabel}
+              </>
+            }
+            image={heroUrl ?? flight?.seed.imageUrl ?? null}
+            // Identical across the seeded and loaded renders, so the underlay
+            // <img> keeps its src (and stays decoded) across the query landing.
+            underlay={flight ? (flight.seed.previewImageUrl ?? flight.seed.cardImageUrl) : null}
+            imageAlt={park?.imageAlt ?? parkName}
+            thumbhash={park?.imageThumbhash}
+            slides={heroSlides}
+            flying={flight?.flying ?? false}
+            entrance={!!flight}
+            overlays={({ chipFx }) => (
+              /* Cast-member-only control (renders null for everyone else) —
+                 rides the top-right overlay slot the other heroes use for
+                 their state chips, joining the entrance cascade. */
+              <div
+                style={chipFx(0).style}
+                className={cn("absolute right-4", HERO_OVERLAY_TOP, chipFx(0).className)}
+              >
+                <RemovalRequestDialog
+                  entityType="park"
+                  entityId={activeSlug}
+                  entityName={park?.name}
+                />
               </div>
-              <RemovalRequestDialog
-                entityType="park"
-                entityId={activeSlug}
-                entityName={park?.name}
-              />
-            </div>
-          </div>
+            )}
+          />
         </div>
       ) : (
         <>
