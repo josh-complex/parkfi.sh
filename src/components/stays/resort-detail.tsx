@@ -7,15 +7,15 @@ import { differenceInCalendarDays, format } from "date-fns";
 import { type DateRange } from "react-day-picker";
 import { ArrowLeftIcon, CalendarIcon, ExternalLinkIcon } from "lucide-react";
 
+import { DetailHero } from "#/components/detail-hero.tsx";
 import { LocationMap } from "#/components/maps/location-map.tsx";
 import { ResortDiningShelf } from "#/components/dining/resort-dining-shelf.tsx";
+import { heroFlightKey } from "#/components/park-map/card-flight.ts";
 import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
 import { ResortPriceChart } from "#/components/stays/resort-price-chart.tsx";
 import { StayAlertButton } from "#/components/stays/stay-alert-button.tsx";
 import { reasonLabel, TIER_LABEL, TIER_META } from "#/components/stays/stays-filters.ts";
-import { Badge } from "#/components/ui/badge.tsx";
 import { Button, buttonVariants } from "#/components/ui/button.tsx";
-import { Image } from "#/components/ui/image.tsx";
 import { Calendar } from "#/components/ui/calendar.tsx";
 import { Label } from "#/components/ui/label.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "#/components/ui/popover.tsx";
@@ -437,33 +437,23 @@ export function ResortDetail({ slug }: { slug: string }) {
         <RemovalRequestDialog entityType="resort" entityId={resort.slug} entityName={resort.name} />
       </div>
 
-      {resort.image && (
-        <div className="relative h-56 w-full overflow-hidden rounded-2xl bg-muted sm:h-80">
-          <Image
-            src={resort.image}
-            alt={resort.name}
-            className="size-full object-cover"
-            loading="eager"
-            fetchPriority="high"
-            sizes="100vw"
-            quality={80}
-            placeholder={resort.imageThumbhash}
-          />
-        </div>
-      )}
-
-      <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{resort.name}</h1>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Badge variant="outline" className="font-normal">
-            {TIER_LABEL[resort.tier]}
-          </Badge>
-          {resort.area && (
-            <Badge variant="outline" className="font-normal">
-              {resort.area}
-            </Badge>
-          )}
-        </div>
+      <header className="flex flex-col gap-4">
+        {/* Identity hero, matching the ride/dining/shop pages: the resort photo
+            (or a neutral gradient), name + tier/area overlaid. No flight lands
+            here — resorts have no map marker — but the shared shell keeps the
+            treatment (and the `data-hero` contract, should resort markers ever
+            land) identical across every detail page. The tier/area badges the
+            old header wore now ride the subtitle line; only the blurb stays
+            below, since the hero can't carry a paragraph. */}
+        <DetailHero
+          heroKey={heroFlightKey("resort", resort.slug)}
+          name={resort.name}
+          subtitle={[TIER_LABEL[resort.tier], resort.area].filter(Boolean).join(" · ")}
+          image={resort.image ?? null}
+          thumbhash={resort.imageThumbhash}
+          flying={false}
+          entrance={false}
+        />
         {blurb && <p className="text-muted-foreground">{blurb}</p>}
       </header>
 
