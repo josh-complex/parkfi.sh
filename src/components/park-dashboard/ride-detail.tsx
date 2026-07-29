@@ -2,11 +2,12 @@
 
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, type CSSProperties } from "react";
 import { ArrowLeftIcon, ExternalLinkIcon } from "lucide-react";
 
 import { AmbientHeroVideo, HeroCrossfade } from "#/components/hero-media.tsx";
 import {
+  launchRideReturn,
   releaseRideFlight,
   rideFlightKey,
   useRideFlight,
@@ -235,7 +236,10 @@ function RideHero({
   waitFlown: boolean;
 }) {
   // Transparent, not unmounted: the flight measures these boxes to land on.
-  const hidden = flying ? { opacity: 0 } : undefined;
+  // `visibility` as well as opacity, because Chrome paints an element's
+  // backdrop-filter even at opacity 0 — a wait chip that's merely transparent
+  // still blits its blur rectangle at the landing spot mid-flight.
+  const hidden = flying ? ({ opacity: 0, visibility: "hidden" } as CSSProperties) : undefined;
   /**
    * Entrance for the overlay chips that *aren't* landing targets (status, hours,
    * Early Entry — and the wait chip when the card didn't fly one). Arriving from
@@ -246,7 +250,7 @@ function RideHero({
    */
   const chipFx = (i: number): { className?: string; style?: CSSProperties } => {
     if (!entrance) return {};
-    if (flying) return { style: { opacity: 0 } };
+    if (flying) return { style: { opacity: 0, visibility: "hidden" } };
     return {
       className: "animate-in fade-in slide-in-from-top-2 duration-300 motion-reduce:animate-none",
       style: { animationDelay: `${i * 70}ms`, animationFillMode: "backwards" },
@@ -342,7 +346,12 @@ function RideHero({
           >
             {waitValue}
           </span>
-          <span className="flex flex-col text-[10px] font-semibold uppercase leading-tight tracking-wide">
+          {/* Tagged so the return flight can shed the wording while the number
+              shrinks back into the marker's badge (see `launchRideReturn`). */}
+          <span
+            data-ride-hero-wait-label
+            className="flex flex-col text-[10px] font-semibold uppercase leading-tight tracking-wide"
+          >
             <span>min</span>
             <span className="text-white/70">{waitIsLive ? "wait now" : "typical"}</span>
           </span>
@@ -427,6 +436,11 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
   // photo and wait, plus whether its three flown clones are still in the air.
   const flight = useRideFlight(parkSlug, rideSlug);
   const heroKey = rideFlightKey(parkSlug, rideSlug);
+  // Heading back to a map view, pop the hero down into its marker. A *layout*
+  // effect, deliberately: its cleanup runs while the page is still in the DOM
+  // (so the hero can be measured and cloned) but with history already pointing
+  // at the destination (so the flight knows this exit is map-bound).
+  useLayoutEffect(() => () => launchRideReturn(parkSlug, rideSlug), [parkSlug, rideSlug]);
   // Drop the seed on the way out, so coming back later from somewhere that
   // isn't the map doesn't paint a stale hero from it.
   useEffect(() => () => releaseRideFlight(parkSlug, rideSlug), [parkSlug, rideSlug]);

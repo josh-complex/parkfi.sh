@@ -603,12 +603,17 @@ export function launchRideFlight(input: RideFlightSeed, nodes: CardFlightNodes):
     if (settled) return;
     settled = true;
     if (state?.key === key) publish({ key, seed, flying: false });
-    for (const f of flown) {
-      if (!f) continue;
-      f.box.style.transition = `opacity ${SETTLE_MS}ms ease`;
-      f.box.style.opacity = "0";
-    }
-    later(destroy, SETTLE_MS + 80);
+    // A frame's grace before the clones thin: the publish above is what makes
+    // React reveal the real targets, and fading over a still-hidden target
+    // reads as a flicker at the handoff.
+    raf = requestAnimationFrame(() => {
+      for (const f of flown) {
+        if (!f) continue;
+        f.box.style.transition = `opacity ${SETTLE_MS}ms ease`;
+        f.box.style.opacity = "0";
+      }
+    });
+    later(destroy, SETTLE_MS + 160);
   };
 
   /** A clone whose counterpart never rendered: dissolve it where it is. */
@@ -741,14 +746,23 @@ export function launchRideFlight(input: RideFlightSeed, nodes: CardFlightNodes):
       margin: "0",
       maxWidth: "none",
       opacity: "0",
+      // The target is a *hidden* landing pad while the flight is up — inline
+      // `visibility: hidden` (see RideHero) that cloneNode carries over. The
+      // copy exists to be seen mid-air, so put it back; the number's own
+      // hidden marker above stays, being the more specific inline style.
+      visibility: "visible",
       // The box draws the dressing for both ends, so the incoming copy brings
       // only its content — otherwise its (already final) pill would pop in at
-      // full size over the box that's still growing into it.
+      // full size over the box that's still growing into it. Backdrop blur is
+      // dressing too, and worse: Chrome paints it at full strength even while
+      // the copy is transparent, which read as a flickering blur patch.
       backgroundColor: "transparent",
       borderColor: "transparent",
       boxShadow: "none",
+      backdropFilter: "none",
       transition: `opacity ${SWAP_MS}ms ease ${SWAP_DELAY_MS}ms`,
     });
+    to.style.setProperty("-webkit-backdrop-filter", "none");
     f.box.append(to);
     void to.offsetWidth;
     to.style.opacity = "1";
@@ -826,5 +840,547 @@ export function launchRideFlight(input: RideFlightSeed, nodes: CardFlightNodes):
     }
     raf = requestAnimationFrame(tick);
   };
+  raf = requestAnimationFrame(tick);
+}
+
+// --- the return flight ------------------------------------------------------
+
+/**
+ * The reverse trip: the ride hero pops back down into its map marker.
+ *
+ * Invoked from the ride page's unmount cleanup — the one moment the hero is
+ * still measurable while history already points at the destination — and only
+ * when that destination is a map view and this page was opened from a map card
+ * in the first place (so the marker is known to exist). The hero's photo, wait
+ * chip and title are cloned into the same kind of fixed overlay as the forward
+ * flight and fly down onto the marker's face, wait badge and name pill. The
+ * marker itself — already restored to a resting disc by the card's `dismiss` —
+ * is never touched: the clones shrink onto it and dissolve.
+ *
+ * Same grammar as the outbound leg, run backwards: the wait number is the
+ * shared element (its wording sheds, the badge's " min" fades in), the title
+ * is one text element morphing headline → pill, and the photo re-rounds into
+ * the disc while the scrim fades off it.
+ */
+export function launchRideReturn(parkSlug: string, rideSlug: string): void {
+  if (typeof window === "undefined") return;
+  const key = rideFlightKey(parkSlug, rideSlug);
+  if (state?.key !== key) return;
+  // By unmount time the history entry is already the destination's.
+  const path = window.location.pathname;
+  if (path !== "/map" && path !== `/park/${parkSlug}`) return;
+  if (state.flying) {
+    // Backed out with the forward flight still airborne — drop everything.
+    teardown?.();
+    publish(null);
+    return;
+  }
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const hero = document.querySelector<HTMLElement>(`[data-ride-hero="${CSS.escape(key)}"]`);
+  if (!hero) return;
+  const heroRect = hero.getBoundingClientRect();
+  if (!heroRect.width || !heroRect.height) return;
+  teardown?.();
+
+  // Photo: a fresh copy of whatever the hero is showing (the topmost decoded,
+  // visible <img> — the gallery crossfade keeps its idle slides at opacity 0),
+  // under the scrim at full strength, in a box that clips like the hero.
+  const heroCs = getComputedStyle(hero);
+  const photoBox = document.createElement("div");
+  Object.assign(photoBox.style, {
+    position: "fixed",
+    left: `${heroRect.left}px`,
+    top: `${heroRect.top}px`,
+    width: `${heroRect.width}px`,
+    height: `${heroRect.height}px`,
+    borderRadius: heroCs.borderRadius,
+    overflow: "hidden",
+    backgroundColor: heroCs.backgroundColor,
+    // A ride with no published photo heroes a gradient instead — carry it, so
+    // the return isn't an empty grey box shrinking into the disc.
+    backgroundImage: heroCs.backgroundImage,
+    transition: "none",
+  });
+  const shown = Array.from(hero.querySelectorAll<HTMLImageElement>("[data-ride-hero-image] img"))
+    .filter(
+      (i) =>
+        i.currentSrc && i.complete && i.naturalWidth > 0 && getComputedStyle(i).opacity !== "0",
+    )
+    .pop();
+  if (shown) {
+    const img = document.createElement("img");
+    img.src = shown.currentSrc;
+    img.alt = "";
+    Object.assign(img.style, {
+      position: "absolute",
+      inset: "0",
+      width: "100%",
+      height: "100%",
+      objectFit: "cover",
+      display: "block",
+    });
+    photoBox.append(img);
+  }
+  const scrimSrc = hero.querySelector<HTMLElement>("[data-ride-hero-scrim]");
+  let scrim: HTMLElement | null = null;
+  if (scrimSrc) {
+    scrim = document.createElement("div");
+    Object.assign(scrim.style, {
+      position: "absolute",
+      inset: "0",
+      backgroundImage: getComputedStyle(scrimSrc).backgroundImage,
+      transition: "none",
+    });
+    photoBox.append(scrim);
+  }
+
+  // Wait chip: the hero block, its number ready to shrink back into the badge.
+  const waitSrc = hero.querySelector<HTMLElement>("[data-ride-hero-wait]");
+  let wait: { box: HTMLElement; from: HTMLElement; label: HTMLElement | null } | null = null;
+  if (waitSrc) {
+    const r = waitSrc.getBoundingClientRect();
+    if (r.width && r.height) {
+      const cs = getComputedStyle(waitSrc);
+      const box = pillBox(r, cs);
+      const from = waitSrc.cloneNode(true) as HTMLElement;
+      scrubTarget(from);
+      Object.assign(from.style, {
+        position: "absolute",
+        inset: "0",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "flex-start",
+        margin: "0",
+        maxWidth: "none",
+        padding: `${cs.paddingTop} ${cs.paddingRight} ${cs.paddingBottom} ${cs.paddingLeft}`,
+        fontVariantNumeric: "tabular-nums",
+        backgroundColor: "transparent",
+        boxShadow: "none",
+        backdropFilter: "none",
+        transition: "none",
+      });
+      from.style.setProperty("-webkit-backdrop-filter", "none");
+      box.append(from);
+      wait = {
+        box,
+        from,
+        label: from.querySelector<HTMLElement>("[data-ride-hero-wait-label]"),
+      };
+    }
+  }
+
+  // Title: one text element, headline type ready to morph down into the pill's.
+  const titleSrc = hero.querySelector<HTMLElement>("[data-ride-hero-title]");
+  let title: { box: HTMLElement; from: HTMLElement } | null = null;
+  if (titleSrc) {
+    const r = titleSrc.getBoundingClientRect();
+    if (r.width && r.height) {
+      const cs = getComputedStyle(titleSrc);
+      const box = document.createElement("div");
+      Object.assign(box.style, {
+        position: "fixed",
+        left: `${r.left}px`,
+        top: `${r.top}px`,
+        width: `${r.width}px`,
+        height: `${r.height}px`,
+        overflow: "hidden",
+        borderRadius: "0px",
+        backgroundColor: "transparent",
+        border: "0px solid transparent",
+        boxSizing: "border-box",
+        transition: "none",
+      });
+      const from = titleSrc.cloneNode(true) as HTMLElement;
+      scrubTarget(from);
+      Object.assign(from.style, {
+        position: "absolute",
+        left: "0",
+        top: "0",
+        width: "100%",
+        margin: "0",
+        padding: "0",
+        border: "0",
+        maxWidth: "none",
+        display: "block",
+        // Nowrap from the first frame: the pill it's becoming is one clipped
+        // line, and an ellipsis emerging as the box narrows *is* the pill's
+        // own clamp arriving.
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        textAlign: "left",
+        backgroundColor: "transparent",
+        fontSize: cs.fontSize,
+        fontWeight: cs.fontWeight,
+        lineHeight: cs.lineHeight,
+        letterSpacing: cs.letterSpacing,
+        color: cs.color,
+        filter: cs.filter === "none" ? "" : cs.filter,
+        transition: "none",
+      });
+      box.append(from);
+      title = { box, from };
+    }
+  }
+
+  const host = document.createElement("div");
+  host.setAttribute("aria-hidden", "true");
+  Object.assign(host.style, {
+    position: "fixed",
+    inset: "0",
+    zIndex: "20",
+    pointerEvents: "none",
+  });
+  host.append(photoBox);
+  if (wait) host.append(wait.box);
+  if (title) host.append(title.box);
+  document.body.append(host);
+
+  // The marker is the landing pad, and it must not be *seen* waiting: a
+  // resting disc sitting under clones that are still descending reads as the
+  // hero landing on an already-there duplicate. Mirror the forward flight's
+  // hidden hero targets — keep the marker invisible for the whole descent
+  // (re-asserted every frame, since the map can rebuild markers mid-flight)
+  // and reveal it the moment the dissolve starts.
+  const markerEl = () =>
+    document.querySelector<HTMLElement>(`[data-attraction-marker="${CSS.escape(rideSlug)}"]`);
+  let revealed = false;
+  const hideMarker = () => {
+    if (!revealed) markerEl()?.style.setProperty("visibility", "hidden");
+  };
+  const revealMarker = () => {
+    revealed = true;
+    markerEl()?.style.removeProperty("visibility");
+  };
+
+  const timers: number[] = [];
+  const later = (fn: () => void, ms: number) => {
+    timers.push(window.setTimeout(fn, ms));
+  };
+  let raf = 0;
+  const destroy = () => {
+    cancelAnimationFrame(raf);
+    for (const t of timers) clearTimeout(t);
+    // Whatever path got us here, never leave the marker hidden behind.
+    revealMarker();
+    host.remove();
+    if (teardown === destroy) teardown = null;
+  };
+  teardown = destroy;
+
+  const boxes = [photoBox, wait?.box, title?.box];
+  const settle = () => {
+    revealMarker();
+    for (const b of boxes) {
+      if (!b) continue;
+      b.style.transition = `opacity ${SETTLE_MS}ms ease`;
+      b.style.opacity = "0";
+    }
+    later(destroy, SETTLE_MS + 80);
+  };
+  const orphan = (b: HTMLElement) => {
+    b.style.transition = `opacity ${SETTLE_MS}ms ease`;
+    b.style.opacity = "0";
+  };
+
+  /** Dressing toward the landing look — geometry is the tracker's job (below).
+   *  The border *arrives* on the last DRESS_MS — the mirror of the outbound
+   *  leg shedding it on the first. */
+  const dressHome = (box: HTMLElement, dress: CSSStyleDeclaration, radius: string) => {
+    box.style.transition = [
+      ...["border-radius", "background-color", "box-shadow"].map(
+        (p) => `${p} ${FLIGHT_MS}ms ${FLIGHT_EASE}`,
+      ),
+      `border-color ${DRESS_MS}ms ease ${FLIGHT_MS - DRESS_MS}ms`,
+      `border-width ${DRESS_MS}ms ease ${FLIGHT_MS - DRESS_MS}ms`,
+    ].join(", ");
+    Object.assign(box.style, {
+      borderRadius: radius,
+      backgroundColor: dress.backgroundColor,
+      borderWidth: dress.borderTopWidth,
+      borderColor: dress.borderTopColor,
+      boxShadow: dress.boxShadow,
+    });
+  };
+
+  /**
+   * Per-frame geometry. A one-shot CSS transition flies to wherever the marker
+   * was at launch — but the map is often still morphing its container and
+   * settling its camera in the first few hundred ms after the route swap, so
+   * the clones kept landing *beside* the marker. Each box instead eases from
+   * its snapshot toward the marker's live rect, re-read every frame (and
+   * re-queried, so a marker rebuild mid-flight is survivable), then keeps
+   * pinning to it through the dissolve so a late camera settle drags the
+   * clones along rather than leaving them hanging.
+   */
+  type Tracked = {
+    box: HTMLElement;
+    start: DOMRect;
+    target: () => DOMRect | undefined;
+    last?: DOMRect;
+    /** Consecutive frames the target has been gone (unlaid-out / removed). */
+    misses: number;
+    /** Content sized on the same clock as the box — type shrinking on a CSS
+     *  clock of its own let the pill close faster than its number, clipping
+     *  it into a squish just before touchdown. */
+    sync?: (k: number) => void;
+  };
+  const tracked: Tracked[] = [];
+  /** Frames of target loss to tolerate (rebuild blips) before giving up. */
+  const TARGET_LOSS_FRAMES = 5;
+  // Close cousin of FLIGHT_EASE, for the leg driven from JS.
+  const easeOut = (t: number) => 1 - (1 - t) ** 4;
+  const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
+  const startTracking = () => {
+    const t0 = performance.now();
+    const step = () => {
+      hideMarker();
+      const k = easeOut(Math.min(1, (performance.now() - t0) / FLIGHT_MS));
+      for (const f of tracked) {
+        const cur = f.target();
+        if (cur && cur.width && cur.height) {
+          f.last = cur;
+          f.misses = 0;
+        } else if (++f.misses === TARGET_LOSS_FRAMES) {
+          // The landing pad left the map mid-flight — the declutter pass hides
+          // wait badges as markers crowd, and a suppressed badge never comes
+          // back at settle either. There is nothing to land on, so this clone
+          // bows out where it is instead of freezing at the pad's last rect.
+          orphan(f.box);
+        }
+        if (f.misses >= TARGET_LOSS_FRAMES) continue;
+        const r = f.last;
+        if (!r) continue;
+        f.box.style.left = `${f.start.left + (r.left - f.start.left) * k}px`;
+        f.box.style.top = `${f.start.top + (r.top - f.start.top) * k}px`;
+        f.box.style.width = `${f.start.width + (r.width - f.start.width) * k}px`;
+        f.box.style.height = `${f.start.height + (r.height - f.start.height) * k}px`;
+        f.sync?.(k);
+      }
+      // Runs until `destroy` cancels it — pinning is part of the dissolve too.
+      raf = requestAnimationFrame(step);
+    };
+    step();
+  };
+
+  const flyBack = (marker: HTMLElement) => {
+    const face = marker.querySelector<HTMLElement>("[data-face-fill]");
+    const badge = marker.querySelector<HTMLElement>("[data-wait-badge]");
+    const chip = marker.querySelector<HTMLElement>("[data-name-chip]");
+    /** A live rect reader for the tracker — re-queried from the document each
+     *  frame, so it follows the marker through camera moves and rebuilds. */
+    const live = (sel: string) => () =>
+      document
+        .querySelector<HTMLElement>(`[data-attraction-marker="${CSS.escape(rideSlug)}"]`)
+        ?.querySelector<HTMLElement>(sel)
+        ?.getBoundingClientRect();
+
+    // Photo → the round disc face. The scrim clears early, while the box is
+    // still big enough for its gradient to read as anything.
+    const fr = face?.getBoundingClientRect();
+    if (face && fr && fr.width && fr.height) {
+      dressHome(photoBox, getComputedStyle(face), "50%");
+      tracked.push({
+        box: photoBox,
+        start: photoBox.getBoundingClientRect(),
+        target: live("[data-face-fill]"),
+        last: fr,
+        misses: 0,
+      });
+      if (scrim) {
+        scrim.style.transition = `opacity ${SWAP_MS}ms ease`;
+        scrim.style.opacity = "0";
+      }
+    } else {
+      orphan(photoBox);
+    }
+
+    // Wait chip → the badge. The number is the shared element again: the
+    // hero's wording sheds up front, the number rides down to badge size, and
+    // the badge's own "75 min" fades in with its number hidden beneath ours.
+    if (wait) {
+      const br = badge?.getBoundingClientRect();
+      if (badge && br && br.width && br.height) {
+        const bcs = getComputedStyle(badge);
+        if (wait.label) {
+          wait.label.style.maxWidth = `${wait.label.offsetWidth}px`;
+          wait.label.style.overflow = "hidden";
+          // A flex child's `min-width: auto` holds it at content width no
+          // matter the max-width — same gotcha as `data-wait-sub`'s min-w-0.
+          wait.label.style.minWidth = "0";
+          void wait.label.offsetWidth;
+          wait.label.style.transition = `opacity ${DRESS_MS}ms ease, max-width ${DRESS_MS}ms ease`;
+          wait.label.style.opacity = "0";
+          wait.label.style.maxWidth = "0px";
+        }
+        // The number's size lives on its own span (text-3xl), so the shrink
+        // has to be driven there, not on the chip root. Both it and the
+        // padding ride the tracker's own clock (`sync` below) rather than a
+        // CSS transition: the box geometry is per-frame now, and a type clock
+        // that lags it gets the number clipped by the closing pill.
+        const num = wait.from.querySelector<HTMLElement>("[data-ride-hero-wait-num]");
+        const fcs = getComputedStyle(wait.from);
+        const p0 = [fcs.paddingTop, fcs.paddingRight, fcs.paddingBottom, fcs.paddingLeft].map(
+          parseFloat,
+        );
+        const p1 = [bcs.paddingTop, bcs.paddingRight, bcs.paddingBottom, bcs.paddingLeft].map(
+          parseFloat,
+        );
+        const fs0 = parseFloat(fcs.fontSize);
+        const fs1 = parseFloat(bcs.fontSize);
+        const nfs0 = num ? parseFloat(getComputedStyle(num).fontSize) : 0;
+        if (num) {
+          num.style.transition = "none";
+          // The badge it lands on sets its digits proportionally — the hero's
+          // own `tabular-nums` (still on the cloned span) draws a wider "10",
+          // which double-strikes against the real badge's glyphs through the
+          // settle dissolve. Same trade as the outbound leg: bake the *landing*
+          // end's numeric metrics in at launch, where the route swap masks it.
+          num.style.fontVariantNumeric = "normal";
+        }
+        wait.from.style.transition = "none";
+        // Sub-pixel per letter — not worth a clock of its own.
+        wait.from.style.letterSpacing = bcs.letterSpacing;
+        const to = badge.cloneNode(true) as HTMLElement;
+        // Same split as the outbound leg, backwards: the badge says "75 min",
+        // our number is already the "75", so only the " min" may fade in.
+        const toNum = to.querySelector<HTMLElement>("[data-wait-num]");
+        const parts = /^(\s*\d[\d\s–-]*?)(\s*[a-z].*)$/i.exec(toNum?.textContent ?? "");
+        if (toNum && parts) {
+          toNum.textContent = parts[1];
+          toNum.style.visibility = "hidden";
+          const unit = document.createElement("span");
+          unit.textContent = parts[2];
+          // The unit keeps its leading space (" min"). As a flex item's first
+          // character it would otherwise collapse, seating "min" a few px left
+          // of where the real badge's single "10 min" span draws it — a smear,
+          // not a dissolve, when the badge is revealed underneath at settle.
+          unit.style.whiteSpace = "pre";
+          toNum.after(unit);
+        }
+        Object.assign(to.style, {
+          // Landing size, but ride the box's vertical *center*, not its top:
+          // the hero clone underneath is centered (flex, inset-0), so a
+          // top-pinned copy hangs its " min" in the corner of the still-tall
+          // pill, away from the number it labels.
+          position: "absolute",
+          left: "0",
+          top: "0",
+          bottom: "0",
+          margin: "auto 0",
+          width: `${br.width}px`,
+          height: `${br.height}px`,
+          maxWidth: "none",
+          transform: "none",
+          // Tailwind's -translate-x-1/2 rides the CSS `translate` *property*,
+          // which `transform: none` doesn't touch — left un-cleared it slid
+          // this copy half a pill left, drawing "min" squarely over the number.
+          translate: "none",
+          opacity: "0",
+          backgroundColor: "transparent",
+          borderColor: "transparent",
+          boxShadow: "none",
+          transition: "none",
+        });
+        wait.box.append(to);
+
+        const waitSync = (k: number) => {
+          wait.from.style.padding = `${lerp(p0[0], p1[0], k)}px ${lerp(p0[1], p1[1], k)}px ${lerp(p0[2], p1[2], k)}px ${lerp(p0[3], p1[3], k)}px`;
+          wait.from.style.fontSize = `${lerp(fs0, fs1, k)}px`;
+          if (num) num.style.fontSize = `${lerp(nfs0, fs1, k)}px`;
+          // The " min" arrives on the geometry's own clock, and only over its
+          // last stretch. The outbound leg's fixed SWAP_DELAY runs the fade
+          // while this box is still well oversized — which painted the wording
+          // at its *landed* spot across a number still mid-shrink: overlapping
+          // glyphs scrunched into the corner of the pill.
+          to.style.opacity = String(Math.min(1, Math.max(0, (k - 0.92) / 0.08)));
+        };
+
+        dressHome(wait.box, bcs, bcs.borderRadius);
+        tracked.push({
+          box: wait.box,
+          start: wait.box.getBoundingClientRect(),
+          target: live("[data-wait-badge]"),
+          last: br,
+          misses: 0,
+          sync: waitSync,
+        });
+      } else {
+        orphan(wait.box);
+      }
+    }
+
+    // Title → the name pill: type shrinks to pill scale while the pill's
+    // dressing gathers around it.
+    if (title) {
+      const cr = chip?.getBoundingClientRect();
+      if (chip && cr && cr.width && cr.height) {
+        const ccs = getComputedStyle(chip);
+        // Size-affecting type props ride the tracker's clock (`sync`), like the
+        // wait chip's — the clipped box would squish a slower CSS clock's text.
+        // The non-geometric hand-offs (weight, color, shadow) stay on CSS.
+        title.from.style.transition = ["font-weight", "letter-spacing", "color", "filter"]
+          .map((p) => `${p} ${FLIGHT_MS}ms ${FLIGHT_EASE}`)
+          .join(", ");
+        Object.assign(title.from.style, {
+          fontWeight: ccs.fontWeight,
+          letterSpacing: ccs.letterSpacing,
+          color: ccs.color,
+          // "none", not "" — clearing the override would let the clone's own
+          // `drop-shadow-md` class reassert itself.
+          filter: "none",
+        });
+        const tcs = getComputedStyle(title.from);
+        const tf0 = parseFloat(tcs.fontSize);
+        const tf1 = parseFloat(ccs.fontSize);
+        const tl0 = parseFloat(tcs.lineHeight) || tf0 * 1.2;
+        const tl1 = parseFloat(ccs.lineHeight) || tf1;
+        const tp0 = [tcs.paddingTop, tcs.paddingRight, tcs.paddingBottom, tcs.paddingLeft].map(
+          parseFloat,
+        );
+        const tp1 = [ccs.paddingTop, ccs.paddingRight, ccs.paddingBottom, ccs.paddingLeft].map(
+          parseFloat,
+        );
+        dressHome(title.box, ccs, ccs.borderRadius);
+        tracked.push({
+          box: title.box,
+          start: title.box.getBoundingClientRect(),
+          target: live("[data-name-chip]"),
+          last: cr,
+          misses: 0,
+          sync: (k) => {
+            title.from.style.fontSize = `${lerp(tf0, tf1, k)}px`;
+            title.from.style.lineHeight = `${lerp(tl0, tl1, k)}px`;
+            title.from.style.padding = `${lerp(tp0[0], tp1[0], k)}px ${lerp(tp0[1], tp1[1], k)}px ${lerp(tp0[2], tp1[2], k)}px ${lerp(tp0[3], tp1[3], k)}px`;
+          },
+        });
+      } else {
+        orphan(title.box);
+      }
+    }
+
+    later(settle, FLIGHT_MS);
+    startTracking();
+  };
+
+  const started = performance.now();
+  const tick = () => {
+    // Out of sight from its very first frame, laid out or not.
+    hideMarker();
+    const marker = markerEl();
+    // The marker exists but may not be laid out yet (the map slot is still
+    // reattaching); wait for a real face box before measuring anything. No
+    // need to wait for it to hold *still* — the tracker follows it live.
+    if (marker?.querySelector<HTMLElement>("[data-face-fill]")?.getBoundingClientRect().height) {
+      flyBack(marker);
+      return;
+    }
+    if (performance.now() - started > LAND_TIMEOUT_MS) {
+      settle();
+      return;
+    }
+    raf = requestAnimationFrame(tick);
+  };
+  hideMarker();
   raf = requestAnimationFrame(tick);
 }

@@ -1136,7 +1136,11 @@ export function openAttractionCard(opts: {
    * The normal `close()` still runs, out of sight, so the marker is a resting
    * disc again by the time the user navigates back to the map.
    */
+  // Set on hand-off to the ride page, so `finalize` knows the pointer state it
+  // sees (a stuck touch `:hover`) doesn't mean the user is on the marker.
+  let handedOff = false;
   const dismiss = () => {
+    handedOff = true;
     detail.style.visibility = "hidden";
     close();
     window.setTimeout(() => {
@@ -1346,7 +1350,11 @@ export function openAttractionCard(opts: {
     // again — so re-open it here rather than leave it collapsed under the pointer.
     // (Dispatching a synthetic `mouseenter` would also re-fire the z-lift, which
     // counts enters and leaves and would end up stuck raised.)
-    if (nameEl && detail.parentElement?.matches(":hover")) expandNameChip(nameEl);
+    // Never after a hand-off to the ride page, though: on a touch screen
+    // `:hover` sticks to the tapped marker, and this finalize runs with the
+    // user already on another route — re-expanding here is what left a
+    // full-width name pill waiting under the return flight's clamped title.
+    if (!handedOff && nameEl && detail.parentElement?.matches(":hover")) expandNameChip(nameEl);
   }
 
   const handle = { close };
@@ -1916,6 +1924,9 @@ export function buildAttractionEl(
   el.type = "button";
   el.setAttribute("aria-label", a.name);
   el.className = "group relative block cursor-pointer";
+  // Landing pad for the ride page's *return* flight (see `launchRideReturn`):
+  // backing out of a ride page pops its hero back down onto this marker.
+  el.dataset.attractionMarker = a.slug;
 
   // `detail` is the wrapper the controller clusters/translates/highlights: the
   // ride photo plus its chips.
