@@ -19,7 +19,7 @@ import { useTRPC } from "#/integrations/trpc/react.ts";
 import { preferredRouteLanguage, preferredUnitSystem, valhallaUnits } from "#/lib/units.ts";
 import { pointInPolygon } from "#/server/living/geofence.ts";
 
-import { launchRideFlight, rideFlightSeed } from "./card-flight.ts";
+import { launchHeroFlight, rideFlightSeed } from "./card-flight.ts";
 import { MarkerCluster, type DeclutterItem } from "./declutter.ts";
 import { fusedHeadingStore } from "./heading-store.ts";
 import { roundCoord } from "./nav-geometry.ts";
@@ -710,7 +710,7 @@ export function ParkMapLeaflet({
               // flying the card's photo, wait chip and title on to that page's
               // hero (and seeding it, so there's a hero to land on right away).
               onPress: (nodes) => {
-                launchRideFlight(
+                launchHeroFlight(
                   rideFlightSeed({
                     parkSlug: effectiveSlug,
                     parkName: parksRef.current?.find((p) => p.slug === effectiveSlug)?.name ?? null,

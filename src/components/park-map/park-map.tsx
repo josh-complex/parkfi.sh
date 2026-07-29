@@ -18,7 +18,7 @@ import { distanceMeters, pointInPolygon } from "#/server/living/geofence.ts";
 import type { GeoPolygon } from "#/db/schema.ts";
 import { reportError } from "#/lib/report-error.ts";
 
-import { launchRideFlight, rideFlightSeed } from "./card-flight.ts";
+import { launchHeroFlight, rideFlightSeed } from "./card-flight.ts";
 import { MarkerCluster, type DeclutterItem } from "./declutter.ts";
 import { fusedHeadingStore } from "./heading-store.ts";
 import { roundCoord, routeBearingAt } from "./nav-geometry.ts";
@@ -1266,7 +1266,7 @@ export function ParkMap({
               // flying the card's photo, wait chip and title on to that page's
               // hero (and seeding it, so there's a hero to land on right away).
               onPress: (nodes) => {
-                launchRideFlight(
+                launchHeroFlight(
                   rideFlightSeed({
                     parkSlug: effectiveSlug,
                     parkName: parksRef.current?.find((p) => p.slug === effectiveSlug)?.name ?? null,
@@ -1597,7 +1597,7 @@ export function ParkMap({
                   wasSelected: false,
                   onClose: () => raise.pinTop(false),
                   onPress: (nodes) => {
-                    launchRideFlight(
+                    launchHeroFlight(
                       rideFlightSeed({
                         parkSlug: effectiveSlug,
                         parkName:

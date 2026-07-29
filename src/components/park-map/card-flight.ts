@@ -4,19 +4,21 @@ import { cfImagesStore } from "#/integrations/posthog/feature-flags.ts";
 import { cfImageUrl, disneyResizeUrl } from "#/lib/image.ts";
 
 /**
- * Cross-route shared-element flight: the open map card → the ride page hero.
+ * Cross-route shared-element flight: the open map card → a detail page's hero.
  *
  * The map card isn't React — `openAttractionCard` builds it imperatively out of
  * the marker's own disc — so motion's `layoutId` can't pair it with anything on
- * the ride page. This does the pairing by hand, the same way `map-morph` carries
- * the singleton map between route slots: on press we snapshot the card's three
+ * the destination page. This does the pairing by hand, the same way `map-morph`
+ * carries the singleton map between route slots: on press we snapshot the card's
  * shared elements (photo header, live-wait chip, title), clone them into a fixed
  * overlay on `document.body` (which outlives the route swap), and fly the clones
- * to the hero's matching boxes once it mounts.
+ * to the hero's matching boxes once it mounts. The landing contract is the
+ * `data-hero*` tags stamped by `DetailHero`; the return pad is the
+ * `data-marker-key` each marker builder stamps.
  *
  * The press also publishes a **seed** — the name, subtitle, wait and photo the
- * card was already showing. `RideDetail` paints its hero from that seed while
- * `parks.attraction` is still in flight, so the clones land on a real hero
+ * card was already showing. The destination paints its hero from that seed while
+ * its own query is still in flight, so the clones land on a real hero
  * instead of a grey skeleton, and the page reads as loaded a round trip early.
  *
  * Landing is a dissolve, not a swap: the real elements are revealed underneath
@@ -48,19 +50,28 @@ const SWAP_MS = Math.round(FLIGHT_MS * 0.5);
 const DRESS_MS = 140;
 
 /**
- * What the map card already knows about the ride, handed to the hero so it can
- * paint before its own query resolves. Everything here is what the *card* was
- * showing, so a seeded hero and the flown clones agree by construction.
+ * What the map card already knows about the entity, handed to the hero so it
+ * can paint before its own query resolves. Everything here is what the *card*
+ * was showing, so a seeded hero and the flown clones agree by construction.
  */
-export type RideFlightSeed = {
-  parkSlug: string;
-  rideSlug: string;
+export type HeroFlightSeed = {
+  /** Flight identity — matches the destination hero's `data-hero`. Built by
+   *  {@link heroFlightKey}, e.g. `ride:magic-kingdom/space-mountain`. */
+  key: string;
+  /** The return pad — matches the origin marker's `data-marker-key` (see the
+   *  builders in `shared.tsx`), so backing out can find the marker again. */
+  markerKey: string;
+  /** Pathnames that count as "backed out to the map": the return flight only
+   *  launches when, at the page's unmount, history already points at one of
+   *  these (so the marker is known to exist there). */
+  returnPaths: string[];
   name: string;
-  /** "Park name · Land" — one line, exactly the hero's own subtitle. */
+  /** e.g. "Park name · Land" — one line, exactly the hero's own subtitle. */
   subtitle: string;
   /** Live standby minutes, or null when the card showed no live wait. */
   waitMinutes: number | null;
-  /** Operating status code, so the hero's status pill doesn't pop in later. */
+  /** Operating status code, so the hero's status pill doesn't pop in later.
+   *  Null for kinds that carry no live status. */
   status: string | null;
   /** The ride's own photo URL, resolved exactly as the hero resolves it, so the
    *  hero's `<img>` never changes `src` when the query lands. */
@@ -127,13 +138,33 @@ export type CardFlightNodes = {
 
 type FlightState = {
   key: string;
-  seed: RideFlightSeed;
+  seed: HeroFlightSeed;
   /** True while clones still cover the hero, which keeps its targets hidden. */
   flying: boolean;
 };
 
+/** Flight identity, `kind:id` — one namespace across every marker/page kind. */
+export function heroFlightKey(kind: string, id: string): string {
+  return `${kind}:${id}`;
+}
+
 export function rideFlightKey(parkSlug: string, rideSlug: string): string {
-  return `${parkSlug}/${rideSlug}`;
+  return heroFlightKey("ride", `${parkSlug}/${rideSlug}`);
+}
+
+// Return-pad keys, matched against the `data-marker-key` each marker builder
+// stamps (`buildAttractionEl` / `buildPoiEl` / `buildParkBadgeEl`). Separate
+// from the flight key: a marker doesn't know everything the page key encodes
+// (an attraction marker has no park slug), and one pad can serve several
+// flights (a SHOW's showtime marker lands the ride-page return).
+export function attractionMarkerKey(slug: string): string {
+  return `attraction:${slug}`;
+}
+export function poiMarkerKey(id: string): string {
+  return `poi:${id}`;
+}
+export function parkMarkerKey(slug: string): string {
+  return `park:${slug}`;
 }
 
 // --- store ----------------------------------------------------------------
@@ -157,12 +188,11 @@ function subscribe(listener: () => void): () => void {
 }
 
 /**
- * The seed for *this* ride page plus whether clones are still covering it.
+ * The seed for *this* page plus whether clones are still covering it.
  * Null when the page wasn't opened from a map card — the ordinary case for a
  * deep link or a crawler, which just renders the normal skeleton.
  */
-export function useRideFlight(parkSlug: string, rideSlug: string): FlightState | null {
-  const key = rideFlightKey(parkSlug, rideSlug);
+export function useHeroFlight(key: string): FlightState | null {
   const snapshot = React.useSyncExternalStore(
     subscribe,
     () => state,
@@ -190,13 +220,16 @@ export function rideFlightSeed(opts: {
       imageThumbUrl?: string | null;
     } | null;
   };
-}): RideFlightSeed {
+}): HeroFlightSeed {
   const { parkSlug, parkName, ride } = opts;
   const operating = ride.status === "OPERATING";
   const imageUrl = ride.meta?.imageHeroUrl ?? ride.meta?.imageThumbUrl ?? null;
   return {
-    parkSlug,
-    rideSlug: ride.slug,
+    key: rideFlightKey(parkSlug, ride.slug),
+    markerKey: attractionMarkerKey(ride.slug),
+    // A ride page can only have been card-launched from the roam map or its
+    // park's map view — the two places its marker lives.
+    returnPaths: ["/map", `/park/${parkSlug}`],
     name: ride.name,
     subtitle: [parkName, ride.meta?.land].filter(Boolean).join(" · "),
     // Only a *live* wait: the hero's other source (the 24–48h typical) isn't on
@@ -205,7 +238,7 @@ export function rideFlightSeed(opts: {
     waitMinutes: operating && ride.standbyWait != null ? ride.standbyWait : null,
     status: ride.status ?? null,
     imageUrl,
-    // Filled in by `launchRideFlight`, which can read what the card is actually
+    // Filled in by `launchHeroFlight`, which can read what the card is actually
     // painting rather than guess at which rendition won.
     cardImageUrl: null,
     previewImageUrl: heroPreviewUrl(imageUrl),
@@ -213,15 +246,15 @@ export function rideFlightSeed(opts: {
 }
 
 /**
- * Drop this ride's seed (on unmount), so navigating back to the same ride later
+ * Drop this page's seed (on unmount), so navigating back to the same page later
  * from somewhere that *isn't* the map doesn't paint a stale hero from it.
  */
-export function releaseRideFlight(parkSlug: string, rideSlug: string): void {
+export function releaseHeroFlight(key: string): void {
   // Never mid-flight: clearing the seed there would swap the seeded hero back to
   // a skeleton and reveal the landing targets under clones still in the air. A
   // flight that outlives its page dissolves on its own timers anyway.
   if (state?.flying) return;
-  if (state?.key === rideFlightKey(parkSlug, rideSlug)) publish(null);
+  if (state?.key === key) publish(null);
 }
 
 // --- clone builders -------------------------------------------------------
@@ -518,12 +551,7 @@ function clonePhoto(fill: HTMLElement | null, preview: string | null): Flown | n
 
 /** Strip the hero's landing hooks off a clone so it can't be found by a query. */
 function scrubTarget(el: HTMLElement): void {
-  for (const a of [
-    "data-ride-hero",
-    "data-ride-hero-image",
-    "data-ride-hero-wait",
-    "data-ride-hero-title",
-  ])
+  for (const a of ["data-hero", "data-hero-image", "data-hero-wait", "data-hero-title"])
     el.removeAttribute(a);
 }
 
@@ -534,16 +562,16 @@ let teardown: (() => void) | null = null;
 /**
  * Snapshot the open card and start the flight. Call this immediately *before*
  * `navigate()` — the card is still laid out at that point, and the seed has to
- * be published before the ride route's first render reads it.
+ * be published before the destination route's first render reads it.
  */
-export function launchRideFlight(input: RideFlightSeed, nodes: CardFlightNodes): void {
+export function launchHeroFlight(input: HeroFlightSeed, nodes: CardFlightNodes): void {
   if (typeof window === "undefined") return;
   teardown?.();
-  const key = rideFlightKey(input.parkSlug, input.rideSlug);
+  const key = input.key;
   // Carry over the exact bytes the card header is painting, so the hero can hold
   // them underneath its own copy instead of fading in from nothing.
   const face = nodes.fill instanceof HTMLImageElement ? nodes.fill : null;
-  const seed: RideFlightSeed = { ...input, cardImageUrl: face?.currentSrc || face?.src || null };
+  const seed: HeroFlightSeed = { ...input, cardImageUrl: face?.currentSrc || face?.src || null };
 
   // Reduced motion still gets the seeded hero — that's a load-time win, not an
   // animation — but nothing travels, so the targets are visible from the start.
@@ -672,7 +700,7 @@ export function launchRideFlight(input: RideFlightSeed, nodes: CardFlightNodes):
     // flight — landing already scrimmed, so the settle dissolve reveals an
     // identical gradient underneath rather than popping one in.
     if (f.scrim) {
-      const real = target.parentElement?.querySelector<HTMLElement>("[data-ride-hero-scrim]");
+      const real = target.parentElement?.querySelector<HTMLElement>("[data-hero-scrim]");
       if (real) {
         f.scrim.style.backgroundImage = getComputedStyle(real).backgroundImage;
         f.scrim.style.transition = `opacity ${FLIGHT_MS}ms ease`;
@@ -695,7 +723,7 @@ export function launchRideFlight(input: RideFlightSeed, nodes: CardFlightNodes):
     const cs = getComputedStyle(target);
     const tr = target.getBoundingClientRect();
     const numTarget =
-      target.querySelector<HTMLElement>("[data-ride-hero-wait-num]") ?? target.firstElementChild;
+      target.querySelector<HTMLElement>("[data-hero-wait-num]") ?? target.firstElementChild;
     const ncs = numTarget instanceof HTMLElement ? getComputedStyle(numTarget) : null;
 
     for (const el of f.shed ?? []) {
@@ -730,7 +758,7 @@ export function launchRideFlight(input: RideFlightSeed, nodes: CardFlightNodes):
     // (still occupying its final width, which is what seats the label column)
     // so there's never a second number at a second size mid-flight.
     if (f.morphNum) {
-      const n = to.querySelector<HTMLElement>("[data-ride-hero-wait-num]");
+      const n = to.querySelector<HTMLElement>("[data-hero-wait-num]");
       if (n) n.style.visibility = "hidden";
     }
     Object.assign(to.style, {
@@ -747,7 +775,7 @@ export function launchRideFlight(input: RideFlightSeed, nodes: CardFlightNodes):
       maxWidth: "none",
       opacity: "0",
       // The target is a *hidden* landing pad while the flight is up — inline
-      // `visibility: hidden` (see RideHero) that cloneNode carries over. The
+      // `visibility: hidden` (see DetailHero) that cloneNode carries over. The
       // copy exists to be seen mid-air, so put it back; the number's own
       // hidden marker above stays, being the more specific inline style.
       visibility: "visible",
@@ -797,7 +825,7 @@ export function launchRideFlight(input: RideFlightSeed, nodes: CardFlightNodes):
   };
 
   const land = (hero: HTMLElement) => {
-    const photoTarget = hero.querySelector<HTMLElement>("[data-ride-hero-image]");
+    const photoTarget = hero.querySelector<HTMLElement>("[data-hero-image]");
     // A hero that's mounted but not yet laid out (zero-height on the frame it
     // commits) would hand back a meaningless box — wait for a real one.
     if (photoTarget && !photoTarget.getBoundingClientRect().height) {
@@ -808,8 +836,8 @@ export function launchRideFlight(input: RideFlightSeed, nodes: CardFlightNodes):
     // rounds the photo is the hero box clipping it (square full-bleed on mobile,
     // `rounded-2xl` from md up), so that's the shape the clone has to land on.
     flyPhoto(photo, photoTarget, getComputedStyle(hero).borderRadius);
-    flyWait(wait, hero.querySelector<HTMLElement>("[data-ride-hero-wait]"));
-    flyTitle(title, hero.querySelector<HTMLElement>("[data-ride-hero-title]"));
+    flyWait(wait, hero.querySelector<HTMLElement>("[data-hero-wait]"));
+    flyTitle(title, hero.querySelector<HTMLElement>("[data-hero-title]"));
 
     // Don't dissolve onto an empty box: hold the photo clone past the travel
     // until there's a decoded photo underneath it. Arriving from a card that's
@@ -829,7 +857,7 @@ export function launchRideFlight(input: RideFlightSeed, nodes: CardFlightNodes):
 
   const started = performance.now();
   const tick = () => {
-    const hero = document.querySelector<HTMLElement>(`[data-ride-hero="${CSS.escape(key)}"]`);
+    const hero = document.querySelector<HTMLElement>(`[data-hero="${CSS.escape(key)}"]`);
     if (hero) {
       land(hero);
       return;
@@ -846,29 +874,29 @@ export function launchRideFlight(input: RideFlightSeed, nodes: CardFlightNodes):
 // --- the return flight ------------------------------------------------------
 
 /**
- * The reverse trip: the ride hero pops back down into its map marker.
+ * The reverse trip: the detail hero pops back down into its map marker.
  *
- * Invoked from the ride page's unmount cleanup — the one moment the hero is
+ * Invoked from the detail page's unmount cleanup — the one moment the hero is
  * still measurable while history already points at the destination — and only
- * when that destination is a map view and this page was opened from a map card
- * in the first place (so the marker is known to exist). The hero's photo, wait
- * chip and title are cloned into the same kind of fixed overlay as the forward
- * flight and fly down onto the marker's face, wait badge and name pill. The
- * marker itself — already restored to a resting disc by the card's `dismiss` —
- * is never touched: the clones shrink onto it and dissolve.
+ * when that destination is one of the seed's `returnPaths` (a map view this
+ * page was card-launched from, so the marker is known to exist). The hero's
+ * photo, wait chip and title are cloned into the same kind of fixed overlay as
+ * the forward flight and fly down onto the marker's face, wait badge and name
+ * pill. The marker itself — already restored to a resting disc by the card's
+ * `dismiss` — is never touched: the clones shrink onto it and dissolve.
  *
  * Same grammar as the outbound leg, run backwards: the wait number is the
  * shared element (its wording sheds, the badge's " min" fades in), the title
  * is one text element morphing headline → pill, and the photo re-rounds into
- * the disc while the scrim fades off it.
+ * the disc while the scrim fades off it. Legs whose pad the marker doesn't
+ * carry (a POI has no wait badge) simply orphan, as on the way out.
  */
-export function launchRideReturn(parkSlug: string, rideSlug: string): void {
+export function launchHeroReturn(key: string): void {
   if (typeof window === "undefined") return;
-  const key = rideFlightKey(parkSlug, rideSlug);
   if (state?.key !== key) return;
+  const { markerKey, returnPaths } = state.seed;
   // By unmount time the history entry is already the destination's.
-  const path = window.location.pathname;
-  if (path !== "/map" && path !== `/park/${parkSlug}`) return;
+  if (!returnPaths.includes(window.location.pathname)) return;
   if (state.flying) {
     // Backed out with the forward flight still airborne — drop everything.
     teardown?.();
@@ -876,7 +904,7 @@ export function launchRideReturn(parkSlug: string, rideSlug: string): void {
     return;
   }
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  const hero = document.querySelector<HTMLElement>(`[data-ride-hero="${CSS.escape(key)}"]`);
+  const hero = document.querySelector<HTMLElement>(`[data-hero="${CSS.escape(key)}"]`);
   if (!hero) return;
   const heroRect = hero.getBoundingClientRect();
   if (!heroRect.width || !heroRect.height) return;
@@ -901,7 +929,7 @@ export function launchRideReturn(parkSlug: string, rideSlug: string): void {
     backgroundImage: heroCs.backgroundImage,
     transition: "none",
   });
-  const shown = Array.from(hero.querySelectorAll<HTMLImageElement>("[data-ride-hero-image] img"))
+  const shown = Array.from(hero.querySelectorAll<HTMLImageElement>("[data-hero-image] img"))
     .filter(
       (i) =>
         i.currentSrc && i.complete && i.naturalWidth > 0 && getComputedStyle(i).opacity !== "0",
@@ -921,7 +949,7 @@ export function launchRideReturn(parkSlug: string, rideSlug: string): void {
     });
     photoBox.append(img);
   }
-  const scrimSrc = hero.querySelector<HTMLElement>("[data-ride-hero-scrim]");
+  const scrimSrc = hero.querySelector<HTMLElement>("[data-hero-scrim]");
   let scrim: HTMLElement | null = null;
   if (scrimSrc) {
     scrim = document.createElement("div");
@@ -935,7 +963,7 @@ export function launchRideReturn(parkSlug: string, rideSlug: string): void {
   }
 
   // Wait chip: the hero block, its number ready to shrink back into the badge.
-  const waitSrc = hero.querySelector<HTMLElement>("[data-ride-hero-wait]");
+  const waitSrc = hero.querySelector<HTMLElement>("[data-hero-wait]");
   let wait: { box: HTMLElement; from: HTMLElement; label: HTMLElement | null } | null = null;
   if (waitSrc) {
     const r = waitSrc.getBoundingClientRect();
@@ -964,13 +992,13 @@ export function launchRideReturn(parkSlug: string, rideSlug: string): void {
       wait = {
         box,
         from,
-        label: from.querySelector<HTMLElement>("[data-ride-hero-wait-label]"),
+        label: from.querySelector<HTMLElement>("[data-hero-wait-label]"),
       };
     }
   }
 
   // Title: one text element, headline type ready to morph down into the pill's.
-  const titleSrc = hero.querySelector<HTMLElement>("[data-ride-hero-title]");
+  const titleSrc = hero.querySelector<HTMLElement>("[data-hero-title]");
   let title: { box: HTMLElement; from: HTMLElement } | null = null;
   if (titleSrc) {
     const r = titleSrc.getBoundingClientRect();
@@ -1043,7 +1071,7 @@ export function launchRideReturn(parkSlug: string, rideSlug: string): void {
   // (re-asserted every frame, since the map can rebuild markers mid-flight)
   // and reveal it the moment the dissolve starts.
   const markerEl = () =>
-    document.querySelector<HTMLElement>(`[data-attraction-marker="${CSS.escape(rideSlug)}"]`);
+    document.querySelector<HTMLElement>(`[data-marker-key="${CSS.escape(markerKey)}"]`);
   let revealed = false;
   const hideMarker = () => {
     if (!revealed) markerEl()?.style.setProperty("visibility", "hidden");
@@ -1171,7 +1199,7 @@ export function launchRideReturn(parkSlug: string, rideSlug: string): void {
      *  frame, so it follows the marker through camera moves and rebuilds. */
     const live = (sel: string) => () =>
       document
-        .querySelector<HTMLElement>(`[data-attraction-marker="${CSS.escape(rideSlug)}"]`)
+        .querySelector<HTMLElement>(`[data-marker-key="${CSS.escape(markerKey)}"]`)
         ?.querySelector<HTMLElement>(sel)
         ?.getBoundingClientRect();
 
@@ -1218,7 +1246,7 @@ export function launchRideReturn(parkSlug: string, rideSlug: string): void {
         // padding ride the tracker's own clock (`sync` below) rather than a
         // CSS transition: the box geometry is per-frame now, and a type clock
         // that lags it gets the number clipped by the closing pill.
-        const num = wait.from.querySelector<HTMLElement>("[data-ride-hero-wait-num]");
+        const num = wait.from.querySelector<HTMLElement>("[data-hero-wait-num]");
         const fcs = getComputedStyle(wait.from);
         const p0 = [fcs.paddingTop, fcs.paddingRight, fcs.paddingBottom, fcs.paddingLeft].map(
           parseFloat,

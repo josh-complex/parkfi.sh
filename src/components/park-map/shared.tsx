@@ -37,7 +37,12 @@ import {
   paidLineProduct,
 } from "#/components/park-dashboard/lightning-lane.ts";
 
-import type { CardFlightNodes } from "#/components/park-map/card-flight.ts";
+import {
+  attractionMarkerKey,
+  parkMarkerKey,
+  poiMarkerKey,
+  type CardFlightNodes,
+} from "#/components/park-map/card-flight.ts";
 import { cfImagesStore } from "#/integrations/posthog/feature-flags.ts";
 import { cfImageUrl } from "#/lib/image.ts";
 import { formatParkName } from "#/lib/parks.ts";
@@ -1590,6 +1595,9 @@ export function buildParkBadgeEl(p: {
   el.type = "button";
   el.setAttribute("aria-label", p.name);
   el.className = "group relative block cursor-pointer";
+  // Return-flight landing pad (see `launchHeroReturn`) — unused until the park
+  // page flies, but stamped now so the pad contract is uniform.
+  el.dataset.markerKey = parkMarkerKey(p.slug);
   const color = operatorColor(p.operatorSlug);
   const disc = discMarkup({
     url: p.imageUrl ?? null,
@@ -1829,6 +1837,9 @@ export function buildPoiEl(poi: PoiItem): { el: HTMLButtonElement; detail: HTMLD
   el.type = "button";
   el.setAttribute("aria-label", poi.name);
   el.className = "group relative block cursor-pointer";
+  // Return-flight landing pad (see `launchHeroReturn`) — unused until the POI
+  // detail pages fly, but stamped now so the pad contract is uniform.
+  el.dataset.markerKey = poiMarkerKey(poi.id);
 
   const detail = document.createElement("div");
   detail.className = DETAIL_CLASS;
@@ -1924,9 +1935,9 @@ export function buildAttractionEl(
   el.type = "button";
   el.setAttribute("aria-label", a.name);
   el.className = "group relative block cursor-pointer";
-  // Landing pad for the ride page's *return* flight (see `launchRideReturn`):
+  // Landing pad for the ride page's *return* flight (see `launchHeroReturn`):
   // backing out of a ride page pops its hero back down onto this marker.
-  el.dataset.attractionMarker = a.slug;
+  el.dataset.markerKey = attractionMarkerKey(a.slug);
 
   // `detail` is the wrapper the controller clusters/translates/highlights: the
   // ride photo plus its chips.
