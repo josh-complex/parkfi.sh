@@ -58,8 +58,11 @@ import {
   poiKind,
   poiPressTarget,
   saveRoamCamera,
+  SEASONAL_POI_RE,
   showCardBodyHtml,
   showsLit,
+  squashName,
+  nameWords,
   SPREAD_ZOOM,
   waitLabelFor,
   wireCardWalkTime,
@@ -71,37 +74,6 @@ import { nextShowtime, parseShowtimes, showClock, untilLabel } from "#/lib/showt
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import type { FeatureCollection, Point } from "geojson";
-
-/**
- * Collapse a show/POI name for cross-feed identity: Disney's finder feed and
- * the live board disagree on ™/®, dash style, ellipses, and even spacing
- * ("Side Show" vs "Sideshow"), so compare only the letters and digits.
- */
-function squashName(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-/** Distinctive words of an act's name for the rename-alias check (≥4 chars,
- *  minus the filler every Disney act shares). */
-const NAME_STOPWORDS = new Set(["disney", "disneys", "meet", "with", "near", "entertainment"]);
-function nameWords(s: string): Set<string> {
-  return new Set(
-    s
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, " ")
-      .split(" ")
-      .filter((w) => w.length >= 4 && !NAME_STOPWORDS.has(w)),
-  );
-}
-
-/**
- * Finder POIs for hard-ticket party / holiday / one-night shows. The finder
- * feed is date-blind — it lists Halloween-party and Christmas-party acts in
- * July — so these are hidden outright rather than gated on showtimes (they
- * never appear on the live board at all until their event runs).
- */
-const SEASONAL_POI_RE =
-  /halloween|not-so-scary|very merry|christmas|holiday|jollywood|jingle bell|seasons greetings|celebrate america|heartbeat of freedom|after hours|fourth of july/i;
 
 /**
  * Vector basemap, per the app theme. We use a custom MapTiler GL style —

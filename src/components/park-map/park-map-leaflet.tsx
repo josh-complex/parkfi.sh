@@ -16,8 +16,9 @@ import {
   maptilerFallbackRasterTileUrl,
 } from "#/components/maps/maptiler-style.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
+import { nextShowtime, parseShowtimes, showClock, untilLabel } from "#/lib/showtimes.ts";
 import { preferredRouteLanguage, preferredUnitSystem, valhallaUnits } from "#/lib/units.ts";
-import { pointInPolygon } from "#/server/living/geofence.ts";
+import { distanceMeters, pointInPolygon } from "#/server/living/geofence.ts";
 
 import {
   launchHeroFlight,
@@ -58,10 +59,16 @@ import {
   ORLANDO_CENTER,
   ORLANDO_ZOOM,
   saveRoamCamera,
+  SEASONAL_POI_RE,
+  showCardBodyHtml,
+  showsLit,
+  squashName,
+  nameWords,
   SPREAD_ZOOM,
   waitLabelFor,
   wireCardWalkTime,
   wireMarkerFadeIn,
+  type PoiItem,
 } from "./shared.tsx";
 
 import "leaflet/dist/leaflet.css";
@@ -347,6 +354,9 @@ export function ParkMapLeaflet({
   // focused and the board has loaded, then clipped to the park boundary at
   // render; a long staleTime keeps them warm as the user roams.
   const layers = filter?.layers;
+  // Whether the Shows chip currently draws: gates the board's SHOW rows as
+  // showtime markers (see `showsLit`). Mirrors the GL renderer.
+  const showsOn = showsLit(filter);
   const poisEnabled = !!effectiveSlug && boardQ.isSuccess;
   const diningQ = useQuery({
     ...trpc.parks.dining.queryOptions(),
@@ -768,13 +778,75 @@ export function ParkMapLeaflet({
       // nothing. Negative ids keep them clear of the attraction/park id space.
       const boundary = parks?.find((p) => p.slug === effectiveSlug)?.boundary ?? null;
       if (boundary) {
+        // Entertainment/character finder-POI hygiene, mirroring the GL
+        // renderer (see park-map.tsx for the full policy rationale): the
+        // finder feed and the live board list the same acts under
+        // loosely-agreeing names, so a POI naming a board SHOW is hidden when
+        // the showtime marker renders (Shows chip lit) or when the act is dark
+        // today; event-named holiday POIs are hidden outright.
+        const supersededKeys: Array<string> = [];
+        const todayShows: Array<{ lngLat: [number, number]; words: Set<string> }> = [];
+        if (layers?.entertainment && !navDest) {
+          for (const a of board ?? []) {
+            if (a.entityType !== "SHOW") continue;
+            const performing = a.showtimes.length > 0 && parseShowtimes(a.showtimes).length > 0;
+            if (!performing || showsOn) supersededKeys.push(squashName(a.name));
+            if (!performing || !showsOn) continue;
+            if (a.latitude == null || a.longitude == null) continue;
+            if (!pointInPolygon([a.longitude, a.latitude], boundary)) continue;
+            todayShows.push({ lngLat: [a.longitude, a.latitude], words: nameWords(a.name) });
+          }
+        }
+        const hideEntertainmentPoi = (p: {
+          name: string;
+          latitude: number | null;
+          longitude: number | null;
+        }): boolean => {
+          // Same act on the board — containment either way so articles,
+          // ™-suffixes, and "X at Y-event" wrappers still match; the ≥6-char
+          // guard keeps short names from matching inside longer ones.
+          const key = squashName(p.name);
+          if (
+            supersededKeys.some(
+              (k) =>
+                k === key ||
+                (key.length >= 6 && k.includes(key)) ||
+                (k.length >= 6 && key.includes(k)),
+            )
+          )
+            return true;
+          // Hard-ticket party / holiday one-offs the finder lists year-round.
+          if (SEASONAL_POI_RE.test(p.name)) return true;
+          // Renames the name matching can't see: pinned at the same spot as a
+          // show performing today and sharing a distinctive word — or the
+          // exact same pin.
+          if (p.latitude != null && p.longitude != null) {
+            const at: [number, number] = [p.longitude, p.latitude];
+            const words = nameWords(p.name);
+            for (const s of todayShows) {
+              const d = distanceMeters(at, s.lngLat);
+              if (d <= 20 && (d <= 3 || [...words].some((w) => s.words.has(w)))) return true;
+            }
+          }
+          return false;
+        };
+        // Finder-POI media keyed by squashed name so a showtime marker that
+        // replaces a finder pin can borrow its richer 800x450 image (below).
+        const poiMediaByName = new Map<string, string | null>();
+        for (const p of poiQ.data ?? []) {
+          if (p.category === "entertainment" || p.category === "character") {
+            poiMediaByName.set(squashName(p.name), p.imageUrl ?? null);
+          }
+        }
         // The park_poi feed carries all three overlay categories; pick the ones
-        // whose layer is lit (Live folds entertainment + character meets).
+        // whose layer is lit (Live folds entertainment + character meets),
+        // minus any entertainment/character pin a showtime marker replaces.
         const overlayPoi = (poiQ.data ?? []).filter(
           (p) =>
             (layers?.services && p.category === "info") ||
             (layers?.entertainment &&
-              (p.category === "entertainment" || p.category === "character")) ||
+              (p.category === "entertainment" || p.category === "character") &&
+              !hideEntertainmentPoi(p)) ||
             (layers?.tours && p.category === "tour"),
         );
         // The dining feed carries both reservable table-service venues and
@@ -913,6 +985,117 @@ export function ParkMapLeaflet({
             kind: poiKind(poi.category),
           });
         });
+
+        // Live SHOW entities as showtime markers (plan item 1.1), mirroring
+        // the GL renderer: the card leads with the next showtime and presses
+        // to the show's detail page. Gated on the Shows chip; hidden while
+        // navigating. Show ids are offset far negative to stay clear of both
+        // the attraction id space and the POI ids above.
+        if (showsOn && !navDest) {
+          const tz =
+            parksRef.current?.find((p) => p.slug === effectiveSlug)?.timezone ?? "America/New_York";
+          (board ?? []).forEach((a, i) => {
+            if (a.entityType !== "SHOW" || a.showtimes.length === 0) return;
+            if (a.latitude == null || a.longitude == null) return;
+            const lngLat: [number, number] = [a.longitude, a.latitude];
+            if (!pointInPolygon(lngLat, boundary)) return;
+            const times = parseShowtimes(a.showtimes);
+            if (times.length === 0) return;
+            // Prefer the finder-POI photo (800x450) over the attraction's own
+            // images, falling back to the hero then the thumb (`buildPoiEl`
+            // derives the small disc thumb; the full size waits for card open).
+            const showImage =
+              poiMediaByName.get(squashName(a.name)) ??
+              a.meta?.imageHeroUrl ??
+              a.meta?.imageThumbUrl ??
+              null;
+            const showPoi: PoiItem = {
+              id: `show-${a.id}`,
+              name: a.name,
+              latitude: a.latitude,
+              longitude: a.longitude,
+              land: a.meta?.land ?? null,
+              category: "entertainment",
+              imageUrl: showImage,
+            };
+            const latLng: [number, number] = [a.latitude, a.longitude];
+            const { el, detail } = buildPoiEl(showPoi);
+            if (shouldFade) wireMarkerFadeIn(detail);
+            const marker = L.marker(latLng, { icon: pointIcon(el) }).addTo(map);
+            const raise = makeRaise(el, marker);
+            markersRef.current.push(marker);
+            const showItemId = -100_000 - i;
+            items.push({
+              id: showItemId,
+              point: () => map.latLngToLayerPoint(latLng),
+              detail,
+              raise,
+              onActivate: () => {
+                void queryClient.prefetchQuery(
+                  trpc.parks.attraction.queryOptions({ parkSlug: effectiveSlug, rideSlug: a.slug }),
+                );
+                cardRef.current?.close();
+                if (!containerRef.current) return;
+                raise.pinTop(true);
+                const now = Date.now();
+                const next = nextShowtime(times, now);
+                const nextLabel = next
+                  ? `Next ${showClock(next.iso, tz)} · ${untilLabel(
+                      Math.round((next.ms - now) / 60_000),
+                    )}`
+                  : null;
+                const sub = `${times.length} ${times.length === 1 ? "show" : "shows"} today`;
+                const { card, close } = openAttractionCard({
+                  detail,
+                  container: containerRef.current,
+                  bodyHtml: showCardBodyHtml({
+                    name: a.name,
+                    land: a.meta?.land ?? null,
+                    longitude: a.longitude,
+                    latitude: a.latitude,
+                    nextLabel,
+                    sub,
+                  }),
+                  wasSelected: false,
+                  onClose: () => raise.pinTop(false),
+                  onPress: (nodes) => {
+                    launchHeroFlight(
+                      rideFlightSeed({
+                        parkSlug: effectiveSlug,
+                        parkName:
+                          parksRef.current?.find((p) => p.slug === effectiveSlug)?.name ?? null,
+                        ride: a,
+                      }),
+                      nodes,
+                    );
+                    void navigate({
+                      to: "/park/$slug/ride/$rideSlug",
+                      params: { slug: effectiveSlug, rideSlug: a.slug },
+                    });
+                  },
+                });
+                cardRef.current = { close };
+                const estimate = fetchWalkEstimate(lngLat);
+                if (estimate) wireCardWalkTime(card, estimate);
+                card
+                  .querySelector<HTMLButtonElement>("[data-directions]")
+                  ?.addEventListener("click", (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onRequestDirectionsRef.current?.({
+                      id: showItemId,
+                      name: a.name,
+                      coords: lngLat,
+                    });
+                    close();
+                    cardRef.current = null;
+                  });
+              },
+              priority: 0,
+              kind: poiKind("entertainment"),
+            });
+          });
+        }
       }
     }
 
