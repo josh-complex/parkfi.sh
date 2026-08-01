@@ -196,6 +196,6 @@ Every "existing" step is infrastructure already running in production today; the
 - **Web client** ships inside the existing TanStack Start app; the same web UI
   runs in the **Capacitor shell we already distribute**, which is the demo
   vehicle ([12](12-demo-vertical-slice.md)). A QR-code web link still serves the
-  2D-canonical loop.
+  screen-canonical loop.
 - **Deep native** (background geofencing, watch, AR fidelity) grows inside that
   shell over time, sharing the same tRPC API and DB.

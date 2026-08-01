@@ -4,8 +4,8 @@
 > the same thing is the v1 of the product. The demo's mic-drop is the **live-data
 > hook**, so that part is _real_; everything else is scoped or Wizard-of-Oz'd.
 > Ship it **inside the Capacitor app we already distribute** (TestFlight/Play
-> internal track); a QR code can still open the web app's 2D-canonical loop for
-> a no-install audience. _(Revised 2026-07-15: the original "web AR behind a QR
+> internal track); a QR code can still open the web app's screen-canonical loop
+> for a no-install audience. _(Revised 2026-07-15: the original "web AR behind a QR
 > code" framing died with 8th Wall — see [07](07-ar-and-channels.md).)_ The
 > first thing to build is the **dev/armchair mode**, because you can't live in
 > the park.
@@ -74,7 +74,8 @@ The good news is we no longer need it:
   webview + device-orientation parallax) — no tracking dependency, no vendor,
   works on every phone in the room.
 - A QR code still works for the no-install audience: it opens the web app's
-  **2D-canonical loop**, which is complete by design (pillar: the game never
+  **screen-canonical loop** (3D theater by default, 2D under battery saver —
+  Canon Log 2026-07-30), which is complete by design (pillar: the game never
   _requires_ AR).
 
 ## Build the dev / armchair mode FIRST

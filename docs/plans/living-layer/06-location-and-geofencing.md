@@ -121,3 +121,20 @@ All-day location is sensitive. The contract must be explicit and honest:
 - **Net-new:** the `world` table + polygons ([10](10-data-model.md)), a
   client-side geofence/motion engine, the verification service (server-side
   presence validation against the live feed), platform attestation.
+
+## The street annex (2026-07-30, Canon Log; [19](19-nationwide-hunt-and-synthesis-2026-07-30.md))
+
+Nationwide play changes the threat model in both directions:
+
+- **Away fights minting real XP inherit the full battle-integrity regime**
+  (sessions, loadout pinning, server replay, daily caps). The couch/street
+  threat is **botting**, not GPS spoofing — the replay validator plus rate
+  caps are the anti-cheat there.
+- **GPS spoofing returns at national scale** (teleporting between regions
+  for weather-exclusive materials or Organization windows). Teleport
+  detection — impossible-travel heuristics over observation timestamps —
+  **moves up the priority list**; platform attestation and the sensor-
+  fusion posture generalize unchanged.
+- **Foreground-only location remains the rule** off-park exactly as
+  in-park: no background harvesting; the radar runs while the app is
+  open, full stop.

@@ -110,7 +110,7 @@ else is re-aiming.
   [08](08-achievements-persistence-coldstart.md)).
 - **Web UI inside the native shell we already ship.** The game iterates at web
   speed in the Capacitor app; AR is a native moment layered on top. A QR-code
-  web link still serves the 2D-canonical loop for a no-install audience.
+  web link still serves the screen-canonical loop for a no-install audience.
   _(Revised 2026-07-15 — was "web-first demo via 8th Wall"; see
   [07](07-ar-and-channels.md) / [12](12-demo-vertical-slice.md).)_
 - **Heads-up beats heads-down, always.**

@@ -16,7 +16,7 @@
 > (presence), M6 (logbook), M7 (packaging) — **re-ordered by the adopted
 > priority list below** (doc [15 §7](15-state-of-the-game-2026-07-15.md)).
 
-### The adopted workstream order (2026-07-16 — supersedes plain M-order)
+### The adopted workstream order (2026-07-16, amended 2026-07-30 — supersedes plain M-order)
 
 1. **Integrity** — encounter **session row** at `startEncounter` (pinning
    keychain/level/party), client submits its **move list**, server **replays**
@@ -30,10 +30,41 @@
    Audio buses, haptics — 15 §3.1–3.7), the **map presentation queue** driven
    by poll-diff (15 §6.4 rung A), and the **echo refiction** + leave/find
    ceremony (which also deletes the free-text moderation surface).
+
+   **2b. The stage — the stylized 3D living map** (GDD §3.8; Canon Log
+   2026-07-30). The presentation queue (priority 2) is the choreography;
+   this is the stage it plays on. Staged rungs, each independently
+   shippable, all inside `play-map.tsx`'s successor:
+   - **(a) The style** — custom KH-toned MapLibre style + tilt/pitch + 3D
+     extruded/modeled park structures. Pure style/config work, zero new
+     game assets; ships first and instantly reframes the whole screen.
+   - **(b) The Heartless** — animated low-poly glTF models loitering at
+     breach locations via a three.js custom layer (MapLibre
+     `CustomLayerInterface`), replacing coral pins; spawn/fade ceremonies
+     consume the rung-A presentation queue. Explicit battery/LOD budget;
+     the M3 pin view is retained as the reduced-motion / low-end fallback.
+   - **(c) The wielder** — the full 3D avatar at the device position
+     (equipped keychain = the visible Keyblade, so the §4.3 loadout has a
+     presentation surface from day one) + fielded companions roaming
+     alongside, with home-World lead behavior (`tierFor`'s second
+     consumer). Avatar is presentational; presence truth stays M5b.
+   - **(d) The atmosphere** — World light as volumetric per-World
+     glow/gloom; this rung **is** the map-brightness deliverable of
+     priority 4 and lands with it.
+   - **(e) The battle stage** (Canon Log 2026-07-30) — the combat theater's
+     `RoundEvent[]` stream renders in a three.js battle scene reusing the
+     rung-(b) models (one asset buy, both surfaces); mechanics and replay
+     integrity untouched. The shipped 2D panel is retained behind the
+     **battery-saver setting** — the same setting that drops the living map
+     to the pin view, auto-defaulted on under OS low-power / reduced-motion
+     / low-end device tiers. Depends on rung (b) assets and the priority-2
+     event queue.
+
 3. **The wire** — mark triggers → LISTEN/NOTIFY → `httpSubscriptionLink`
    ([11 §5](11-architecture.md)), vocabulary v1 minus `seal` until priority 1
    lands.
-4. **World light** — derived aggregate → map brightness → spawn-weight input →
+4. **World light** — derived aggregate → map brightness (on the living map:
+   the volumetric atmosphere rung, 2b-d) → spawn-weight input →
    `light` band events (GDD §3.7).
 5. **The progression spine** — Journal (`journal_entry`, catalog-in-code,
    sibling of the achievements engine) → XP economy (GDD §4.5 replaces the
@@ -49,6 +80,20 @@
    the real presence primitive, landing on the achievements side).
 8. **Nobodies → solo Rifts → DO presence rooms → shared-anchor Convergences**
    — after the joint balancing pass (escalation clock × World light).
+9. **The trip cycle** (GDD §5 meta loop; Canon Log 2026-07-30;
+   [17](17-retention-and-the-away-game-2026-07-30.md)) — the **Chronicle**
+   (M6 re-scoped per-trip; data deps are exactly priority ①'s stamping),
+   **Memory Dives** (a thin consumer of ①'s move lists + ②'s theater),
+   the **Vigil** (park channel read-only, needs ③), pinned promises +
+   the return beat (rides the trip manifest).
+10. **The nationwide hunt** (GDD §3.2/§4.4/§4.6; Canon Log 2026-07-30;
+    [19 §8](19-nationwide-hunt-and-synthesis-2026-07-30.md)) — N1 walk
+    MVP (geohash + weather spawn engine, fissures, materials;
+    **hard-depends on ①** — street fights minting real XP cannot ship
+    client-trusted) → N2 the Moogle bench (components, alignment) → N3
+    escalation + the regional Organization calendar → N4 ARCore
+    Geospatial ceremonies + gates/Wayfinders (needs ③, M5b, FCM A4).
+    **License gate zero precedes any N-work** (19 §7).
 
 M0 (dev mode), M1 (world + geofence), M2 (mark + Darkness engine — the mic-drop),
 and M3 (public `living` router + discovery pins + the gated play map) are
@@ -438,7 +483,7 @@ its achievement (with evidence provenance). Profile query renders the timeline.
 
 **Acceptance:** a fresh device installs the TestFlight build and runs the full
 loop including the lite-AR reveal; a second device opens the QR web link with no
-install and completes the 2D-canonical loop ([07](07-ar-and-channels.md)).
+install and completes the screen-canonical loop ([07](07-ar-and-channels.md)).
 
 ---
 

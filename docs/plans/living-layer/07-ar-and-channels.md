@@ -18,18 +18,38 @@ and it's another heads-down time-sink (and a safety hazard —
 
 ## The four channels and their jobs
 
-| Channel                 | Job                                            | Attention cost                | When                                                |
-| ----------------------- | ---------------------------------------------- | ----------------------------- | --------------------------------------------------- |
-| **Wrist** (haptic)      | "something is here — look up"                  | near-zero, eyes-up            | threshold crossings, nudges, Convergence alerts     |
-| **Ear** (spatial audio) | continuous story / guidance while walking      | low, hands-free, eyes-on-park | navigation, lore, a Companion talking to you        |
-| **Screen**              | maps, roster, the moment of choice             | medium, heads-down            | interactions, party management, the logbook         |
-| **AR**                  | the _reveal_ — the layer made visible in place | high, heads-down              | encounters, mark finds, the data-made-physical view |
+| Channel                 | Job                                                                   | Attention cost                | When                                                |
+| ----------------------- | --------------------------------------------------------------------- | ----------------------------- | --------------------------------------------------- |
+| **Wrist** (haptic)      | "something is here — look up"                                         | near-zero, eyes-up            | threshold crossings, nudges, Convergence alerts     |
+| **Ear** (spatial audio) | continuous story / guidance while walking                             | low, hands-free, eyes-on-park | navigation, lore, a Companion talking to you        |
+| **Screen**              | the living map (stylized 3D world view), roster, the moment of choice | medium, heads-down            | interactions, party management, the logbook         |
+| **AR**                  | the _reveal_ — the layer made visible in place                        | high, heads-down              | encounters, mark finds, the data-made-physical view |
 
 The choreography of a typical beat:
 
 > **wrist** buzz (_here_) → **ear** cue (_"the Darkness's rising by the
 > mansion"_) → raise phone, **AR reveal** (the Heartless appears) → resolve →
 > **screen** confirm (drop, roster) → phone back in pocket.
+
+## The living map is the screen channel, not AR (2026-07-30)
+
+The screen channel's canonical form is the **living map** (GDD §3.8): a
+heavily stylized KH-toned 3D world view — custom style + tilt, stylized 3D
+park structures, animated Heartless models at breaches, the wielder's 3D
+avatar (equipped keychain = visible Keyblade) with fielded companions
+roaming alongside, and World light as volumetric atmosphere. Two boundaries
+keep it honest:
+
+- **It is not AR.** The living map is the game board you glance at; AR stays
+  the episodic, stand-still reveal. The AR ladder below is unchanged by it.
+- **It does not loosen pillar 4.** No mechanic may require watching the map
+  while walking; the avatar mirrors your position, it never demands your
+  eyes. Attention cost stays "medium, heads-down, for moments."
+
+Build ladder and tech (MapLibre custom style + three.js custom layer,
+low-poly glTF, battery/LOD budget) live in
+[14 §2b](14-implementation-plan.md); the M3 pin view remains the
+reduced-motion / low-end fallback.
 
 ## AR is the punchline, not the paragraph
 
@@ -68,12 +88,12 @@ Rules of engagement for AR:
 
 Climb the ladder; do not start at the top.
 
-| Rung | Technique                                                                                                                                                                                                                                                                                                                                                                                                                        | Robustness                 | When               |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ------------------ |
-| 1    | **Camera-overlay "lite AR"** — a native camera preview rendered _behind_ a transparent webview (e.g. a Capacitor camera-preview plugin with `toBack: true`); the Heartless is an animated DOM/canvas/WebGL overlay with device-orientation parallax. No tracking — but for a **stand-still, seconds-long reveal** it reads as AR, and it ships entirely in the existing web UI.                                                  | High                       | **v1**             |
-| 2    | **Plane-anchored native AR** — a thin Capacitor plugin hosting **ARKit/RealityKit** (iOS) and **ARCore/SceneView** (Android); drop the Heartless on a detected ground plane in front of a stationary Wielder. Plugin surface stays tiny: `showEncounter(spec) → outcome`.                                                                                                                                                        | High                       | v1.5               |
-| 3    | **VPS (visual positioning)** — the **ARCore Geospatial API** (actively maintained on _both_ Android and iOS): sub-meter world anchors by lat/lng/alt wherever Street View coverage exists, plus Streetscape Geometry for occlusion and Rooftop anchors. Probe park coverage in-app with `checkVpsAvailability`. Niantic Lightship VPS is **de-prioritized** — post-Scopely, Niantic Spatial pivoted to enterprise geospatial AI. | Medium                     | v2                 |
-| 4    | **Shared-anchor co-op** — two Wielders pointing at the same spot see the _same_ boss. Via rung 3 this is far cheaper than classic cloud anchors: both clients simply resolve the **same geospatial anchor** (identical lat/lng/alt) — no session pairing, no anchor hosting.                                                                                                                                                     | Hard → Medium (via rung 3) | v2+ (Convergences) |
+| Rung | Technique                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Robustness                 | When               |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ------------------ |
+| 1    | **Camera-overlay "lite AR"** — a native camera preview rendered _behind_ a transparent webview (e.g. a Capacitor camera-preview plugin with `toBack: true`); the Heartless is an animated DOM/canvas/WebGL overlay with device-orientation parallax. No tracking — but for a **stand-still, seconds-long reveal** it reads as AR, and it ships entirely in the existing web UI.                                                                                                                                                                                                                                                                                                              | High                       | **v1**             |
+| 2    | **Plane-anchored native AR** — a thin Capacitor plugin hosting **ARKit/RealityKit** (iOS) and **ARCore/SceneView** (Android); drop the Heartless on a detected ground plane in front of a stationary Wielder. Plugin surface stays tiny: `showEncounter(spec) → outcome`.                                                                                                                                                                                                                                                                                                                                                                                                                    | High                       | v1.5               |
+| 3    | **VPS (visual positioning)** — the **ARCore Geospatial API** (actively maintained on _both_ Android and iOS): sub-meter world anchors by lat/lng/alt wherever Street View coverage exists, plus Streetscape Geometry for occlusion and Rooftop anchors. Probe park coverage in-app with `checkVpsAvailability`. Niantic Lightship VPS is **de-prioritized** — post-Scopely, Niantic Spatial pivoted to enterprise geospatial AI. Nationwide, this rung also carries the **street fissure-seal ceremonies** (Canon Log 2026-07-30, [19 §3](19-nationwide-hunt-and-synthesis-2026-07-30.md)) — Street View coverage is exactly where street players are; screen-only fallback everywhere else. | Medium                     | v2                 |
+| 4    | **Shared-anchor co-op** — two Wielders pointing at the same spot see the _same_ boss. Via rung 3 this is far cheaper than classic cloud anchors: both clients simply resolve the **same geospatial anchor** (identical lat/lng/alt) — no session pairing, no anchor hosting.                                                                                                                                                                                                                                                                                                                                                                                                                 | Hard → Medium (via rung 3) | v2+ (Convergences) |
 
 Raw GPS will **not** hold a virtual object on a real statue — that's why we start
 at overlay/plane anchors, not world-scale GPS placement. The original ladder's
@@ -85,9 +105,10 @@ rung of its own.
 
 Most Pokémon GO players play with AR **off**, and Monster Hunter Now — the best
 location-game combat shipped to date — runs its battles AR-off by default (AR is
-an opt-in flourish). This is evidence for what was already canon: the **2D battle
-is canonical**, the AR reveal is an _earned peak moment_, and no loop may require
-the camera.
+an opt-in flourish). This is evidence for what was already canon: the **screen
+battle is canonical** (3D theater by default, the 2D panel under battery saver —
+Canon Log 2026-07-30), the AR reveal is an _earned peak moment_, and no loop may
+require the camera.
 
 ## The Capacitor-native path (replaces "web AR first")
 
@@ -107,8 +128,8 @@ The stack is still web (TanStack Start + tRPC) — it just runs inside the
   de-risk) on the same in-park trip as M5b presence validation.
 - **Demo distribution:** TestFlight / Play internal track (the native app
   already exists — it is no longer a "roadmap slide"). A QR code can still open
-  the _web_ app for a no-install audience — they get the 2D-canonical loop,
-  which is complete by design.
+  the _web_ app for a no-install audience — they get the full screen-canonical
+  loop (3D theater or battery-saver 2D, never AR), which is complete by design.
 - The open-sourced 8th Wall engine (MIT) is worth _watching_ as a fallback, but
   its binary-only SLAM and dead hosted infrastructure make it a foundation
   risk, not a plan.

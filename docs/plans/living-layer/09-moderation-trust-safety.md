@@ -113,3 +113,23 @@ congestion-aware by construction**, using the live crowd feed to _spread_ foot
 traffic and keep players heads-up. That's the opposite of the
 guest-experience/liability headache an unsanctioned location game would
 represent — and it's only possible because we already hold the operational data.
+
+## Part C — The street annex (2026-07-30, Canon Log; [19](19-nationwide-hunt-and-synthesis-2026-07-30.md))
+
+The nationwide hunt moves gameplay onto sidewalks, so Part B's rules
+restate — strengthened, not relaxed — for off-park play:
+
+- **Stand-still encounters and the speed lockout are absolute** (no play
+  above walking speed; no exceptions for passengers in v1 — the detector
+  can't tell a bus from a driver's seat).
+- **Fissure anchors come from a curated POI class allowlist**
+  (plazas, parks, monuments, transit — Overture/OSM classes; no UGC POI
+  program, ever). Nothing spawns on private residential parcels, road
+  medians, or anywhere reaching it rewards trespass.
+- **Heads-up rules (pillar 4) bind harder on a sidewalk** than in a park:
+  the radar is a buzz, never a stare; ceremonies are stationary.
+- **No new UGC surface**: street play adds zero player-authored content —
+  fissures, spawns, and Moogle posts are all system/curated. Part A's
+  surface does not grow.
+- Letter notices (any realm) carry **existence + place, never contents**
+  (Canon Log 2026-07-30, doc 17 adoption).

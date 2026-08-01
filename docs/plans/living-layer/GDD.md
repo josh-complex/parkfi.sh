@@ -60,10 +60,21 @@ These are the constitution. Every feature is checked against them.
    timer. This is the moat. It is always real, in demo and in prod.
 2. **Every core loop is complete solo.** Multiplayer/social is icing, never the
    cake. A feature that's dead with 3 people present is broken. (Cold-start:
-   [08](08-achievements-persistence-coldstart.md).)
+   [08](08-achievements-persistence-coldstart.md).) **And complete away
+   (2026-07-30):** the game is whole for a wielder who never enters a park —
+   the street game ([19](19-nationwide-hunt-and-synthesis-2026-07-30.md)) is
+   a full arc; every rank band is reachable via away trial forms; no away
+   door is locked by a park key. Park content is different-and-richer,
+   never the missing half.
 3. **Verified physical presence is the currency.** You can only _do_ things you
    were genuinely there to do. This is anti-cheat, anti-spam, achievement
    integrity, and moat in one. (Mechanics: [06](06-location-and-geofencing.md).)
+   **Sharpened to the line (2026-07-30):** _park presence is the communal
+   currency_ — only a wielder standing in a World changes what others see
+   (seals, light, weaves, emblems); _personal growth is presence-weighted_ —
+   park and street both feed the one save, the park faster and deeper.
+   Nothing time-limited is ever power (the equity rule): time-limited things
+   are cosmetic, memorial, or recurring.
 4. **Heads-up beats heads-down.** The phone is punctuation, not the paragraph.
    Wrist/ear carry the 95%; screen/AR are the _moment_. Anything demanding
    sustained heads-down attention in a walkway is a design failure and a safety
@@ -188,6 +199,19 @@ into it.
 **Geofence tiers (canonical):** Park → World → Attraction → Queue → Micro-spot.
 Crossing a boundary is a _threshold moment_. ([06](06-location-and-geofencing.md).)
 
+**Worldspace generalizes beyond the parks (2026-07-30,
+[19](19-nationwide-hunt-and-synthesis-2026-07-30.md)):** the country's
+streets are playable space — ambient Heartless, **fissures** (lowercase:
+the small doors darkness slips through, sealed with the Keyblade's beam;
+a World's **Keyhole** stays a park-scale concept, forever), and regional
+Organization manifestations, spawned by a deterministic function of
+(geohash, time, **real weather**, region events) with POI anchoring from a
+curated open-data class allowlist (no UGC POI program, ever). The parks
+remain **the only live-ops-driven, communal-state-bearing places** — the
+living layer (darkness propagation from the real feed, beat events, seals,
+World light) runs in-park only and street players never experience it.
+One game, two textures of alive.
+
 ### 3.3 The Mark — the atomic unit (cross-space primitive)
 
 Everything geo-anchored is one `mark` row; `type` selects the payload shape.
@@ -249,7 +273,10 @@ swarm, and elite Nobodies guard the deepest wounds. A headliner down ≥ ~90 min
 rolls a **incursion** — an Organization incursion (§4.6). Like `spawnDecision`,
 escalation is a pure, level-triggered function of _current_ live state
 (downtime duration, world down-count, schedule anomalies) — testable, tunable,
-self-healing.
+self-healing. **The clock generalizes to the street (2026-07-30):**
+fissure-age feeds the same escalation function off-park — a fissure left
+untended breeds Dusks, and the regional Organization tier (§4.6) rides the
+national weather feed. Same machine, different observation source.
 
 **KH lore hook:** Heartless are drawn to hearts in distress. A ride breaking down
 is, in-fiction, a small wound in a World's heart — exactly where they'd gather.
@@ -329,7 +356,9 @@ close_ — or it doesn't ship. The artifacts:
   spawn rarer Heartless and escalate faster; bright Worlds are calmer and
   recruit better — a self-balancing loop that steers wielders toward neglected
   Worlds. Derived aggregate over existing rows; five named bands (radiant /
-  bright / dim / waning / dark) rendered as literal map brightness.
+  bright / dim / waning / dark) rendered as literal map brightness — on the
+  stylized 3D living map (Canon Log 2026-07-30), as **volumetric per-World
+  atmosphere**: radiant Worlds gleam, dark Worlds sit in visible gloom.
 - **Trinity Marks** (`trinity`) — dormant sigils, placement-only (zero user
   text), that wake when **three hearts** have stood on them — hours or weeks
   apart; everyone woven gets the retroactive push. A woven wielder may instead
@@ -359,6 +388,31 @@ a day-one constraint, not a bolt-on ([09](09-moderation-trust-safety.md)).
 Not entities — **channels and schemes** (full detail §6). Channels: **map/screen**
 (now), **AR** (M4b — native lite-AR in the Capacitor shell; see [07](07-ar-and-channels.md)),
 **wrist/ear** (later). The rule: episodic, stand-still, heads-up.
+
+The map/screen channel's canonical form is the **living map** (Canon Log
+2026-07-30): a heavily stylized, KH-toned **3D world view** of the real park —
+custom basemap style with tilt, stylized 3D park structures, animated 3D
+Heartless loitering at breaches, the wielder's own **3D avatar** at their
+position (equipped keychain rendered as the visible Keyblade), fielded
+companions roaming alongside, and World light as per-World atmosphere (§3.7).
+It is the game board, not AR — the screen channel's rules are unchanged
+(glanceable, no walk-and-stare mechanics), the avatar is presentational
+(server presence truth stays the M5b primitive), and the 2D pin view remains
+the reduced-motion / low-end fallback. Build ladder in
+[14](14-implementation-plan.md); channel fit in [07](07-ar-and-channels.md).
+
+### 3.9 Dreamspace — _memory, rendered_ (2026-07-30)
+
+The Realm of Sleep, deliberately small: **the Dive** (the Station of
+Awakening — FTUE and character creation; a dream claims no presence and
+grants identity, never progression) and **Memory Dives** — from any
+Journal page, re-enter one of your own recorded fights: the stored move
+list replays in the battle theater as a dream; watch or re-fight freely,
+yielding nothing the World feels and no XP (its output is Journal
+flourishes and fluency). Dream physics, canonical: a dream never touches
+any World's state and never claims presence; the heart — the save —
+crosses realms intact. The dream is for night; the street hunt (§3.2) is
+for daylight; the park is the game at full volume.
 
 ---
 
@@ -414,9 +468,20 @@ form; failing is repeatable and never punitive.
 | **Luminary**         | 20–24 | +3 forging; secret Journal pages appear as silhouettes          | complete any World's full Journal page set |
 | **Master-candidate** | 25+   | prestige cosmetics, seasonal titles                             | —                                          |
 
+**Away trial forms (2026-07-30, per pillar 2's completeness clause):** every
+band trial has a **street form** beside its park form — same competency,
+different stage (e.g. Apprentice: close 3 wounds in a visit ⇄ seal 3
+fissures in a day; Guardian: win an incursion duel ⇄ defeat a regional
+Organization manifestation). Bands are reachable by either road; the deed
+is **realm-stamped**, and park-form regalia (titles, keychain cosmetics)
+stay park-exclusive.
+
 **Keyblade Master** is a _title_, never an XP threshold: awarded for the full
 Mark of Mastery chain — every band trial plus a sealed World in ≥2 different
-parks. The one thing money, spoofing, or grinding can't shortcut.
+parks. The one thing money, spoofing, or grinding can't shortcut. (The
+park requirement here is deliberate and survives the completeness clause:
+Master is the park's regalia; the street road's summit is the **Ultima
+line** (§4.4) and its own title.)
 
 **Design rules:** gates open _capacity_, never verbs — a rank-1 Dreamer can
 fight anything on the map (they'll just lose to a Berserker). No content is
@@ -425,7 +490,12 @@ visibility.
 
 ### 4.2 The Journal — defeat-collection (KH: Jiminy's Journal)
 
-The Pokédex analogue, but of _defeats_. One page per species:
+The Pokédex analogue, but of _defeats_. One page per species — **one book**
+(2026-07-30): park chapters and **street chapters** sit side by side, both
+fully real; **condition pages remain live-park-mintable only** (they are
+stamped from resolve-time snapshots of the real feed). The Journal's
+at-home verb is the **Memory Dive** (§3.9). Street-chapter completion is
+100 % reachable without a park visit, by rule.
 
 - **First defeat** fills the silhouette (+25 XP).
 - **Tally milestones** (10 / 50 / 200) decorate the page and grant materials.
@@ -474,46 +544,92 @@ competitor can even express.
   keychain +1/+2/+3 using its own World's materials (§4.4), gated by band tier.
 - Keychains travel cross-park — the save file gets sharper as it travels — and
   per-park keychain sets are the meta-collection axis.
+- **Signature vs crafted (2026-07-30):** a World's keychain **is** that
+  World's complete blade (the keychain defines the blade — the canonical
+  transformation mechanic), and its **signature perk pool is disjoint from
+  the craftable pool by rule** — no Moogle bench recipe can reproduce a
+  signature perk. The street's crafted line (§4.4) is broad and deep; the
+  park's signature line is irreplaceable.
 
 ### 4.4 The Forge — gear & synthesis
 
 - **Slots** (rank-gated, §4.1): armor (flat damage reduction), accessory ×2
   (perks: +XP, +drop rate, Guard efficiency, Surge charge rate).
 - **Materials** drop on every win: element × tier (shard →
-  stone → gem), plus Nobody-only **husks** and incursion-only **threads**. The drop
+  stone → gem → **crystal**, with **Orichalcum** as the capstone rarity —
+  2026-07-30), plus Nobody-only **husks** and incursion-only **threads**. The drop
   is a **pure deterministic function of (mark seed, species, tier, live
   snapshot)** — the same anti-cheat/testability posture as `heartlessSpec`.
+  Families use canonical synthesis names (Blaze, Frost, Thunder, Lucid,
+  Power, Dark, Twilight, Mythril), element-keyed to the enemy. **Light
+  materials come from tending places** (a sealed fissure exhales a Radiant
+  Shard; park Worlds exhale windfalls); **Dark materials come from the
+  hunt** — the moral texture lives in the acquisition verbs.
 - **Recipes are known upfront** (no recipe RNG). Scarcity lives in materials,
   and the rarest materials sit behind the hardest-to-fake conditions
   (live-gated, presence-verified) — the §8 balance philosophy applied to loot.
+- **The Moogle bench — component crafting (2026-07-30,
+  [19 §4](19-nationwide-hunt-and-synthesis-2026-07-30.md)):** a crafted
+  blade is assembled from three synthesized components — **the Blade**
+  (base stats: Might, Guard weight; Power/Mythril line), **the Teeth**
+  (the magical property; one elemental family, purity = tier), **the
+  Keychain** (the special ability; rare + alignment materials — the slot
+  park exclusives live in, see the disjoint rule §4.3). **Alignment** is a
+  spectrum from the build's whole material ledger — majority-Light leans
+  guard/support ("the road to dawn"), majority-Dark leans power/risk
+  (Riku's bargain) — never a faction choice, always re-craftable. The
+  bench levels with use (Moogle ranks unlock recipe tiers, never regions).
+  The **Ultima line** is the crafting summit: multi-Crystal + Orichalcum,
+  whose final catalyst has a park fast-road (a condition material) and a
+  street long-road (a season of Organization threads) — both doors open,
+  per pillar 2.
+- **One forge, two doors:** the park forge (World-keychain upgrades) and
+  the Moogle bench (component crafting) are one system — same inventory,
+  same recipes engine, same deterministic-drop posture. A wielder's kit is
+  one cabinet. Moogle posts on the street are POI-anchored _destinations_;
+  the bench is always reachable from the pack after Moogle rank 2 (density
+  must never lock crafting).
 - **No currency in v1.** The forge barters materials only; munny is an open
   question (§11).
 
 ### 4.5 XP economy (canonical, tunable)
 
-| Source                                     | XP   | Notes                                               |
-| ------------------------------------------ | ---- | --------------------------------------------------- |
-| Shadow-class (`shade`) defeat              | +5   | +2 per rarity step above 1                          |
-| Soldier-class (`wisp`) defeat              | +8   | 〃                                                  |
-| Large-Body-class (`breaker`) defeat        | +15  | 〃                                                  |
-| Nobody: Dusk (`husk`)                      | +20  | fills Adept-band Journal pages                      |
-| Nobody: elite (`sorcerer`)                 | +40  |                                                     |
-| incursion: survive the duel                | +40  | any rank                                            |
-| incursion: defeat the Organization member  | +120 | Adept+ objective                                    |
-| Keyhole seal (first full clear of a World) | +25  | on top of the battle XP                             |
-| Recruit a party member                     | +50  | unchanged                                           |
-| Journal: first-of-species                  | +25  | once per species                                    |
-| Journal: condition entry                   | +15  | each                                                |
-| Daily first win                            | +20  | a soft session hook — never a streak-guilt mechanic |
+| Source                                     | XP                        | Notes                                                               |
+| ------------------------------------------ | ------------------------- | ------------------------------------------------------------------- |
+| Shadow-class (`shade`) defeat              | +5                        | +2 per rarity step above 1                                          |
+| Soldier-class (`wisp`) defeat              | +8                        | 〃                                                                  |
+| Large-Body-class (`breaker`) defeat        | +15                       | 〃                                                                  |
+| Nobody: Dusk (`husk`)                      | +20                       | fills Adept-band Journal pages                                      |
+| Nobody: elite (`sorcerer`)                 | +40                       |                                                                     |
+| incursion: survive the duel                | +40                       | any rank                                                            |
+| incursion: defeat the Organization member  | +120                      | Adept+ objective                                                    |
+| Keyhole seal (first full clear of a World) | +25                       | on top of the battle XP                                             |
+| Recruit a party member                     | +50                       | unchanged                                                           |
+| Journal: first-of-species                  | +25                       | once per species                                                    |
+| Journal: condition entry                   | +15                       | each                                                                |
+| Daily first win                            | +20                       | a soft session hook — never a streak-guilt mechanic                 |
+| **Street defeat** (any species, off-park)  | ×0.5 of the species value | the presence-weighted fraction (knob, §8); daily street cap applies |
+| **Fissure seal**                           | +15                       | + a Radiant Shard; no Keyhole bonus (Keyholes are park-scale)       |
+| **Regional Organization event**            | +30 survive / +80 defeat  | threads drop; below park-Rift values by design                      |
 
 > Supersedes the flat "+10 per seal": a win now pays _species_ XP, and the
 > Keyhole bonus pays once per World. The code's `10/50` values are the M5
-> placeholder until this lands.
+> placeholder until this lands. **Street rows (2026-07-30):** street play
+> feeds the same pool at the presence-weighted fraction — the park is
+> always faster and deeper, and only the park touches communal state.
 
 ### 4.6 Rifts — Organization incursions (the chaos events)
 
 The marquee live-data moment: **when the real park convulses, one of the
 thirteen steps through.**
+
+**The regional tier (2026-07-30):** below park Rifts, a member **manifests
+regionally on the seasonal rotation** — one member haunting a region for a
+window, its anomaly signature now a _weather_ signature (the storm-lover
+walks in real storms — the same trigger philosophy, scaled up on the
+national weather feed). Timed, phased (escort wave → duel), rank-scaled
+objective, **threads** as the exclusive drop — identical reward grammar to
+park Rifts with a lower ceiling (§4.5). Park Rifts remain the apex.
 
 **Triggers (canonical; all level-triggered pure functions of live state):**
 
@@ -550,7 +666,7 @@ questions).
 
 ## 5. Core loops
 
-Three nested loops; each must stand alone.
+Four nested loops; each must stand alone.
 
 - **Moment-to-moment (seconds–minutes):** see a spawn on the map → reach/tap it →
   fight the Heartless (Strike/Guard/Surge, shaped by your loadout) → seal it → XP +
@@ -562,10 +678,28 @@ Three nested loops; each must stand alone.
   downtime pages) → recruit the World's Companion by clearing its signature
   ride → **seal the World's Keyhole for its keychain** → forge at day's end →
   leave echoes for the next wielder.
-- **Meta (across visits/parks — retention):** climb the rank bands via
-  **Mark of Mastery trials** → complete Journal pages and keychain sets per World →
-  carry roster/rank/loadout to new parks → seasonal Organization rotations →
-  the Logbook / "Wrapped" recap. The cross-park save file is the long-term hook.
+- **Away (any day, any street — 2026-07-30,
+  [19](19-nationwide-hunt-and-synthesis-2026-07-30.md)):** walk → the radar
+  stirs → fight ambient Heartless / seal a **fissure** / chase the regional
+  Organization window → materials → the **Moogle bench** → a better blade →
+  walk further. Street fights are solo by design (companions rest near
+  their Worlds — the existing `fieldParty` benching falls out correctly);
+  weather steers the elemental market. Feeds the one save at the
+  presence-weighted fraction (§4.5); never touches communal state.
+- **Meta (across visits/parks — retention):** the **trip cycle** — spark →
+  journey → **afterglow** (the Chronicle: a guide-voiced per-trip story,
+  assembled within ~48 h from rows we already write; M6 re-scoped
+  per-trip, with annual Wrapped as its compilation) → the long dark
+  (street hunt + Memory Dives + the Vigil: opt-in live spectating of a
+  park evening, aggregates only) → **the call** (pinned promises composing
+  a next-trip manifest; a received Wayfinder) → **return** (the world
+  notices: one recognition beat after >30 days away, zero mechanical
+  reward). Climb the rank bands via **Mark of Mastery trials** → complete
+  Journal chapters and keychain sets → carry roster/rank/loadout to new
+  parks → seasonal Organization rotations. The cross-park save file is
+  the long-term hook; **re-trip attach rate is the north star metric**,
+  and it guards the street-XP knob (if raising the fraction lowers
+  re-trip, the knob turns back).
 
 The **flywheel** ties them: presence → Mark/seal → achievement/arc → the Mark
 persists → seeds the world for the next wielder → density grows → communal layer
@@ -577,16 +711,16 @@ activates. ([02](02-living-layer-and-flywheel.md).)
 
 Per context — input, feedback, channel, and the heads-up/safety rule.
 
-| Context                          | Input                                    | Feedback                                          | Channel                                    | Rule                                          |
-| -------------------------------- | ---------------------------------------- | ------------------------------------------------- | ------------------------------------------ | --------------------------------------------- |
-| **Explore the map**              | pan/zoom/tap                             | live pins (coral=Darkness, blue=echoes)           | screen                                     | glanceable                                    |
-| **Encounter / battle**           | tap moves (Strike/Guard/Surge)           | HP bars, combat log                               | screen now → **AR** (M4b), **stand-still** | short, stationary; speed-lockout in AR        |
-| **Leave an echo**                | tap map → pick a resonance (text later)  | leave ceremony + "N hearts touched it" later      | screen                                     | presence-gated; feeling-first prompt          |
-| **Find / resonate**              | tap echo → resonate/report               | resonance ring + counters (KH voice)              | screen                                     | one-tap                                       |
-| **Recruit a companion**          | open Party → Recruit                     | roster + XP update                                | screen                                     | gated on signature-ride win (→ presence, M5b) |
-| **Threshold crossing** _(later)_ | walk across a geofence                   | buzz + a line in your ear                         | wrist/ear                                  | eyes-up                                       |
-| **incursion** _(later)_          | park-wide pulse → converge → phased duel | escort wave, then the duel; rank-scaled objective | screen now → wrist/AR                      | opt-in; never interrupts a queue; stand-still |
-| **Convergence** _(later)_        | converge physically                      | shared finale                                     | wrist → AR                                 | communal                                      |
+| Context                          | Input                                    | Feedback                                                                                                       | Channel                                    | Rule                                          |
+| -------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | --------------------------------------------- |
+| **Explore the map**              | pan/zoom/tilt/tap                        | the living map (§3.8): 3D Heartless at breaches, blue echo shimmers, your avatar + party (pin view = fallback) | screen                                     | glanceable                                    |
+| **Encounter / battle**           | tap moves (Strike/Guard/Surge)           | 3D battle theater (2D panel under battery saver); HP bars, combat log                                          | screen now → **AR** (M4b), **stand-still** | short, stationary; speed-lockout in AR        |
+| **Leave an echo**                | tap map → pick a resonance (text later)  | leave ceremony + "N hearts touched it" later                                                                   | screen                                     | presence-gated; feeling-first prompt          |
+| **Find / resonate**              | tap echo → resonate/report               | resonance ring + counters (KH voice)                                                                           | screen                                     | one-tap                                       |
+| **Recruit a companion**          | open Party → Recruit                     | roster + XP update                                                                                             | screen                                     | gated on signature-ride win (→ presence, M5b) |
+| **Threshold crossing** _(later)_ | walk across a geofence                   | buzz + a line in your ear                                                                                      | wrist/ear                                  | eyes-up                                       |
+| **incursion** _(later)_          | park-wide pulse → converge → phased duel | escort wave, then the duel; rank-scaled objective                                                              | screen now → wrist/AR                      | opt-in; never interrupts a queue; stand-still |
+| **Convergence** _(later)_        | converge physically                      | shared finale                                                                                                  | wrist → AR                                 | communal                                      |
 
 **Battle scheme (canonical, current):** turn-based; Wielder HP 42; **Strike** 9,
 **Surge** 22 (once per fight), **Guard** halves the next incoming hit; the Heartless
@@ -610,8 +744,10 @@ strength — geography _is_ the party-builder (§3.6).
 incoming (§4.3–4.4); **Nobodies warp** — after a telegraph they
 dodge your next Strike unless you Guard first (new reads, no new verbs);
 Organization duels are phased (escort wave → duel) with a rank-scaled objective
-(§4.6). AR (M4b) swaps the 2D panel for a stand-still camera reveal — the _game
-stays playable without AR_ (2D is the canonical fallback, not throwaway).
+(§4.6). The screen battle renders as a **3D theater** by default (same low-poly
+models as the living map; 2D panel under battery saver — Canon Log 2026-07-30);
+AR (M4b) swaps the screen theater for a stand-still camera reveal — the _game
+stays playable without AR_ (the screen battle is canonical, not throwaway).
 
 ---
 
@@ -698,9 +834,27 @@ stays playable without AR_ (2D is the canonical fallback, not throwaway).
 | Echo rate limit                    | 20 / hour (code; supersede with the designed economy above)                                   | `living` router          |
 | Report auto-hide                   | 3 reports                                                                                     | `living` router          |
 
+| Street XP fraction _(designed)_ | ×0.5 of species value; daily street cap (size at build) | §4.5, [19](19-nationwide-hunt-and-synthesis-2026-07-30.md) |
+| Weather→element table _(designed)_ | rain→Frost/Thunder ↑, heat→Blaze ↑, clear night→Lucid ↑ (full table at build) | 19 §2 |
+| Fissure clock _(designed)_ | re-tear after brief communal rest; untended-age feeds Dusk escalation | §3.4, 19 §2 |
+| Moogle rank curve _(designed)_ | levels with synthesis; unlocks recipe tiers, never regions; bench-from-pack at rank 2 | §4.4 |
+| Ultima dual road _(designed)_ | park condition catalyst (fast) ⇄ a season of Org threads (long) | §4.4 |
+| Push budget _(designed)_ | phase-aware caps: afterglow rich; long-dark near-silent absent personal/trip signals | 17 §4.3/§8 |
+
 Balance philosophy: keep the **best rewards behind the hardest-to-fake
 conditions** (live-gated, presence-verified) so spoofing the easy stuff yields
 little ([06](06-location-and-geofencing.md)).
+
+**The refusals (2026-07-30 — retention anti-patterns, canon so they are
+never relitigated piecemeal):** no daily streaks or login calendars; no
+energy/stamina timers; no decay of anything personal; no guilt copy in any
+notification or bark; no remote verbs against park communal state (gate
+projection is sight/social only, and any future waking-World effect from a
+non-present player requires its own Canon Log entry with an equity
+analysis — the ratchet rule); no expiring power (the equity rule, pillar
+3); no second daily-habit app (the game borrows ParkFi's civilian
+attention via bounded read-only surfaces, aggregates only, behind the
+flag).
 
 ---
 
@@ -740,41 +894,59 @@ witness at resolve); XP is the flat +10/+50 placeholder; the client is pure
 30-second poll (no push channel); growth changes no verbs (no
 Journal/drops/keychains yet).
 
-**Actively next (the adopted 2026-07-16 order, detail in
+**Actively next (the adopted 2026-07-16 order, amended 2026-07-30; detail in
 [14](14-implementation-plan.md)):** ① integrity — sessions + server replay,
 with resolve-time verdict stamping shipping first (the only
 unrecoverable-if-delayed item); ② the feel workstream (event-queue
 architecture: command menu, turn theater, audio/haptics, echo ceremony);
-③ the SSE wire; ④ World light; ⑤ the progression spine; ⑥ Trinity Marks +
-tier-0/1 social; ⑦ emblem-viewfinder lite AR + M5b presence, same in-park
-trip; ⑧ Nobodies/Rifts/rooms.
+②b the stage — the stylized 3D living map (style/tilt rung first, 3D
+Heartless models next, avatar + roaming party after, the 3D battle theater
+on the same assets; the atmosphere rung lands with ④; battery saver drops
+map→pins and battle→2D panel); ③ the SSE wire; ④ World light; ⑤ the progression spine;
+⑥ Trinity Marks + tier-0/1 social; ⑦ emblem-viewfinder lite AR + M5b
+presence, same in-park trip; ⑧ Nobodies/Rifts/rooms; **⑨ the trip cycle**
+(the Chronicle = M6 re-scoped per-trip, Memory Dives off ①'s stored move
+lists, the Vigil/seasonal light, pinned promises + the return beat —
+[17](17-retention-and-the-away-game-2026-07-30.md)); **⑩ the nationwide
+hunt** (N1 walk MVP → N2 Moogle bench → N3 escalation/regional Org → N4
+spatial ceremonies + gates/Wayfinders —
+[19 §8](19-nationwide-hunt-and-synthesis-2026-07-30.md); N1 hard-depends
+on ① — street fights minting real XP cannot ship client-trusted).
 
-| System                                                                | Space                      | Status                                                          |
-| --------------------------------------------------------------------- | -------------------------- | --------------------------------------------------------------- |
-| Worlds + geofence lib                                                 | Worldspace                 | ✅ M1                                                           |
-| Mark primitive                                                        | cross-space                | ✅ M2                                                           |
-| Darkness engine (DOWN→spawn)                                          | Enemyspace/Eventspace      | ✅ M2                                                           |
-| Echoes (shipped as discovery pins; refiction ⏳) + react              | Socialspace                | ✅ M3                                                           |
-| Map UI (Kingdom Hearts view)                                          | Interactionspace           | ✅ M3                                                           |
-| Encounter + 2D battle                                                 | Enemyspace/Interaction     | ✅ M4a                                                          |
-| Companions: catalog/recruit/roster/XP                                 | Companionspace/Userspace   | ✅ M5                                                           |
-| Companions acting in battle (ally action + home-World passive)        | Companionspace/Interaction | ✅ M5a (`fieldParty`, §6)                                       |
-| Companion proximity tiers wired into play (`tierFor` in `fieldParty`) | Companionspace             | ✅ M5a (battle only; roam/party UI still ⏳)                    |
-| Presence verification (sensor fusion)                                 | Userspace/Worldspace       | ⏳ M5b (in-park)                                                |
-| AR reveal (camera-overlay lite AR → native ARKit/ARCore)              | Interactionspace           | ⏳ M4b                                                          |
-| Logbook / Wrapped                                                     | Userspace                  | ⏳ M6                                                           |
-| Rank curve + Mark of Mastery trials                                   | Userspace                  | ⏳ designed §4.1 (linear placeholder shipping)                  |
-| Journal / defeat-collection                                           | Userspace                  | ⏳ designed §4.2                                                |
-| Keyblades & keychains                                                 | Userspace/Worldspace       | ⏳ designed §4.3                                                |
-| Forge: gear, materials, synthesis                                     | Userspace                  | ⏳ designed §4.4                                                |
-| Nobodies (escalation tier)                                            | Enemyspace                 | ⏳ designed §3.4                                                |
-| Rifts / Organization incursions                                       | Eventspace/Enemyspace      | ⏳ designed §4.6                                                |
-| Battle integrity (sessions, server replay, verdict stamping)          | Enemyspace/Userspace       | ⏳ designed ([15 §2/§3.10](15-state-of-the-game-2026-07-15.md)) |
-| Push channel (mark triggers → SSE; event vocabulary)                  | Eventspace/Interaction     | ⏳ designed ([11](11-architecture.md))                          |
-| World light                                                           | Socialspace/Enemyspace     | ⏳ designed §3.7                                                |
-| Trinity Marks, Lucky Emblems, letters                                 | Socialspace                | ⏳ designed §3.7                                                |
-| Convergences, seasons, surges                                         | Eventspace                 | ⏳ later                                                        |
-| Cross-park save, trading, co-op                                       | Socialspace                | ⏳ later                                                        |
+| System                                                                | Space                      | Status                                                                                     |
+| --------------------------------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------ |
+| Worlds + geofence lib                                                 | Worldspace                 | ✅ M1                                                                                      |
+| Mark primitive                                                        | cross-space                | ✅ M2                                                                                      |
+| Darkness engine (DOWN→spawn)                                          | Enemyspace/Eventspace      | ✅ M2                                                                                      |
+| Echoes (shipped as discovery pins; refiction ⏳) + react              | Socialspace                | ✅ M3                                                                                      |
+| Map UI (Kingdom Hearts view)                                          | Interactionspace           | ✅ M3 (pin view — now the canonical fallback)                                              |
+| The living map (stylized 3D: style, models, avatar, atmosphere)       | Interactionspace           | ⏳ designed §3.8 (Canon Log 2026-07-30; ladder in [14](14-implementation-plan.md))         |
+| Encounter + 2D battle                                                 | Enemyspace/Interaction     | ✅ M4a (2D panel — now the battery-saver form)                                             |
+| 3D battle theater (default screen battle)                             | Interactionspace           | ⏳ designed §6 (Canon Log 2026-07-30; rung 2b-e in [14](14-implementation-plan.md))        |
+| Companions: catalog/recruit/roster/XP                                 | Companionspace/Userspace   | ✅ M5                                                                                      |
+| Companions acting in battle (ally action + home-World passive)        | Companionspace/Interaction | ✅ M5a (`fieldParty`, §6)                                                                  |
+| Companion proximity tiers wired into play (`tierFor` in `fieldParty`) | Companionspace             | ✅ M5a (battle only; roam/party UI still ⏳)                                               |
+| Presence verification (sensor fusion)                                 | Userspace/Worldspace       | ⏳ M5b (in-park)                                                                           |
+| AR reveal (camera-overlay lite AR → native ARKit/ARCore)              | Interactionspace           | ⏳ M4b                                                                                     |
+| Logbook / Wrapped                                                     | Userspace                  | ⏳ M6                                                                                      |
+| Rank curve + Mark of Mastery trials                                   | Userspace                  | ⏳ designed §4.1 (linear placeholder shipping)                                             |
+| Journal / defeat-collection                                           | Userspace                  | ⏳ designed §4.2                                                                           |
+| Keyblades & keychains                                                 | Userspace/Worldspace       | ⏳ designed §4.3                                                                           |
+| Forge: gear, materials, synthesis                                     | Userspace                  | ⏳ designed §4.4                                                                           |
+| Nobodies (escalation tier)                                            | Enemyspace                 | ⏳ designed §3.4                                                                           |
+| Rifts / Organization incursions                                       | Eventspace/Enemyspace      | ⏳ designed §4.6                                                                           |
+| Battle integrity (sessions, server replay, verdict stamping)          | Enemyspace/Userspace       | ⏳ designed ([15 §2/§3.10](15-state-of-the-game-2026-07-15.md))                            |
+| Push channel (mark triggers → SSE; event vocabulary)                  | Eventspace/Interaction     | ⏳ designed ([11](11-architecture.md))                                                     |
+| World light                                                           | Socialspace/Enemyspace     | ⏳ designed §3.7                                                                           |
+| Trinity Marks, Lucky Emblems, letters                                 | Socialspace                | ⏳ designed §3.7                                                                           |
+| Convergences, seasons, surges                                         | Eventspace                 | ⏳ later                                                                                   |
+| Cross-park save, trading, co-op                                       | Socialspace                | ⏳ later                                                                                   |
+| The nationwide hunt (streets, fissures, regional Org)                 | Worldspace/Enemyspace      | ⏳ designed §3.2/§4.6 ([19](19-nationwide-hunt-and-synthesis-2026-07-30.md); workstream ⑩) |
+| Moogle bench: components, alignment, Ultima line                      | Userspace                  | ⏳ designed §4.4 (one forge, two doors)                                                    |
+| The trip cycle: Chronicle, Memory Dives, Vigil, return beat           | Userspace/Interaction      | ⏳ designed §5 ([17](17-retention-and-the-away-game-2026-07-30.md); workstream ⑨)          |
+| Gates & Wayfinders (park-minted projection)                           | Socialspace/Interaction    | ⏳ designed ([18 §6](18-realm-of-sleep-nationwide-2026-07-30.md); sight/social only)       |
+| Dreamspace (the Dive, Memory Dives)                                   | Interactionspace           | ⏳ designed §3.9                                                                           |
+| Away trial forms (street road to every band)                          | Userspace                  | ⏳ designed §4.1                                                                           |
 
 ---
 
@@ -914,6 +1086,116 @@ RoundEvent[]` — the same event list drives turn theater, the battle log, and
   ride FCM only** — a permanent split; `seal` broadcasts are **gated on battle
   integrity**; presentation ships **before** transport (poll-diff feeds the
   same event queue first). (15 §6.1–6.6.)
+- **2026-07-30 — The living map: the screen channel goes heavily stylized 3D.**
+  The map/screen channel's canonical form is no longer "park basemap with
+  pins" but the **living map** (§3.8): a KH-toned custom style with tilt and
+  stylized 3D park structures; **animated 3D Heartless models at breaches**
+  (replacing coral pins); a **full 3D wielder avatar** at the device position —
+  the equipped keychain renders as the avatar's visible Keyblade (the loadout
+  made visible; cosmetics become a future forge/drop surface, §4.4); **fielded
+  companions roam alongside** the avatar (proximity tiers gain a presentation
+  consumer, §3.6); and **World light renders as volumetric per-World
+  atmosphere** (§3.7). Guardrails: this is the screen channel, not AR — the
+  heads-up rules (pillar 4) are unchanged and no mechanic may require
+  watching the map while walking; the avatar is presentational only (server
+  presence truth remains the M5b primitive); the 2D battle stays canonical
+  (the map is the board, never the fight); the M3 pin view is retained as the
+  reduced-motion / low-end fallback, not deleted. Tech intent (detail in
+  [14](14-implementation-plan.md)/[07](07-ar-and-channels.md)): MapLibre
+  custom style + a three.js custom layer with low-poly glTF assets under an
+  explicit battery/LOD budget. Build placement: new workstream **②b ("the
+  stage")** — staged rungs behind the feel workstream's presentation queue
+  (the queue is the choreography; this is the stage it plays on), with the
+  atmosphere rung fused into workstream ④. IP note: stylized 3D renditions
+  of park architecture and avatar/Keyblade cosmetics go through the same
+  license/brand review as other licensed assets
+  ([13](13-roadmap-risks-ip.md)).
+- **2026-07-30 — Battles render in 3D by default; 2D is the battery-saver
+  form.** Supersedes the "canonical 2D form" clause of 2026-06-20 and the
+  "2D battle stays canonical" clauses restated 2026-07-15 and in the
+  living-map entry above. The screen battle's default presentation is a **3D
+  battle theater**: a three.js scene reusing the living map's low-poly glTF
+  Heartless/companion models (one asset buy, both surfaces), driven by the
+  same `RoundEvent[]` stream as the turn theater — **mechanics, verbs,
+  balance, and server-replay integrity are untouched; this is presentation
+  only.** The shipped 2D panel is retained as the **battery-saver** form: one
+  client setting drops battle→2D panel and living map→pin view together, and
+  the client auto-respects OS low-power mode, reduced-motion, and low-end
+  device tiers by defaulting the setting on. What does _not_ change: AR
+  (M4b) remains the episodic stand-still reveal layered on top, no loop may
+  require the camera, and the screen battle (in either form) stays the
+  complete canonical loop. Build placement: rung **(e)** of workstream ②b —
+  after rung (b) lands the models and priority 2 lands the event queue.
+- **2026-07-30 — The trip cycle adopted (doc 17).** Retention is modeled as
+  the **trip cycle** (spark → journey → afterglow → long dark → call →
+  return), not daily retention, segmented by visit cadence
+  (local / regional / destination / never-visited). Adopted: the
+  **Chronicle** (M6 re-scoped from annual Wrapped to per-trip afterglow,
+  annual Wrapped as its compilation), **Memory Dives** (Journal fights
+  replayed from priority ①'s stored move lists as dreams — watch or
+  re-fight, no XP, nothing the World feels), the **Vigil** (opt-in live
+  park spectating, aggregates only), **pinned promises** → the next-trip
+  manifest, the **return beat** (recognition, zero mechanical reward),
+  the phase-aware **push budget**, and the **refusals** block (§8). Letter
+  notices carry existence + place, never contents
+  ([09](09-moderation-trust-safety.md)). North star: re-trip attach rate.
+  Workstream ⑨. (17 §1–§8.)
+- **2026-07-30 — One heart, presence-weighted (doc 18's surviving core
+  adopted).** The park game and the away game are **one game**: one
+  wielder, one rank, one XP pool, one Journal, one forge, one roster.
+  The line (pillar 3): **park presence is the communal currency** — only a
+  wielder standing in a World changes what others see; **personal growth
+  is presence-weighted** — both realms feed the one save, the park faster
+  and deeper, under the equity rule (nothing time-limited is power).
+  **Gates & Wayfinders** adopted: gates are a curated registry of real
+  park landmarks; a present wielder can _open the way_ (a ~15-min live
+  window for away players, aggregates only) or _send a Wayfinder_
+  (presence-minted, ~1/day, to a named friend: bounded spectral
+  projection — move/emote/lantern and live `RoundEvent[]` battle
+  spectating; **no waking verbs, ever**), with the **ratchet rule**: any
+  future waking-World effect from a non-present player needs its own
+  Canon Log entry + equity analysis. **Dreamspace contracts** (§3.9) to
+  the Dive + Memory Dives — the Realm-of-Sleep away-game spine (couch
+  Dreamscape, depths, Spirits/Nightmares) is **not** adopted; doc 18's
+  banner records the supersession by 19. Integrity consequence: away
+  fights minting real XP inherit the full priority-① regime (sessions,
+  replay, caps) — the away threat model is botting; nationwide, GPS
+  spoofing returns (teleport detection moves up,
+  [06](06-location-and-geofencing.md)).
+- **2026-07-30 — The nationwide hunt & Moogle synthesis adopted (doc
+  19).** The typical non-park loop is **get out and walk**: ambient
+  Heartless, **fissures** (lowercase — the small doors darkness slips
+  through; a World's Keyhole stays park-scale, and copy may never say
+  "the Keyhole of \<suburb\>"), Nobody escalation off fissure-age, and a
+  **regional Organization tier** on the seasonal rotation with weather
+  signatures. Spawns are a deterministic function of (geohash, time,
+  real weather, region events); POI anchoring from a curated open-data
+  allowlist (Overture/OSM classes — **no UGC POI program, ever**);
+  AR via **ARCore Geospatial** ceremonies where covered, screen-only
+  everywhere (AR never required). **Synthesis expansion:** the material
+  ladder gains **Crystal + Orichalcum**; canonical family names; Light
+  materials from tending places / Dark from the hunt; the **Moogle
+  bench** crafts component blades (Blade = base stats, Teeth = magical
+  property, Keychain = special ability) with **alignment as a
+  material-ledger spectrum** (never a faction); Moogle ranks unlock
+  recipe tiers; **one forge, two doors** (same inventory/recipes engine
+  as the park forge). **Park premium:** the signature-perk pool is
+  disjoint from the craftable pool by rule; complete World blades come
+  only from in-park Keyhole seals; condition materials are the park's
+  Orichalcum; the **Ultima line's** catalyst has a park fast-road ⇄
+  street long-road. The in-park living layer is untouched and park-only
+  — the parks remain the only place the game world is driven by reality
+  breaking in real time. Lore basis: the Ultima Weapon is
+  Moogle-synthesized in KH1/2/3 (crafting the strongest blade is the
+  series' own endgame loop); keychains are the canonical transformation
+  mechanic; KHχ's worldwide wielders precedent; Riku precedents
+  dark-aligned wielding. Safety: street annex in
+  [09](09-moderation-trust-safety.md) (stand-still, speed lockout, POI
+  allowlist). Strategy stated plainly: nationwide we play the Niantic
+  shape better-themed (IP + weather-live spawns + one-save unity); **the
+  moat lives in the parks**. License **gate zero precedes any build**
+  (19 §7; [13](13-roadmap-risks-ip.md)). Workstream ⑩; N1 hard-depends
+  on ①.
 
 ### Open questions (decide before the relevant build)
 

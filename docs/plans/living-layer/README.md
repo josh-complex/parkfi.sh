@@ -44,12 +44,16 @@ in the map below is tagged with one:
 2. **DEEP DIVE** — docs 01–14: living reference docs that defer to the GDD.
    Kept aligned by periodic passes; if one disagrees with the GDD, the GDD is
    right and the doc has drifted (fix the doc).
-3. **FROZEN RECORD** — doc 15: a research digest whose recommendations were
-   **already folded into canon** and which is now historical rationale. It
-   reads like current instruction; it is not. Never treat it as a build order
-   or edit it — its value is "why we decided," not "what to do."
-4. **PROPOSALS** — doc 16: design proposals **not yet adopted**. Nothing in
-   it is buildable until its canon deltas land in the GDD.
+3. **FROZEN RECORD** — docs 15 and 17–19: research/design digests whose
+   recommendations were **already folded into canon** (15 on 2026-07-16;
+   17/19 and 18's surviving core on 2026-07-30) and which are now
+   historical rationale. They read like current instruction; they are not.
+   Never treat them as build orders — their value is "why we decided," not
+   "what to do." (Doc 18 is also superseded in part by 19 — read its
+   banner before citing it.)
+4. **PROPOSALS** — doc 16: design proposals **not yet adopted**. Nothing
+   in it is buildable until its canon deltas land in the GDD (exceptions
+   the GDD explicitly absorbed: the Dive's presence exemption, §3.9).
 
 **For an AI/agent picking this up cold:**
 
@@ -61,7 +65,7 @@ in the map below is tagged with one:
   (build history), and not doc 15 §7 (the frozen source the adopted list was
   taken from).
 - If you found a passage via search, check its doc's status here before
-  acting on it — docs 15 and 16 are the likely wrong-landing zones.
+  acting on it — docs 15–19 are the likely wrong-landing zones.
 - Any change that ships a milestone, alters balance, or decides a design
   question updates the GDD (§10 / §8 / Canon Log) **in the same change**.
   The same fact may be stated in several docs — when you change one, grep for
@@ -81,25 +85,28 @@ in the map below is tagged with one:
 > real-vs-designed table. It is required to be updated in the same change as
 > any milestone that ships.
 
-| #   | Doc                                                                                    | Status            | What it covers                                                                                                                |
-| --- | -------------------------------------------------------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| ★   | [GDD.md](GDD.md)                                                                       | **CANON**         | Pillars, glossary, the spaces, loops, interaction, story, balance, decisions                                                  |
-| 01  | [Vision & strategy](01-vision-and-strategy.md)                                         | deep dive         | Why, the moat, the design ethic                                                                                               |
-| 02  | [The living layer & the flywheel](02-living-layer-and-flywheel.md)                     | deep dive         | The core mental model; the self-reinforcing loop                                                                              |
-| 03  | [Marks & discovery](03-marks-and-discovery.md)                                         | deep dive         | The atomic unit; echoes, Trinity Marks, Lucky Emblems, letters; decay                                                         |
-| 04  | [Game design — the machine](04-game-design.md)                                         | deep dive         | Worlds, encounters, the darkness engine, battles, progression                                                                 |
-| 05  | [Companions & land-proximity](05-companions-and-proximity.md)                          | deep dive         | Square-Enix-style party system gated by physical land proximity                                                               |
-| 06  | [Location & geofencing](06-location-and-geofencing.md)                                 | deep dive         | Tracking, sensor fusion, battery, anti-spoof, privacy                                                                         |
-| 07  | [AR & the multi-channel UX](07-ar-and-channels.md)                                     | deep dive         | Screen / ear / wrist / AR; the reveal; the native AR ladder                                                                   |
-| 08  | [Achievements, persistence & cold-start](08-achievements-persistence-coldstart.md)     | deep dive         | Verified-by-physics, the save file, the empty-world problem                                                                   |
-| 09  | [Moderation, trust & safety](09-moderation-trust-safety.md)                            | deep dive         | The (deliberately shrunken) UGC surface, physical safety, the two-layer model                                                 |
-| 10  | [Data model](10-data-model.md)                                                         | deep dive         | New Drizzle tables; how they hang off the existing schema                                                                     |
-| 11  | [Architecture](11-architecture.md)                                                     | deep dive         | How every piece reuses infra we already operate                                                                               |
-| 12  | [The demo / vertical slice](12-demo-vertical-slice.md)                                 | deep dive         | What to build first; the in-app lite-AR demo; the dev/armchair mode                                                           |
-| 13  | [Roadmap, risks & IP](13-roadmap-risks-ip.md)                                          | deep dive         | Phasing, the license position, the kill-risks                                                                                 |
-| 14  | [Implementation plan](14-implementation-plan.md)                                       | deep dive         | The **adopted workstream order** (top) + M0–M7 build history (superseded ordering)                                            |
-| 15  | [State of the game (2026-07-15)](15-state-of-the-game-2026-07-15.md)                   | **frozen record** | Audit + research digest — **folded into canon 2026-07-16**; rationale only, never a build order                               |
-| 16  | [Engagement & AR deep dive (2026-07-17)](16-engagement-and-ar-deep-dive-2026-07-17.md) | **proposals**     | Gap-review deep dive — the Dive, the guide, magic, queues, at-home, variants, families/COPPA, AR pipeline — **not yet canon** |
+| #   | Doc                                                                                                                         | Status            | What it covers                                                                                                                                 |
+| --- | --------------------------------------------------------------------------------------------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| ★   | [GDD.md](GDD.md)                                                                                                            | **CANON**         | Pillars, glossary, the spaces, loops, interaction, story, balance, decisions                                                                   |
+| 01  | [Vision & strategy](01-vision-and-strategy.md)                                                                              | deep dive         | Why, the moat, the design ethic                                                                                                                |
+| 02  | [The living layer & the flywheel](02-living-layer-and-flywheel.md)                                                          | deep dive         | The core mental model; the self-reinforcing loop                                                                                               |
+| 03  | [Marks & discovery](03-marks-and-discovery.md)                                                                              | deep dive         | The atomic unit; echoes, Trinity Marks, Lucky Emblems, letters; decay                                                                          |
+| 04  | [Game design — the machine](04-game-design.md)                                                                              | deep dive         | Worlds, encounters, the darkness engine, battles, progression                                                                                  |
+| 05  | [Companions & land-proximity](05-companions-and-proximity.md)                                                               | deep dive         | Square-Enix-style party system gated by physical land proximity                                                                                |
+| 06  | [Location & geofencing](06-location-and-geofencing.md)                                                                      | deep dive         | Tracking, sensor fusion, battery, anti-spoof, privacy                                                                                          |
+| 07  | [AR & the multi-channel UX](07-ar-and-channels.md)                                                                          | deep dive         | Screen / ear / wrist / AR; the reveal; the native AR ladder                                                                                    |
+| 08  | [Achievements, persistence & cold-start](08-achievements-persistence-coldstart.md)                                          | deep dive         | Verified-by-physics, the save file, the empty-world problem                                                                                    |
+| 09  | [Moderation, trust & safety](09-moderation-trust-safety.md)                                                                 | deep dive         | The (deliberately shrunken) UGC surface, physical safety, the two-layer model                                                                  |
+| 10  | [Data model](10-data-model.md)                                                                                              | deep dive         | New Drizzle tables; how they hang off the existing schema                                                                                      |
+| 11  | [Architecture](11-architecture.md)                                                                                          | deep dive         | How every piece reuses infra we already operate                                                                                                |
+| 12  | [The demo / vertical slice](12-demo-vertical-slice.md)                                                                      | deep dive         | What to build first; the in-app lite-AR demo; the dev/armchair mode                                                                            |
+| 13  | [Roadmap, risks & IP](13-roadmap-risks-ip.md)                                                                               | deep dive         | Phasing, the license position, the kill-risks                                                                                                  |
+| 14  | [Implementation plan](14-implementation-plan.md)                                                                            | deep dive         | The **adopted workstream order** (top) + M0–M7 build history (superseded ordering)                                                             |
+| 15  | [State of the game (2026-07-15)](15-state-of-the-game-2026-07-15.md)                                                        | **frozen record** | Audit + research digest — **folded into canon 2026-07-16**; rationale only, never a build order                                                |
+| 16  | [Engagement & AR deep dive (2026-07-17)](16-engagement-and-ar-deep-dive-2026-07-17.md)                                      | **proposals**     | Gap-review deep dive — the Dive, the guide, magic, queues, at-home, variants, families/COPPA, AR pipeline — **not yet canon**                  |
+| 17  | [Retention & the away game (2026-07-30)](17-retention-and-the-away-game-2026-07-30.md)                                      | **frozen record** | The trip-cycle retention model — Chronicle, Memory Dives, Vigil, refusals, metrics — **adopted into canon 2026-07-30**                         |
+| 18  | [The Realm of Sleep: the nationwide game (2026-07-30)](18-realm-of-sleep-nationwide-2026-07-30.md)                          | **frozen record** | One-heart presence-weighted economy, completeness, gates & Wayfinders — **core adopted 2026-07-30; dream-spine superseded by 19**              |
+| 19  | [The nationwide hunt: streets, synthesis & the Moogle economy (2026-07-30)](19-nationwide-hunt-and-synthesis-2026-07-30.md) | **frozen record** | The walk loop — fissures/regional Org, spawn & spatial model, Moogle component crafting, park-premium loot — **adopted into canon 2026-07-30** |
 
 ## Reading order
 
