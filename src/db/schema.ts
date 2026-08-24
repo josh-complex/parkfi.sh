@@ -1740,6 +1740,57 @@ export const blogPost = pgTable(
   ],
 );
 
+/**
+ * Detected "what changed at the parks" events — the ledger between the SQL
+ * detectors and the data-driven blog composer (services/cron-park-report; plan
+ * at docs/plans/blog-data-reports.md). Each row is one newsworthy fact derived
+ * from our own telemetry (a downtime episode, a venue's menu churn for a day, a
+ * price move), with the numbers precomputed into `payload` so the drafting LLM
+ * narrates data rather than inventing it.
+ *
+ * Idempotent by construction: detectors re-scan a trailing window every run and
+ * the (kind, entity_kind, entity_id, window_start) unique key makes re-detected
+ * events no-ops. `consumed_by` links an event to the blog_post draft that
+ * narrated it; NULL rows are the composer's backlog. Plain table — low volume,
+ * and rows are kept after consumption as a history of what we reported.
+ */
+export const reportEvent = pgTable(
+  "report_event",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    // 'downtime_episode' | 'menu_change_rollup' | 'price_change'
+    kind: text("kind").notNull(),
+    // Digest grouping key ('walt-disney-world' | 'universal-orlando') — events
+    // compose into per-resort posts. Denormalized here because not every entity
+    // reaches a park FK (facilities and SKUs are resort-scoped, not park-keyed).
+    resortSlug: text("resort_slug").notNull(),
+    parkId: bigint("park_id", { mode: "number" }).references(() => parks.id),
+    // 'attraction' | 'facility' | 'product' | 'sku'
+    entityKind: text("entity_kind").notNull(),
+    // attraction id / facility_id / '<park>:<product>:<tier>' / sku — text so
+    // one column spans every entity vocabulary.
+    entityId: text("entity_id").notNull(),
+    // The span the event describes (episode start→end; a local calendar day for
+    // per-day rollups). window_start is part of the identity key.
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    windowEnd: timestamp("window_end", { withTimezone: true }).notNull(),
+    // Newsworthiness — detector-specific formula, comparable only within a kind.
+    // The composer sums scores to decide when a digest is worth drafting.
+    score: real("score").notNull(),
+    // Kind-specific precomputed facts (names, counts, prices, durations) — the
+    // whole brief the LLM sees, so everything the post cites lives here.
+    payload: jsonb("payload").notNull(),
+    detectedAt: timestamp("detected_at", { withTimezone: true }).notNull().defaultNow(),
+    // blog_post.id of the draft that narrated this event; NULL = unreported.
+    consumedBy: bigint("consumed_by", { mode: "number" }),
+  },
+  (t) => [
+    uniqueIndex("report_event_identity_uq").on(t.kind, t.entityKind, t.entityId, t.windowStart),
+    // Composer backlog scan: unconsumed events per resort, oldest first.
+    index("report_event_backlog_idx").on(t.resortSlug, t.consumedBy, t.detectedAt),
+  ],
+);
+
 // ---------------------------------------------------------------------------
 // Pin traders — cold photo identification + trading board.
 //

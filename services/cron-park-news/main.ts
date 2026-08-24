@@ -500,12 +500,23 @@ type RecentPost = {
   aiSummary: string | null;
 };
 
+/**
+ * Drafts get a much shorter coverage window than published posts. Counting old
+ * drafts as "covered" created a self-suppression loop: a stalled review queue
+ * fed every unapproved draft back into the prompt as prior coverage, teaching
+ * the model to skip fresh items — so the longer the queue sat, the fewer new
+ * drafts got written. A draft still unreviewed after this window no longer
+ * blocks new coverage of the (by then re-newsworthy) topic.
+ */
+const DRAFT_COVERAGE_DAYS = Number(process.env.NEWS_DRAFT_COVERAGE_DAYS ?? 10);
+
 async function recentCoverage(): Promise<RecentPost[]> {
   const { rows } = await db.execute<RecentPost>(sql`
     SELECT slug, title, ai_summary AS "aiSummary"
     FROM blog_post
-    WHERE status IN ('published', 'draft')
-      AND created_at >= now() - INTERVAL '45 days'
+    WHERE (status = 'published' AND created_at >= now() - INTERVAL '45 days')
+       OR (status = 'draft'
+           AND created_at >= now() - make_interval(days => ${DRAFT_COVERAGE_DAYS}))
     ORDER BY created_at DESC
     LIMIT 40
   `);
