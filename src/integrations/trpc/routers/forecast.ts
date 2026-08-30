@@ -143,16 +143,33 @@ export const forecastRouter = {
             AND qf.model_version = (SELECT model_version FROM active)
             AND (qf.target_ts AT TIME ZONE (SELECT timezone FROM park))::date = ${input.date}::date
         ),
+        -- Daily averages clip to the regular OPERATING window (latest
+        -- snapshot), mirroring loadParkCalendar — see parkCalendar.ts.
+        op_latest AS (
+          SELECT s.service_date, max(s.snapshot_date) AS snap
+          FROM park_schedule s
+          WHERE s.park_id = (SELECT id FROM park) AND s.type = 'OPERATING'
+          GROUP BY s.service_date
+        ),
+        op AS (
+          SELECT s.service_date AS d, min(s.opening_time) AS o, max(s.closing_time) AS c
+          FROM park_schedule s
+          JOIN op_latest ol ON ol.service_date = s.service_date AND ol.snap = s.snapshot_date
+          WHERE s.park_id = (SELECT id FROM park) AND s.type = 'OPERATING'
+          GROUP BY s.service_date
+        ),
         hist AS (
           SELECT (q.bucket AT TIME ZONE (SELECT timezone FROM park))::date AS d,
                  avg(q.avg_wait) AS day_avg
           FROM queue_15min q
           JOIN attractions a ON a.id = q.attraction_id
+          LEFT JOIN op ON op.d = (q.bucket AT TIME ZONE (SELECT timezone FROM park))::date
           WHERE a.park_id = (SELECT id FROM park)
             AND q.queue_type = ${STANDBY}
             AND q.avg_wait IS NOT NULL
             AND q.bucket >= now() - INTERVAL '90 days'
-          GROUP BY d
+            AND (op.d IS NULL OR (q.bucket >= op.o AND (op.c IS NULL OR q.bucket < op.c)))
+          GROUP BY 1
         )
         SELECT
           CASE WHEN count(*) = 0 OR (SELECT v FROM pred) IS NULL THEN NULL
@@ -193,12 +210,14 @@ export const forecastRouter = {
             }
           : undefined,
       );
+      // Heuristic floor only applies on holiday/break dates (mirrors
+      // loadParkCalendar); ordinary days trust the model outright.
       const crowdIndex =
         mlCrowdIndex == null
           ? heuristic
-          : heuristic == null
-            ? mlCrowdIndex
-            : Math.max(mlCrowdIndex, heuristic);
+          : calRow
+            ? Math.max(mlCrowdIndex, heuristic)
+            : mlCrowdIndex;
 
       return {
         parkSlug: input.parkSlug,

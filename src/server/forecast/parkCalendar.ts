@@ -17,17 +17,18 @@ const DOW_BASE = [5, 3, 3, 3, 3, 4, 6] as const;
 /**
  * Rules-based crowd index (1–10) for dates beyond the ML model's horizon.
  * Uses day-of-week, federal holidays, and school-break labels from calendarDay.
- * Returns null when no calendar row exists for the date.
+ * `calendar_day` is sparse (holidays/breaks only), so a missing row just means
+ * an ordinary day — score it on day-of-week alone rather than returning null,
+ * so every date in a range gets at least an estimate.
  */
 export function heuristicCrowdIndex(
   date: string,
-  cal: { isFedHoliday: boolean; isSchoolBreak: boolean; breakLabel: string | null } | undefined,
-): number | null {
-  if (!cal) return null;
+  cal?: { isFedHoliday: boolean; isSchoolBreak: boolean; breakLabel: string | null },
+): number {
   const dow = new Date(`${date}T12:00:00Z`).getUTCDay();
   let score = DOW_BASE[dow];
-  if (cal.isFedHoliday) score += 2;
-  if (cal.isSchoolBreak) {
+  if (cal?.isFedHoliday) score += 2;
+  if (cal?.isSchoolBreak) {
     const label = cal.breakLabel?.toLowerCase() ?? "";
     if (label.includes("summer")) score += 4;
     else if (label.includes("winter") || label.includes("christmas")) score += 3;
@@ -48,18 +49,29 @@ export interface ParkCalendar {
   days: Array<CalendarDay>;
 }
 
+// Upper bound on generated calendar days per request — the UI asks for
+// -90..+150; this only guards the public procedure against absurd ranges.
+const MAX_RANGE_DAYS = 400;
+
 /**
  * Per-date crowd index + daily weather summary for a park over a date range.
- * Crowd index = the predicted daily-average standby wait percentile-ranked
- * against the park's own last-90-days distribution, mapped to 1–10, with the
- * day-of-week/holiday heuristic acting as a floor.
+ * Past dates score the *actual* daily-average standby wait; today/future use
+ * the ML prediction — both percentile-ranked against the park's own
+ * last-90-days distribution and mapped to 1–10. Actual/historical daily
+ * averages count only buckets inside the day's regular OPERATING window. Dates with neither (beyond the
+ * model's horizon, or past days with no wait data) fall back to the
+ * day-of-week/holiday heuristic, flagged via `crowdIsEstimate`.
  */
 export async function loadParkCalendar(
   parkSlug: string,
   startDate: string,
   endDate: string,
 ): Promise<ParkCalendar> {
-  const crowdP = db.execute<{ date: string; percentile: number | null }>(sql`
+  const crowdP = db.execute<{
+    date: string;
+    pred_percentile: number | null;
+    actual_percentile: number | null;
+  }>(sql`
     WITH park AS (SELECT id, timezone FROM parks WHERE slug = ${parkSlug}),
     active AS (
       SELECT model_version FROM model_run WHERE status = 'active'
@@ -77,25 +89,68 @@ export async function loadParkCalendar(
             BETWEEN ${startDate}::date AND ${endDate}::date
       GROUP BY d
     ),
+    -- Regular OPERATING window per service date (latest snapshot). Daily
+    -- averages clip to it so early entry, dead post-close buckets, and
+    -- near-empty ticketed-event evenings (e.g. Halloween-party nights that
+    -- close to day guests at 6p) don't drag a day's average.
+    op_latest AS (
+      SELECT s.service_date, max(s.snapshot_date) AS snap
+      FROM park_schedule s
+      WHERE s.park_id = (SELECT id FROM park) AND s.type = 'OPERATING'
+      GROUP BY s.service_date
+    ),
+    op AS (
+      SELECT s.service_date AS d, min(s.opening_time) AS o, max(s.closing_time) AS c
+      FROM park_schedule s
+      JOIN op_latest ol ON ol.service_date = s.service_date AND ol.snap = s.snapshot_date
+      WHERE s.park_id = (SELECT id FROM park) AND s.type = 'OPERATING'
+      GROUP BY s.service_date
+    ),
     hist AS (
       SELECT (q.bucket AT TIME ZONE (SELECT timezone FROM park))::date AS d,
              avg(q.avg_wait) AS day_avg
       FROM queue_15min q
       JOIN attractions a ON a.id = q.attraction_id
+      LEFT JOIN op ON op.d = (q.bucket AT TIME ZONE (SELECT timezone FROM park))::date
       WHERE a.park_id = (SELECT id FROM park)
         AND q.queue_type = ${STANDBY}
         AND q.avg_wait IS NOT NULL
         AND q.bucket >= now() - INTERVAL '90 days'
-      GROUP BY d
+        -- No schedule row (older/missing dates) -> keep the whole day.
+        AND (op.d IS NULL OR (q.bucket >= op.o AND (op.c IS NULL OR q.bucket < op.c)))
+      GROUP BY 1
     ),
-    hist_n AS (SELECT count(*)::float AS n FROM hist)
-    SELECT pred.d::text AS date,
+    hist_n AS (SELECT count(*)::float AS n FROM hist),
+    actual AS (
+      SELECT (q.bucket AT TIME ZONE (SELECT timezone FROM park))::date AS d,
+             avg(q.avg_wait) AS v
+      FROM queue_15min q
+      JOIN attractions a ON a.id = q.attraction_id
+      LEFT JOIN op ON op.d = (q.bucket AT TIME ZONE (SELECT timezone FROM park))::date
+      WHERE a.park_id = (SELECT id FROM park)
+        AND q.queue_type = ${STANDBY}
+        AND q.avg_wait IS NOT NULL
+        AND q.bucket >= ${startDate}::date::timestamptz - INTERVAL '1 day'
+        AND q.bucket < ${endDate}::date::timestamptz + INTERVAL '2 days'
+        AND (q.bucket AT TIME ZONE (SELECT timezone FROM park))::date
+            BETWEEN ${startDate}::date AND ${endDate}::date
+        AND (q.bucket AT TIME ZONE (SELECT timezone FROM park))::date
+            < (now() AT TIME ZONE (SELECT timezone FROM park))::date
+        AND (op.d IS NULL OR (q.bucket >= op.o AND (op.c IS NULL OR q.bucket < op.c)))
+      GROUP BY 1
+    )
+    SELECT COALESCE(pred.d, act.d)::text AS date,
            CASE WHEN (SELECT n FROM hist_n) = 0 OR pred.v IS NULL THEN NULL
                 ELSE (SELECT count(*)::float FROM hist WHERE day_avg <= pred.v)
                      / (SELECT n FROM hist_n)
-           END AS percentile
+           END AS pred_percentile,
+           CASE WHEN (SELECT n FROM hist_n) = 0 OR act.v IS NULL THEN NULL
+                ELSE (SELECT count(*)::float FROM hist WHERE day_avg <= act.v)
+                     / (SELECT n FROM hist_n)
+           END AS actual_percentile
     FROM pred
-    ORDER BY pred.d
+    FULL OUTER JOIN actual act ON act.d = pred.d
+    ORDER BY 1
   `);
 
   const weatherP = db.execute<{
@@ -151,7 +206,9 @@ export async function loadParkCalendar(
 
   const [crowd, weather, calendar] = await Promise.all([crowdP, weatherP, calendarP]);
 
-  const crowdByDate = new Map(crowd.rows.map((r) => [r.date, r.percentile]));
+  const crowdByDate = new Map(
+    crowd.rows.map((r) => [r.date, { pred: r.pred_percentile, actual: r.actual_percentile }]),
+  );
   const weatherByDate = new Map(
     weather.rows.map((r) => [
       r.date,
@@ -173,28 +230,43 @@ export async function loadParkCalendar(
     ]),
   );
 
-  // Union of all dates from any source.
-  const allDates = [
-    ...new Set([...crowdByDate.keys(), ...weatherByDate.keys(), ...calByDate.keys()]),
-  ].sort();
+  // Every date in the requested range gets a day — the heuristic covers dates
+  // no data source mentions, so the calendar has no unexplained holes.
+  const allDates: Array<string> = [];
+  const from = Date.parse(`${startDate}T00:00:00Z`);
+  const to = Date.parse(`${endDate}T00:00:00Z`);
+  for (let t = from; t <= to && allDates.length < MAX_RANGE_DAYS; t += 86_400_000) {
+    allDates.push(new Date(t).toISOString().slice(0, 10));
+  }
+
+  const toIndex = (pct: number | null | undefined): number | null =>
+    pct == null ? null : Math.max(1, Math.min(10, Math.round(1 + 9 * pct)));
 
   return {
     days: allDates.map((date) => {
-      const pct = crowdByDate.get(date) ?? null;
-      const mlCrowdIndex = pct == null ? null : Math.max(1, Math.min(10, Math.round(1 + 9 * pct)));
-      const heuristic = heuristicCrowdIndex(date, calByDate.get(date));
-      // Heuristic acts as a floor: prevents partially-elapsed days from showing
-      // an artificially low ML score.
-      const crowdIndex =
-        mlCrowdIndex == null
-          ? heuristic
-          : heuristic == null
-            ? mlCrowdIndex
-            : Math.max(mlCrowdIndex, heuristic);
+      const pcts = crowdByDate.get(date);
+      const actualIndex = toIndex(pcts?.actual);
+      const mlCrowdIndex = toIndex(pcts?.pred);
+      const cal = calByDate.get(date);
+      const heuristic = heuristicCrowdIndex(date, cal);
+      let crowdIndex: number;
+      let crowdIsEstimate = false;
+      if (actualIndex != null) {
+        // Past date with observed waits — ground truth, no floor.
+        crowdIndex = actualIndex;
+      } else if (mlCrowdIndex != null) {
+        // On holidays/breaks the heuristic acts as a floor: prevents
+        // partially-elapsed days from showing an artificially low ML score.
+        // Ordinary days trust the model outright.
+        crowdIndex = cal ? Math.max(mlCrowdIndex, heuristic) : mlCrowdIndex;
+      } else {
+        crowdIndex = heuristic;
+        crowdIsEstimate = true;
+      }
       return {
         date,
         crowdIndex,
-        crowdIsEstimate: mlCrowdIndex == null && crowdIndex != null,
+        crowdIsEstimate,
         weather: weatherByDate.get(date) ?? null,
       };
     }),
