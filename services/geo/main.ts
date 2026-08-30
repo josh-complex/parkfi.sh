@@ -106,6 +106,7 @@ import {
   buildUniversalContentIndex,
   rideJoinKey,
   resolveUniversalRideAttrs,
+  trustedUniversalPoiVenue,
   UNIVERSAL_VENUE_ID_BY_SLUG,
   universalShowtimes,
   venueBoundary,
@@ -285,9 +286,14 @@ async function upsertAttractionMeta(
       .onConflictDoUpdate({
         target: attractionMeta.attractionId,
         set: {
-          imageThumbUrl: sql`excluded.image_thumb_url`,
-          imageHeroUrl: sql`excluded.image_hero_url`,
-          imageAlt: sql`excluded.image_alt`,
+          // Coalesced like the copy fields below — stale beats none. A source
+          // regression must not blank artwork out: Universal dropped every
+          // Epic Universe tile from `filtersdata` in Aug 2026 and the wholesale
+          // refresh this used to do wiped 24 EU rides' images. A changed URL
+          // still replaces (excluded wins when non-null).
+          imageThumbUrl: sql`coalesce(excluded.image_thumb_url, attraction_meta.image_thumb_url)`,
+          imageHeroUrl: sql`coalesce(excluded.image_hero_url, attraction_meta.image_hero_url)`,
+          imageAlt: sql`coalesce(excluded.image_alt, attraction_meta.image_alt)`,
           // image_thumbhash/_src are deliberately untouched: the thumbhash
           // step (below) recomputes any row whose hash_src no longer matches
           // the (possibly just-updated) image_thumb_url.
@@ -1431,8 +1437,13 @@ async function upsertUniversalPoi(
         longitude: poi.Longitude ?? null,
         land: poi.LandId != null ? (content.landById.get(poi.LandId) ?? null) : null,
         // Services keep the glyph (their artwork is flat icons); real
-        // entertainment gets its photo, like the Disney POI rule.
-        imageUrl: category === "info" ? null : (poi.ListImage ?? poi.ThumbnailImage ?? null),
+        // entertainment gets its photo, like the Disney POI rule. Untrusted
+        // venues (Epic Universe) publish a shared placeholder image on the
+        // few records that carry one, so their mobile-feed artwork is dropped.
+        imageUrl:
+          category === "info" || !trustedUniversalPoiVenue(venueId)
+            ? null
+            : (poi.ListImage ?? poi.ThumbnailImage ?? null),
         detailUrl: poi.SiteUrl ?? null,
         schedule: universalShowtimes(poi),
         source: Source.UNIVERSAL_DIRECT,

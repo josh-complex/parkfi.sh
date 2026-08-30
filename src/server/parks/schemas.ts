@@ -1552,12 +1552,14 @@ export type UniversalFiltersData = z.infer<typeof UniversalFiltersDataSchema>;
 export type UniversalTile = UniversalFiltersData["Tiles"][number];
 
 // ---------------------------------------------------------------------------
-// A `/contentdata/…/things-to-do/rides-attractions/{slug}/index.html` page —
-// the per-ride Tridion document (§2.2). We only model the "GDS - Utility
-// Section" component: its `featureList` is the guest-facing attribute strip
-// (Height Requirement · Ride Type · Express Pass · Child Swap · Accessibility ·
-// Loose Articles · Rider Safety), which is the ONLY source covering Epic
-// Universe and the most accurate height source resort-wide.
+// A `/contentdata/…/things-to-do/{rides-attractions|shows|entertainment}/{slug}/index.html`
+// page — the per-attraction Tridion document (§2.2). We model two components:
+// "GDS - Utility Section", whose `featureList` is the guest-facing attribute
+// strip (Height Requirement · Ride Type · Express Pass · Child Swap ·
+// Accessibility · Loose Articles · Rider Safety) — the ONLY source covering
+// Epic Universe and the most accurate height source resort-wide — and
+// "GDS - Hero", the page's masthead image, which became the only Epic Universe
+// artwork source when the `filtersdata` feed dropped its EU tiles (Aug 2026).
 // ---------------------------------------------------------------------------
 const TridionTextField = z
   .object({ Values: listOf(z.string()), KeywordValues: listOf(TridionKeyword) })
@@ -1578,6 +1580,46 @@ const UniversalUtilityFeature = z
   .partial()
   .passthrough();
 
+/** One breakpoint slot of a Tridion responsive image: a link to a Multimedia
+ *  component whose `Url` is the `/uor/en/us/files/…` asset path. */
+const TridionImageRendition = z
+  .object({
+    LinkedComponentValues: listOf(
+      z
+        .object({
+          Multimedia: z
+            .object({ Url: z.string().nullable().optional() })
+            .partial()
+            .passthrough()
+            .nullable()
+            .optional(),
+        })
+        .partial()
+        .passthrough(),
+    ),
+  })
+  .partial()
+  .passthrough();
+
+/** The `image` field shared by "GDS - Hero" (and "GDS - Content - Feature"):
+ *  desktop/tablet/mobile renditions plus the alt text. */
+const TridionResponsiveImage = z
+  .object({
+    EmbeddedValues: listOf(
+      z
+        .object({
+          desktop: TridionImageRendition.optional(),
+          tablet: TridionImageRendition.optional(),
+          mobile: TridionImageRendition.optional(),
+          alt: TridionTextField.optional(),
+        })
+        .partial()
+        .passthrough(),
+    ),
+  })
+  .partial()
+  .passthrough();
+
 export const UniversalRidePageSchema = z.object({
   ComponentPresentations: z
     .array(
@@ -1593,6 +1635,7 @@ export const UniversalRidePageSchema = z.object({
                 .object({
                   heading: TridionTextField.optional(),
                   categoryLabel: TridionTextField.optional(),
+                  image: TridionResponsiveImage.optional(),
                   featureList: z
                     .object({
                       LinkedComponentValues: z

@@ -54,6 +54,8 @@ function index(input: {
       expressPass: false,
       companionRequirement: null,
       singleRider: false,
+      imageHero: null,
+      imageAlt: null,
       ...f,
     })),
     lands: [{ id: 10143, name: "Minion Land" }],
@@ -163,6 +165,58 @@ describe("rideFactsFromPage", () => {
     expect(facts.rideTypes).toEqual(["Thrill", "Water Ride"]);
     expect(facts.childSwap).toBe(true);
     expect(facts.expressPass).toBe(true);
+  });
+
+  it("reads the GDS - Hero masthead image and its alt text", () => {
+    const parsed = UniversalRidePageSchema.parse({
+      ComponentPresentations: [
+        {
+          Component: {
+            Schema: { Title: "GDS - Hero" },
+            Fields: {
+              image: {
+                EmbeddedValues: [
+                  {
+                    desktop: {
+                      LinkedComponentValues: [
+                        {
+                          Multimedia: {
+                            Url: "/uor/en/us/files/Images/gds/ueu-stardust-racers-a.jpg",
+                          },
+                        },
+                      ],
+                    },
+                    mobile: {
+                      LinkedComponentValues: [
+                        {
+                          Multimedia: {
+                            Url: "/uor/en/us/files/Images/gds/ueu-stardust-racers-b.jpg",
+                          },
+                        },
+                      ],
+                    },
+                    alt: { Values: ["Riders fly through the air on Stardust Racers."] },
+                  },
+                ],
+              },
+            },
+          },
+        },
+        {
+          Component: {
+            Schema: { Title: "GDS - Utility Section" },
+            Fields: { heading: field("Stardust Racers") },
+          },
+        },
+      ],
+    });
+    const facts = rideFactsFromPage("stardust-racers", parsed);
+    expect(facts.heading).toBe("Stardust Racers");
+    // Desktop rendition preferred, made absolute against the web origin.
+    expect(facts.imageHero).toBe(
+      "https://www.universalorlando.com/uor/en/us/files/Images/gds/ueu-stardust-racers-a.jpg",
+    );
+    expect(facts.imageAlt).toBe("Riders fly through the air on Stardust Racers.");
   });
 
   it("keeps a supervising-companion rule out of the height field", () => {
@@ -323,6 +377,73 @@ describe("resolveUniversalRideAttrs", () => {
     expect(attrs.matched).toBe(true);
     expect(attrs.minHeightIn).toBeNull();
     expect(attrs.imageAlt).toBe("A wand shop");
+  });
+
+  it("falls back to the page hero for artwork when no tile exists", () => {
+    // The Epic Universe case: `filtersdata` dropped every EU tile (Aug 2026),
+    // so the ride page's masthead is the only artwork left.
+    const attrs = resolveUniversalRideAttrs(
+      index({
+        rides: [{ MblDisplayName: "Stardust Racers", VenueId: EPIC }],
+        facts: [
+          {
+            heading: "Stardust Racers",
+            imageHero: "https://www.universalorlando.com/uor/en/us/files/Images/gds/sr-a.jpg",
+            imageAlt: "Riders on Stardust Racers.",
+          },
+        ],
+      }),
+      EPIC,
+      "Stardust Racers",
+    );
+    expect(attrs.imageHeroUrl).toBe(
+      "https://www.universalorlando.com/uor/en/us/files/Images/gds/sr-a.jpg",
+    );
+    // The hero also backs up the thumb slot when no list crop exists anywhere.
+    expect(attrs.imageThumbUrl).toBe(
+      "https://www.universalorlando.com/uor/en/us/files/Images/gds/sr-a.jpg",
+    );
+    expect(attrs.imageAlt).toBe("Riders on Stardust Racers.");
+  });
+
+  it("ignores POI-feed artwork at a venue whose records aren't trusted", () => {
+    // EU show records ship a shared curious-george placeholder image; the same
+    // trust gate that discards EU's all-false flags discards its artwork.
+    const junk = "https://services.universalorlando.com:443/api/Images/curious-george.jpg";
+    const untrusted = resolveUniversalRideAttrs(
+      index({
+        shows: [
+          {
+            MblDisplayName: "The Untrainable Dragon",
+            VenueId: EPIC,
+            Category: "Shows",
+            ListImage: junk,
+            DetailImages: [junk],
+          },
+        ],
+      }),
+      EPIC,
+      "The Untrainable Dragon",
+    );
+    expect(untrusted.imageThumbUrl).toBeNull();
+    expect(untrusted.imageHeroUrl).toBeNull();
+
+    const trusted = resolveUniversalRideAttrs(
+      index({
+        rides: [
+          {
+            MblDisplayName: "Revenge of the Mummy™",
+            VenueId: USF,
+            ListImage: "https://services.universalorlando.com:443/api/Images/mummy-list.jpg",
+            DetailImages: ["https://services.universalorlando.com:443/api/Images/mummy-a.jpg"],
+          },
+        ],
+      }),
+      USF,
+      "Revenge of the Mummy™",
+    );
+    expect(trusted.imageThumbUrl).toContain("mummy-list.jpg");
+    expect(trusted.imageHeroUrl).toContain("mummy-a.jpg");
   });
 
   it("merges ride types, page types and tile interests into one tag list", () => {

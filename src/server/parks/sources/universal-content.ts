@@ -15,11 +15,14 @@ import { UpstreamError } from "./themeparks.ts";
  *
  *  1. `filtersdata` — the tile database behind universalorlando.com's own
  *     filter UI. One 1.4 MB GET carries card copy, real ALT TEXT and the
- *     interest/age taxonomies for 339 POIs, with a `PublishedOn` stamp.
- *  2. The per-ride pages — the guest-facing attribute strip ("GDS - Utility
- *     Section" → `featureList`). This is both the ONLY height/Express source
- *     that covers Epic Universe (the mobile POI feed publishes null for every
- *     EU ride) and the most accurate one resort-wide.
+ *     interest/age taxonomies for ~340 POIs, with a `PublishedOn` stamp.
+ *     Epic Universe was REMOVED from this feed in Aug 2026 — zero EU tiles
+ *     remain — so it now covers USF/IOA/Volcano Bay/CityWalk only.
+ *  2. The per-ride/show pages — the guest-facing attribute strip ("GDS -
+ *     Utility Section" → `featureList`) plus the "GDS - Hero" masthead image.
+ *     This is the ONLY height/Express/artwork source that covers Epic Universe
+ *     (the mobile POI feed publishes null for every EU ride) and the most
+ *     accurate height source resort-wide.
  *
  * Deliberately NOT taken from `filtersdata`: its `HeightRequirements` facet.
  * Those are cumulative "which height filters does this tile appear under"
@@ -33,7 +36,21 @@ import { UpstreamError } from "./themeparks.ts";
  */
 
 const UTILITY_SECTION_SCHEMA = "GDS - Utility Section";
+const HERO_SCHEMA = "GDS - Hero";
 const RIDE_PATH_PREFIX = "/things-to-do/rides-attractions/";
+/**
+ * Sitemap sections whose pages carry the Utility Section / Hero components.
+ * Shows, entertainment and character encounters are included because Epic
+ * Universe's theatre shows (The Untrainable Dragon, Le Cirque Arcanus) and
+ * nighttime show live there — with no `filtersdata` tile, these pages are
+ * their only artwork source. Pages that match no attraction never join.
+ */
+const PAGE_PATH_PREFIXES = [
+  RIDE_PATH_PREFIX,
+  "/things-to-do/shows/",
+  "/things-to-do/entertainment/",
+  "/things-to-do/character-encounters/",
+];
 const RETRY_STATUS = new Set([403, 408, 425, 429, 500, 502, 503, 504]);
 
 function sleep(ms: number): Promise<void> {
@@ -151,13 +168,14 @@ export function tileInfo(tile: UniversalTile): UniversalTileInfo {
 
 // --- per-ride pages -------------------------------------------------------
 
-/** Ride-page slugs from the public sitemap (the complete contentdata index). */
-export async function fetchUniversalRideSlugs(signal: AbortSignal): Promise<Array<string>> {
+/** Attraction/show page paths from the public sitemap (the complete
+ *  contentdata index), e.g. `/things-to-do/shows/le-cirque-arcanus`. */
+export async function fetchUniversalPagePaths(signal: AbortSignal): Promise<Array<string>> {
   const url = `${config.universalWebBase}/web/en/us/sitemap.xml`;
   const res = await fetch(url, { signal, headers: { accept: "application/xml" } });
   if (!res.ok) throw new UpstreamError(`GET ${url} -> ${res.status}`, res.status);
   const xml = await res.text();
-  const slugs = new Set<string>();
+  const paths = new Set<string>();
   for (const match of xml.matchAll(/<loc>([^<]+)<\/loc>/g)) {
     let path: string;
     try {
@@ -165,12 +183,15 @@ export async function fetchUniversalRideSlugs(signal: AbortSignal): Promise<Arra
     } catch {
       continue;
     }
-    const idx = path.indexOf(RIDE_PATH_PREFIX);
-    if (idx === -1) continue;
-    const slug = path.slice(idx + RIDE_PATH_PREFIX.length).replace(/\/+$/, "");
-    if (slug && !slug.includes("/")) slugs.add(slug);
+    for (const prefix of PAGE_PATH_PREFIXES) {
+      const idx = path.indexOf(prefix);
+      if (idx === -1) continue;
+      const slug = path.slice(idx + prefix.length).replace(/\/+$/, "");
+      if (slug && !slug.includes("/")) paths.add(`${prefix}${slug}`);
+      break;
+    }
   }
-  return [...slugs];
+  return [...paths];
 }
 
 /** One ride's guest-facing attribute strip, normalized. */
@@ -191,6 +212,12 @@ export interface UniversalRideFacts {
   /** "Under 48" (122 cm) Requires Supervising Companion" and friends. */
   companionRequirement: string | null;
   singleRider: boolean;
+  /** The page's "GDS - Hero" masthead image (desktop rendition preferred).
+   *  The only artwork source covering Epic Universe since the `filtersdata`
+   *  feed dropped its EU tiles (Aug 2026). */
+  imageHero: string | null;
+  /** Alt text off the same hero slot — real copy, like the tile feed's. */
+  imageAlt: string | null;
 }
 
 /**
@@ -238,6 +265,13 @@ function text(raw: string | null): string | null {
  * across templates for the same concept (`height-limit` / `height-requirement`,
  * `wheel-chair` / `accessibility`).
  */
+/** First linked Multimedia URL of a hero breakpoint slot. */
+function renditionUrl(rendition?: {
+  LinkedComponentValues?: Array<{ Multimedia?: { Url?: string | null } | null }>;
+}): string | null {
+  return rendition?.LinkedComponentValues?.[0]?.Multimedia?.Url ?? null;
+}
+
 export function rideFactsFromPage(slug: string, page: UniversalRidePage): UniversalRideFacts {
   const facts: UniversalRideFacts = {
     slug,
@@ -248,9 +282,21 @@ export function rideFactsFromPage(slug: string, page: UniversalRidePage): Univer
     expressPass: false,
     companionRequirement: null,
     singleRider: false,
+    imageHero: null,
+    imageAlt: null,
   };
   for (const cp of page.ComponentPresentations) {
     const component = cp.Component;
+    if (component?.Schema?.Title === HERO_SCHEMA) {
+      // Desktop and tablet are usually the same asset; mobile is a taller
+      // crop — same preference order as `universalPlaceImages`.
+      const slot = component.Fields?.image?.EmbeddedValues?.[0];
+      facts.imageHero ??= contentImageUrl(
+        renditionUrl(slot?.desktop) ?? renditionUrl(slot?.tablet) ?? renditionUrl(slot?.mobile),
+      );
+      facts.imageAlt ??= text(val(slot?.alt));
+      continue;
+    }
     if (component?.Schema?.Title !== UTILITY_SECTION_SCHEMA) continue;
     facts.heading ??= text(val(component.Fields?.heading));
     const features = (component.Fields?.featureList?.LinkedComponentValues ?? []).flatMap(
@@ -287,29 +333,31 @@ export function rideFactsFromPage(slug: string, page: UniversalRidePage): Univer
   return facts;
 }
 
-/** Fetch + parse one ride page; null when the slug no longer resolves. */
-export async function fetchUniversalRideFacts(slug: string): Promise<UniversalRideFacts | null> {
-  const body = await getJson(
-    `${config.universalContentBase}/uor/en/us${RIDE_PATH_PREFIX}${slug}/index.html`,
-  );
+/** Fetch + parse one attraction/show page by its `/things-to-do/…` path; null
+ *  when the path no longer resolves. */
+export async function fetchUniversalRideFacts(path: string): Promise<UniversalRideFacts | null> {
+  const body = await getJson(`${config.universalContentBase}/uor/en/us${path}/index.html`);
   if (body == null) return null;
+  const slug = path.replace(/\/+$/, "").split("/").at(-1) ?? path;
   return rideFactsFromPage(slug, UniversalRidePageSchema.parse(body));
 }
 
 /**
- * Crawl every ride page in the sitemap, serially with a polite gap (61 pages,
- * monthly — the whole pass is well under a minute). A page that fails is
- * skipped, not fatal: this is a fill-in layer over the POI feed.
+ * Crawl every attraction/show/entertainment page in the sitemap, serially with
+ * a polite gap (~95 pages, monthly — the whole pass is a couple of minutes). A
+ * page that fails is skipped, not fatal: this is a fill-in layer over the POI
+ * feed. Pages that match no attraction (CityWalk venues, arcades) simply never
+ * join.
  */
 export async function fetchAllUniversalRideFacts(
   signal: AbortSignal,
   delayMs = 150,
 ): Promise<Array<UniversalRideFacts>> {
-  const slugs = await fetchUniversalRideSlugs(signal);
+  const paths = await fetchUniversalPagePaths(signal);
   const out: Array<UniversalRideFacts> = [];
-  for (const slug of slugs) {
+  for (const path of paths) {
     try {
-      const facts = await fetchUniversalRideFacts(slug);
+      const facts = await fetchUniversalRideFacts(path);
       if (facts?.heading) out.push(facts);
     } catch {
       // Skipped — the POI feed still covers this ride for everything but EU.

@@ -62,6 +62,16 @@ export const UNIVERSAL_SLUG_BY_VENUE_ID: Record<number, string> = Object.fromEnt
  */
 const POI_ATTRIBUTE_VENUES = new Set([10010, 10000, 13801]);
 
+/**
+ * Whether a venue's POI records can be read as statements — about attributes
+ * AND artwork. Epic Universe fails both ways: all-false flags, and a shared
+ * `curious-george-…-play-area` placeholder on the few records that carry any
+ * image at all.
+ */
+export function trustedUniversalPoiVenue(venueId: number | null | undefined): boolean {
+  return venueId != null && POI_ATTRIBUTE_VENUES.has(venueId);
+}
+
 const SINGLE_RIDER_SUFFIX = /\s+single\s+rider$/i;
 
 /** Join key: normalized name, with our synthetic "Single Rider" suffix removed. */
@@ -228,7 +238,7 @@ export function resolveUniversalRideAttrs(
 
   // Whether this venue's POI record can be read as a statement about
   // attributes at all (see POI_ATTRIBUTE_VENUES).
-  const poiTrusted = venueId != null && POI_ATTRIBUTE_VENUES.has(venueId);
+  const poiTrusted = trustedUniversalPoiVenue(venueId);
 
   /**
    * A published `true` from either source is believed. A `false` is only
@@ -281,11 +291,22 @@ export function resolveUniversalRideAttrs(
         .map((d) => d?.trim() || null)
         .filter((d): d is string => d != null)
         .sort((a, b) => b.length - a.length)[0] ?? null,
-    // Real alt text at last — 338/339 tiles carry it, where every other UOR
-    // feed falls back to repeating the venue name.
-    imageAlt: tile?.imageAlt ?? null,
-    imageThumbUrl: poi?.ListImage ?? poi?.ThumbnailImage ?? tile?.imageTile ?? null,
-    imageHeroUrl: tile?.imageHero ?? poi?.DetailImages?.[0] ?? null,
+    // Real alt text at last — the tiles and ride pages both carry it, where
+    // every other UOR feed falls back to repeating the venue name.
+    imageAlt: tile?.imageAlt ?? facts?.imageAlt ?? null,
+    // POI-feed images get the same trust gate as its attribute flags: Epic
+    // Universe's records ship a shared `curious-george-…-play-area` placeholder
+    // on the few shows that carry any image at all, so an untrusted venue's
+    // artwork comes from the tiles / ride pages only. The page hero also backs
+    // up the thumb slot — since the `filtersdata` feed dropped its EU tiles
+    // (Aug 2026), the ride pages are EU's only artwork source.
+    imageThumbUrl:
+      (poiTrusted ? (poi?.ListImage ?? poi?.ThumbnailImage) : null) ??
+      tile?.imageTile ??
+      facts?.imageHero ??
+      null,
+    imageHeroUrl:
+      tile?.imageHero ?? facts?.imageHero ?? (poiTrusted ? poi?.DetailImages?.[0] : null) ?? null,
     land: tile?.land ?? (poi?.LandId != null ? (index.landById.get(poi.LandId) ?? null) : null),
     matched: true,
   };
