@@ -126,12 +126,17 @@ function keywordLabel(kw: { Value?: string | null; Description?: string | null }
   return raw.replace(/^\d{3}\s+/, "").trim() || null;
 }
 
-/** Absolute URL for a `/uor/en/us/files/…` content path. */
+/**
+ * Absolute URL for a `/uor/en/us/files/…` content path. Assets live under the
+ * Tridion `/contentdata` host, NOT the web origin — the bare web-origin form
+ * 301s to `oops-sorry` (verified live 2026-08-29; the site's own pages
+ * reference `…/contentdata/uor/en/us/files/…` too).
+ */
 function contentImageUrl(path?: string | null): string | null {
   const raw = path?.trim();
   if (!raw) return null;
   if (/^https?:\/\//i.test(raw)) return raw;
-  return `${config.universalWebBase}${raw.startsWith("/") ? "" : "/"}${raw}`;
+  return `${config.universalContentBase}${raw.startsWith("/") ? "" : "/"}${raw}`;
 }
 
 export function tileInfo(tile: UniversalTile): UniversalTileInfo {

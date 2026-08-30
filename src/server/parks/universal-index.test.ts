@@ -212,9 +212,10 @@ describe("rideFactsFromPage", () => {
     });
     const facts = rideFactsFromPage("stardust-racers", parsed);
     expect(facts.heading).toBe("Stardust Racers");
-    // Desktop rendition preferred, made absolute against the web origin.
+    // Desktop rendition preferred, made absolute against the /contentdata
+    // asset host (the bare web origin 301s to oops-sorry).
     expect(facts.imageHero).toBe(
-      "https://www.universalorlando.com/uor/en/us/files/Images/gds/ueu-stardust-racers-a.jpg",
+      "https://www.universalorlando.com/contentdata/uor/en/us/files/Images/gds/ueu-stardust-racers-a.jpg",
     );
     expect(facts.imageAlt).toBe("Riders fly through the air on Stardust Racers.");
   });
