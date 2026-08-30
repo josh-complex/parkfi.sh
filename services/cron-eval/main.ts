@@ -46,6 +46,9 @@ async function runStep(label: string, fn: () => Promise<void>): Promise<void> {
     await fn();
   } catch (err) {
     console.error(`[cron-eval] ${label} failed:`, err instanceof Error ? err.message : err);
+    // A silently-failing step left model_metrics empty for weeks — always page
+    // telemetry, not just the container log.
+    reportServiceError("cron-eval", label, err);
   }
 }
 
@@ -89,14 +92,23 @@ async function backfillEval(): Promise<void> {
  * Step 2: roll `forecast_eval` up into `model_metrics` for one window. `lower`
  * is the target_ts floor (NULL ⇒ 'all'). coverage_pct = evaluated / evaluable
  * (forecasts whose target_ts is in the window and past the grace).
+ *
+ * Written at two grains per window:
+ *   - one row per model_version (ops: compare retrains against each other)
+ *   - one 'pipeline' row aggregated across ALL versions — what /predictions
+ *     shows. The model retrains into a fresh version daily, so per-version
+ *     rows reset every morning; the rolling public windows must span versions.
+ *
+ * NB: "window" is a reserved word in Postgres — it must stay quoted in raw SQL
+ * (an unquoted `window` here is a syntax error and silently emptied this table).
  */
 async function recomputeWindow(label: string, lower: SQL): Promise<void> {
-  const res = await db.execute(sql`
+  const upsert = (grain: SQL) => sql`
     WITH ev AS (
-      SELECT model_version, actual_wait, abs_err
+      SELECT ${grain} AS model_version, actual_wait, abs_err
       FROM forecast_eval
       WHERE actual_wait IS NOT NULL
-        AND (${lower}::timestamptz IS NULL OR target_ts >= ${lower}::timestamptz)
+        AND ((${lower})::timestamptz IS NULL OR target_ts >= (${lower})::timestamptz)
     ),
     agg AS (
       SELECT model_version,
@@ -115,14 +127,14 @@ async function recomputeWindow(label: string, lower: SQL): Promise<void> {
       GROUP BY e.model_version
     ),
     gen AS (
-      SELECT model_version, count(*) AS generated
+      SELECT ${grain} AS model_version, count(*) AS generated
       FROM queue_forecast
       WHERE target_ts < now() - ${EVAL_GRACE}
-        AND (${lower}::timestamptz IS NULL OR target_ts >= ${lower}::timestamptz)
-      GROUP BY model_version
+        AND ((${lower})::timestamptz IS NULL OR target_ts >= (${lower})::timestamptz)
+      GROUP BY 1
     )
     INSERT INTO model_metrics
-      (model_version, window, computed_at, mae, rmse, mape, r2, n_predictions, coverage_pct)
+      (model_version, "window", computed_at, mae, rmse, mape, r2, n_predictions, coverage_pct)
     SELECT a.model_version, ${label}, now(),
            a.mae, a.rmse, a.mape,
            CASE WHEN t.ss_tot > 0 THEN 1 - a.ss_res / t.ss_tot ELSE NULL END,
@@ -131,7 +143,7 @@ async function recomputeWindow(label: string, lower: SQL): Promise<void> {
     FROM agg a
     JOIN tot t USING (model_version)
     LEFT JOIN gen g USING (model_version)
-    ON CONFLICT (model_version, window) DO UPDATE SET
+    ON CONFLICT (model_version, "window") DO UPDATE SET
       computed_at    = excluded.computed_at,
       mae            = excluded.mae,
       rmse           = excluded.rmse,
@@ -139,8 +151,13 @@ async function recomputeWindow(label: string, lower: SQL): Promise<void> {
       r2             = excluded.r2,
       n_predictions  = excluded.n_predictions,
       coverage_pct   = excluded.coverage_pct
-  `);
-  console.log(`[cron-eval] metrics[${label}]: ${res.rowCount ?? 0} model rows`);
+  `;
+  const perModel = await db.execute(upsert(sql`model_version`));
+  const pipeline = await db.execute(upsert(sql`'pipeline'`));
+  console.log(
+    `[cron-eval] metrics[${label}]: ${perModel.rowCount ?? 0} model rows, ` +
+      `${pipeline.rowCount ?? 0} pipeline row`,
+  );
 }
 
 async function main() {

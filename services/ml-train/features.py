@@ -37,6 +37,14 @@ STANDBY = 1  # ref_queue_type.STANDBY — the only target we forecast
 # next-day hourly curve uses whatever (large) horizon the target implies.
 NEAR_TERM_HORIZONS = (30, 60, 120)
 
+# Long lead times trained so the next-day curve isn't extrapolating: the curve
+# is served at ~24-40h horizons where the recent-lag trail is NULL (asof lands
+# overnight while parks are closed). Without these rows LightGBM only ever saw
+# horizon <= 120 with populated lags and collapsed to a low baseline at curve
+# time. Trained on hourly buckets only (see build_training_requests) to keep
+# the frame size sane.
+CURVE_TRAIN_HORIZONS = (24 * 60, 36 * 60)
+
 # Numeric feature columns fed to LightGBM, in a fixed order (persisted in the
 # model bundle so inference rebuilds the exact same matrix).
 NUMERIC_FEATURES = [
@@ -228,13 +236,28 @@ def assemble_features(conn: psycopg.Connection, req: pd.DataFrame) -> pd.DataFra
 
 
 def active_standby_attractions(conn: psycopg.Connection) -> pd.DataFrame:
-    """Active ride-type attractions with a park (the inference universe)."""
+    """Active attractions that report standby waits (the inference universe).
+
+    The reporting filter drops entities that don't meaningfully report a
+    standby queue — Universal's "Single Rider" queues and character meets are
+    their own active ATTRACTION rows with only a couple dozen stray 0-wait
+    buckets in 90 days (real rides have thousands). Forecasting them wastes
+    rows and their near-zero predictions diluted park-average crowd math
+    downstream. The 100-bucket floor (~25h of reporting) matches the app's
+    `reporting` CTEs; new rides self-admit within days of opening.
+    """
     return read_df(
         conn,
         """
         SELECT a.id AS attraction_id, a.park_id, p.timezone
         FROM attractions a JOIN parks p ON p.id = a.park_id
         WHERE a.active = true AND a.entity_type = 'ATTRACTION'
+          AND 100 <= (
+            SELECT count(*) FROM queue_15min q
+            WHERE q.attraction_id = a.id AND q.queue_type = 1
+              AND q.avg_wait IS NOT NULL
+              AND q.bucket >= now() - INTERVAL '90 days'
+          )
         ORDER BY a.id
         """,
     )
@@ -245,12 +268,17 @@ def build_training_requests(
     start: str,
     end: str,
     horizons: tuple[int, ...] = NEAR_TERM_HORIZONS,
+    curve_horizons: tuple[int, ...] = CURVE_TRAIN_HORIZONS,
 ) -> pd.DataFrame:
     """One request per observed (attraction, bucket) × horizon over [start, end).
 
     `asof_ts = target_ts - horizon` so each row's recent-lag trail is exactly
     what we'd have known `horizon` minutes before the target (no leakage). The
     label is joined later by `assemble_features` from the same `target_ts`.
+
+    Near-term horizons replay every 15-min bucket; curve horizons replay only
+    hourly buckets — matching how the next-day curve is served (hourly grid)
+    while keeping the frame from ballooning.
     """
     obs = read_df(
         conn,
@@ -264,9 +292,10 @@ def build_training_requests(
     )
     if obs.empty:
         return obs
+    hourly = obs[pd.to_datetime(obs["target_ts"], utc=True).dt.minute == 0]
     frames = []
-    for h in horizons:
-        f = obs.copy()
+    for h, base in [(h, obs) for h in horizons] + [(h, hourly) for h in curve_horizons]:
+        f = base.copy()
         f["horizon_min"] = h
         f["asof_ts"] = pd.to_datetime(f["target_ts"], utc=True) - pd.Timedelta(minutes=h)
         frames.append(f)

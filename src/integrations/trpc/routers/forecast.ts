@@ -20,9 +20,18 @@ const STANDBY = 1;
 /**
  * Cold-start honesty gate: don't surface public accuracy tiles until a window
  * has at least this many verified predictions, so an early "0.3% coverage"
- * can't masquerade as a real "56%". (docs/plans §4b)
+ * can't masquerade as a real "56%". (docs/plans §4b) Applies to the
+ * cross-version 'pipeline' rollup, which accumulates ~17k verified rows/day —
+ * 5k is a stable sample without gating the 24h window out forever.
  */
-const ACCURACY_MIN_N = 50_000;
+const ACCURACY_MIN_N = 5_000;
+
+/**
+ * model_metrics pseudo-version aggregating forecast_eval across ALL model
+ * versions (written by cron-eval). The public page reads this: per-version
+ * rows reset every daily retrain, so they can never fill a rolling window.
+ */
+const PIPELINE_VERSION = "pipeline";
 
 export const forecastRouter = {
   /**
@@ -87,6 +96,18 @@ export const forecastRouter = {
    * percentile-ranked against the distribution of its own historical daily-avg
    * standby waits over the last 90 days of `queue_15min`, mapped onto 1–10.
    * Documented + returned (`percentile`, `basisDays`) so the number is auditable.
+   *
+   * Two corrections keep the ranking apples-to-apples (2026-08-30):
+   *   - Only attractions that actually report standby waits count. Universal
+   *     lists "Single Rider" queues + character meets as their own active
+   *     ATTRACTION rows that never get queue_15min data; their ~4-min
+   *     forecasts diluted the predicted park average vs a history built only
+   *     from reporting rides (EU: 19 forecast entities, 13 reporting → 1/10).
+   *   - The predicted average is shifted by the park's recent curve bias
+   *     (avg actual − predicted on matched forecast_eval rows, horizon > 3h,
+   *     last 14 days). The model underpredicts at next-day horizons, and a
+   *     predicted-vs-actual percentile collapses to 0 under any systematic
+   *     bias; the correction re-centers it. Chart points stay raw model output.
    */
   parkCurve: publicProcedure
     .input(
@@ -110,10 +131,25 @@ export const forecastRouter = {
           SELECT model_version FROM model_run WHERE status = 'active'
           ORDER BY trained_at DESC LIMIT 1
         ),
+        reporting AS (
+          SELECT q.attraction_id
+          FROM queue_15min q
+          JOIN attractions ra ON ra.id = q.attraction_id
+          WHERE ra.park_id = (SELECT id FROM park)
+            AND q.queue_type = ${STANDBY}
+            AND q.avg_wait IS NOT NULL
+            AND q.bucket >= now() - INTERVAL '90 days'
+          GROUP BY 1
+          -- >= 100 buckets (~25h reporting) in 90 days: phantom entities like
+          -- Universal's Single Rider rows emit a couple dozen stray 0-wait
+          -- buckets, so a bare EXISTS would re-admit them.
+          HAVING count(*) >= 100
+        ),
         fc AS (
           SELECT qf.target_ts, qf.predicted_wait, qf.lower, qf.upper, qf.model_version
           FROM queue_forecast qf
           JOIN attractions a ON a.id = qf.attraction_id
+          JOIN reporting rp ON rp.attraction_id = qf.attraction_id
           WHERE a.park_id = (SELECT id FROM park)
             AND qf.queue_type = ${STANDBY}
             AND qf.model_version = (SELECT model_version FROM active)
@@ -134,10 +170,40 @@ export const forecastRouter = {
           SELECT model_version FROM model_run WHERE status = 'active'
           ORDER BY trained_at DESC LIMIT 1
         ),
+        reporting AS (
+          SELECT q.attraction_id
+          FROM queue_15min q
+          JOIN attractions ra ON ra.id = q.attraction_id
+          WHERE ra.park_id = (SELECT id FROM park)
+            AND q.queue_type = ${STANDBY}
+            AND q.avg_wait IS NOT NULL
+            AND q.bucket >= now() - INTERVAL '90 days'
+          GROUP BY 1
+          -- >= 100 buckets (~25h reporting) in 90 days: phantom entities like
+          -- Universal's Single Rider rows emit a couple dozen stray 0-wait
+          -- buckets, so a bare EXISTS would re-admit them.
+          HAVING count(*) >= 100
+        ),
+        -- Recent long-horizon bias for this park (actual − predicted on
+        -- matched backtest rows). Applied to the predicted average before
+        -- percentile-ranking so systematic under/over-prediction can't pin
+        -- the index at 1 or 10. Needs ≥100 pairs, else 0.
+        bias AS (
+          SELECT CASE WHEN count(*) >= 100
+                      THEN avg(fe.actual_wait - fe.predicted_wait) ELSE 0 END AS b
+          FROM forecast_eval fe
+          JOIN attractions ba ON ba.id = fe.attraction_id
+          WHERE ba.park_id = (SELECT id FROM park)
+            AND fe.queue_type = ${STANDBY}
+            AND fe.horizon_min > 180
+            AND fe.actual_wait IS NOT NULL
+            AND fe.target_ts >= now() - INTERVAL '14 days'
+        ),
         pred AS (
-          SELECT avg(qf.predicted_wait) AS v
+          SELECT avg(qf.predicted_wait) + (SELECT b FROM bias) AS v
           FROM queue_forecast qf
           JOIN attractions a ON a.id = qf.attraction_id
+          JOIN reporting rp ON rp.attraction_id = qf.attraction_id
           WHERE a.park_id = (SELECT id FROM park)
             AND qf.queue_type = ${STANDBY}
             AND qf.model_version = (SELECT model_version FROM active)
@@ -301,10 +367,13 @@ export const forecastRouter = {
     }),
 
   /**
-   * Accuracy tiles for the active model, per rolling window. Numbers come from
-   * `model_metrics` (recomputed by cron-eval). `ready` enforces the cold-start
-   * gate: false ⇒ the window hasn't cleared the `ACCURACY_MIN_N` floor and the
-   * page should hide its public tiles.
+   * Accuracy tiles per rolling window, read from the cross-version 'pipeline'
+   * rollup in `model_metrics` (recomputed hourly by cron-eval). The model
+   * retrains into a fresh version daily, so per-version metrics reset every
+   * morning — the public rolling windows must span versions or the page shows
+   * "calibrating" forever. `model` still reports the active version for the
+   * technical-details disclosure. `ready` enforces the cold-start gate: false
+   * ⇒ the window hasn't cleared the `ACCURACY_MIN_N` floor.
    */
   accuracy: publicProcedure.query(async () => {
     const result = await db.execute<{
@@ -325,10 +394,10 @@ export const forecastRouter = {
         WHERE status = 'active' ORDER BY trained_at DESC LIMIT 1
       )
       SELECT a.model_version, a.trained_at, a.status, a.metrics_json,
-             m.window, m.mae, m.rmse, m.mape, m.r2, m.n_predictions, m.coverage_pct
+             m."window", m.mae, m.rmse, m.mape, m.r2, m.n_predictions, m.coverage_pct
       FROM active a
-      LEFT JOIN model_metrics m ON m.model_version = a.model_version
-      ORDER BY m.window
+      LEFT JOIN model_metrics m ON m.model_version = ${PIPELINE_VERSION}
+      ORDER BY m."window"
     `);
 
     const head = result.rows[0];

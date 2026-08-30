@@ -77,11 +77,43 @@ export async function loadParkCalendar(
       SELECT model_version FROM model_run WHERE status = 'active'
       ORDER BY trained_at DESC LIMIT 1
     ),
+    -- Only attractions that actually report standby waits: Universal lists
+    -- "Single Rider" queues + character meets as their own active ATTRACTION
+    -- rows with no queue_15min data, and their low forecasts diluted the
+    -- predicted park average vs a history built from reporting rides only.
+    reporting AS (
+      SELECT q.attraction_id
+      FROM queue_15min q
+      JOIN attractions ra ON ra.id = q.attraction_id
+      WHERE ra.park_id = (SELECT id FROM park)
+        AND q.queue_type = ${STANDBY}
+        AND q.avg_wait IS NOT NULL
+        AND q.bucket >= now() - INTERVAL '90 days'
+      GROUP BY 1
+      -- >= 100 buckets (~25h reporting) in 90 days: phantom entities emit a
+      -- couple dozen stray 0-wait buckets, so a bare EXISTS would re-admit them.
+      HAVING count(*) >= 100
+    ),
+    -- Recent long-horizon model bias (actual − predicted, matched backtest
+    -- rows, ≥100 pairs else 0) — re-centers the predicted average before
+    -- percentile-ranking so systematic bias can't pin the index at 1 or 10.
+    bias AS (
+      SELECT CASE WHEN count(*) >= 100
+                  THEN avg(fe.actual_wait - fe.predicted_wait) ELSE 0 END AS b
+      FROM forecast_eval fe
+      JOIN attractions ba ON ba.id = fe.attraction_id
+      WHERE ba.park_id = (SELECT id FROM park)
+        AND fe.queue_type = ${STANDBY}
+        AND fe.horizon_min > 180
+        AND fe.actual_wait IS NOT NULL
+        AND fe.target_ts >= now() - INTERVAL '14 days'
+    ),
     pred AS (
       SELECT (qf.target_ts AT TIME ZONE (SELECT timezone FROM park))::date AS d,
-             avg(qf.predicted_wait) AS v
+             avg(qf.predicted_wait) + (SELECT b FROM bias) AS v
       FROM queue_forecast qf
       JOIN attractions a ON a.id = qf.attraction_id
+      JOIN reporting rp ON rp.attraction_id = qf.attraction_id
       WHERE a.park_id = (SELECT id FROM park)
         AND qf.queue_type = ${STANDBY}
         AND qf.model_version = (SELECT model_version FROM active)
