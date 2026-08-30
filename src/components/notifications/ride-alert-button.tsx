@@ -1,11 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { Link } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { BellIcon, BellRingIcon } from "lucide-react";
 import { toast } from "sonner";
 
+import { LoginLink } from "#/components/login-link.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Input } from "#/components/ui/input.tsx";
 import { Label } from "#/components/ui/label.tsx";
@@ -145,7 +145,7 @@ export function RideAlertButton({
                 Sign in to get a push notification when {attractionName}’s wait changes.
               </PopoverDescription>
             </PopoverHeader>
-            <Button size="sm" className="w-full" render={<Link to="/login" />}>
+            <Button size="sm" className="w-full" render={<LoginLink />}>
               Sign in
             </Button>
           </div>

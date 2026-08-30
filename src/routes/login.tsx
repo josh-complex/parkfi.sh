@@ -98,12 +98,20 @@ export const Route = createFileRoute("/login")({
   component: LoginPage,
   // OAuth failures redirect back here with `?error=…` (and sometimes
   // `?error_description=…`); parse them so the component can react.
+  // `?redirect=` is the post-login destination — internal absolute paths only
+  // ("//host" and full URLs are dropped so the param can't send users off-site).
   validateSearch: (
     search: Record<string, unknown>,
-  ): { error?: string; error_description?: string } => ({
+  ): { error?: string; error_description?: string; redirect?: string } => ({
     error: typeof search.error === "string" ? search.error : undefined,
     error_description:
       typeof search.error_description === "string" ? search.error_description : undefined,
+    redirect:
+      typeof search.redirect === "string" &&
+      search.redirect.startsWith("/") &&
+      !search.redirect.startsWith("//")
+        ? search.redirect
+        : undefined,
   }),
   head: () =>
     seo({
@@ -128,6 +136,8 @@ function LoginPage() {
   // Which provider's native sign-in is in flight (null on web / idle). Drives the
   // per-button spinner and disables the others while the system browser is open.
   const [socialPending, setSocialPending] = React.useState<string | null>(null);
+  // Where to land after a successful sign-in (validated internal path, or home).
+  const redirectTo = search.redirect ?? "/";
   const hasCaptcha = !!import.meta.env.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY;
   // Managed Turnstile is silent on the happy path — only reveal the widget box
   // when CF actually escalates to an interactive challenge.
@@ -162,8 +172,9 @@ function LoginPage() {
     } else {
       setError(message);
     }
-    void navigate({ to: "/login", search: {}, replace: true });
-  }, [search.error, search.error_description, navigate]);
+    // Strip only the error params — keep ?redirect so a retry still lands right.
+    void navigate({ to: "/login", search: { redirect: search.redirect }, replace: true });
+  }, [search.error, search.error_description, search.redirect, navigate]);
 
   // Cloudflare Turnstile widget
   React.useEffect(() => {
@@ -237,7 +248,7 @@ function LoginPage() {
           toast: false,
           context: { flow: "passkey", code: "code" in error ? error.code : undefined },
         });
-      } else await navigate({ to: "/" });
+      } else await navigate({ to: redirectTo });
     } finally {
       setPasskeyPending(false);
     }
@@ -251,7 +262,7 @@ function LoginPage() {
     if (!isNative()) {
       void authClient.signIn.social({
         provider,
-        callbackURL: "/",
+        callbackURL: redirectTo,
         ...(provider === "microsoft" ? { errorCallbackURL: "/login" } : {}),
       });
       return;
@@ -263,7 +274,7 @@ function LoginPage() {
       // Full reload rather than SPA navigate: the app booted signed-out, so it
       // must re-boot to pick up the freshly-persisted bearer token and fetch the
       // now-authenticated session (an in-place navigate keeps the stale session).
-      window.location.href = "/";
+      window.location.href = redirectTo;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign-in failed. Please try again.");
       setSocialPending(null);
@@ -274,7 +285,7 @@ function LoginPage() {
     if (!isNative()) {
       void authClient.signIn.oauth2({
         providerId: "microsoft-disney",
-        callbackURL: "/",
+        callbackURL: redirectTo,
         errorCallbackURL: "/login",
       });
       return;
@@ -285,7 +296,7 @@ function LoginPage() {
       await signInWithDisneyNative();
       // Full reload (not SPA navigate) so the app re-boots with the persisted
       // bearer token and fetches the authenticated session. See handleSocial.
-      window.location.href = "/";
+      window.location.href = redirectTo;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign-in failed. Please try again.");
       setSocialPending(null);
@@ -347,7 +358,7 @@ function LoginPage() {
           return;
         }
       }
-      await navigate({ to: "/" });
+      await navigate({ to: redirectTo });
     } finally {
       setPending(false);
       if (turnstileWidgetId.current && window.turnstile) {

@@ -1,11 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckIcon, HeartIcon, PlusIcon } from "lucide-react";
 import { toast } from "sonner";
 
+import { LoginLink } from "#/components/login-link.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import {
   Popover,
@@ -110,7 +110,7 @@ function SignInPrompt({
               Your collection and wishlist are tied to your account.
             </PopoverDescription>
           </PopoverHeader>
-          <Button size="sm" className="w-full" render={<Link to="/login" />}>
+          <Button size="sm" className="w-full" render={<LoginLink />}>
             Sign in
           </Button>
         </div>

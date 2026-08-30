@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRightIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 
+import { LoginLink } from "#/components/login-link.tsx";
 import { RideAlertButton } from "#/components/notifications/ride-alert-button.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
@@ -115,7 +116,7 @@ export function AlertsManager() {
         <p className="text-muted-foreground mt-1 text-xs">
           Get a push notification when a ride’s wait drops or changes.
         </p>
-        <Button size="sm" className="mt-3" render={<Link to="/login" />}>
+        <Button size="sm" className="mt-3" render={<LoginLink />}>
           Sign in
         </Button>
       </div>

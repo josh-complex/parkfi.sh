@@ -2,6 +2,9 @@ import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
+import { FerrisWheelIcon, FootprintsIcon, TrophyIcon } from "lucide-react";
+
+import { LoginLink } from "#/components/login-link.tsx";
 import { AllBadges } from "#/components/achievements/family-shelf.tsx";
 import {
   LifetimeCard,
@@ -10,6 +13,13 @@ import {
   type DayEntry,
 } from "#/components/activity/recap-card.tsx";
 import { Button } from "#/components/ui/button.tsx";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "#/components/ui/empty.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
@@ -112,7 +122,7 @@ function ActivityPage() {
 
   if (isPending) {
     return (
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6 lg:px-6">
+      <div className="font-rubik-all mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6 lg:px-6">
         <Skeleton className="h-[40rem] w-full rounded-3xl" />
       </div>
     );
@@ -120,10 +130,48 @@ function ActivityPage() {
 
   if (!signedIn) {
     return (
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6 lg:px-6">
-        <p className="text-sm text-muted-foreground">
-          You must be signed in to view your park activity.
-        </p>
+      <div className="font-rubik-all mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6 lg:px-6">
+        <Empty>
+          <EmptyMedia variant="icon">
+            <FootprintsIcon />
+          </EmptyMedia>
+          <EmptyHeader>
+            <EmptyTitle>Sign in to see your park days</EmptyTitle>
+            <EmptyDescription>
+              Visit a park with ParkFi running and every day gets recapped here automatically — no
+              check-in required.
+            </EmptyDescription>
+          </EmptyHeader>
+          <Button render={<LoginLink />}>Sign in</Button>
+        </Empty>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          {[
+            {
+              icon: <FootprintsIcon className="size-5" />,
+              title: "Steps & distance",
+              desc: "How far you walked, park by park.",
+            },
+            {
+              icon: <FerrisWheelIcon className="size-5" />,
+              title: "Rides detected",
+              desc: "Every ride you rode, logged for you.",
+            },
+            {
+              icon: <TrophyIcon className="size-5" />,
+              title: "Badges & XP",
+              desc: "Park days level you up and unlock badges.",
+            },
+          ].map((f) => (
+            <div key={f.title} className="rounded-2xl border bg-card px-4 py-5 text-center">
+              <div className="mx-auto mb-2 flex size-10 items-center justify-center rounded-xl bg-muted">
+                {f.icon}
+              </div>
+              <p className="font-rounded text-sm font-bold">{f.title}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">{f.desc}</p>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -140,7 +188,7 @@ function ActivityPage() {
   const showEmpty = days.length === 0 && !progressQ.isLoading && !hasLifetime;
 
   return (
-    <div className="flex w-full flex-col">
+    <div className="font-rubik-all flex w-full flex-col">
       {/* Full-bleed recap surface (runs to the device edges on mobile). */}
       {feedQ.isLoading ? (
         <div className="px-4 pt-[calc(var(--safe-top)_+_var(--app-header-h)_+_1.25rem)] md:px-6 md:pt-6">

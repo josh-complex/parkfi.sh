@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BellIcon } from "lucide-react";
 import { toast } from "sonner";
 
+import { LoginLink } from "#/components/login-link.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Empty, EmptyDescription, EmptyTitle } from "#/components/ui/empty.tsx";
@@ -64,7 +65,7 @@ export function DiningAlertsManager() {
         <EmptyDescription>
           Dining-availability alerts are tied to your account so we know where to notify you.
         </EmptyDescription>
-        <Button className="mt-4" render={<Link to="/login" />}>
+        <Button className="mt-4" render={<LoginLink />}>
           Sign in
         </Button>
       </Empty>

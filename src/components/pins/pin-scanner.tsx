@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CameraIcon, CheckCircle2Icon } from "lucide-react";
 import { toast } from "sonner";
 
+import { LoginLink } from "#/components/login-link.tsx";
 import { PinImage } from "#/components/pins/pin-card.tsx";
 import { formatCents } from "#/components/pins/format.ts";
 import { Badge } from "#/components/ui/badge.tsx";
@@ -229,7 +230,7 @@ export function PinScanner() {
                   <p className="text-muted-foreground text-sm">
                     Sign in to confirm a match and save it to your collection.
                   </p>
-                  <Button size="sm" render={<Link to="/login" />}>
+                  <Button size="sm" render={<LoginLink />}>
                     Sign in
                   </Button>
                 </div>

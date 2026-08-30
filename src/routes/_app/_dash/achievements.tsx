@@ -2,13 +2,21 @@ import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
-import { Share2 } from "lucide-react";
+import { Share2, TrophyIcon } from "lucide-react";
 
 import { Sparkle } from "#/components/achievements/achievement-toast.tsx";
+import { LoginLink } from "#/components/login-link.tsx";
 import { AllBadges } from "#/components/achievements/family-shelf.tsx";
 import { LevelBadge } from "#/components/achievements/level-badge.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "#/components/ui/empty.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { hasGrantedLocationBefore } from "#/hooks/use-geolocation.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
@@ -24,6 +32,8 @@ export const Route = createFileRoute("/_app/_dash/achievements")({
 });
 
 const TOTAL_TIERS = ACHIEVEMENTS.reduce((n, f) => n + f.tiers.length, 0);
+// Stable empty set for the signed-out catalog preview (avoids a new Set per render).
+const EMPTY_UNLOCKED: ReadonlySet<string> = new Set();
 
 /**
  * The "Level N" hero — the same gold, sparkle-accented treatment as the
@@ -216,7 +226,7 @@ function AchievementsPage() {
 
   if (isPending) {
     return (
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-6 lg:px-6">
+      <div className="font-rubik-all mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-6 lg:px-6">
         <Skeleton className="h-32 w-full rounded-2xl" />
         {[1, 2, 3].map((i) => (
           <div key={i} className="flex flex-col gap-3">
@@ -234,10 +244,41 @@ function AchievementsPage() {
 
   if (!session?.user) {
     return (
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6 lg:px-6">
-        <p className="text-sm text-muted-foreground">
-          You must be signed in to view your achievements.
-        </p>
+      <div className="font-rubik-all mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6 lg:px-6">
+        <header>
+          <h1 className="text-xl font-semibold tracking-tight">Achievements</h1>
+          <p className="text-sm text-muted-foreground">
+            Level up by spending time in the parks — geofenced automatically, no check-in required.
+          </p>
+        </header>
+
+        <Empty>
+          <EmptyMedia variant="icon">
+            <TrophyIcon />
+          </EmptyMedia>
+          <EmptyHeader>
+            <EmptyTitle>Sign in to start earning badges</EmptyTitle>
+            <EmptyDescription>
+              Park days, rides, steps, and streaks all count toward {TOTAL_TIERS} badges — and they
+              start counting the moment you sign in.
+            </EmptyDescription>
+          </EmptyHeader>
+          <Button render={<LoginLink />}>Sign in</Button>
+        </Empty>
+
+        {/* The real catalog, all locked — a preview of what's earnable. */}
+        <section className="flex flex-col gap-5">
+          <div>
+            <h2 className="font-rounded text-lg font-bold tracking-tight">
+              Every badge you can earn
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {TOTAL_TIERS} badges across {ACHIEVEMENTS.length} families, from first steps to
+              lifetime milestones.
+            </p>
+          </div>
+          <AllBadges stats={{}} unlockedIds={EMPTY_UNLOCKED} />
+        </section>
       </div>
     );
   }
@@ -246,7 +287,7 @@ function AchievementsPage() {
   const unlockedIds = new Set(data?.unlocked.map((u) => u.id) ?? []);
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6 lg:px-6">
+    <div className="font-rubik-all mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6 lg:px-6">
       <header>
         <h1 className="text-xl font-semibold tracking-tight">Achievements</h1>
         <p className="text-sm text-muted-foreground">

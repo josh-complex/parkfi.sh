@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Bell, BellOff, ChevronRightIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 
+import { LoginLink } from "#/components/login-link.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "#/components/ui/popover.tsx";
@@ -191,7 +192,7 @@ function Body({
         <p className="text-muted-foreground mt-1 text-xs">
           Get a push when a ride’s wait drops or changes.
         </p>
-        <Button size="sm" className="mt-3" render={<Link to="/login" />} onClick={onClose}>
+        <Button size="sm" className="mt-3" render={<LoginLink />} onClick={onClose}>
           Sign in
         </Button>
       </div>

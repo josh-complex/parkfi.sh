@@ -15,6 +15,7 @@ import { useTheme } from "next-themes";
 
 import { LevelBadge, LevelDetails } from "#/components/achievements/level-badge.tsx";
 import { CastAvatarBadge } from "#/components/cast-member-badge.tsx";
+import { LoginLink } from "#/components/login-link.tsx";
 import {
   Drawer,
   DrawerClose,
@@ -179,10 +180,10 @@ export function MobileUserMenu({ showDot = false }: { showDot?: boolean }) {
             </>
           ) : (
             <DrawerClose asChild>
-              <Link to="/login" className={ROW}>
+              <LoginLink className={ROW}>
                 <LogInIcon />
                 Sign in
-              </Link>
+              </LoginLink>
             </DrawerClose>
           )}
         </div>

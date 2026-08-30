@@ -3,6 +3,7 @@ import { FootprintsIcon, LogInIcon, LogOutIcon, SettingsIcon } from "lucide-reac
 import { authClient } from "#/lib/auth-client.ts";
 import { signOut } from "#/lib/sign-out.ts";
 import { LevelBadge, LevelDetails } from "#/components/achievements/level-badge.tsx";
+import { LoginLink } from "#/components/login-link.tsx";
 import { NotificationCenter } from "#/components/notifications/notification-center.tsx";
 import { SidebarThemeToggle } from "#/components/theme-toggle.tsx";
 import { Avatar, AvatarFallback, AvatarImage } from "#/components/ui/avatar.tsx";
@@ -48,7 +49,7 @@ export function NavUser() {
   if (!session?.user) {
     return (
       <div className="flex items-center justify-between gap-1 px-2">
-        <Button variant="ghost" size="sm" render={<Link to="/login" />}>
+        <Button variant="ghost" size="sm" render={<LoginLink />}>
           <LogInIcon />
           Sign in
         </Button>

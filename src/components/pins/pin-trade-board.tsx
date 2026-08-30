@@ -5,6 +5,7 @@ import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { LoginLink } from "#/components/login-link.tsx";
 import { PinImage } from "#/components/pins/pin-card.tsx";
 import { Avatar, AvatarFallback, AvatarImage } from "#/components/ui/avatar.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
@@ -69,7 +70,7 @@ export function PinTradeBoard() {
         <EmptyDescription>
           We match your for-trade pins against other collectors' wishlists.
         </EmptyDescription>
-        <Button className="mt-4" render={<Link to="/login" />}>
+        <Button className="mt-4" render={<LoginLink />}>
           Sign in
         </Button>
       </Empty>

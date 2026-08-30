@@ -1,4 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap");
 @import "tailwindcss";
 @plugin '@tailwindcss/typography';
 
@@ -8,8 +7,8 @@
 
 @import "shadcn/tailwind.css";
 
-@import "@fontsource-variable/instrument-sans";
 @import "@fontsource-variable/fredoka";
+@import "@fontsource-variable/rubik";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -183,7 +182,7 @@ html.native [data-slot="sidebar-wrapper"] {
 }
 
 @theme inline {
-  --font-sans: "Instrument Sans Variable", sans-serif;
+  --font-sans: "Rubik Variable", sans-serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -223,10 +222,21 @@ html.native [data-slot="sidebar-wrapper"] {
   --font-heading: var(--font-sans);
   /* Rounded display face — the playful heavy numerals + wordmark on the
      /activity recap (and available app-wide as `font-rounded`). */
-  --font-rounded: "Fredoka Variable", "Instrument Sans Variable", sans-serif;
+  --font-rounded: "Fredoka Variable", "Rubik Variable", sans-serif;
+  /* Rubik — the app sans (also forced over font-rounded on /activity and
+     /achievements via .font-rubik-all). */
+  --font-rubik: "Rubik Variable", sans-serif;
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* Sets a whole subtree in Rubik — including descendants carrying font-rounded /
+   font-heading utilities. Un-layered on purpose so it outranks Tailwind's
+   layered font utilities. Used by the /activity and /achievements pages. */
+.font-rubik-all,
+.font-rubik-all * {
+  font-family: var(--font-rubik);
 }
 
 @layer base {
