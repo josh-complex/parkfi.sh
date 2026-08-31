@@ -1,8 +1,9 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { FootprintsIcon, LogInIcon, LogOutIcon, SettingsIcon } from "lucide-react";
+import { FootprintsIcon, LogInIcon, LogOutIcon, SettingsIcon, WrenchIcon } from "lucide-react";
 import { authClient } from "#/lib/auth-client.ts";
 import { signOut } from "#/lib/sign-out.ts";
 import { LevelBadge, LevelDetails } from "#/components/achievements/level-badge.tsx";
+import { useIsAdmin } from "#/components/maintenance-gate.tsx";
 import { LoginLink } from "#/components/login-link.tsx";
 import { NotificationCenter } from "#/components/notifications/notification-center.tsx";
 import { SidebarThemeToggle } from "#/components/theme-toggle.tsx";
@@ -26,6 +27,7 @@ export function NavUser() {
   const navigate = useNavigate();
   const { isMobile } = useSidebar();
   const userLevel = useUserLevel();
+  const isAdmin = useIsAdmin();
   // The bell + theme toggle live beside the user button only on mobile (in the
   // offcanvas menu). On desktop they've moved to the blue toolbar (see AppInset),
   // so the footer no longer carries them at any panel state.
@@ -133,6 +135,12 @@ export function NavUser() {
               <SettingsIcon />
               Account settings
             </DropdownMenuItem>
+            {isAdmin && (
+              <DropdownMenuItem render={<Link to="/admin" />}>
+                <WrenchIcon />
+                Admin
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => void handleSignOut()}>
               <LogOutIcon />

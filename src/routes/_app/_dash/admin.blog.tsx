@@ -7,6 +7,7 @@ import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -366,6 +367,9 @@ function AdminBlog() {
                     <CardHeader>
                       <CardTitle className="text-lg">{d.title}</CardTitle>
                       <CardDescription>{d.dek}</CardDescription>
+                      <CardAction className="text-xs whitespace-nowrap text-muted-foreground">
+                        {formatDate(d.createdAt)}
+                      </CardAction>
                     </CardHeader>
                     <CardContent className="flex flex-col gap-3">
                       <div className="flex flex-wrap items-center gap-1.5">

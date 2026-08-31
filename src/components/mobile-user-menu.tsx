@@ -10,11 +10,13 @@ import {
   SunIcon,
   TrendingUpIcon,
   UserRoundIcon,
+  WrenchIcon,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 
 import { LevelBadge, LevelDetails } from "#/components/achievements/level-badge.tsx";
 import { CastAvatarBadge } from "#/components/cast-member-badge.tsx";
+import { useIsAdmin } from "#/components/maintenance-gate.tsx";
 import { LoginLink } from "#/components/login-link.tsx";
 import {
   Drawer,
@@ -45,6 +47,7 @@ export function MobileUserMenu({ showDot = false }: { showDot?: boolean }) {
   const navigate = useNavigate();
   const { resolvedTheme, setTheme } = useTheme();
   const userLevel = useUserLevel();
+  const isAdmin = useIsAdmin();
   const user = session?.user;
 
   const initials = user?.name
@@ -167,6 +170,14 @@ export function MobileUserMenu({ showDot = false }: { showDot?: boolean }) {
                   Account settings
                 </Link>
               </DrawerClose>
+              {isAdmin && (
+                <DrawerClose asChild>
+                  <Link to="/admin" className={ROW}>
+                    <WrenchIcon />
+                    Admin
+                  </Link>
+                </DrawerClose>
+              )}
               <DrawerClose asChild>
                 <button
                   type="button"
