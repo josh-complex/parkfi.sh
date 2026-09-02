@@ -4,7 +4,7 @@ import * as React from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNowStrict } from "date-fns";
-import { ArrowLeftIcon, TrendingDownIcon, TrendingUpIcon } from "lucide-react";
+import { TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 
 import { MenuItemPriceChart } from "#/components/dining/menu-item-price-chart.tsx";
 import { menuItemAnchorId } from "#/components/dining/menu-content.tsx";
@@ -117,10 +117,8 @@ function ElsewhereCard({
 export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug: string }) {
   const trpc = useTRPC();
   const itemQ = useQuery(trpc.dining.menuItem.queryOptions({ facilityId, slug }));
-  const venueQ = useQuery(trpc.dining.venue.queryOptions({ facilityId }));
   const elsewhereQ = useQuery(trpc.dining.menuItemElsewhere.queryOptions({ facilityId, slug }));
   const item = itemQ.data;
-  const venue = venueQ.data;
   const elsewhere = elsewhereQ.data ?? [];
 
   const currency = item?.current?.currency ?? null;
@@ -148,7 +146,7 @@ export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug:
 
   if (itemQ.isLoading) {
     return (
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 pt-2 pb-6 lg:px-6">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-4 lg:p-6">
         <Skeleton className="h-4 w-40" />
         <Skeleton className="h-9 w-72" />
         <Skeleton className="h-40 w-full rounded-2xl" />
@@ -159,7 +157,7 @@ export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug:
 
   if (!item) {
     return (
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 pt-2 pb-6 lg:px-6">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-4 lg:p-6">
         <div className="rounded-2xl border bg-muted/30 py-16 text-center">
           <p className="text-lg font-semibold">Menu item not found</p>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -186,28 +184,7 @@ export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug:
   ) as Array<string>;
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 pt-2 pb-10 lg:px-6">
-      {/* Breadcrumb back to the venue menu, anchored on this item. */}
-      <div className="-mb-1 hidden flex-wrap items-center gap-1.5 text-sm text-muted-foreground md:flex">
-        <Link
-          to="/dining/$facilityId"
-          params={{ facilityId }}
-          hash="menu"
-          className="inline-flex items-center gap-1.5 hover:underline"
-        >
-          <ArrowLeftIcon className="size-3.5" />
-          Menu
-        </Link>
-        {venue && (
-          <>
-            <span aria-hidden>/</span>
-            <Link to="/dining/$facilityId" params={{ facilityId }} className="hover:underline">
-              {venue.name}
-            </Link>
-          </>
-        )}
-      </div>
-
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 pt-4 pb-10 lg:px-6 lg:pt-6">
       {/* Header — identity, chips, current price, and description all live in
           one section together. */}
       <header className="flex flex-col gap-2">

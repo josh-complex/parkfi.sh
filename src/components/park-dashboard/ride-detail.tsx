@@ -3,7 +3,7 @@
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect, type CSSProperties } from "react";
-import { ArrowLeftIcon, ExternalLinkIcon } from "lucide-react";
+import { ExternalLinkIcon } from "lucide-react";
 
 import { DetailHero, HERO_BLEED, HERO_OVERLAY_TOP } from "#/components/detail-hero.tsx";
 import {
@@ -12,7 +12,6 @@ import {
   rideFlightKey,
   useHeroFlight,
 } from "#/components/park-map/card-flight.ts";
-import { getLastMapView } from "#/components/park-map/map-stage.tsx";
 import { WalkThereButton } from "#/components/park-map/walk-there-button.tsx";
 import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
@@ -344,7 +343,7 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
          DOM node when the query lands. The query usually resolves mid-flight,
          and a hero that remounted then would replay its image fade, orphan the
          flight's settle listeners, and replay the chips' entrance stagger. */
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 pt-2 pb-6 lg:px-6">
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-4 lg:p-6">
         <div className="hidden h-8 md:block" />
         <header className="flex flex-col gap-4">
           {/* Arriving from a map card, the hero is already known — paint it from
@@ -458,33 +457,15 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
   const hasAbout = !!ride.meta?.description || !!ride.meta?.funFact;
   const hasAccessibility = (ride.meta?.accessibility?.length ?? 0) > 0;
 
-  // Return to wherever the user last was on the map (the free-roam map at its
-  // remembered camera, or a park dashboard) rather than always the park page.
-  const back = getLastMapView();
-  const backClass = "-m-2 inline-flex items-center gap-1.5 p-2 hover:underline";
-
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 pt-2 pb-6 lg:px-6">
-      <div className="hidden items-center justify-between gap-3 md:flex">
-        <nav className="text-sm text-muted-foreground">
-          {back.to === "/map" ? (
-            <Link to="/map" className={backClass}>
-              <ArrowLeftIcon className="size-3.5" />
-              {ride.park.name}
-            </Link>
-          ) : (
-            <Link to="/park/$slug" params={back.params} className={backClass}>
-              <ArrowLeftIcon className="size-3.5" />
-              {ride.park.name}
-            </Link>
-          )}
-        </nav>
-        <RemovalRequestDialog
-          entityType="attraction"
-          entityId={String(ride.id)}
-          entityName={ride.name}
-        />
-      </div>
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-4 lg:p-6">
+      {/* Cast-member-only; renders nothing for everyone else, so it adds no gap. */}
+      <RemovalRequestDialog
+        entityType="attraction"
+        entityId={String(ride.id)}
+        entityName={ride.name}
+        className="hidden self-end md:inline-flex"
+      />
 
       <header className="flex flex-col gap-4">
         {/* Identity hero, matching the park pages: name + location overlaid at

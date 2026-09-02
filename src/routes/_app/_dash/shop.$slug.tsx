@@ -1,7 +1,7 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { createFileRoute, notFound } from "@tanstack/react-router";
 import { isServer, useQuery } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect } from "react";
-import { ArrowLeftIcon, ExternalLinkIcon, ShoppingBagIcon } from "lucide-react";
+import { ExternalLinkIcon, ShoppingBagIcon } from "lucide-react";
 
 import { DetailHero, HERO_OVERLAY_TOP } from "#/components/detail-hero.tsx";
 import {
@@ -87,18 +87,16 @@ function ShopPage() {
     : (flight?.seed.subtitle ?? null);
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 pt-2 pb-6 lg:px-6">
-      <div className="hidden items-center justify-between gap-3 md:flex">
-        <nav className="text-sm text-muted-foreground">
-          <Link to="/map" className="-m-2 inline-flex items-center gap-1.5 p-2 hover:underline">
-            <ArrowLeftIcon className="size-3.5" />
-            Back to map
-          </Link>
-        </nav>
-        {shop && (
-          <RemovalRequestDialog entityType="shop" entityId={shop.id} entityName={shop.name} />
-        )}
-      </div>
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-4 lg:p-6">
+      {/* Cast-member-only; renders nothing for everyone else, so it adds no gap. */}
+      {shop && (
+        <RemovalRequestDialog
+          entityType="shop"
+          entityId={shop.id}
+          entityName={shop.name}
+          className="hidden self-end md:inline-flex"
+        />
+      )}
 
       <header className="flex flex-col gap-4">
         {/* Identity hero, matching the ride/dining pages: the shop's photo (or

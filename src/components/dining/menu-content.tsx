@@ -465,37 +465,54 @@ export function MenuBody({
   const activeChangeList = changeKindTabs.find((t) => t.key === activeKind)?.items ?? [];
 
   // ── Scroll spy ────────────────────────────────────────────────────────────
-  // Highlight the quick-jump pill for whichever type section the reader is
-  // currently looking at. We score each section by how much of it is visible in
-  // the scroll viewport and pick the winner — that stays stable in the desktop
-  // two-column masonry (where headings in both columns cross the top together
-  // and a "topmost heading" rule flickers) as well as the mobile single column.
-  const [activeType, setActiveType] = React.useState<string | null>(null);
+  // Highlight the quick-jump pill(s) for what the reader is currently looking
+  // at. The layout is read back from the DOM rather than assumed: sections are
+  // grouped into columns by their measured x position (one column on phones,
+  // two in the desktop masonry — whatever CSS decided). Within each column the
+  // active section is the one at the reading position: the last section whose
+  // top has crossed the top of the viewport (or the first one in view when none
+  // has), and the last section once the list is scrolled to the end. Every
+  // column's pick is highlighted, so on desktop "Appetizers" and "Beverages"
+  // light up together because the reader is at both.
+  const [activeTypes, setActiveTypes] = React.useState<string[]>([]);
   React.useEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller || viewingChanges || typeSections.length <= 1) {
-      setActiveType(null);
+      setActiveTypes([]);
       return;
     }
     let frame = 0;
     const compute = () => {
       frame = 0;
       const view = scroller.getBoundingClientRect();
-      let bestKey: string | null = null;
-      let bestVisible = -1;
+      // A heading counts as "passed" a little before it actually leaves the
+      // viewport, so the pill flips as the heading reaches the top edge.
+      const line = view.top + 24;
+      const atEnd = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2;
+      // column x → { passed: last section whose top crossed the line and is
+      // still in view, first: first section in view } in document order.
+      const columns = new Map<number, { passed: string | null; first: string | null }>();
       for (const s of typeSections) {
         const el = sectionRefs.current.get(s.typeKey);
         if (!el) continue;
         const r = el.getBoundingClientRect();
-        const visible = Math.min(r.bottom, view.bottom) - Math.max(r.top, view.top);
-        // Prefer the section covering the most viewport height; on a tie keep the
-        // earlier one (document order) so the pill doesn't jitter between columns.
-        if (visible > bestVisible + 1) {
-          bestVisible = visible;
-          bestKey = s.typeKey;
-        }
+        if (r.bottom <= view.top || r.top >= view.bottom) continue;
+        const col = Math.round(r.left / 8);
+        const entry = columns.get(col) ?? { passed: null, first: null };
+        if (!entry.first) entry.first = s.typeKey;
+        // At the end of the scroll the last section in view wins even if its
+        // heading never reaches the line (short final sections).
+        if (r.top <= line || atEnd) entry.passed = s.typeKey;
+        columns.set(col, entry);
       }
-      setActiveType(bestKey ?? typeSections[0]?.typeKey ?? null);
+      const next = [...columns.entries()]
+        .sort(([a], [b]) => a - b)
+        .map(([, v]) => v.passed ?? v.first)
+        .filter((k): k is string => !!k);
+      if (next.length === 0 && typeSections[0]) next.push(typeSections[0].typeKey);
+      setActiveTypes((prev) =>
+        prev.length === next.length && prev.every((k, i) => k === next[i]) ? prev : next,
+      );
     };
     const onScroll = () => {
       if (frame) return;
@@ -503,13 +520,18 @@ export function MenuBody({
     };
     compute();
     scroller.addEventListener("scroll", onScroll, { passive: true });
+    // Re-read the layout when the scroller resizes (columns come and go).
+    const resize = new ResizeObserver(onScroll);
+    resize.observe(scroller);
     return () => {
       scroller.removeEventListener("scroll", onScroll);
+      resize.disconnect();
       if (frame) cancelAnimationFrame(frame);
     };
-  }, [scrollRef, sectionRefs, typeSections, viewingChanges, menuIsLoading]);
+  }, [scrollRef, sectionRefs, typeSections, viewingChanges, menuIsLoading, twoColumn]);
 
-  // Keep the active pill centered in the horizontally-scrolling chip strip.
+  // Keep the primary active pill centered in the horizontally-scrolling strip.
+  const activeType = activeTypes[0] ?? null;
   React.useEffect(() => {
     if (!activeType) return;
     const strip = pillsRef.current;
@@ -576,6 +598,25 @@ export function MenuBody({
     );
   }
 
+  function renderPill(s: TypeSection) {
+    return (
+      <button
+        key={s.typeKey}
+        type="button"
+        data-pill={s.typeKey}
+        onClick={() => onJumpToType(s.typeKey)}
+        className={cn(
+          "shrink-0 snap-start rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+          activeTypes.includes(s.typeKey)
+            ? "border-foreground bg-foreground text-background"
+            : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
+        )}
+      >
+        {s.label}
+      </button>
+    );
+  }
+
   return (
     <>
       {/* Period tabs, plus an "Updates" pseudo-tab for recent menu activity */}
@@ -617,48 +658,37 @@ export function MenuBody({
           when the "Updates" tab is active. Same chip styling either way. */}
       {viewingChanges
         ? hasChanges && (
-            <div
-              ref={pillsRef}
-              className="flex shrink-0 snap-x snap-mandatory gap-1.5 overflow-x-auto scroll-px-4 border-b px-4 py-2.5 [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-            >
-              {changeKindTabs.map((t) => (
-                <button
-                  key={t.key}
-                  type="button"
-                  onClick={() => setActiveChangeKind(t.key)}
-                  className={cn(
-                    "shrink-0 snap-start rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                    activeKind === t.key
-                      ? "border-foreground bg-foreground text-background"
-                      : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
-                  )}
-                >
-                  {t.label} ({t.items.length})
-                </button>
-              ))}
+            <div className="shrink-0 border-b">
+              <div
+                ref={pillsRef}
+                className="flex snap-x snap-mandatory gap-1.5 overflow-x-auto scroll-px-4 px-4 py-2.5 [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              >
+                {changeKindTabs.map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => setActiveChangeKind(t.key)}
+                    className={cn(
+                      "shrink-0 snap-start rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                      activeKind === t.key
+                        ? "border-foreground bg-foreground text-background"
+                        : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
+                    )}
+                  >
+                    {t.label} ({t.items.length})
+                  </button>
+                ))}
+              </div>
             </div>
           )
         : hasTypeSections && (
-            <div
-              ref={pillsRef}
-              className="flex shrink-0 snap-x snap-mandatory gap-1.5 overflow-x-auto scroll-px-4 border-b px-4 py-2.5 [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-            >
-              {typeSections.map((s) => (
-                <button
-                  key={s.typeKey}
-                  type="button"
-                  data-pill={s.typeKey}
-                  onClick={() => onJumpToType(s.typeKey)}
-                  className={cn(
-                    "shrink-0 snap-start rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                    activeType === s.typeKey
-                      ? "border-foreground bg-foreground text-background"
-                      : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
-                  )}
-                >
-                  {s.label}
-                </button>
-              ))}
+            <div className="shrink-0 border-b">
+              <div
+                ref={pillsRef}
+                className="flex snap-x snap-mandatory gap-1.5 overflow-x-auto scroll-px-4 px-4 py-2.5 [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              >
+                {typeSections.map((s) => renderPill(s))}
+              </div>
             </div>
           )}
 

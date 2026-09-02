@@ -28,6 +28,7 @@ import {
 } from "#/components/ui/select.tsx";
 import { useAchievementTrack } from "#/hooks/use-achievement-track.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
+import { cn } from "#/lib/utils.ts";
 
 const PARTY_OPTIONS: Record<string, string> = Object.fromEntries(
   Array.from({ length: 8 }, (_, i) => {
@@ -54,11 +55,17 @@ export function DiningAlertButton({
   restaurantName,
   defaultPartySize,
   loggedIn,
+  variant = "secondary",
+  className = "size-9 shadow-sm md:size-7",
 }: {
   facilityId: string;
   restaurantName: string;
   defaultPartySize: number;
   loggedIn: boolean;
+  /** Trigger look — the card uses the compact secondary default; the venue
+   *  page passes `outline` to sit level with its date/party controls. */
+  variant?: "secondary" | "outline";
+  className?: string;
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -100,9 +107,9 @@ export function DiningAlertButton({
       <PopoverTrigger
         render={
           <Button
-            variant="secondary"
+            variant={variant}
             size="icon"
-            className="size-9 shrink-0 shadow-sm md:size-7"
+            className={cn("shrink-0", className)}
             aria-label={`Alert me about ${restaurantName}`}
           />
         }

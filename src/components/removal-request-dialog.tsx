@@ -24,6 +24,7 @@ import {
 } from "#/components/ui/select.tsx";
 import { Textarea } from "#/components/ui/textarea.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
+import { cn } from "#/lib/utils.ts";
 
 type EntityType = "park" | "attraction" | "restaurant" | "shop" | "resort";
 type Scope = "listing" | "image" | "menu";
@@ -52,10 +53,13 @@ export function RemovalRequestDialog({
   entityType,
   entityId,
   entityName,
+  className,
 }: {
   entityType: EntityType;
   entityId: string;
   entityName?: string;
+  /** Applied to the trigger button — lets pages position/hide it. */
+  className?: string;
 }) {
   const isCastMember = useIsCastMember();
   const trpc = useTRPC();
@@ -83,7 +87,10 @@ export function RemovalRequestDialog({
         render={
           <Button
             size="sm"
-            className="w-fit gap-1.5 bg-yellow-400 font-semibold text-black hover:bg-yellow-300 [--btn-3d:var(--color-amber-600)]"
+            className={cn(
+              "w-fit gap-1.5 bg-yellow-400 font-semibold text-black hover:bg-yellow-300 [--btn-3d:var(--color-amber-600)]",
+              className,
+            )}
           >
             <FlagIcon className="size-4" />
             Report or request removal

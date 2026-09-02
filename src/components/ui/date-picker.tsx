@@ -23,6 +23,7 @@ export function DatePicker({
   className,
   fromDate,
   toDate,
+  dateFormat = "PPP",
 }: {
   value?: Date;
   onChange: (date: Date | undefined) => void;
@@ -31,6 +32,8 @@ export function DatePicker({
   className?: string;
   fromDate?: Date;
   toDate?: Date;
+  /** date-fns format for the trigger label; "PP" for a short-month variant. */
+  dateFormat?: string;
 }) {
   const [open, setOpen] = React.useState(false);
 
@@ -56,7 +59,7 @@ export function DatePicker({
         }
       >
         <CalendarIcon className="size-4" />
-        {value ? format(value, "PPP") : <span>{placeholder}</span>}
+        {value ? format(value, dateFormat) : <span>{placeholder}</span>}
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">
         <Calendar

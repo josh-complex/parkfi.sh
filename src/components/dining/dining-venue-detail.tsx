@@ -1,15 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { getRouteApi, Link } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { ArrowLeftIcon, ExternalLinkIcon, PhoneIcon } from "lucide-react";
+import { ExternalLinkIcon, PhoneIcon } from "lucide-react";
 
 import { DetailHero, HERO_BLEED, HERO_OVERLAY_TOP } from "#/components/detail-hero.tsx";
 import { DiningAlertButton } from "#/components/dining/dining-alert-button.tsx";
 import { taxonomyLabel } from "#/components/dining/dining-filters.ts";
-import { diningTrail } from "#/components/dining/dining-search-params.ts";
 import {
   hoursLabel,
   openStatus,
@@ -52,8 +51,6 @@ import { resortSlugByName } from "#/components/stays/resort-detail.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
 import { cn } from "#/lib/utils.ts";
-
-const venueRoute = getRouteApi("/_app/dining_/$facilityId");
 
 /** Items/venues first seen within this many days read as "new". */
 const NEW_WINDOW_DAYS = 30;
@@ -372,7 +369,8 @@ function ReservationsSection({
             fromDate={today}
             toDate={maxDate}
             placeholder="Pick a date"
-            className="h-8 flex-1 md:w-44 md:flex-none"
+            dateFormat="PP"
+            className="h-8 flex-1 md:w-40 md:flex-none"
           />
           <Select value={String(partySize)} onValueChange={(v) => v && setPartySize(Number(v))}>
             <SelectTrigger size="sm" className="w-28 shrink-0" aria-label="Party size">
@@ -391,6 +389,8 @@ function ReservationsSection({
             restaurantName={restaurantName}
             defaultPartySize={partySize}
             loggedIn={!!session?.user}
+            variant="outline"
+            className="size-8"
           />
         </div>
       </div>
@@ -480,9 +480,6 @@ export function DiningVenueDetail({
 }) {
   const trpc = useTRPC();
   const isMobile = useIsMobile();
-  // The dining search carried in via the results link — powers the breadcrumb.
-  const search = venueRoute.useSearch();
-  const trail = diningTrail(search);
   const venueQ = useQuery(trpc.dining.venue.queryOptions({ facilityId }));
   const venue = venueQ.data;
   const hoursQ = useQuery(trpc.dining.hours.queryOptions({}));
@@ -592,37 +589,14 @@ export function DiningVenueDetail({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 pt-2 pb-6 lg:px-6">
-      {/* Tuck the breadcrumb tight under the header, matching the eats search /
-          cuisine-chip rhythm. The header (py-3) + wrapper (pt-2) leave ~20px
-          above it, so trim the section gap to leave the same below. */}
-      <div className="-mb-1 hidden items-center justify-between gap-3 md:flex">
-        <nav className="flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
-          <Link
-            to="/dining"
-            search={{}}
-            className="inline-flex items-center gap-1.5 hover:underline"
-          >
-            <ArrowLeftIcon className="size-3.5" />
-            All dining
-          </Link>
-          {trail.map((label, i) => (
-            <React.Fragment key={`${label}-${i}`}>
-              <span aria-hidden>/</span>
-              {/* Every crumb returns to the same filtered list — the facets are
-                parallel, so there's no deeper level to drill into. */}
-              <Link to="/dining" search={search} className="hover:underline">
-                {label}
-              </Link>
-            </React.Fragment>
-          ))}
-        </nav>
-        <RemovalRequestDialog
-          entityType="restaurant"
-          entityId={facilityId}
-          entityName={venue?.name}
-        />
-      </div>
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-4 lg:p-6">
+      {/* Cast-member-only; renders nothing for everyone else, so it adds no gap. */}
+      <RemovalRequestDialog
+        entityType="restaurant"
+        entityId={facilityId}
+        entityName={venue?.name}
+        className="hidden self-end md:inline-flex"
+      />
 
       {/* Header. The loading shell mirrors the loaded branch — same <header>
           wrapper, hero first — so React reconciles the hero into the *same*

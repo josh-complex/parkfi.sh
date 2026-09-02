@@ -5,7 +5,7 @@ import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { differenceInCalendarDays, format } from "date-fns";
 import { type DateRange } from "react-day-picker";
-import { ArrowLeftIcon, CalendarIcon, ExternalLinkIcon } from "lucide-react";
+import { CalendarIcon, ExternalLinkIcon } from "lucide-react";
 
 import { DetailHero } from "#/components/detail-hero.tsx";
 import { LocationMap } from "#/components/maps/location-map.tsx";
@@ -426,16 +426,14 @@ export function ResortDetail({ slug }: { slug: string }) {
     : "";
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 pt-2 pb-6 lg:px-6">
-      <div className="hidden items-center justify-between gap-3 md:flex">
-        <nav className="text-sm text-muted-foreground">
-          <Link to="/stays" className="inline-flex items-center gap-1.5 hover:underline">
-            <ArrowLeftIcon className="size-3.5" />
-            All resorts
-          </Link>
-        </nav>
-        <RemovalRequestDialog entityType="resort" entityId={resort.slug} entityName={resort.name} />
-      </div>
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-4 lg:p-6">
+      {/* Cast-member-only; renders nothing for everyone else, so it adds no gap. */}
+      <RemovalRequestDialog
+        entityType="resort"
+        entityId={resort.slug}
+        entityName={resort.name}
+        className="hidden self-end md:inline-flex"
+      />
 
       <header className="flex flex-col gap-4">
         {/* Identity hero, matching the ride/dining/shop pages: the resort photo
