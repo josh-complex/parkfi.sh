@@ -4,7 +4,13 @@ import { isServer, useQuery } from "@tanstack/react-query";
 import { RideDetail } from "#/components/park-dashboard/ride-detail.tsx";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
-import { attractionJsonLd, breadcrumbJsonLd, seo, truncateMeta } from "#/lib/seo.ts";
+import {
+  attractionJsonLd,
+  breadcrumbJsonLd,
+  liveCardVersion,
+  seo,
+  truncateMeta,
+} from "#/lib/seo.ts";
 
 /** "space-mountain" -> "Space Mountain" for a readable, indexable title. */
 function titleizeSlug(slug: string): string {
@@ -55,7 +61,7 @@ export const Route = createFileRoute("/_app/_dash/park/$slug_/ride/$rideSlug")({
       title: `${name} Wait Times${isUniversal ? "" : " & Lightning Lane"} — ${parkName} — ParkFi`,
       description: `${waitLede}Live standby wait, ride status, and ${lineLabel} availability for ${name} at ${parkName}.${about}`,
       path: `/park/${params.slug}/ride/${params.rideSlug}`,
-      image: `/og/ride/${params.slug}/${params.rideSlug}/card.png`,
+      image: `/og/ride/${params.slug}/${params.rideSlug}/card.png?v=${liveCardVersion()}`,
       imageWidth: 1200,
       imageHeight: 630,
     });

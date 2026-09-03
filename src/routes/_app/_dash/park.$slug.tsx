@@ -5,7 +5,7 @@ import { ParkDashboard } from "#/components/park-dashboard/park-dashboard.tsx";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { load } from "#/lib/loader.ts";
-import { amusementParkJsonLd, breadcrumbJsonLd, seo } from "#/lib/seo.ts";
+import { amusementParkJsonLd, breadcrumbJsonLd, liveCardVersion, seo } from "#/lib/seo.ts";
 
 /** "magic-kingdom" -> "Magic Kingdom" for a readable, indexable title. */
 function titleizeSlug(slug: string): string {
@@ -54,7 +54,7 @@ export const Route = createFileRoute("/_app/_dash/park/$slug")({
       title: `${name} Wait Times & Live Map — ParkFi`,
       description: `Live wait times, ride status, and ${lineLabel} availability for ${name}. Plan your day with real-time queue data on ParkFi.`,
       path: `/park/${params.slug}`,
-      image: `/og/park/${params.slug}/card.png`,
+      image: `/og/park/${params.slug}/card.png?v=${liveCardVersion()}`,
       imageWidth: 1200,
       imageHeight: 630,
     });

@@ -161,7 +161,7 @@ export const Route = createFileRoute("/og/ride/$parkSlug/$rideSlug/card.png")({
         return new Response(new Uint8Array(png), {
           headers: {
             "content-type": "image/png",
-            "cache-control": "public, max-age=300, s-maxage=86400, stale-while-revalidate=604800",
+            "cache-control": "public, max-age=300, s-maxage=600, stale-while-revalidate=600",
           },
         });
       },

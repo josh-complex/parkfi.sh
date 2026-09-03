@@ -99,7 +99,7 @@ export const Route = createFileRoute("/og/park/$slug/card.png")({
             "content-type": "image/png",
             // .png extension → Cloudflare caches it by default; long edge TTL,
             // short browser TTL, served stale while the live stats refresh.
-            "cache-control": "public, max-age=300, s-maxage=86400, stale-while-revalidate=604800",
+            "cache-control": "public, max-age=300, s-maxage=600, stale-while-revalidate=600",
           },
         });
       },

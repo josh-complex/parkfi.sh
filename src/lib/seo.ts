@@ -17,6 +17,17 @@ const DEFAULT_IMAGE = `${SITE_URL}/og-image.png`;
 const DEFAULT_IMAGE_WIDTH = "1731";
 const DEFAULT_IMAGE_HEIGHT = "909";
 
+/**
+ * Cache-busting version for share cards that render live data (ride/park
+ * waits). Rotates every 10 minutes, matching the cards' edge `s-maxage`, so
+ * each fresh crawl of a page points at a new `og:image` URL. That sidesteps
+ * Discord's (very sticky) image-proxy cache as well as our own edge cache.
+ * Only the meta tag carries it — the shared page URL stays clean.
+ */
+export function liveCardVersion(now = Date.now()): string {
+  return String(Math.floor(now / 600_000));
+}
+
 export interface SeoOptions {
   /** Full <title>. Include the brand suffix yourself, e.g. "Dining — ParkFi". */
   title: string;
