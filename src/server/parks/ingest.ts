@@ -68,27 +68,52 @@ async function resolveAttractions(
 
   const missing = entities.filter((e) => !map.has(e.externalId));
   for (const e of missing) {
-    const [inserted] = await db
-      .insert(attractions)
-      .values({
-        parkId,
-        name: e.name,
-        slug: slugify(e.name),
-        entityType: e.entityType,
-      })
-      .returning({ id: attractions.id });
+    // queue-times is a fallback, never the catalog: an unmapped ride there is
+    // almost always one ThemeParks.wiki already created under the same name
+    // (it carries no entity types, so it would come back as an ATTRACTION twin
+    // of a SHOW row and shadow it on the ride shelves — 20 such ghosts were
+    // retired 2026-09-03). Link to the existing row by slug; insert only when
+    // the park genuinely has nothing by that name.
+    const existingId =
+      source === Source.QUEUE_TIMES ? await activeAttractionBySlug(parkId, slugify(e.name)) : null;
+    const attractionId =
+      existingId ??
+      (
+        await db
+          .insert(attractions)
+          .values({
+            parkId,
+            name: e.name,
+            slug: slugify(e.name),
+            entityType: e.entityType,
+          })
+          .returning({ id: attractions.id })
+      )[0]!.id;
     await db
       .insert(externalIds)
       .values({
         entityKind: KIND_ATTRACTION,
-        entityId: inserted.id,
+        entityId: attractionId,
         source,
         externalId: e.externalId,
       })
       .onConflictDoNothing();
-    map.set(e.externalId, inserted.id);
+    map.set(e.externalId, attractionId);
   }
   return map;
+}
+
+/** Lowest-id active attraction in the park with this slug, if any. */
+async function activeAttractionBySlug(parkId: number, slug: string): Promise<number | null> {
+  const [row] = await db
+    .select({ id: attractions.id })
+    .from(attractions)
+    .where(
+      and(eq(attractions.parkId, parkId), eq(attractions.slug, slug), eq(attractions.active, true)),
+    )
+    .orderBy(attractions.id)
+    .limit(1);
+  return row?.id ?? null;
 }
 
 interface LatestStatus {
