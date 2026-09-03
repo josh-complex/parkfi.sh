@@ -18,6 +18,11 @@ import { config } from "./config.ts";
 import { normalizeLive, type NormalizedEntity } from "./normalize.ts";
 import { fetchQueueTimes } from "./sources/queue-times.ts";
 import { fetchLive } from "./sources/themeparks.ts";
+import {
+  applyUniversalWaits,
+  universalResortForPark,
+  universalWaits,
+} from "./universal-cdn-waits.ts";
 import { applyVirtualLineStates, virtualLineStates } from "./universal-virtual-line.ts";
 
 const KIND_ATTRACTION = "attraction";
@@ -30,6 +35,8 @@ export interface IngestResult {
   queueRows: number;
   /** Rides whose virtual-line state came from Universal's registry, not TP.wiki. */
   virtualLineRows: number;
+  /** Rides whose Express / single-rider waits came from Universal's CDN wait board. */
+  expressRows: number;
   degraded: boolean;
   error?: string;
 }
@@ -205,6 +212,7 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
       statusChanges: 0,
       queueRows: 0,
       virtualLineRows: 0,
+      expressRows: 0,
       degraded: false,
       error: "no themeparks_wiki external id for park",
     };
@@ -224,6 +232,7 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
         statusChanges: 0,
         queueRows: 0,
         virtualLineRows: 0,
+        expressRows: 0,
         degraded: false,
         error: err instanceof Error ? err.message : String(err),
       };
@@ -268,6 +277,16 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
   const meta = await parkMeta(parkId);
   if (meta?.operatorSlug === "universal") {
     virtualLineRows = applyVirtualLineStates(normalized, meta.slug, await virtualLineStates());
+  }
+
+  // Universal only: Express and single-rider waits from the operator's public
+  // CDN wait board — TP.wiki reports those two queues for only a few rides.
+  // Same isolation rule as the Virtual Line overlay: on any failure the tick
+  // proceeds on TP.wiki's queues alone.
+  let expressRows = 0;
+  const resort = meta?.operatorSlug === "universal" ? universalResortForPark(meta.slug) : null;
+  if (meta && resort) {
+    expressRows = applyUniversalWaits(normalized, meta.slug, await universalWaits(resort));
   }
 
   const idMap = await resolveAttractions(parkId, source, normalized);
@@ -357,6 +376,8 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
     const attractionId = idMap.get(e.externalId)!;
     const byType = new Map(e.queues.map((q) => [q.queueType, q]));
     const standby = byType.get(QueueType.STANDBY);
+    const singleRider = byType.get(QueueType.SINGLE_RIDER);
+    const paidStandby = byType.get(QueueType.PAID_STANDBY);
     const ll = byType.get(QueueType.PAID_RETURN_TIME);
     const rt = byType.get(QueueType.RETURN_TIME);
     const bg = byType.get(QueueType.BOARDING_GROUP);
@@ -364,6 +385,8 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
       attractionId,
       status: e.status,
       standbyWait: standby?.waitMin ?? null,
+      singleRiderWait: singleRider?.waitMin ?? null,
+      paidStandbyWait: paidStandby?.waitMin ?? null,
       llState: ll?.state ?? null,
       llPriceCents: ll?.priceCents ?? null,
       llCurrency: ll?.currency ?? null,
@@ -391,6 +414,8 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
           set: {
             status: sql`excluded.status`,
             standbyWait: sql`excluded.standby_wait`,
+            singleRiderWait: sql`excluded.single_rider_wait`,
+            paidStandbyWait: sql`excluded.paid_standby_wait`,
             llState: sql`excluded.ll_state`,
             llPriceCents: sql`excluded.ll_price_cents`,
             llCurrency: sql`excluded.ll_currency`,
@@ -449,6 +474,7 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
     statusChanges: statusRows.length,
     queueRows: queueRows.length,
     virtualLineRows,
+    expressRows,
     degraded,
   };
 }

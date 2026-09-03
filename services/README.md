@@ -44,10 +44,11 @@ sweep only polls restaurants flagged `restaurant_dim.priority=true` (set those b
 hand/SQL); `dining-facilities` seeds the full catalog but never sets `priority`.
 
 **Browserless v2** runs as its own Railway service (the `ghcr.io/browserless/chromium`
-image / Railway Browserless template). For the Universal feeds, `cron-tickets`
-connects puppeteer-core to it over its WS/CDP endpoint. Simplest wiring: reference
-the template's `BROWSER_WS_ENDPOINT` (a full `wss://…?token=…` URL) into the cron
-— that's all it needs.
+image / Railway Browserless template). The Universal places (`geo`) and dining
+crons connect puppeteer-core to it over its WS/CDP endpoint to mint a guest
+session; `cron-tickets` no longer needs it (the ticket store's API is open).
+Simplest wiring: reference the template's `BROWSER_WS_ENDPOINT` (a full
+`wss://…?token=…` URL) into those crons — that's all they need.
 
 The `geo` cron is keyless and needs only `DATABASE_URL`. It enriches the nullable
 geo columns on `parks` (center, bounds, `map_zoom`) and `attractions` (lat/lng,
@@ -110,20 +111,22 @@ All services need `DATABASE_URL` (Timescale-enabled Postgres). Optional knobs
 `cron-tickets` gated feeds (Disney: `research/disney-ticket-deep-dive.md`;
 Universal: `research/universal-ticket-deep-dive.md`):
 
-| Var                                     | Default                             | Purpose                                                                      |
-| --------------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------- |
-| `DISNEY_TICKET_BASE`                    | `https://disneyworld.disney.go.com` | WDW client-token + lexicon catalog/pricing host (D2)                         |
-| `DISNEY_PRICE_WINDOW_DAYS`              | `180`                               | forward window of WDW per-date pricing (calendar reaches ~17mo)              |
-| `BROWSER_WS_ENDPOINT`                   | _(unset)_                           | full `wss://…?token=…` (Railway template var); unset ⇒ Universal skipped     |
-| `BROWSERLESS_URL` + `BROWSERLESS_TOKEN` | _(unset)_                           | fallback: HTTP base (→ `ws://`) + token, e.g. `…railway.internal:3000`       |
-| `BROWSERLESS_TIMEOUT_MS`                | `600000`                            | budget for one Browserless session (sized for the dining-availability sweep) |
-| `BROWSERLESS_WS_QUERY`                  | _(unset)_                           | extra WS query, e.g. `proxy=residential&proxySticky=true` (Akamai fallback)  |
-| `UNIVERSAL_STORE_URL`                   | `https://www.universalorlando.com`  | web-store front loaded once to mint the guest session                        |
-| `UNIVERSAL_API_BASE`                    | `https://api.universalparks.com`    | commerce API host (`gettickets` + `priceAndInventory/v2`)                    |
-| `UNIVERSAL_TICKETS_URL`                 | web-store default                   | tickets page whose `gettickets` request we harvest session headers from      |
-| `UNIVERSAL_CONTRACT_ID`                 | `4000000000000000003`               | priceAndInventory contract id (prices standard + FL SKUs)                    |
-| `UNIVERSAL_PRICE_WINDOW_DAYS`           | `180`                               | forward window of per-date pricing (one call covers it; max ~365)            |
-| `UNIVERSAL_PRICE_BATCH`                 | `20`                                | partNumbers per priceAndInventory call                                       |
+| Var                                     | Default                                                           | Purpose                                                                       |
+| --------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `DISNEY_TICKET_BASE`                    | `https://disneyworld.disney.go.com`                               | WDW client-token + lexicon catalog/pricing host (D2)                          |
+| `DISNEY_PRICE_WINDOW_DAYS`              | `180`                                                             | forward window of WDW per-date pricing (calendar reaches ~17mo)               |
+| `BROWSER_WS_ENDPOINT`                   | _(unset)_                                                         | full `wss://…?token=…` (Railway template var); geo + dining crons only        |
+| `BROWSERLESS_URL` + `BROWSERLESS_TOKEN` | _(unset)_                                                         | fallback: HTTP base (→ `ws://`) + token, e.g. `…railway.internal:3000`        |
+| `BROWSERLESS_TIMEOUT_MS`                | `600000`                                                          | budget for one Browserless session (sized for the dining-availability sweep)  |
+| `BROWSERLESS_WS_QUERY`                  | _(unset)_                                                         | extra WS query, e.g. `proxy=residential&proxySticky=true` (Akamai fallback)   |
+| `UNIVERSAL_STORE_URL`                   | `https://www.universalorlando.com`                                | site whose tickets page is loaded once to mint the guest session (geo/dining) |
+| `UNIVERSAL_API_BASE`                    | `https://api.universalparks.com`                                  | guest-session API host (places catalog, dining reservations)                  |
+| `UNIVERSAL_TICKETS_URL`                 | web-store default                                                 | page whose bearer-carrying request we harvest session headers from            |
+| `UNIVERSAL_OCC_BASE`                    | `https://comm-api.universaldestinationsandexperiences.com/occ/v2` | ticket store (SAP Commerce) API — catalog + per-date calendar, cookieless     |
+| `UNIVERSAL_OCC_SITE`                    | `uor_b2c`                                                         | the store's base site id                                                      |
+| `UNIVERSAL_PRICE_WINDOW_DAYS`           | `180`                                                             | forward window of per-date pricing (calendars run ~16 months out)             |
+| `UNIVERSAL_PRICE_BATCH`                 | `20`                                                              | part numbers per calendar call                                                |
+| `UNIVERSAL_OCC_TIMEOUT_MS`              | `30000`                                                           | budget per catalog page / calendar batch                                      |
 
 Stay-alert email (`notifications` worker; see `docs/plans/stays-caching-and-alerts.md`).
 Secrets are read directly from `process.env` (like `SESSION_ENC_KEY`), not `src/env.ts`:
@@ -167,15 +170,18 @@ recent observation on or before your target date, not an exact-date match.
 an anonymous client token, then sweep the lexicon pricing calendar across product
 types × add-ons (theme-parks ±hopper/PHP/WPS, after-2pm, four-park-magic, canada,
 FL) — each row is keyed by its `productInstanceId` (1-day rows carry the
-`_mk/_ep/_hs/_ak` park). **Universal** is captured by loading the web-store once
-in Browserless to harvest the guest-session headers, then calling `gettickets`
-(catalog crawl) + `priceAndInventory/v2` (per-date pricing) **in-page** so they
-carry the live browser session (the API rejects detached datacenter clients).
+`_mk/_ep/_hs/_ak` park). **Universal** is plain HTTPS too since the store moved
+to SAP Commerce (Aug 2026): the three store categories (tickets / Express /
+extras) come from the OCC product search and per-date price + sell-out from
+`fetchCalendarDatesWithPriceAndInventory`, keyed by the store's variant part
+numbers (`src/server/parks/universal-occ.ts`). Day tickets are date-priced
+there, so UOR admission now has a real calendar; the old WebSphere part numbers
+are retired (`product_dim.active = false`) on the first run.
 
-Disney's JSON APIs (D1/D2) are not Akamai-sensor-gated, so they run over a plain
-HTTPS client with no proxy. If the Railway datacenter IP gets challenged on either
-resort, route through Browserless `/unblock` + residential proxy (the WS-query
-fallback above for Universal; not wired for Disney by default).
+Neither resort's ticket API is Akamai-sensor-gated, so both run over a plain
+HTTPS client with no proxy. If the Railway datacenter IP ever gets challenged,
+the Universal calls are ordinary `fetch`es and can be replayed inside a
+Browserless page against the store origin (not wired by default).
 
 ## One-time bootstrap (in order)
 

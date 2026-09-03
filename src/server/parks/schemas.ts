@@ -877,48 +877,122 @@ export const DisneyProductListingSchema = z.object({
 });
 export type DisneyProductListing = z.infer<typeof DisneyProductListingSchema>;
 
-// Universal `priceAndInventory/v2` per-date calendar, harvested by replaying the
-// endpoint with the web-store's guest-session headers. Shape:
-// eventAvailability[partNumber][date] = {...}.
-const UniversalDateEntry = z.object({
-  pricing: z
-    .array(
-      z.object({
-        amount: z.number().optional(),
-        quantity: z.number().optional(),
-        currency: z.string().optional(),
-      }),
-    )
-    .default([]),
-  inventoryEvents: z
-    .array(
-      z.object({
-        availableUnits: z.string().nullable().optional(),
-        totalCapacity: z.string().nullable().optional(),
-        available: z.string().nullable().optional(),
-      }),
-    )
-    .default([]),
-});
+// ---------------------------------------------------------------------------
+// Universal's SAP Commerce (OCC v2) ticket store — `sources/universal-occ.ts`.
+// Two cookieless calls: the category product search (catalog, from-prices,
+// variants) and the per-date calendar (price + availability by variant part
+// number). Tolerant: every enriched field optional, unknown keys pass through.
+// ---------------------------------------------------------------------------
+const OccPrice = z
+  .object({
+    value: z.number().nullable().optional(),
+    currencyIso: z.string().nullable().optional(),
+    formattedValue: z.string().nullable().optional(),
+  })
+  .partial()
+  .passthrough();
 
-// A SKU from the `gettickets` catalog crawl. `listPrice` is the from-price anchor;
-// `variablePriced` marks demand-priced day tickets/Express vs flat annual passes.
-const UniversalSku = z.object({
-  partNumber: z.string(),
-  name: z.string().nullable().optional(),
-  listPrice: z.union([z.number(), z.string()]).nullable().optional(),
-  currency: z.string().nullable().optional(),
-  variablePriced: z.boolean().default(false),
-});
-export type UniversalSku = z.infer<typeof UniversalSku>;
+const OccVariant = z
+  .object({
+    /** The orderable part number — our `product_dim.sku`. */
+    code: z.string().nullable().optional(),
+    name: z.string().nullable().optional(),
+    /** ADULT · CHILD · ALL */
+    ageCategory: z.string().nullable().optional(),
+    startingPrice: OccPrice.nullable().optional(),
+    minQty: z.union([z.string(), z.number()]).nullable().optional(),
+    maxQty: z.union([z.string(), z.number()]).nullable().optional(),
+    purchasable: z.boolean().nullable().optional(),
+    calendarStartDate: z.string().nullable().optional(),
+    calendarEndDate: z.string().nullable().optional(),
+  })
+  .passthrough();
 
-// Full Universal capture: catalog (all SKUs) + per-date pricing for the
-// variable-priced ones. See research/universal-ticket-deep-dive.md.
-export const UniversalCaptureSchema = z.object({
-  skus: z.array(UniversalSku).default([]),
-  eventAvailability: z.record(z.string(), z.record(z.string(), UniversalDateEntry)).default({}),
-});
-export type UniversalCapture = z.infer<typeof UniversalCaptureSchema>;
+const OccProduct = z
+  .object({
+    /** Product code carrying the dimensions, e.g. `DAY_01D_BSE_EPIC_ICE`. */
+    code: z.string().nullable().optional(),
+    name: z.string().nullable().optional(),
+    /** True for anything sold per visit date (day tickets, Express, events). */
+    dateSelectionRequired: z.boolean().nullable().optional(),
+    purchasable: z.boolean().nullable().optional(),
+    price: OccPrice.nullable().optional(),
+    stock: z
+      .object({ stockLevelStatus: z.string().nullable().optional() })
+      .passthrough()
+      .nullable()
+      .optional(),
+    variantOptions: z.array(OccVariant).nullable().optional(),
+  })
+  .passthrough();
+export type UniversalOccProduct = z.infer<typeof OccProduct>;
+
+export const UniversalOccSearchSchema = z
+  .object({
+    products: z.array(OccProduct).default([]),
+    pagination: z
+      .object({
+        currentPage: z.number().nullable().optional(),
+        pageSize: z.number().nullable().optional(),
+        totalPages: z.number().nullable().optional(),
+        totalResults: z.number().nullable().optional(),
+      })
+      .passthrough()
+      .nullable()
+      .optional(),
+  })
+  .passthrough();
+export type UniversalOccSearch = z.infer<typeof UniversalOccSearchSchema>;
+
+const OccCalendarDate = z
+  .object({
+    date: z.string().nullable().optional(),
+    canBeVisited: z.boolean().nullable().optional(),
+    forceSoldOut: z.boolean().nullable().optional(),
+    pricing: z
+      .array(
+        z
+          .object({
+            /** Rounded per-day display price. */
+            amount: z.number().nullable().optional(),
+            /** Exact ticket total for the variant. */
+            fullVariantPrice: z.number().nullable().optional(),
+            currency: z.string().nullable().optional(),
+            quantity: z.number().nullable().optional(),
+          })
+          .passthrough(),
+      )
+      .default([]),
+    inventoryEvents: z
+      .array(
+        z
+          .object({
+            isAvailable: z.boolean().nullable().optional(),
+            forceSoldOut: z.boolean().nullable().optional(),
+            startDate: z.string().nullable().optional(),
+            endDate: z.string().nullable().optional(),
+          })
+          .passthrough(),
+      )
+      .default([]),
+  })
+  .passthrough();
+
+export const UniversalOccCalendarSchema = z
+  .object({
+    eventAvailability: z
+      .array(
+        z
+          .object({
+            partNumber: z.string().nullable().optional(),
+            calendarDates: z.array(OccCalendarDate).default([]),
+          })
+          .passthrough(),
+      )
+      .default([]),
+  })
+  .passthrough();
+export type UniversalOccCalendar = z.infer<typeof UniversalOccCalendarSchema>;
 
 // ---------------------------------------------------------------------------
 // Universal Orlando "places" feed — the UOR geo *enrichment* layer (analog of
@@ -1482,6 +1556,47 @@ export const UniversalQueuesSchema = z.object({
 });
 export type UniversalQueues = z.infer<typeof UniversalQueuesSchema>;
 export type UniversalQueue = UniversalQueues["Results"][number];
+
+// ---------------------------------------------------------------------------
+// `assets.universalparks.com/{resort}/wait-time/wait-time-attraction-list.json`
+// — the wait board behind Universal's own app (research/universal-app-data-
+// mining.md §1). One cookieless GET per resort, ~50 KB, republished about once
+// a minute. Each attraction carries typed queues — STANDBY, EXPRESS and SINGLE
+// (rider) — the latter two being what ThemeParks.wiki surfaces for only a few
+// rides. Loose: unknown keys must never fail a tick.
+// ---------------------------------------------------------------------------
+const UniversalWaitQueue = z
+  .object({
+    queue_id: z.string().nullable().optional(),
+    /** STANDBY · EXPRESS · SINGLE */
+    queue_type: z.string().nullable().optional(),
+    /** OPEN · CLOSED · OPENS_AT · CLOSES_AT · AT_CAPACITY · COMING_SOON · RIDE_NOW · SPECIAL_EVENT */
+    status: z.string().nullable().optional(),
+    /** Minutes; 995 is the feed's "nothing posted" sentinel (universal-cdn-waits.ts). */
+    display_wait_time: z.number().nullable().optional(),
+    opens_at: z.string().nullable().optional(),
+    closes_at: z.string().nullable().optional(),
+  })
+  .passthrough();
+
+export const UniversalWaitFeedSchema = z.array(
+  z
+    .object({
+      /** The operator's place id — `uor.<venue>.rides.<slug>`, our join key. */
+      wait_time_attraction_id: z.string().nullable().optional(),
+      /** `uor.ioa` / `uor.usf` / `uor.eu` / `uor.vb` (note `eu`, not `ueu`). */
+      venue_id: z.string().nullable().optional(),
+      land_id: z.string().nullable().optional(),
+      name: z.string().nullable().optional(),
+      has_single_rider: z.boolean().nullable().optional(),
+      show_externally: z.boolean().nullable().optional(),
+      modified_at: z.string().nullable().optional(),
+      queues: z.array(UniversalWaitQueue).default([]),
+    })
+    .passthrough(),
+);
+export type UniversalWaitFeed = z.infer<typeof UniversalWaitFeedSchema>;
+export type UniversalWaitAttraction = UniversalWaitFeed[number];
 
 // ---------------------------------------------------------------------------
 // `contentdata/uor/en/us/api/filtersdata/index.html` — the tile database behind

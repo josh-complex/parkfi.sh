@@ -1047,52 +1047,10 @@ export function osmPoiName(poiType: string, tags?: Record<string, string> | null
   return tags?.name?.trim() || OSM_POI_LABELS[poiType] || "Guest Service";
 }
 
-// ---------------------------------------------------------------------------
-// Universal Orlando web-store (api.universalparks.com) helpers
-// ---------------------------------------------------------------------------
-
-/**
- * The set of parks a Universal `partNumber` is valid at, decoded from its
- * taxonomy (see research/universal-ticket-deep-dive.md §1). Park scope codes:
- * 2P={USF,IOA}, 3P=+Epic, 4P=+Volcano Bay; explicit `EPIC`/`USF`/`UIOA`/`UVB`
- * tokens (and Express `AO-UEP_*_<PARK>`) name a single park. Stored as labels in
- * `product_dim.park_scope` (not park FKs — Universal pricing is SKU-keyed).
- */
-export function universalParkScope(partNumber: string): Array<string> {
-  const tokens = partNumber.split(/[-_]/);
-  const has = (t: string) => tokens.includes(t);
-  const scope = new Set<string>();
-
-  // Explicit single-park tokens (Express SKUs + Epic/Volcano-Bay-only tickets).
-  if (has("EPIC")) scope.add("EPIC");
-  if (has("USF")) scope.add("USF");
-  if (has("UIOA")) scope.add("UIOA");
-  if (has("UVB")) scope.add("UVB");
-
-  // Multi-park pool codes (TPA admission tickets).
-  if (has("4P")) ["USF", "UIOA", "EPIC", "UVB"].forEach((p) => scope.add(p));
-  else if (has("3P")) ["USF", "UIOA", "EPIC"].forEach((p) => scope.add(p));
-  else if (has("2P")) ["USF", "UIOA"].forEach((p) => scope.add(p));
-  else if (has("1P") && scope.size === 0) scope.add("USF"); // ambiguous one-park pool
-
-  return [...scope];
-}
-
-/**
- * Decode a Universal `partNumber` into `product_dim` fields, per the taxonomy in
- * research/universal-ticket-deep-dive.md §1:
- *   TPA-{DUR}_{TYPE}_{PARKSCOPE}[_{ADDON}]_{AGE}[_GA]_{CONTRACT}[_FL][_{VARIANT}]
- * Express SKUs use the `AO-UEP_*` family.
- */
-export interface UniversalSkuDims {
-  family: "TICKET" | "ANNUAL" | "EXPRESS";
-  durationDays: number | null;
-  parkScope: Array<string>;
-  parkToPark: boolean;
-  ageGroup: "ADULT" | "CHILD" | null;
-  residency: "STD" | "FL";
-  passTier: "POWER" | "SEASONAL" | "PREFERRED" | "PREMIER" | null;
-}
+// Universal Orlando ticket SKUs: the store moved to SAP Commerce in Aug 2026 and
+// its product codes are decoded in `universal-occ.ts` (`universalOccDecode`).
+// The old WebSphere `TPA-…`/`AO-UEP_…` part numbers survive only as retired
+// (`active = false`) `product_dim` rows.
 
 /**
  * Decode a WDW `productInstanceId` into `product_dim` fields, per the taxonomy
@@ -1228,37 +1186,4 @@ export function parseDisneyWaterParkTickets(html: string): WaterParkTickets {
   }
 
   return { regular, blockout, blockoutRanges: [...ranges.values()] };
-}
-
-export function universalDecodeSku(partNumber: string): UniversalSkuDims {
-  const tokens = partNumber.split(/[-_]/);
-  const has = (t: string) => tokens.includes(t);
-
-  const isExpress = partNumber.startsWith("AO-UEP") || has("UEP");
-  const isAnnual = has("12M") || has("AP");
-  const family = isExpress ? "EXPRESS" : isAnnual ? "ANNUAL" : "TICKET";
-
-  // DUR: 01D..07D -> 1..7; the Express add-on uses a bare `1D`.
-  const dur = tokens.find((t) => /^0[1-7]D$/.test(t)) ?? (has("1D") ? "1D" : undefined);
-  const durationDays = !isAnnual && dur ? Number(dur.replace(/^0/, "").replace(/D$/, "")) : null;
-
-  const passTier = has("PWR")
-    ? "POWER"
-    : has("SEA")
-      ? "SEASONAL"
-      : has("PRF")
-        ? "PREFERRED"
-        : has("PRM")
-          ? "PREMIER"
-          : null;
-
-  return {
-    family,
-    durationDays,
-    parkScope: universalParkScope(partNumber),
-    parkToPark: has("PTP"),
-    ageGroup: has("AD") ? "ADULT" : has("CH") ? "CHILD" : null,
-    residency: has("FL") ? "FL" : "STD",
-    passTier,
-  };
 }

@@ -1,88 +1,66 @@
 /**
- * Universal capture debugger. Loads the web-store in Browserless and reports
- * what actually happens — page status, redirects, every api.universalparks.com
- * request, Queue-It/Akamai signals — then runs the full capture and prints a
- * sample. Use it to pin down UNIVERSAL_TICKETS_URL / detect datacenter blocking.
+ * Universal store smoke test. Pulls the three store categories and one calendar
+ * batch from the SAP Commerce API exactly as the cron does — but writes nothing
+ * — and prints what came back. Use it to confirm the host answers from a given
+ * network (no browser involved any more) and to eyeball the SKU decode.
  *
  * Run:  bun services/cron-tickets/debug-universal.ts
- *       UNIVERSAL_TICKETS_URL=... bun services/cron-tickets/debug-universal.ts
  */
 import { config as loadEnv } from "dotenv";
 loadEnv({ path: [".env.local", ".env"] });
 
-import { config } from "#/server/parks/config.ts";
-import { browserlessConfigured, withBrowser } from "#/server/parks/sources/browserless.ts";
-import { fetchUniversalCatalogAndPricing } from "#/server/parks/sources/universal.ts";
+import {
+  fetchUniversalOccCalendar,
+  fetchUniversalOccCategory,
+  UNIVERSAL_OCC_CATEGORIES,
+  type UniversalOccCategory,
+} from "#/server/parks/sources/universal-occ.ts";
+import {
+  universalOccPriceRows,
+  universalOccSkus,
+  type UniversalOccSku,
+} from "#/server/parks/universal-occ.ts";
 
-const URL =
-  process.env.UNIVERSAL_TICKETS_URL ?? `${config.universalStoreUrl}/web-store/en/us/park-tickets`;
-const UA =
-  process.env.UNIVERSAL_BROWSER_UA ??
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
-
-async function probe() {
-  await withBrowser(async (browser) => {
-    const page = await browser.newPage();
-    await page.setUserAgent(UA);
-    await page.setViewport({ width: 1366, height: 900 });
-
-    const api: Array<string> = [];
-    page.on("request", (r) => {
-      const u = r.url();
-      if (u.includes("universalparks.com") || u.includes("queue-it")) {
-        const h = r.headers();
-        const authed = h.authorization || h.wctoken ? " [authed]" : "";
-        api.push(`${r.method()} ${u.split("?")[0]}${authed}`);
-      }
-    });
-
-    console.log(`→ goto ${URL}`);
-    const resp = await page
-      .goto(URL, { waitUntil: "networkidle2", timeout: 60_000 })
-      .catch((e: Error) => {
-        console.log(`  goto error: ${e.message}`);
-        return null;
-      });
-    await new Promise((r) => setTimeout(r, 5_000)); // let late XHRs fire
-
-    console.log(`status:    ${resp?.status() ?? "(none)"}`);
-    console.log(`final url: ${page.url()}`);
-    console.log(`title:     ${await page.title().catch(() => "?")}`);
-    const html = await page.content().catch(() => "");
-    console.log(`html len:  ${html.length}`);
-    console.log(`queue-it:  ${/queue-it|queue\.it/i.test(html)}`);
-    console.log(`akamai:    ${/_abck|akam|bm-verify/i.test(html)}`);
-    const uniq = new Set(api);
-    console.log(`api/queue requests seen (${uniq.size}):`);
-    for (const r of uniq) console.log(`  ${r}`);
-  }, AbortSignal.timeout(90_000));
+function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
 }
 
 async function main() {
-  if (!browserlessConfigured()) {
-    console.error("BROWSER_WS_ENDPOINT / BROWSERLESS_URL not set");
-    process.exit(1);
+  const skus: Array<UniversalOccSku> = [];
+  for (const category of Object.keys(UNIVERSAL_OCC_CATEGORIES) as Array<UniversalOccCategory>) {
+    const products = await fetchUniversalOccCategory(category, AbortSignal.timeout(30_000));
+    const rows = universalOccSkus(category, products);
+    console.log(`${category}: ${products.length} products → ${rows.length} SKUs`);
+    skus.push(...rows);
   }
-
-  console.log("=== 1) page probe ===");
-  await probe();
-
-  console.log("\n=== 2) full capture ===");
-  const cap = await fetchUniversalCatalogAndPricing(
-    AbortSignal.timeout(config.browserlessTimeoutMs),
+  console.table(
+    skus.map((s) => ({
+      sku: s.sku,
+      product: s.productCode,
+      family: s.dims.family,
+      days: s.dims.durationDays,
+      parks: s.dims.parkScope.join("+"),
+      ptp: s.dims.parkToPark,
+      age: s.dims.ageGroup,
+      res: s.dims.residency,
+      tier: s.dims.passTier,
+      from: s.listPriceCents,
+      dated: s.datePriced,
+      name: s.name?.slice(0, 48),
+    })),
   );
-  console.log(`catalog SKUs: ${cap.skus.length}`);
-  console.table(cap.skus.slice(0, 12));
-  const priced = Object.keys(cap.eventAvailability);
-  console.log(`priced SKUs:  ${priced.length}`);
-  const sample = priced[0];
-  if (sample) {
-    const dates = Object.keys(cap.eventAvailability[sample]);
-    console.log(
-      `${sample}: ${dates.length} dates, first prices`,
-      dates.slice(0, 5).map((d) => cap.eventAvailability[sample][d].pricing[0]?.amount),
-    );
-  }
+
+  const today = new Date();
+  const end = new Date(today);
+  end.setDate(end.getDate() + 30);
+  const sample = skus.filter((s) => s.datePriced).slice(0, 4);
+  const calendar = await fetchUniversalOccCalendar(
+    sample.map((s) => ({ partNumber: s.sku, startDate: isoDate(today), endDate: isoDate(end) })),
+    AbortSignal.timeout(30_000),
+  );
+  const rows = universalOccPriceRows(calendar, isoDate(today), isoDate(end));
+  console.log(`calendar: ${rows.length} price rows for ${sample.length} SKUs over 30 days`);
+  console.table(rows.slice(0, 12));
 }
 
 main()

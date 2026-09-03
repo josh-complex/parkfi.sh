@@ -7,12 +7,13 @@
  * Feeds (Disney: research/gated-feeds-report.md; Universal: research/universal-ticket-deep-dive.md):
  *   D1     Disney ticket-date availability  -> ticket_availability         (plain HTTPS)
  *   D2     Disney ticket catalog + pricing  -> product_dim + sku_price_obs  (plain HTTPS, cookieless bearer)
- *   U1/U2  Universal ticket + Express        -> product_dim + sku_price_obs  (SKU-keyed, in-browser)
+ *   U1/U2  Universal store catalog + pricing -> product_dim + sku_price_obs  (plain HTTPS, cookieless)
  *
- * Disney's JSON APIs aren't Akamai-sensor-gated, so they run over a plain HTTPS
- * client. Universal is harvested by loading the web-store once in Browserless to
- * mint a guest session, then replaying gettickets + priceAndInventory/v2. If
- * Browserless isn't configured, Universal is skipped and Disney still runs.
+ * Neither resort needs a browser any more. Disney's JSON APIs aren't
+ * Akamai-sensor-gated. Universal's ticket store moved to SAP Commerce in Aug
+ * 2026 (`sources/universal-occ.ts`): its catalog search and per-date calendar
+ * are open, cookieless calls, so the old Browserless guest-session replay of
+ * `gettickets` + `priceAndInventory/v2` is gone with the store that served it.
  *
  * Run:  bun run cron:tickets
  */
@@ -22,7 +23,7 @@ loadEnv({ path: [".env.local", ".env"] });
 // Imported after loadEnv so the module-level PostHog client sees POSTHOG_KEY.
 import { flushTelemetry, reportServiceError } from "../shared/telemetry.ts";
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, notInArray, sql } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
 import {
@@ -40,7 +41,6 @@ import {
   QueueState,
   Source,
   themeparksScheduleProduct,
-  universalDecodeSku,
   WDW_WATER_PARK_BLOCKOUT_FAMILY,
   WDW_WATER_PARK_FAMILY,
   type DisneySkuDims,
@@ -54,10 +54,17 @@ import {
   fetchTicketPricing,
   fetchWaterParkTicketsPage,
 } from "#/server/parks/sources/disney.ts";
-import { browserlessConfigured } from "#/server/parks/sources/browserless.ts";
 import { fetchSchedule } from "#/server/parks/sources/themeparks.ts";
-import { fetchUniversalCatalogAndPricing } from "#/server/parks/sources/universal.ts";
+import {
+  fetchUniversalOccCalendar,
+  fetchUniversalOccCategory,
+  UNIVERSAL_OCC_CATEGORIES,
+  type UniversalOccCategory,
+} from "#/server/parks/sources/universal-occ.ts";
+import { universalOccPriceRows, universalOccSkus } from "#/server/parks/universal-occ.ts";
 import { config } from "#/server/parks/config.ts";
+
+import type { UniversalOccSku } from "#/server/parks/universal-occ.ts";
 
 // The availability calendar serves three free segments off the same endpoint.
 // `tickets` = standard day-ticket admission; `passholder` = Annual Pass blockout
@@ -69,6 +76,14 @@ const SEGMENTS = ["tickets", "passholder", "resort"] as const;
 const WINDOW_DAYS = Number(process.env.TICKET_WINDOW_DAYS ?? 60);
 // How far forward to record Disney per-date pricing (the calendar reaches ~17mo).
 const DISNEY_PRICE_WINDOW_DAYS = Number(process.env.DISNEY_PRICE_WINDOW_DAYS ?? 180);
+// Universal: forward window of per-date pricing (the store's calendars run to the
+// product's own end date, ~16 months for day tickets) and part numbers per
+// calendar call (the store's UI sends the two age variants of a product; 20
+// priced a full year in one ~1 MB response live).
+const UNIVERSAL_PRICE_WINDOW_DAYS = Number(process.env.UNIVERSAL_PRICE_WINDOW_DAYS ?? 180);
+const UNIVERSAL_PRICE_BATCH = Number(process.env.UNIVERSAL_PRICE_BATCH ?? 20);
+// One catalog page or one calendar batch; both are bigger than the 9 s poll budget.
+const UNIVERSAL_OCC_TIMEOUT_MS = Number(process.env.UNIVERSAL_OCC_TIMEOUT_MS ?? 30_000);
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -76,10 +91,6 @@ function isoDate(d: Date): string {
 
 function roundCents(amount: number): number {
   return Math.round(amount * 100);
-}
-
-function roundOrNull(amount: number | null): number | null {
-  return amount == null ? null : roundCents(amount);
 }
 
 /** External-id (by source) -> internal park id, for a given source. */
@@ -565,89 +576,125 @@ async function captureDisneyWaterParks(observedAt: Date): Promise<number> {
   return inserted;
 }
 
-// --- U1/U2: Universal Express + admission pricing -------------------------
+// --- U1/U2: Universal store catalog + per-date pricing ----------------------
 
+/**
+ * Universal's SAP Commerce store (`sources/universal-occ.ts`), cookieless:
+ *   (1) the three store categories (tickets / Express / extras) -> `product_dim`,
+ *       one row per orderable variant, dimensions decoded from the product code;
+ *   (2) UOR SKUs the store no longer lists — including every old WebSphere
+ *       part number — are retired (`active = false`), so the shelves stop
+ *       reading their last observed price;
+ *   (3) every date-priced SKU gets its calendar over the forward window ->
+ *       `sku_price_obs` (exact ticket total per date + sell-out flag; the new
+ *       store publishes no unit counts, so those columns are null);
+ *   (4) flat SKUs (annual passes, merchandise) get one row today at list price.
+ * Category and calendar batches are isolated: one failing call logs and is
+ * skipped, never fails the resort.
+ */
 async function captureUniversalPricing(todayIso: string, observedAt: Date): Promise<number> {
-  const capture = await fetchUniversalCatalogAndPricing(
-    AbortSignal.timeout(config.browserlessTimeoutMs),
-  );
+  const msg = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
-  function num(v: number | string | null | undefined): number | null {
-    if (v == null) return null;
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
-  }
-
-  // (1) product_dim: decode every SKU we have catalog or pricing for.
-  const dims = new Map<string, typeof productDim.$inferInsert>();
-  const addDim = (
-    sku: string,
-    listPriceCents: number | null,
-    name: string | null,
-    variablePriced: boolean,
-  ) => {
-    if (dims.has(sku)) return;
-    const d = universalDecodeSku(sku);
-    dims.set(sku, {
-      sku,
-      resort: "UOR",
-      family: d.family,
-      durationDays: d.durationDays,
-      parkScope: d.parkScope,
-      parkToPark: d.parkToPark,
-      ageGroup: d.ageGroup,
-      residency: d.residency,
-      passTier: d.passTier,
-      variablePriced,
-      listPriceCents,
-      name,
-      updatedAt: observedAt,
-    });
-  };
-  for (const s of capture.skus) {
-    addDim(s.partNumber, roundOrNull(num(s.listPrice)), s.name ?? null, s.variablePriced);
-  }
-  // Express SKUs (and anything priced but absent from the catalog crawl).
-  for (const sku of Object.keys(capture.eventAvailability)) addDim(sku, null, null, true);
-
-  const dimRows = [...dims.values()];
-  await upsertProductDims(dimRows);
-
-  // (2) sku_price_obs: per-date demand pricing (day tickets + Express), plus a
-  // single flat row today for annual passes (no per-date calendar).
-  const rows: Array<typeof skuPriceObs.$inferInsert> = [];
-  for (const [sku, byDate] of Object.entries(capture.eventAvailability)) {
-    for (const [serviceDate, entry] of Object.entries(byDate)) {
-      if (serviceDate < todayIso) continue;
-      const price = entry.pricing[0];
-      if (price?.amount === undefined) continue;
-      const inv = entry.inventoryEvents[0];
-      rows.push({
-        observedAt,
-        sku,
-        serviceDate,
-        priceCents: roundCents(price.amount),
-        currency: price.currency ?? "USD",
-        // `available` is the reliable signal; units/capacity are soft (capped).
-        available: inv ? inv.available !== "0" : null,
-        availableUnits: num(inv?.availableUnits),
-        totalCapacity: num(inv?.totalCapacity),
-        source: Source.UNIVERSAL_DIRECT,
-      });
+  // (1) catalog — dedupe by sku, since a variant can be listed in two categories.
+  const bySku = new Map<string, UniversalOccSku>();
+  for (const category of Object.keys(UNIVERSAL_OCC_CATEGORIES) as Array<UniversalOccCategory>) {
+    try {
+      const products = await fetchUniversalOccCategory(
+        category,
+        AbortSignal.timeout(UNIVERSAL_OCC_TIMEOUT_MS),
+      );
+      for (const sku of universalOccSkus(category, products)) {
+        if (!bySku.has(sku.sku)) bySku.set(sku.sku, sku);
+      }
+    } catch (err) {
+      console.error(`[U1] Universal store category ${category} failed:`, msg(err));
     }
   }
-  const priced = new Set(Object.keys(capture.eventAvailability));
-  for (const s of capture.skus) {
-    if (s.variablePriced || priced.has(s.partNumber)) continue;
-    const amount = num(s.listPrice);
-    if (amount == null) continue;
+  if (bySku.size === 0) throw new Error("Universal store: no products from any category");
+
+  const dimRows = [...bySku.values()].map((s) => ({
+    sku: s.sku,
+    resort: "UOR",
+    family: s.dims.family,
+    durationDays: s.dims.durationDays,
+    parkScope: s.dims.parkScope,
+    parkToPark: s.dims.parkToPark,
+    ageGroup: s.dims.ageGroup,
+    residency: s.dims.residency,
+    passTier: s.dims.passTier,
+    variablePriced: s.datePriced,
+    listPriceCents: s.listPriceCents,
+    name: s.name,
+    updatedAt: observedAt,
+  }));
+  await upsertProductDims(dimRows);
+
+  // (2) retire what the store no longer sells.
+  const retired = await db
+    .update(productDim)
+    .set({ active: false, updatedAt: observedAt })
+    .where(
+      and(
+        eq(productDim.resort, "UOR"),
+        eq(productDim.active, true),
+        notInArray(productDim.sku, [...bySku.keys()]),
+      ),
+    )
+    .returning({ sku: productDim.sku });
+
+  // (3) per-date calendars for the date-priced SKUs.
+  const end = new Date(observedAt);
+  end.setDate(end.getDate() + UNIVERSAL_PRICE_WINDOW_DAYS);
+  const endIso = isoDate(end);
+  const datePriced = [...bySku.values()].filter((s) => s.datePriced && s.purchasable);
+  const rows: Array<typeof skuPriceObs.$inferInsert> = [];
+  let calendarBatchesFailed = 0;
+  for (let i = 0; i < datePriced.length; i += UNIVERSAL_PRICE_BATCH) {
+    const batch = datePriced.slice(i, i + UNIVERSAL_PRICE_BATCH);
+    try {
+      const calendar = await fetchUniversalOccCalendar(
+        batch.map((s) => ({ partNumber: s.sku, startDate: todayIso, endDate: endIso })),
+        AbortSignal.timeout(UNIVERSAL_OCC_TIMEOUT_MS),
+      );
+      for (const r of universalOccPriceRows(calendar, todayIso, endIso)) {
+        rows.push({
+          observedAt,
+          sku: r.sku,
+          serviceDate: r.serviceDate,
+          priceCents: r.priceCents,
+          currency: r.currency,
+          available: r.available,
+          availableUnits: null,
+          totalCapacity: null,
+          source: Source.UNIVERSAL_DIRECT,
+        });
+      }
+    } catch (err) {
+      calendarBatchesFailed++;
+      console.error(
+        `[U2] Universal calendar batch ${i / UNIVERSAL_PRICE_BATCH + 1} failed:`,
+        msg(err),
+      );
+    }
+  }
+  const dated = new Set(rows.map((r) => r.sku));
+  const uncalendared = datePriced.filter((s) => !dated.has(s.sku)).map((s) => s.sku);
+  if (uncalendared.length > 0) {
+    console.warn(
+      `[U2] ${uncalendared.length} date-priced SKU(s) returned no calendar dates: ${uncalendared.slice(0, 8).join(", ")}`,
+    );
+  }
+
+  // (4) flat SKUs: one row today at the list price.
+  for (const s of bySku.values()) {
+    if (s.datePriced || s.listPriceCents == null) continue;
     rows.push({
       observedAt,
-      sku: s.partNumber,
+      sku: s.sku,
       serviceDate: todayIso,
-      priceCents: roundCents(amount),
-      currency: s.currency ?? "USD",
-      available: true,
+      priceCents: s.listPriceCents,
+      currency: "USD",
+      available: s.purchasable,
       availableUnits: null,
       totalCapacity: null,
       source: Source.UNIVERSAL_DIRECT,
@@ -656,7 +703,7 @@ async function captureUniversalPricing(todayIso: string, observedAt: Date): Prom
 
   const inserted = await insertSkuPrices(rows);
   console.log(
-    `[U1/U2] Universal: ${dimRows.length} SKUs in catalog, ${inserted}/${rows.length} price obs inserted`,
+    `[U1/U2] Universal store: ${dimRows.length} SKUs (${datePriced.length} date-priced), ${retired.length} retired, ${calendarBatchesFailed} calendar batch(es) failed, ${inserted}/${rows.length} price obs inserted`,
   );
   return inserted;
 }
@@ -779,11 +826,9 @@ async function main() {
   await runStep("D3 Disney water-park pricing", () => captureDisneyWaterParks(observedAt));
 
   // Universal is SKU-keyed (product_dim + sku_price_obs), not park-mapped.
-  if (!browserlessConfigured()) {
-    console.warn("[cron-tickets] BROWSERLESS_URL not set — skipping Universal feeds");
-  } else {
-    await runStep("U1/U2 Universal pricing", () => captureUniversalPricing(todayIso, observedAt));
-  }
+  await runStep("U1/U2 Universal store catalog + pricing", () =>
+    captureUniversalPricing(todayIso, observedAt),
+  );
 
   // TP: secondary source (both resorts) for park hours + LL bundle pricing.
   const themeparksMap = await parkMapForSource(Source.THEMEPARKS_WIKI);

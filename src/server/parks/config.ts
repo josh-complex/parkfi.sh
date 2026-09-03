@@ -44,10 +44,23 @@ export const config = {
   disneyOneIdClientId: process.env.DISNEY_ONEID_CLIENT_ID ?? "TPR-WDW-LBJS.WEB-PROD",
   disneyOneIdBase: process.env.DISNEY_ONEID_BASE ?? "https://registerdisney.go.com/jgc/v8",
 
-  /** Universal Orlando web-store front (Akamai-protected SPA we drive in Chromium). */
+  /**
+   * Universal Orlando's website (Akamai-protected). The tickets page is loaded
+   * once in Browserless to mint the anonymous guest session the places and
+   * dining feeds need (`sources/universal-session.ts`).
+   */
   universalStoreUrl: process.env.UNIVERSAL_STORE_URL ?? "https://www.universalorlando.com",
-  /** Universal commerce API host (gettickets + priceAndInventory/v2 live here). */
+  /** Universal's guest-session API host (places catalog, dining reservations). */
   universalApiBase: process.env.UNIVERSAL_API_BASE ?? "https://api.universalparks.com",
+  /**
+   * The ticket store's SAP Commerce (OCC v2) API — catalog + per-date pricing
+   * (`sources/universal-occ.ts`). Plain cookieless HTTPS: no session, no bearer,
+   * no Queue-it. `universalOccSite` is the store's base site id (`uor_b2c`).
+   */
+  universalOccBase:
+    process.env.UNIVERSAL_OCC_BASE ??
+    "https://comm-api.universaldestinationsandexperiences.com/occ/v2",
+  universalOccSite: process.env.UNIVERSAL_OCC_SITE ?? "uor_b2c",
   /**
    * Universal's Tridion content host. `/contentdata/<path>/index.html` returns
    * the raw page model as JSON for anything in the website sitemap, to a plain
@@ -72,6 +85,16 @@ export const config = {
   universalServicesApiKey: process.env.UNIVERSAL_SERVICES_API_KEY ?? "WebServicePortal",
   universalServicesToken:
     process.env.UNIVERSAL_SERVICES_TOKEN ?? "020B07FD-C5CC-412F-BBCC-F94B16BE7A3F",
+  /**
+   * Universal's public asset CDN — the live wait board behind the operator's
+   * own app (`sources/universal-cdn.ts`). `/{resort}/wait-time/
+   * wait-time-attraction-list.json` is a plain cookieless GET, no headers, CORS
+   * `*`, republished about once a minute, and it types every ride's queues
+   * (STANDBY / EXPRESS / SINGLE) where ThemeParks.wiki carries the Express and
+   * single-rider lines for only a few rides. Keyed by the operator's place id,
+   * which TP.wiki hands us as the live entity's `externalId`.
+   */
+  universalCdnBase: process.env.UNIVERSAL_CDN_BASE ?? "https://assets.universalparks.com",
 
   /**
    * Browserless v2 instance (separate Railway service). Universal's feeds are

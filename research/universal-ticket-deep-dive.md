@@ -1,5 +1,21 @@
 # Universal Orlando — full ticket/Express catalog + pricing API deep dive
 
+> **Status (2026-09-03): superseded.** The WebSphere store this documents was
+> replaced in August 2026 by an SAP Commerce storefront at
+> `store.universalorlando.com` (Queue-it-gated HTML) whose API is
+> `comm-api.universaldestinationsandexperiences.com/occ/v2/uor_b2c`. `gettickets`
+> no longer fires from the tickets page (the catalog crawl inserted 0 SKUs from
+> 2026-07-29), while `priceAndInventory/v2` still answered for the old Express
+> part numbers as late as 2026-09-03. The cron now reads the new store
+> cookielessly — `products/search` per category for the catalog and
+> `POST products/fetchCalendarDatesWithPriceAndInventory` for per-date price +
+> sell-out, keyed by the store's numeric variant codes with dimensions decoded
+> from the product code (`src/server/parks/universal-occ.ts`,
+> `sources/universal-occ.ts`). Day tickets are date-priced in the new store;
+> nothing carries unit counts. Everything below is the retired store, kept as
+> the record of the `TPA-…`/`AO-UEP_…` part-number taxonomy still present on
+> deactivated `product_dim` rows.
+
 Captured 2026-06-05 by replaying the live web-store session (Claude-in-Chrome). Every endpoint/body below was **replayed and returned real data**. This supersedes the "verify" caveats in `gated-feeds-report.md` §U1/U2.
 
 ## 0. The two endpoints (both CORS-open: `Access-Control-Allow-Origin: *`, `Allow-Credentials: true`)

@@ -198,6 +198,8 @@ export const parksRouter = {
       entity_type: string;
       status: number | null;
       standby_wait: number | null;
+      single_rider_wait: number | null;
+      paid_standby_wait: number | null;
       ll_state: number | null;
       ll_price_cents: number | null;
       ll_currency: string | null;
@@ -269,6 +271,8 @@ export const parksRouter = {
                  al.status,
                  al.observed_at,
                  CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.standby_wait END AS standby_wait,
+                 CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.single_rider_wait END AS single_rider_wait,
+                 CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.paid_standby_wait END AS paid_standby_wait,
                  CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.ll_state END AS ll_state,
                  CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.ll_price_cents END AS ll_price_cents,
                  CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.ll_currency END AS ll_currency,
@@ -301,6 +305,7 @@ export const parksRouter = {
         SELECT a.id, a.name, a.slug, a.entity_type,
                lv.status,
                lv.standby_wait AS standby_wait,
+               lv.single_rider_wait, lv.paid_standby_wait,
                lv.observed_at,
                lv.ll_state, lv.ll_price_cents, lv.ll_currency,
                lv.ll_return_start, lv.ll_return_end,
@@ -347,6 +352,10 @@ export const parksRouter = {
       entityType: r.entity_type,
       status: knownClosed ? "CLOSED" : code(STATUS_CODE, r.status),
       standbyWait: knownClosed ? null : r.standby_wait,
+      // Universal's single-rider / Express lines (the CDN wait-board overlay);
+      // null at Disney and wherever the ride runs neither.
+      singleRiderWait: knownClosed ? null : r.single_rider_wait,
+      paidStandbyWait: knownClosed ? null : r.paid_standby_wait,
       observedAt: r.observed_at,
       lightningLane: knownClosed
         ? { state: null, priceCents: null, currency: null, returnStart: null, returnEnd: null }
@@ -835,6 +844,8 @@ export const parksRouter = {
         resort_name: string | null;
         status: number | null;
         standby_wait: number | null;
+        single_rider_wait: number | null;
+        paid_standby_wait: number | null;
         ll_state: number | null;
         ll_price_cents: number | null;
         ll_currency: string | null;
@@ -926,6 +937,8 @@ export const parksRouter = {
                o.slug AS operator_slug, r.name AS resort_name,
                ls.status,
                sb.wait_min AS standby_wait,
+               sr.wait_min AS single_rider_wait,
+               ps.wait_min AS paid_standby_wait,
                sb.observed_at,
                prt.state AS ll_state, prt.price_cents AS ll_price_cents,
                prt.currency AS ll_currency,
@@ -970,6 +983,8 @@ export const parksRouter = {
         LEFT JOIN resorts r ON r.id = p.resort_id
         LEFT JOIN latest_status ls ON ls.attraction_id = a.id
         LEFT JOIN latest_q sb ON sb.queue_type = 1
+        LEFT JOIN latest_q sr ON sr.queue_type = 2
+        LEFT JOIN latest_q ps ON ps.queue_type = 5
         LEFT JOIN latest_q prt ON prt.queue_type = 4
         LEFT JOIN latest_q rt ON rt.queue_type = 3
         LEFT JOIN caps ON true
@@ -1009,6 +1024,9 @@ export const parksRouter = {
         },
         status: code(STATUS_CODE, r.status),
         standbyWait: r.standby_wait,
+        // Universal's single-rider / Express lines (CDN wait-board overlay).
+        singleRiderWait: r.single_rider_wait,
+        paidStandbyWait: r.paid_standby_wait,
         observedAt: r.observed_at,
         lightningLane: {
           state: code(QUEUE_STATE_CODE, r.ll_state),

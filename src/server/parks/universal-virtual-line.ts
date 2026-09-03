@@ -41,7 +41,7 @@ import type { UniversalQueue } from "./schemas.ts";
  * Universe (the Queues registry uses the former, the public CDN feed the
  * latter), so both are mapped.
  */
-const PARK_SLUG_BY_VENUE: Record<string, string> = {
+export const PARK_SLUG_BY_VENUE: Record<string, string> = {
   ioa: "islands-of-adventure",
   usf: "universal-studios-florida",
   ueu: "epic-universe",

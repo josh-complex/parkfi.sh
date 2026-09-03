@@ -14,8 +14,9 @@ import type { TRPCRouterRecord } from "@trpc/server";
 const SHELF_DAYS = 150;
 
 // Each resort's date-priced "from price to skip/enter" product. WDW date-prices
-// admission (Lightning Lane isn't in this feed); Universal date-prices Express
-// (its 1-day admission is a flat list price), so that's what the calendar shows.
+// admission (Lightning Lane isn't in this feed); at Universal the calendar shows
+// Express (admission is date-priced too since the Aug 2026 store move, but the
+// per-park Express price is the number people plan around).
 
 function parkLabel(
   parks: Array<{ code: string; label: string }>,
@@ -84,11 +85,14 @@ function uorProduct(
 ): { label: string; filter: SQL } {
   const ageStr = ageGroup === "CHILD" ? "Child" : "Adult";
   const parts = ["1-Day", ageStr, parkLabel(UOR_PARKS, park), "Express Pass"];
-  // age_group IS NULL covers Express SKUs that don't encode adult/child in the part number
+  // age_group IS NULL covers Express SKUs that don't encode adult/child in the part
+  // number (all of them, since the store move). duration_days = 1 keeps the new
+  // 2–5-day multi-park Express passes — priced per pass, not per day — from
+  // undercutting the single-day price.
   const parkCond = park ? sql` AND d.park_scope && ARRAY[${park}]::text[]` : sql``;
   return {
     label: parts.filter(Boolean).join(" "),
-    filter: sql`d.family = 'EXPRESS' AND d.variable_priced = true AND (d.age_group = ${ageGroup} OR d.age_group IS NULL)${parkCond}`,
+    filter: sql`d.family = 'EXPRESS' AND d.variable_priced = true AND d.duration_days = 1 AND (d.age_group = ${ageGroup} OR d.age_group IS NULL)${parkCond}`,
   };
 }
 
