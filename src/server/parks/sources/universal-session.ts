@@ -71,7 +71,15 @@ export async function harvestSession(page: Page): Promise<GuestSession> {
     if (!url.includes("api.universalparks.com")) return;
     seenApi.push(`${req.method()} ${url.split("?")[0]}`);
     const h = req.headers();
-    if (!h.authorization && !h.wctoken) return;
+    // The OIDC client-credentials exchange (`/oidc/connect/token`) carries a
+    // `Basic` client secret, not a session: replaying it against a data
+    // endpoint 401s. Since the store moved to store.universalorlando.com (Aug
+    // 2026) it is the FIRST authenticated call on the page, so wait for the
+    // bearer the SPA mints from it (`resort-areas/…` GETs) — that token has
+    // the `default` scope the places catalog wants (verified 2026-09-03).
+    if (url.includes("/oidc/connect/token")) return;
+    const isBearer = typeof h.authorization === "string" && /^bearer\s/i.test(h.authorization);
+    if (!isBearer && !h.wctoken) return;
     const isGetTickets = url.includes("/personalization/gettickets");
     if (isGetTickets) {
       captured = { headers: h, body: req.postData() };
