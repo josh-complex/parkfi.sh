@@ -61,7 +61,7 @@ export const Route = createFileRoute("/_app/_dash/park/$slug_/ride/$rideSlug")({
       title: `${name} Wait Times${isUniversal ? "" : " & Lightning Lane"} — ${parkName} — ParkFi`,
       description: `${waitLede}Live standby wait, ride status, and ${lineLabel} availability for ${name} at ${parkName}.${about}`,
       path: `/park/${params.slug}/ride/${params.rideSlug}`,
-      image: `/og/ride/${params.slug}/${params.rideSlug}/card.png?v=${liveCardVersion()}`,
+      image: `/og/ride/${params.slug}/${params.rideSlug}/card.jpg?v=${liveCardVersion()}`,
       imageWidth: 1200,
       imageHeight: 630,
     });

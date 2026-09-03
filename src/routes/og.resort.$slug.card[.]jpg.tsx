@@ -13,7 +13,7 @@ const TIER_LABEL: Record<ResortTier, string> = {
   campground: "Campground",
 };
 
-async function renderPng(slug: string): Promise<Buffer> {
+async function renderJpeg(slug: string): Promise<Buffer> {
   const resort = RESORT_BY_SLUG.get(slug);
   const chips: Array<OgChip> = [];
   if (resort) chips.push({ value: TIER_LABEL[resort.tier], label: "Resort type" });
@@ -25,17 +25,17 @@ async function renderPng(slug: string): Promise<Buffer> {
   });
 }
 
-export const Route = createFileRoute("/og/resort/$slug/card.png")({
+export const Route = createFileRoute("/og/resort/$slug/card.jpg")({
   server: {
     handlers: {
       GET: async ({ request }) => {
-        // Path: `/og/resort/<slug>/card.png`.
+        // Path: `/og/resort/<slug>/card.jpg`.
         const path = new URL(request.url).pathname;
-        const slug = path.replace(/^\/og\/resort\//, "").replace(/\/card\.png$/, "");
-        const png = await renderPng(slug);
-        return new Response(new Uint8Array(png), {
+        const slug = path.replace(/^\/og\/resort\//, "").replace(/\/card\.jpg$/, "");
+        const jpeg = await renderJpeg(slug);
+        return new Response(new Uint8Array(jpeg), {
           headers: {
-            "content-type": "image/png",
+            "content-type": "image/jpeg",
             "cache-control": "public, max-age=300, s-maxage=86400, stale-while-revalidate=604800",
           },
         });

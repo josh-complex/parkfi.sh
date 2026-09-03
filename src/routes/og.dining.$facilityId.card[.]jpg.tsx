@@ -51,7 +51,7 @@ async function loadStats(facilityId: string): Promise<VenueStats | null> {
   }
 }
 
-async function renderPng(facilityId: string): Promise<Buffer> {
+async function renderJpeg(facilityId: string): Promise<Buffer> {
   const stats = await loadStats(facilityId);
   const chips: Array<OgChip> = [];
   if (stats?.priceRange) chips.push({ value: stats.priceRange, label: "Price" });
@@ -71,17 +71,17 @@ async function renderPng(facilityId: string): Promise<Buffer> {
   });
 }
 
-export const Route = createFileRoute("/og/dining/$facilityId/card.png")({
+export const Route = createFileRoute("/og/dining/$facilityId/card.jpg")({
   server: {
     handlers: {
       GET: async ({ request }) => {
-        // Path: `/og/dining/<facilityId>/card.png`.
+        // Path: `/og/dining/<facilityId>/card.jpg`.
         const path = new URL(request.url).pathname;
-        const facilityId = path.replace(/^\/og\/dining\//, "").replace(/\/card\.png$/, "");
-        const png = await renderPng(facilityId);
-        return new Response(new Uint8Array(png), {
+        const facilityId = path.replace(/^\/og\/dining\//, "").replace(/\/card\.jpg$/, "");
+        const jpeg = await renderJpeg(facilityId);
+        return new Response(new Uint8Array(jpeg), {
           headers: {
-            "content-type": "image/png",
+            "content-type": "image/jpeg",
             "cache-control": "public, max-age=300, s-maxage=86400, stale-while-revalidate=604800",
           },
         });

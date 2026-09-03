@@ -70,7 +70,7 @@ async function loadStats(slug: string): Promise<ParkStats | null> {
   }
 }
 
-async function renderPng(slug: string): Promise<Buffer> {
+async function renderJpeg(slug: string): Promise<Buffer> {
   const stats = await loadStats(slug);
   const chips: Array<OgChip> = [];
   if (stats?.avgWait != null) chips.push({ value: `${stats.avgWait} min`, label: "Average wait" });
@@ -86,18 +86,18 @@ async function renderPng(slug: string): Promise<Buffer> {
   });
 }
 
-export const Route = createFileRoute("/og/park/$slug/card.png")({
+export const Route = createFileRoute("/og/park/$slug/card.jpg")({
   server: {
     handlers: {
       GET: async ({ request }) => {
-        // Parse the slug from the path: `/og/park/<slug>/card.png`.
+        // Parse the slug from the path: `/og/park/<slug>/card.jpg`.
         const path = new URL(request.url).pathname;
-        const slug = path.replace(/^\/og\/park\//, "").replace(/\/card\.png$/, "");
-        const png = await renderPng(slug);
-        return new Response(new Uint8Array(png), {
+        const slug = path.replace(/^\/og\/park\//, "").replace(/\/card\.jpg$/, "");
+        const jpeg = await renderJpeg(slug);
+        return new Response(new Uint8Array(jpeg), {
           headers: {
-            "content-type": "image/png",
-            // .png extension → Cloudflare caches it by default; long edge TTL,
+            "content-type": "image/jpeg",
+            // .jpg extension → Cloudflare caches it by default; long edge TTL,
             // short browser TTL, served stale while the live stats refresh.
             "cache-control": "public, max-age=300, s-maxage=600, stale-while-revalidate=600",
           },

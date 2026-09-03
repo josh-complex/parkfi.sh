@@ -51,7 +51,7 @@ export const Route = createFileRoute("/_app/dining_/$facilityId")({
       title: `${name} — Menu & Reservations — ParkFi`,
       description: `Full menu, pricing, and live reservation availability for ${name}${at} on ParkFi.${about}`,
       path: `/dining/${params.facilityId}`,
-      image: `/og/dining/${params.facilityId}/card.png`,
+      image: `/og/dining/${params.facilityId}/card.jpg`,
       imageWidth: 1200,
       imageHeight: 630,
     });

@@ -118,7 +118,7 @@ function paidLineChip(stats: RideStats): OgChip | null {
   return { value, label: single ? "Lightning Lane (Single)" : "Lightning Lane" };
 }
 
-async function renderPng(parkSlug: string, rideSlug: string): Promise<Buffer> {
+async function renderJpeg(parkSlug: string, rideSlug: string): Promise<Buffer> {
   const stats = await loadStats(parkSlug, rideSlug);
   const chips: Array<OgChip> = [];
   let badge: OgBadge | null = null;
@@ -149,18 +149,18 @@ async function renderPng(parkSlug: string, rideSlug: string): Promise<Buffer> {
   });
 }
 
-export const Route = createFileRoute("/og/ride/$parkSlug/$rideSlug/card.png")({
+export const Route = createFileRoute("/og/ride/$parkSlug/$rideSlug/card.jpg")({
   server: {
     handlers: {
       GET: async ({ request }) => {
-        // Path: `/og/ride/<parkSlug>/<rideSlug>/card.png`.
+        // Path: `/og/ride/<parkSlug>/<rideSlug>/card.jpg`.
         const path = new URL(request.url).pathname;
-        const rest = path.replace(/^\/og\/ride\//, "").replace(/\/card\.png$/, "");
+        const rest = path.replace(/^\/og\/ride\//, "").replace(/\/card\.jpg$/, "");
         const [parkSlug = "", rideSlug = ""] = rest.split("/");
-        const png = await renderPng(parkSlug, rideSlug);
-        return new Response(new Uint8Array(png), {
+        const jpeg = await renderJpeg(parkSlug, rideSlug);
+        return new Response(new Uint8Array(jpeg), {
           headers: {
-            "content-type": "image/png",
+            "content-type": "image/jpeg",
             "cache-control": "public, max-age=300, s-maxage=600, stale-while-revalidate=600",
           },
         });

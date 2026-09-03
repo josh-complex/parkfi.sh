@@ -54,7 +54,7 @@ export const Route = createFileRoute("/_app/_dash/park/$slug")({
       title: `${name} Wait Times & Live Map — ParkFi`,
       description: `Live wait times, ride status, and ${lineLabel} availability for ${name}. Plan your day with real-time queue data on ParkFi.`,
       path: `/park/${params.slug}`,
-      image: `/og/park/${params.slug}/card.png?v=${liveCardVersion()}`,
+      image: `/og/park/${params.slug}/card.jpg?v=${liveCardVersion()}`,
       imageWidth: 1200,
       imageHeight: 630,
     });

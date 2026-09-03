@@ -50,9 +50,9 @@ import { Route as AppDashAchievementsRouteImport } from './routes/_app/_dash/ach
 import { Route as AppDashAccountRouteImport } from './routes/_app/_dash/account'
 import { Route as AppDashAdminIndexRouteImport } from './routes/_app/_dash/admin.index'
 import { Route as AppDashAccountIndexRouteImport } from './routes/_app/_dash/account/index'
-import { Route as OgResortSlugCardDotpngRouteImport } from './routes/og.resort.$slug.card[.]png'
-import { Route as OgParkSlugCardDotpngRouteImport } from './routes/og.park.$slug.card[.]png'
-import { Route as OgDiningFacilityIdCardDotpngRouteImport } from './routes/og.dining.$facilityId.card[.]png'
+import { Route as OgResortSlugCardDotjpgRouteImport } from './routes/og.resort.$slug.card[.]jpg'
+import { Route as OgParkSlugCardDotjpgRouteImport } from './routes/og.park.$slug.card[.]jpg'
+import { Route as OgDiningFacilityIdCardDotjpgRouteImport } from './routes/og.dining.$facilityId.card[.]jpg'
 import { Route as AppDashShopSlugRouteImport } from './routes/_app/_dash/shop.$slug'
 import { Route as AppDashParkSlugRouteImport } from './routes/_app/_dash/park.$slug'
 import { Route as AppDashAdminRemovalRequestsRouteImport } from './routes/_app/_dash/admin.removal-requests'
@@ -63,7 +63,7 @@ import { Route as AppDashAccountSecurityRouteImport } from './routes/_app/_dash/
 import { Route as AppDashAccountProfileRouteImport } from './routes/_app/_dash/account/profile'
 import { Route as AppDashAccountConnectionsRouteImport } from './routes/_app/_dash/account/connections'
 import { Route as AppDashAccountAlertsRouteImport } from './routes/_app/_dash/account/alerts'
-import { Route as OgRideParkSlugRideSlugCardDotpngRouteImport } from './routes/og.ride.$parkSlug.$rideSlug.card[.]png'
+import { Route as OgRideParkSlugRideSlugCardDotjpgRouteImport } from './routes/og.ride.$parkSlug.$rideSlug.card[.]jpg'
 import { Route as AppDiningFacilityIdItemSlugRouteImport } from './routes/_app/dining_.$facilityId_.item.$slug'
 import { Route as AppDashParkSlugRideRideSlugRouteImport } from './routes/_app/_dash/park.$slug_.ride.$rideSlug'
 
@@ -270,20 +270,20 @@ const AppDashAccountIndexRoute = AppDashAccountIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppDashAccountRoute,
 } as any)
-const OgResortSlugCardDotpngRoute = OgResortSlugCardDotpngRouteImport.update({
-  id: '/og/resort/$slug/card.png',
-  path: '/og/resort/$slug/card.png',
+const OgResortSlugCardDotjpgRoute = OgResortSlugCardDotjpgRouteImport.update({
+  id: '/og/resort/$slug/card.jpg',
+  path: '/og/resort/$slug/card.jpg',
   getParentRoute: () => rootRouteImport,
 } as any)
-const OgParkSlugCardDotpngRoute = OgParkSlugCardDotpngRouteImport.update({
-  id: '/og/park/$slug/card.png',
-  path: '/og/park/$slug/card.png',
+const OgParkSlugCardDotjpgRoute = OgParkSlugCardDotjpgRouteImport.update({
+  id: '/og/park/$slug/card.jpg',
+  path: '/og/park/$slug/card.jpg',
   getParentRoute: () => rootRouteImport,
 } as any)
-const OgDiningFacilityIdCardDotpngRoute =
-  OgDiningFacilityIdCardDotpngRouteImport.update({
-    id: '/og/dining/$facilityId/card.png',
-    path: '/og/dining/$facilityId/card.png',
+const OgDiningFacilityIdCardDotjpgRoute =
+  OgDiningFacilityIdCardDotjpgRouteImport.update({
+    id: '/og/dining/$facilityId/card.jpg',
+    path: '/og/dining/$facilityId/card.jpg',
     getParentRoute: () => rootRouteImport,
   } as any)
 const AppDashShopSlugRoute = AppDashShopSlugRouteImport.update({
@@ -339,10 +339,10 @@ const AppDashAccountAlertsRoute = AppDashAccountAlertsRouteImport.update({
   path: '/alerts',
   getParentRoute: () => AppDashAccountRoute,
 } as any)
-const OgRideParkSlugRideSlugCardDotpngRoute =
-  OgRideParkSlugRideSlugCardDotpngRouteImport.update({
-    id: '/og/ride/$parkSlug/$rideSlug/card.png',
-    path: '/og/ride/$parkSlug/$rideSlug/card.png',
+const OgRideParkSlugRideSlugCardDotjpgRoute =
+  OgRideParkSlugRideSlugCardDotjpgRouteImport.update({
+    id: '/og/ride/$parkSlug/$rideSlug/card.jpg',
+    path: '/og/ride/$parkSlug/$rideSlug/card.jpg',
     getParentRoute: () => rootRouteImport,
   } as any)
 const AppDiningFacilityIdItemSlugRoute =
@@ -406,13 +406,13 @@ export interface FileRoutesByFullPath {
   '/admin/removal-requests': typeof AppDashAdminRemovalRequestsRoute
   '/park/$slug': typeof AppDashParkSlugRoute
   '/shop/$slug': typeof AppDashShopSlugRoute
-  '/og/dining/$facilityId/card.png': typeof OgDiningFacilityIdCardDotpngRoute
-  '/og/park/$slug/card.png': typeof OgParkSlugCardDotpngRoute
-  '/og/resort/$slug/card.png': typeof OgResortSlugCardDotpngRoute
+  '/og/dining/$facilityId/card.jpg': typeof OgDiningFacilityIdCardDotjpgRoute
+  '/og/park/$slug/card.jpg': typeof OgParkSlugCardDotjpgRoute
+  '/og/resort/$slug/card.jpg': typeof OgResortSlugCardDotjpgRoute
   '/account/': typeof AppDashAccountIndexRoute
   '/admin/': typeof AppDashAdminIndexRoute
   '/dining/$facilityId/item/$slug': typeof AppDiningFacilityIdItemSlugRoute
-  '/og/ride/$parkSlug/$rideSlug/card.png': typeof OgRideParkSlugRideSlugCardDotpngRoute
+  '/og/ride/$parkSlug/$rideSlug/card.jpg': typeof OgRideParkSlugRideSlugCardDotjpgRoute
   '/park/$slug/ride/$rideSlug': typeof AppDashParkSlugRideRideSlugRoute
 }
 export interface FileRoutesByTo {
@@ -461,13 +461,13 @@ export interface FileRoutesByTo {
   '/admin/removal-requests': typeof AppDashAdminRemovalRequestsRoute
   '/park/$slug': typeof AppDashParkSlugRoute
   '/shop/$slug': typeof AppDashShopSlugRoute
-  '/og/dining/$facilityId/card.png': typeof OgDiningFacilityIdCardDotpngRoute
-  '/og/park/$slug/card.png': typeof OgParkSlugCardDotpngRoute
-  '/og/resort/$slug/card.png': typeof OgResortSlugCardDotpngRoute
+  '/og/dining/$facilityId/card.jpg': typeof OgDiningFacilityIdCardDotjpgRoute
+  '/og/park/$slug/card.jpg': typeof OgParkSlugCardDotjpgRoute
+  '/og/resort/$slug/card.jpg': typeof OgResortSlugCardDotjpgRoute
   '/account': typeof AppDashAccountIndexRoute
   '/admin': typeof AppDashAdminIndexRoute
   '/dining/$facilityId/item/$slug': typeof AppDiningFacilityIdItemSlugRoute
-  '/og/ride/$parkSlug/$rideSlug/card.png': typeof OgRideParkSlugRideSlugCardDotpngRoute
+  '/og/ride/$parkSlug/$rideSlug/card.jpg': typeof OgRideParkSlugRideSlugCardDotjpgRoute
   '/park/$slug/ride/$rideSlug': typeof AppDashParkSlugRideRideSlugRoute
 }
 export interface FileRoutesById {
@@ -521,13 +521,13 @@ export interface FileRoutesById {
   '/_app/_dash/admin/removal-requests': typeof AppDashAdminRemovalRequestsRoute
   '/_app/_dash/park/$slug': typeof AppDashParkSlugRoute
   '/_app/_dash/shop/$slug': typeof AppDashShopSlugRoute
-  '/og/dining/$facilityId/card.png': typeof OgDiningFacilityIdCardDotpngRoute
-  '/og/park/$slug/card.png': typeof OgParkSlugCardDotpngRoute
-  '/og/resort/$slug/card.png': typeof OgResortSlugCardDotpngRoute
+  '/og/dining/$facilityId/card.jpg': typeof OgDiningFacilityIdCardDotjpgRoute
+  '/og/park/$slug/card.jpg': typeof OgParkSlugCardDotjpgRoute
+  '/og/resort/$slug/card.jpg': typeof OgResortSlugCardDotjpgRoute
   '/_app/_dash/account/': typeof AppDashAccountIndexRoute
   '/_app/_dash/admin/': typeof AppDashAdminIndexRoute
   '/_app/dining_/$facilityId_/item/$slug': typeof AppDiningFacilityIdItemSlugRoute
-  '/og/ride/$parkSlug/$rideSlug/card.png': typeof OgRideParkSlugRideSlugCardDotpngRoute
+  '/og/ride/$parkSlug/$rideSlug/card.jpg': typeof OgRideParkSlugRideSlugCardDotjpgRoute
   '/_app/_dash/park/$slug_/ride/$rideSlug': typeof AppDashParkSlugRideRideSlugRoute
 }
 export interface FileRouteTypes {
@@ -580,13 +580,13 @@ export interface FileRouteTypes {
     | '/admin/removal-requests'
     | '/park/$slug'
     | '/shop/$slug'
-    | '/og/dining/$facilityId/card.png'
-    | '/og/park/$slug/card.png'
-    | '/og/resort/$slug/card.png'
+    | '/og/dining/$facilityId/card.jpg'
+    | '/og/park/$slug/card.jpg'
+    | '/og/resort/$slug/card.jpg'
     | '/account/'
     | '/admin/'
     | '/dining/$facilityId/item/$slug'
-    | '/og/ride/$parkSlug/$rideSlug/card.png'
+    | '/og/ride/$parkSlug/$rideSlug/card.jpg'
     | '/park/$slug/ride/$rideSlug'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -635,13 +635,13 @@ export interface FileRouteTypes {
     | '/admin/removal-requests'
     | '/park/$slug'
     | '/shop/$slug'
-    | '/og/dining/$facilityId/card.png'
-    | '/og/park/$slug/card.png'
-    | '/og/resort/$slug/card.png'
+    | '/og/dining/$facilityId/card.jpg'
+    | '/og/park/$slug/card.jpg'
+    | '/og/resort/$slug/card.jpg'
     | '/account'
     | '/admin'
     | '/dining/$facilityId/item/$slug'
-    | '/og/ride/$parkSlug/$rideSlug/card.png'
+    | '/og/ride/$parkSlug/$rideSlug/card.jpg'
     | '/park/$slug/ride/$rideSlug'
   id:
     | '__root__'
@@ -694,13 +694,13 @@ export interface FileRouteTypes {
     | '/_app/_dash/admin/removal-requests'
     | '/_app/_dash/park/$slug'
     | '/_app/_dash/shop/$slug'
-    | '/og/dining/$facilityId/card.png'
-    | '/og/park/$slug/card.png'
-    | '/og/resort/$slug/card.png'
+    | '/og/dining/$facilityId/card.jpg'
+    | '/og/park/$slug/card.jpg'
+    | '/og/resort/$slug/card.jpg'
     | '/_app/_dash/account/'
     | '/_app/_dash/admin/'
     | '/_app/dining_/$facilityId_/item/$slug'
-    | '/og/ride/$parkSlug/$rideSlug/card.png'
+    | '/og/ride/$parkSlug/$rideSlug/card.jpg'
     | '/_app/_dash/park/$slug_/ride/$rideSlug'
   fileRoutesById: FileRoutesById
 }
@@ -720,10 +720,10 @@ export interface RootRouteChildren {
   ApiMapStyleThemeRoute: typeof ApiMapStyleThemeRoute
   ApiPushSubscribeRoute: typeof ApiPushSubscribeRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
-  OgDiningFacilityIdCardDotpngRoute: typeof OgDiningFacilityIdCardDotpngRoute
-  OgParkSlugCardDotpngRoute: typeof OgParkSlugCardDotpngRoute
-  OgResortSlugCardDotpngRoute: typeof OgResortSlugCardDotpngRoute
-  OgRideParkSlugRideSlugCardDotpngRoute: typeof OgRideParkSlugRideSlugCardDotpngRoute
+  OgDiningFacilityIdCardDotjpgRoute: typeof OgDiningFacilityIdCardDotjpgRoute
+  OgParkSlugCardDotjpgRoute: typeof OgParkSlugCardDotjpgRoute
+  OgResortSlugCardDotjpgRoute: typeof OgResortSlugCardDotjpgRoute
+  OgRideParkSlugRideSlugCardDotjpgRoute: typeof OgRideParkSlugRideSlugCardDotjpgRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -1015,25 +1015,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDashAccountIndexRouteImport
       parentRoute: typeof AppDashAccountRoute
     }
-    '/og/resort/$slug/card.png': {
-      id: '/og/resort/$slug/card.png'
-      path: '/og/resort/$slug/card.png'
-      fullPath: '/og/resort/$slug/card.png'
-      preLoaderRoute: typeof OgResortSlugCardDotpngRouteImport
+    '/og/resort/$slug/card.jpg': {
+      id: '/og/resort/$slug/card.jpg'
+      path: '/og/resort/$slug/card.jpg'
+      fullPath: '/og/resort/$slug/card.jpg'
+      preLoaderRoute: typeof OgResortSlugCardDotjpgRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/og/park/$slug/card.png': {
-      id: '/og/park/$slug/card.png'
-      path: '/og/park/$slug/card.png'
-      fullPath: '/og/park/$slug/card.png'
-      preLoaderRoute: typeof OgParkSlugCardDotpngRouteImport
+    '/og/park/$slug/card.jpg': {
+      id: '/og/park/$slug/card.jpg'
+      path: '/og/park/$slug/card.jpg'
+      fullPath: '/og/park/$slug/card.jpg'
+      preLoaderRoute: typeof OgParkSlugCardDotjpgRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/og/dining/$facilityId/card.png': {
-      id: '/og/dining/$facilityId/card.png'
-      path: '/og/dining/$facilityId/card.png'
-      fullPath: '/og/dining/$facilityId/card.png'
-      preLoaderRoute: typeof OgDiningFacilityIdCardDotpngRouteImport
+    '/og/dining/$facilityId/card.jpg': {
+      id: '/og/dining/$facilityId/card.jpg'
+      path: '/og/dining/$facilityId/card.jpg'
+      fullPath: '/og/dining/$facilityId/card.jpg'
+      preLoaderRoute: typeof OgDiningFacilityIdCardDotjpgRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/_dash/shop/$slug': {
@@ -1106,11 +1106,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDashAccountAlertsRouteImport
       parentRoute: typeof AppDashAccountRoute
     }
-    '/og/ride/$parkSlug/$rideSlug/card.png': {
-      id: '/og/ride/$parkSlug/$rideSlug/card.png'
-      path: '/og/ride/$parkSlug/$rideSlug/card.png'
-      fullPath: '/og/ride/$parkSlug/$rideSlug/card.png'
-      preLoaderRoute: typeof OgRideParkSlugRideSlugCardDotpngRouteImport
+    '/og/ride/$parkSlug/$rideSlug/card.jpg': {
+      id: '/og/ride/$parkSlug/$rideSlug/card.jpg'
+      path: '/og/ride/$parkSlug/$rideSlug/card.jpg'
+      fullPath: '/og/ride/$parkSlug/$rideSlug/card.jpg'
+      preLoaderRoute: typeof OgRideParkSlugRideSlugCardDotjpgRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/dining_/$facilityId_/item/$slug': {
@@ -1259,10 +1259,10 @@ const rootRouteChildren: RootRouteChildren = {
   ApiMapStyleThemeRoute: ApiMapStyleThemeRoute,
   ApiPushSubscribeRoute: ApiPushSubscribeRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,
-  OgDiningFacilityIdCardDotpngRoute: OgDiningFacilityIdCardDotpngRoute,
-  OgParkSlugCardDotpngRoute: OgParkSlugCardDotpngRoute,
-  OgResortSlugCardDotpngRoute: OgResortSlugCardDotpngRoute,
-  OgRideParkSlugRideSlugCardDotpngRoute: OgRideParkSlugRideSlugCardDotpngRoute,
+  OgDiningFacilityIdCardDotjpgRoute: OgDiningFacilityIdCardDotjpgRoute,
+  OgParkSlugCardDotjpgRoute: OgParkSlugCardDotjpgRoute,
+  OgResortSlugCardDotjpgRoute: OgResortSlugCardDotjpgRoute,
+  OgRideParkSlugRideSlugCardDotjpgRoute: OgRideParkSlugRideSlugCardDotjpgRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -14,7 +14,7 @@ export const Route = createFileRoute("/_app/resort/$slug")({
       title: `${name} — Availability & Rates — ParkFi`,
       description: `Live nightly availability and rates for ${name}${inArea} at Walt Disney World. Track openings and set price alerts on ParkFi.`,
       path: `/resort/${params.slug}`,
-      image: `/og/resort/${params.slug}/card.png`,
+      image: `/og/resort/${params.slug}/card.jpg`,
       imageWidth: 1200,
       imageHeight: 630,
     });

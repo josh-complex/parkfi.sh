@@ -1,5 +1,6 @@
 import { Resvg } from "@resvg/resvg-js";
 import satori from "satori";
+import sharp from "sharp";
 
 import { GEIST_REGULAR_BASE64 } from "#/server/og/geist-font.ts";
 import { SITE_NAME } from "#/lib/seo.ts";
@@ -190,7 +191,15 @@ async function fetchImageDataUri(url: string | null | undefined): Promise<string
   }
 }
 
-/** Render a 1200×630 share card to PNG. Shared by every per-entity OG route. */
+/**
+ * Render a 1200×630 share card to JPEG. Shared by every per-entity OG route.
+ *
+ * JPEG, not PNG: the photo-backed cards came out ~1.2 MB as PNG, and since
+ * live cards rotate their URL every 10 minutes (see `liveCardVersion`), link
+ * unfurlers (Discord's image proxy especially) re-download and re-encode a
+ * fresh copy on nearly every share. At q85 the same card is ~100 KB, so the
+ * unfurl is fast even on a cold edge.
+ */
 export async function renderOgCard(config: OgCardConfig): Promise<Buffer> {
   const imageDataUri = await fetchImageDataUri(config.imageUrl);
   const svg = await satori(<Card {...config} imageDataUri={imageDataUri} />, {
@@ -198,7 +207,8 @@ export async function renderOgCard(config: OgCardConfig): Promise<Buffer> {
     height: OG_HEIGHT,
     fonts: [{ name: "Geist", data: FONT, weight: 400, style: "normal" }],
   });
-  return new Resvg(svg, { fitTo: { mode: "width", value: OG_WIDTH } }).render().asPng();
+  const png = new Resvg(svg, { fitTo: { mode: "width", value: OG_WIDTH } }).render().asPng();
+  return sharp(png).jpeg({ quality: 85, mozjpeg: true }).toBuffer();
 }
 
 /** "magic-kingdom" -> "Magic Kingdom" fallback when an entity isn't in the DB. */
