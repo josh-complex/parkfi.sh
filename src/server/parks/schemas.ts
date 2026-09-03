@@ -1676,3 +1676,27 @@ export const UniversalRidePageSchema = z.object({
     .default([]),
 });
 export type UniversalRidePage = z.infer<typeof UniversalRidePageSchema>;
+
+/**
+ * A "GDS - Content - Feature" card: the items of a "GDS - Content Feature Six
+ * Swimlane". On the `/hhn/haunted-houses` page every house is one of these —
+ * `eyebrow` is the house name (sometimes `<em>`-wrapped), `heading` its
+ * tagline, `image` the key art. Parsed node-by-node by a recursive walk
+ * (`hhnHousesFromPage`), so only the card itself is modelled here.
+ */
+export const UniversalContentFeatureSchema = z
+  .object({
+    Schema: z.object({ Id: z.string().optional(), Title: z.string().optional() }).partial(),
+    Fields: z
+      .object({
+        eyebrow: TridionTextField.optional(),
+        heading: TridionTextField.optional(),
+        description: TridionTextField.optional(),
+        image: TridionResponsiveImage.optional(),
+      })
+      .partial()
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+export type UniversalContentFeature = z.infer<typeof UniversalContentFeatureSchema>;

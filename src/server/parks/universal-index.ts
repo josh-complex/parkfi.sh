@@ -288,10 +288,11 @@ export function resolveUniversalRideAttrs(
     accessibility: universalAccessibilityLabels(poi?.AccessibilityOptions),
     funFact: poi?.FunFact?.trim() || null,
     tags: [...new Set(tags)],
-    // Tile copy is the marketing description; the POI feed's is the app blurb.
-    // Prefer the longer of the two, matching the places-feed rule.
+    // Tile copy is the marketing description; the POI feed's is the app blurb;
+    // the HHN house cards carry their own. Prefer the longest, matching the
+    // places-feed rule.
     description:
-      [tile?.description, poi?.MblLongDescription, poi?.MblShortDescription]
+      [tile?.description, facts?.description, poi?.MblLongDescription, poi?.MblShortDescription]
         .map((d) => d?.trim() || null)
         .filter((d): d is string => d != null)
         .sort((a, b) => b.length - a.length)[0] ?? null,

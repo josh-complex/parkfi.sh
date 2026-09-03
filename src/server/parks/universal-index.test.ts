@@ -7,6 +7,8 @@ import {
   universalTypeLabels,
 } from "./codes.ts";
 import {
+  curatedUniversalArtwork,
+  hhnHousesFromPage,
   parseFeatureHeightInches,
   rideFactsFromPage,
   type UniversalRideFacts,
@@ -279,6 +281,123 @@ describe("rideFactsFromPage", () => {
     );
     expect(facts.minHeightIn).toBe(0);
     expect(facts.companionRequirement).toContain("Supervising Companion");
+  });
+});
+
+/** Narrow real facts records to the test index helper's `heading: string`. */
+function named(facts: Array<UniversalRideFacts>): Array<UniversalRideFacts & { heading: string }> {
+  return facts.filter((f): f is UniversalRideFacts & { heading: string } => f.heading != null);
+}
+
+describe("hhnHousesFromPage", () => {
+  const field = (value: string) => ({ Values: [value], KeywordValues: [] });
+  const image = (url: string) => ({
+    EmbeddedValues: [{ desktop: { LinkedComponentValues: [{ Multimedia: { Url: url } }] } }],
+  });
+  const card = (fields: Record<string, unknown>) => ({
+    Schema: { Title: "GDS - Content - Feature" },
+    Fields: fields,
+  });
+  // The live page nests the cards several container/swimlane levels down.
+  const page = {
+    ComponentPresentations: [
+      { Component: { Schema: { Title: "GDS - Hero" }, Fields: {} } },
+      {
+        Component: {
+          Schema: { Title: "GDS - Container" },
+          Fields: {
+            elements: {
+              EmbeddedValues: [
+                {
+                  component: {
+                    LinkedComponentValues: [
+                      {
+                        Schema: { Title: "GDS - Content Feature Six Swimlane" },
+                        Fields: {
+                          items: {
+                            LinkedComponentValues: [
+                              card({
+                                eyebrow: field("Jack &amp; Oddfellow: Chaos &amp; Control"),
+                                heading: field("The Forces of Horror Collide"),
+                                description: field("Horror icons aren't born."),
+                                image: image(
+                                  "/uor/en/us/files/Images/usf-halloween-horror-nights-jack-oddfellow-house-cf-a.jpg",
+                                ),
+                              }),
+                              card({
+                                eyebrow: field(
+                                  '<em xmlns="http://www.w3.org/1999/xhtml">Cybergoria</em>',
+                                ),
+                                heading: field("Immortality Comes at a Cost"),
+                                image: image(
+                                  "/uor/en/us/files/Images/usf-halloween-horror-nights-house-cybergoria-a3.jpg",
+                                ),
+                              }),
+                              // Promo card: no eyebrow → not a house.
+                              card({
+                                heading: field("Get Your Ticket to Terror"),
+                                image: image("/uor/en/us/files/Images/hhn-tickets.jpg"),
+                              }),
+                              // Named but art-less → nothing to contribute.
+                              card({ eyebrow: field("Sinners"), heading: field("Bluesy") }),
+                            ],
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        },
+      },
+    ],
+  };
+
+  it("yields one artwork-only facts record per named house, on the /contentdata host", () => {
+    const houses = hhnHousesFromPage(page);
+    expect(houses.map((h) => h.heading)).toEqual([
+      "Jack & Oddfellow: Chaos & Control",
+      "Cybergoria",
+    ]);
+    expect(houses[0]?.imageHero).toBe(
+      "https://www.universalorlando.com/contentdata/uor/en/us/files/Images/usf-halloween-horror-nights-jack-oddfellow-house-cf-a.jpg",
+    );
+    expect(houses[0]?.description).toBe("Horror icons aren't born.");
+    expect(houses[0]?.imageAlt).toBe("Jack & Oddfellow: Chaos & Control");
+    // No attribute claims ride along with the artwork.
+    expect(houses[1]?.minHeightIn).toBeNull();
+    expect(houses[1]?.expressPass).toBe(false);
+  });
+
+  it("joins a house to its wait-board attraction and feeds the card copy in", () => {
+    const attrs = resolveUniversalRideAttrs(
+      index({
+        rides: [{ MblDisplayName: "Cybergoria", VenueId: USF }],
+        facts: named(hhnHousesFromPage(page)),
+      }),
+      USF,
+      "Cybergoria",
+    );
+    expect(attrs.matched).toBe(true);
+    expect(attrs.imageThumbUrl).toContain("house-cybergoria-a3.jpg");
+    expect(attrs.imageHeroUrl).toContain("house-cybergoria-a3.jpg");
+  });
+
+  it("curated artwork resolves absolute on the /contentdata host", () => {
+    const curated = curatedUniversalArtwork();
+    expect(curated.length).toBeGreaterThan(0);
+    for (const facts of curated) {
+      expect(facts.heading).toBeTruthy();
+      expect(facts.imageHero).toMatch(/^https:\/\/www\.universalorlando\.com\/contentdata\/uor\//);
+    }
+    const attrs = resolveUniversalRideAttrs(
+      index({ shows: [{ MblDisplayName: "Meet Toad", VenueId: EPIC }], facts: named(curated) }),
+      EPIC,
+      "Meet Toad",
+    );
+    expect(attrs.imageThumbUrl).toContain("toad-walkaround-character-a.jpg");
   });
 });
 

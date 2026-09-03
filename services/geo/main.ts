@@ -93,8 +93,10 @@ import {
 } from "#/server/parks/sources/osm-boundaries.ts";
 import { fetchChildren } from "#/server/parks/sources/themeparks.ts";
 import {
+  curatedUniversalArtwork,
   fetchAllUniversalRideFacts,
   fetchUniversalFiltersData,
+  fetchUniversalHhnHouses,
   universalAssetUrl,
   tileInfo,
 } from "#/server/parks/sources/universal-content.ts";
@@ -1578,7 +1580,7 @@ async function main() {
       venues = await fetchUniversalVenues(AbortSignal.timeout(config.fetchTimeoutMs));
     });
     await runStep("universal content", async () => {
-      const [pois, tiles, rideFacts] = await Promise.all([
+      const [pois, tiles, rideFacts, hhnHouses] = await Promise.all([
         fetchUniversalPois(AbortSignal.timeout(config.fetchTimeoutMs)).catch((err) => {
           reportServiceError("geo", "universal pois", err);
           return null;
@@ -1593,16 +1595,22 @@ async function main() {
           reportServiceError("geo", "universal ride pages", err);
           return [];
         }),
+        fetchUniversalHhnHouses().catch((err) => {
+          reportServiceError("geo", "universal hhn houses", err);
+          return [];
+        }),
       ]);
       universalContent = buildUniversalContentIndex({
         pois,
         tiles,
-        rideFacts,
+        // Keyed by name, last writer wins: the curated list is the floor, a
+        // real page for the same name replaces it.
+        rideFacts: [...curatedUniversalArtwork(), ...hhnHouses, ...rideFacts],
         lands: venues ? universalLands(venues) : [],
       });
       console.log(
         `[geo] universal content: ${pois?.Rides.length ?? 0} rides, ${tiles.length} tiles, ` +
-          `${rideFacts.length} ride pages`,
+          `${rideFacts.length} ride pages, ${hhnHouses.length} HHN houses`,
       );
     });
   }

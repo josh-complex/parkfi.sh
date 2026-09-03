@@ -1,5 +1,6 @@
 import { config } from "../config.ts";
 import {
+  UniversalContentFeatureSchema,
   UniversalFiltersDataSchema,
   UniversalRidePageSchema,
   type UniversalFiltersData,
@@ -37,6 +38,14 @@ import { UpstreamError } from "./themeparks.ts";
 
 const UTILITY_SECTION_SCHEMA = "GDS - Utility Section";
 const HERO_SCHEMA = "GDS - Hero";
+const CONTENT_FEATURE_SCHEMA = "GDS - Content - Feature";
+/**
+ * The Halloween Horror Nights haunted-houses page. The houses run on the live
+ * wait board (so they're attractions here) but have no `filtersdata` tile, no
+ * sitemap page and null artwork in the mobile POI feed; this page's swimlane
+ * carries one key-art card per house, named in its `eyebrow`.
+ */
+const HHN_HOUSES_PATH = "/hhn/haunted-houses";
 const RIDE_PATH_PREFIX = "/things-to-do/rides-attractions/";
 /**
  * Sitemap sections whose pages carry the Utility Section / Hero components.
@@ -252,6 +261,9 @@ export interface UniversalRideFacts {
   imageHero: string | null;
   /** Alt text off the same hero slot — real copy, like the tile feed's. */
   imageAlt: string | null;
+  /** Card copy, where the source has any (HHN houses); ride pages publish none
+   *  in the components we read, so this stays null there. */
+  description?: string | null;
 }
 
 /**
@@ -399,4 +411,149 @@ export async function fetchAllUniversalRideFacts(
     if (delayMs > 0) await sleep(delayMs);
   }
   return out;
+}
+
+// --- HHN haunted houses + curated artwork ---------------------------------
+
+/** Depth-first walk yielding every object node of a parsed JSON document. */
+function* objectNodes(node: unknown): Generator<Record<string, unknown>> {
+  if (Array.isArray(node)) {
+    for (const item of node) yield* objectNodes(item);
+  } else if (node != null && typeof node === "object") {
+    yield node as Record<string, unknown>;
+    for (const value of Object.values(node)) yield* objectNodes(value);
+  }
+}
+
+/** A facts record that carries artwork (and maybe copy) and nothing else —
+ *  every attribute flag stays at its "not published" value. */
+function artworkFacts(input: {
+  slug: string;
+  heading: string;
+  imageHero: string | null;
+  imageAlt: string | null;
+  description?: string | null;
+}): UniversalRideFacts {
+  return {
+    slug: input.slug,
+    heading: input.heading,
+    minHeightIn: null,
+    rideTypes: [],
+    childSwap: false,
+    expressPass: false,
+    companionRequirement: null,
+    singleRider: false,
+    imageHero: input.imageHero,
+    imageAlt: input.imageAlt,
+    description: input.description ?? null,
+  };
+}
+
+/**
+ * Every haunted-house card on the parsed `/hhn/haunted-houses` page, as
+ * artwork-only facts keyed by the house name. The cards sit several
+ * container/swimlane levels deep and that nesting isn't stable, so this walks
+ * the whole document for "GDS - Content - Feature" components instead of
+ * modelling the path. Cards without a name or an image are skipped — the page
+ * also carries generic promo cards.
+ */
+export function hhnHousesFromPage(page: unknown): Array<UniversalRideFacts> {
+  const out: Array<UniversalRideFacts> = [];
+  const seen = new Set<string>();
+  for (const node of objectNodes(page)) {
+    const schema = node.Schema as { Title?: unknown } | undefined;
+    if (schema?.Title !== CONTENT_FEATURE_SCHEMA) continue;
+    const parsed = UniversalContentFeatureSchema.safeParse(node);
+    if (!parsed.success) continue;
+    const fields = parsed.data.Fields;
+    const heading = text(val(fields?.eyebrow));
+    const slot = fields?.image?.EmbeddedValues?.[0];
+    const imageHero = contentImageUrl(
+      renditionUrl(slot?.desktop) ?? renditionUrl(slot?.tablet) ?? renditionUrl(slot?.mobile),
+    );
+    if (!heading || !imageHero || seen.has(heading)) continue;
+    seen.add(heading);
+    out.push(
+      artworkFacts({
+        slug: `hhn/${heading
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "")}`,
+        heading,
+        imageHero,
+        // The card's alt text is the tagline at best; the house name reads
+        // better as alt than "The Final Chapter".
+        imageAlt: text(val(slot?.alt)) ?? heading,
+        description: text(val(fields?.description)),
+      }),
+    );
+  }
+  return out;
+}
+
+/** Fetch + parse the haunted-houses page; empty when the page is gone (off-season). */
+export async function fetchUniversalHhnHouses(): Promise<Array<UniversalRideFacts>> {
+  const body = await getJson(
+    `${config.universalContentBase}/uor/en/us${HHN_HOUSES_PATH}/index.html`,
+  );
+  return body == null ? [] : hhnHousesFromPage(body);
+}
+
+/**
+ * Artwork Universal publishes only inside a land or land-wide page, keyed by
+ * OUR attraction name (the wait board's). These attractions have no
+ * `filtersdata` tile, no page of their own in the sitemap, and null images in
+ * the mobile POI feed, so nothing automatic can reach them:
+ *
+ *  - Epic Universe's Nintendo character meets: one card each on the
+ *    `/things-to-do/character-encounters/super-nintendo-world-character-encounters`
+ *    swimlane, but the card headings are taglines ("Strike a Pose with Toad"),
+ *    not names, so there is nothing to join on.
+ *  - Bowser Jr. Challenge is the Key Challenges finale; the land page's
+ *    Key Challenges poster is the closest thing to a photo of it.
+ *
+ * Lowest priority in the index (see the geo cron): a real page or tile for
+ * the same name replaces these wholesale. Revisit when Universal publishes
+ * per-character pages — `fetchUniversalPagePaths` already crawls that section.
+ */
+const CURATED_ARTWORK: ReadonlyArray<{ heading: string; image: string; alt: string }> = [
+  {
+    heading: "Meet Mario and Luigi",
+    image:
+      "/uor/en/us/files/Images/gds/ueu-super-nintendo-world-mario-and-luigi-walkaround-characters-hands-up-a.jpg",
+    alt: "Mario and Luigi waving with their hands up in SUPER NINTENDO WORLD.",
+  },
+  {
+    heading: "Meet Princess Peach",
+    image:
+      "/uor/en/us/files/Images/gds/ueu-super-nintendo-world-princess-peach-walkaround-character-a.jpg",
+    alt: "Princess Peach greeting guests in SUPER NINTENDO WORLD.",
+  },
+  {
+    heading: "Meet Toad",
+    image: "/uor/en/us/files/Images/gds/ueu-super-nintendo-world-toad-walkaround-character-a.jpg",
+    alt: "Toad posing with guests in SUPER NINTENDO WORLD.",
+  },
+  {
+    heading: "Meet Donkey Kong",
+    image: "/uor/en/us/files/Images/gds/ueu-super-nintendo-world-dk-walkaround-character-a.jpg",
+    alt: "Donkey Kong meeting guests in Donkey Kong Country.",
+  },
+  {
+    heading: "Bowser Jr. Challenge",
+    image: "/uor/en/us/files/Images/gds/ueu-super-nintendo-world-04-key-challenges-IG-poster-h.jpg",
+    alt: "Guests playing the Key Challenges in SUPER NINTENDO WORLD.",
+  },
+];
+
+/** {@link CURATED_ARTWORK} as artwork-only facts, absolute on the content host. */
+export function curatedUniversalArtwork(): Array<UniversalRideFacts> {
+  return CURATED_ARTWORK.map((entry) =>
+    artworkFacts({
+      slug: `curated/${entry.heading.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+      heading: entry.heading,
+      imageHero: contentImageUrl(entry.image),
+      imageAlt: entry.alt,
+    }),
+  );
 }
