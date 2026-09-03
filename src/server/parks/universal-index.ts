@@ -6,7 +6,11 @@ import {
   UNIVERSAL_POI_BUCKETS,
   type PoiCategory,
 } from "./codes.ts";
-import type { UniversalTileInfo, UniversalRideFacts } from "./sources/universal-content.ts";
+import {
+  universalAssetUrl,
+  type UniversalRideFacts,
+  type UniversalTileInfo,
+} from "./sources/universal-content.ts";
 import type {
   UniversalPoi,
   UniversalPoiFeed,
@@ -300,13 +304,18 @@ export function resolveUniversalRideAttrs(
     // artwork comes from the tiles / ride pages only. The page hero also backs
     // up the thumb slot — since the `filtersdata` feed dropped its EU tiles
     // (Aug 2026), the ride pages are EU's only artwork source.
-    imageThumbUrl:
+    // Both slots pass through `universalAssetUrl`: the tile/page URLs are
+    // already on the `/contentdata` host, but the POI feed's are whatever it
+    // publishes, and the bare web-origin form 301s to an error page.
+    imageThumbUrl: universalAssetUrl(
       (poiTrusted ? (poi?.ListImage ?? poi?.ThumbnailImage) : null) ??
-      tile?.imageTile ??
-      facts?.imageHero ??
-      null,
-    imageHeroUrl:
+        tile?.imageTile ??
+        facts?.imageHero ??
+        null,
+    ),
+    imageHeroUrl: universalAssetUrl(
       tile?.imageHero ?? facts?.imageHero ?? (poiTrusted ? poi?.DetailImages?.[0] : null) ?? null,
+    ),
     land: tile?.land ?? (poi?.LandId != null ? (index.landById.get(poi.LandId) ?? null) : null),
     matched: true,
   };

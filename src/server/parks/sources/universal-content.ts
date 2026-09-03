@@ -62,13 +62,17 @@ function sleep(ms: number): Promise<void> {
  * signal — the URL 301s to `oops-sorry`) or a 404; soft blocks retry with
  * jittered backoff. Mirrors `universal-menu.getPage`.
  */
-async function getJson(url: string, attempts = 3): Promise<unknown> {
+async function getJson(
+  url: string,
+  attempts = 3,
+  timeoutMs: number = config.fetchTimeoutMs,
+): Promise<unknown> {
   let lastErr: unknown;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
       const res = await fetch(url, {
         redirect: "manual",
-        signal: AbortSignal.timeout(config.fetchTimeoutMs),
+        signal: AbortSignal.timeout(timeoutMs),
         headers: { accept: "application/json" },
       });
       if (res.status >= 300 && res.status < 400) return null;
@@ -93,10 +97,18 @@ async function getJson(url: string, attempts = 3): Promise<unknown> {
 
 // --- filtersdata ----------------------------------------------------------
 
+/**
+ * Tridion renders the 1.4 MB tile database on request: measured ~24 s to first
+ * byte (2026-09-03), so the default 9 s fetch timeout aborted it on every geo
+ * run — zero tiles, and the coalescing upsert then silently kept whatever
+ * artwork the rows already had.
+ */
+const FILTERS_DATA_TIMEOUT_MS = 90_000;
+
 /** The whole tile database — one GET, edge-cached, no session. */
 export async function fetchUniversalFiltersData(): Promise<UniversalFiltersData> {
   const url = `${config.universalContentBase}/uor/en/us/api/filtersdata/index.html`;
-  const body = await getJson(url);
+  const body = await getJson(url, 3, FILTERS_DATA_TIMEOUT_MS);
   if (body == null) throw new UpstreamError(`GET ${url} -> redirect/404`);
   return UniversalFiltersDataSchema.parse(body);
 }
@@ -135,8 +147,25 @@ function keywordLabel(kw: { Value?: string | null; Description?: string | null }
 function contentImageUrl(path?: string | null): string | null {
   const raw = path?.trim();
   if (!raw) return null;
-  if (/^https?:\/\//i.test(raw)) return raw;
+  if (/^https?:\/\//i.test(raw)) return universalAssetUrl(raw);
   return `${config.universalContentBase}${raw.startsWith("/") ? "" : "/"}${raw}`;
+}
+
+/**
+ * Bare web-origin form of a Tridion asset (`https://www.universalorlando.com/uor/…`),
+ * which 301s to `oops-sorry` — see {@link contentImageUrl}. Some feeds hand
+ * these out already-absolute, and rows written before 2026-08-29 hold them.
+ */
+const BARE_ASSET_RE = /^https?:\/\/(?:www\.)?universalorlando\.com\/(uor\/)/i;
+
+/**
+ * Rewrite a Universal asset URL onto the `/contentdata` host when it is in the
+ * bare web-origin form; every other URL (mobile-services `/api/Images/…`,
+ * already-`/contentdata` paths, non-Universal hosts) passes through untouched.
+ */
+export function universalAssetUrl<T extends string | null | undefined>(url: T): T {
+  if (!url) return url;
+  return url.replace(BARE_ASSET_RE, `${config.universalContentBase}/$1`) as T;
 }
 
 export function tileInfo(tile: UniversalTile): UniversalTileInfo {

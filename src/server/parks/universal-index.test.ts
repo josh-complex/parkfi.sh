@@ -220,6 +220,46 @@ describe("rideFactsFromPage", () => {
     expect(facts.imageAlt).toBe("Riders fly through the air on Stardust Racers.");
   });
 
+  it("rewrites an already-absolute bare-origin hero onto the /contentdata host", () => {
+    // Rows written before 2026-08-29 (and some feeds) carry the web-origin
+    // form, which 301s to `oops-sorry`; only the `/contentdata` host serves it.
+    const parsed = UniversalRidePageSchema.parse({
+      ComponentPresentations: [
+        {
+          Component: {
+            Schema: { Title: "GDS - Hero" },
+            Fields: {
+              image: {
+                EmbeddedValues: [
+                  {
+                    desktop: {
+                      LinkedComponentValues: [
+                        {
+                          Multimedia: {
+                            Url: "https://www.universalorlando.com/uor/en/us/files/Images/gds/ueu-stardust-racers-a.jpg",
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+        {
+          Component: {
+            Schema: { Title: "GDS - Utility Section" },
+            Fields: { heading: field("Stardust Racers") },
+          },
+        },
+      ],
+    });
+    expect(rideFactsFromPage("stardust-racers", parsed).imageHero).toBe(
+      "https://www.universalorlando.com/contentdata/uor/en/us/files/Images/gds/ueu-stardust-racers-a.jpg",
+    );
+  });
+
   it("keeps a supervising-companion rule out of the height field", () => {
     // Its icon slug starts with `height-`, so only the heading check saves it.
     const facts = rideFactsFromPage(
@@ -397,12 +437,14 @@ describe("resolveUniversalRideAttrs", () => {
       EPIC,
       "Stardust Racers",
     );
+    // The fixture hands in the bare web-origin form; it must come out on the
+    // `/contentdata` host (the bare form 301s to an error page).
     expect(attrs.imageHeroUrl).toBe(
-      "https://www.universalorlando.com/uor/en/us/files/Images/gds/sr-a.jpg",
+      "https://www.universalorlando.com/contentdata/uor/en/us/files/Images/gds/sr-a.jpg",
     );
     // The hero also backs up the thumb slot when no list crop exists anywhere.
     expect(attrs.imageThumbUrl).toBe(
-      "https://www.universalorlando.com/uor/en/us/files/Images/gds/sr-a.jpg",
+      "https://www.universalorlando.com/contentdata/uor/en/us/files/Images/gds/sr-a.jpg",
     );
     expect(attrs.imageAlt).toBe("Riders on Stardust Racers.");
   });

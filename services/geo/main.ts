@@ -95,6 +95,7 @@ import { fetchChildren } from "#/server/parks/sources/themeparks.ts";
 import {
   fetchAllUniversalRideFacts,
   fetchUniversalFiltersData,
+  universalAssetUrl,
   tileInfo,
 } from "#/server/parks/sources/universal-content.ts";
 import {
@@ -1443,7 +1444,7 @@ async function upsertUniversalPoi(
         imageUrl:
           category === "info" || !trustedUniversalPoiVenue(venueId)
             ? null
-            : (poi.ListImage ?? poi.ThumbnailImage ?? null),
+            : universalAssetUrl(poi.ListImage ?? poi.ThumbnailImage ?? null),
         detailUrl: poi.SiteUrl ?? null,
         schedule: universalShowtimes(poi),
         source: Source.UNIVERSAL_DIRECT,
