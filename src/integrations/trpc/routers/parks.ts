@@ -599,6 +599,7 @@ export const parksRouter = {
       category: string | null;
       status: number | null;
       standby_wait: number | null;
+      paid_standby_wait: number | null;
       latitude: number | null;
       longitude: number | null;
       park_slug: string;
@@ -625,7 +626,8 @@ export const parksRouter = {
         -- window).
         SELECT al.attraction_id,
                al.status,
-               CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.standby_wait END AS wait_min
+               CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.standby_wait END AS wait_min,
+               CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.paid_standby_wait END AS paid_standby_wait
         FROM attraction_live al
       ),
       sched AS (
@@ -644,7 +646,7 @@ export const parksRouter = {
         GROUP BY p.id
       )
       SELECT a.id, a.name, a.slug, a.category, a.latitude, a.longitude,
-             lv.status, lv.wait_min AS standby_wait,
+             lv.status, lv.wait_min AS standby_wait, lv.paid_standby_wait,
              p.slug AS park_slug, p.name AS park_name,
              o.slug AS operator_slug, o.name AS operator_name,
              m.land AS meta_land, m.height_requirement AS meta_height_requirement,
@@ -675,6 +677,9 @@ export const parksRouter = {
         category: r.category,
         status: knownClosed ? "CLOSED" : code(STATUS_CODE, r.status),
         standbyWait: knownClosed ? null : r.standby_wait,
+        // Universal's live Express-line wait (CDN wait-board overlay); null at
+        // Disney and wherever nothing is posted.
+        paidStandbyWait: knownClosed ? null : r.paid_standby_wait,
         latitude: r.latitude,
         longitude: r.longitude,
         parkSlug: r.park_slug,

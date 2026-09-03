@@ -1,7 +1,13 @@
 import * as React from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUpDownIcon, LayoutGridIcon, ListIcon, SlidersHorizontalIcon } from "lucide-react";
+import {
+  ArrowUpDownIcon,
+  LayoutGridIcon,
+  ListIcon,
+  SlidersHorizontalIcon,
+  ZapIcon,
+} from "lucide-react";
 
 import { ConnectionLost } from "#/components/connection-lost.tsx";
 import { RideCategoryChips } from "#/components/rides/ride-category-chips.tsx";
@@ -51,6 +57,8 @@ type Ride = {
   category: string | null;
   status: string | null;
   standbyWait: number | null;
+  /** Universal's live Express-line wait, when the park posts one. */
+  paidStandbyWait: number | null;
   parkSlug: string;
   parkName: string;
   land: string | null;
@@ -128,6 +136,27 @@ function WaitBadge({ ride, className }: { ride: Ride; className?: string }) {
   );
 }
 
+/**
+ * Universal's Express-line wait, shown beside the standby badge only while the
+ * ride is operating and the park has posted one. The zap icon is the same
+ * Express marker the park board uses, so the two read as one product.
+ */
+function ExpressBadge({ ride, className }: { ride: Ride; className?: string }) {
+  if (ride.status !== "OPERATING" || ride.paidStandbyWait == null) return null;
+  return (
+    <Badge
+      className={cn(
+        "border-0 bg-black/60 text-xs font-normal text-white tabular-nums shadow backdrop-blur-sm",
+        className,
+      )}
+      title="Live wait in the Universal Express line"
+    >
+      <ZapIcon className="size-3 fill-current" aria-hidden />
+      {ride.paidStandbyWait} min
+    </Badge>
+  );
+}
+
 /** Card for the grid view — same shape as the Eats "picks" cards. */
 /** `eager` marks above-the-fold cards: eager-loaded so the browser's preload
  *  scanner fetches them from the SSR HTML instead of waiting for hydration +
@@ -174,6 +203,7 @@ function RideCard({ ride, eager }: { ride: Ride; eager?: boolean }) {
             />
           ) : null}
           <WaitBadge ride={ride} className="absolute left-2 top-2" />
+          <ExpressBadge ride={ride} className="absolute right-2 top-2" />
         </div>
         <div className="flex flex-col gap-0.5 px-0.5">
           <span className="line-clamp-1 text-sm font-medium group-hover:underline">
@@ -213,6 +243,7 @@ function RideRow({ ride, eager }: { ride: Ride; eager?: boolean }) {
         <div className="truncate text-sm font-medium">{ride.name}</div>
         {ride.land && <div className="truncate text-xs text-muted-foreground">{ride.land}</div>}
       </div>
+      <ExpressBadge ride={ride} />
       <WaitBadge ride={ride} />
     </Link>
   );
