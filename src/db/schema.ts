@@ -457,10 +457,12 @@ export const attractionLive = pgTable("attraction_live", {
   status: smallint("status").references(() => refAttractionStatus.id),
   // STANDBY (queue_type 1)
   standbyWait: integer("standby_wait"),
-  // SINGLE_RIDER (queue_type 2) / PAID_STANDBY (queue_type 5) — Universal's
-  // single-rider and Express lines, from the operator's CDN wait board
-  // (universal-cdn-waits.ts). Null where the ride runs neither line or nothing
-  // is posted right now.
+  // SINGLE_RIDER (queue_type 2) — Universal's single-rider line, from the
+  // operator's CDN wait board (universal-cdn-waits.ts). Null where the ride has
+  // no such line or nothing is posted right now.
+  // PAID_STANDBY (queue_type 5) — nothing populates it today: Universal's
+  // Express "wait" proved to be a static placard (see that module) and Disney
+  // has no paid standby line. Kept for an operator that does post one.
   singleRiderWait: integer("single_rider_wait"),
   paidStandbyWait: integer("paid_standby_wait"),
   // PAID_RETURN_TIME (queue_type 4) — attraction-grain Lightning Lane.

@@ -35,8 +35,8 @@ export interface IngestResult {
   queueRows: number;
   /** Rides whose virtual-line state came from Universal's registry, not TP.wiki. */
   virtualLineRows: number;
-  /** Rides whose Express / single-rider waits came from Universal's CDN wait board. */
-  expressRows: number;
+  /** Rides whose single-rider waits came from Universal's CDN wait board. */
+  singleRiderRows: number;
   degraded: boolean;
   error?: string;
 }
@@ -212,7 +212,7 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
       statusChanges: 0,
       queueRows: 0,
       virtualLineRows: 0,
-      expressRows: 0,
+      singleRiderRows: 0,
       degraded: false,
       error: "no themeparks_wiki external id for park",
     };
@@ -232,7 +232,7 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
         statusChanges: 0,
         queueRows: 0,
         virtualLineRows: 0,
-        expressRows: 0,
+        singleRiderRows: 0,
         degraded: false,
         error: err instanceof Error ? err.message : String(err),
       };
@@ -279,14 +279,15 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
     virtualLineRows = applyVirtualLineStates(normalized, meta.slug, await virtualLineStates());
   }
 
-  // Universal only: Express and single-rider waits from the operator's public
-  // CDN wait board — TP.wiki reports those two queues for only a few rides.
-  // Same isolation rule as the Virtual Line overlay: on any failure the tick
-  // proceeds on TP.wiki's queues alone.
-  let expressRows = 0;
+  // Universal only: single-rider waits from the operator's public CDN wait
+  // board — TP.wiki reports that queue for only a few rides — and the removal
+  // of any PAID_STANDBY (Express) queue, which is not a live wait at Universal
+  // (see universal-cdn-waits.ts). Same isolation rule as the Virtual Line
+  // overlay: on a CDN failure the tick proceeds on TP.wiki's queues alone.
+  let singleRiderRows = 0;
   const resort = meta?.operatorSlug === "universal" ? universalResortForPark(meta.slug) : null;
   if (meta && resort) {
-    expressRows = applyUniversalWaits(normalized, meta.slug, await universalWaits(resort));
+    singleRiderRows = applyUniversalWaits(normalized, meta.slug, await universalWaits(resort));
   }
 
   const idMap = await resolveAttractions(parkId, source, normalized);
@@ -474,7 +475,7 @@ export async function ingestPark(parkId: number): Promise<IngestResult> {
     statusChanges: statusRows.length,
     queueRows: queueRows.length,
     virtualLineRows,
-    expressRows,
+    singleRiderRows,
     degraded,
   };
 }

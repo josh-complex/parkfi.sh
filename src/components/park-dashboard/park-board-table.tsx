@@ -120,9 +120,9 @@ function PaidLineHeader({ operatorSlug }: { operatorSlug: string | null | undefi
         <TooltipContent className="max-w-xs text-pretty">
           {isUniversal(operatorSlug) ? (
             <span>
-              Universal’s free <strong>Virtual Line</strong> state, plus the live wait in the paid{" "}
-              <strong>Express</strong> line where the park posts one. Express is a separate
-              park-wide pass — see the Ticket Pricing page for its dates and prices.
+              Universal’s free <strong>Virtual Line</strong> state, plus an <strong>Express</strong>{" "}
+              marker on rides that accept the paid Express Pass. Express is a separate park-wide
+              pass — see the Ticket Pricing page for its dates and prices.
             </span>
           ) : (
             <span>
@@ -229,25 +229,21 @@ function StandbyValue({ item, className }: { item: BoardItem; className?: string
 }
 
 /**
- * Universal's live Express-line wait, when the park posts one (the CDN
- * wait-board overlay). Only meaningful while the ride is operating — the mirror
- * keeps the last posted value until the next tick clears it.
+ * Universal's "accepts Express Pass" marker, from the operator's own per-ride
+ * flag (`attraction_meta.express_pass`). Express is a park-wide add-on with no
+ * per-ride live number — the wait board's EXPRESS queue is a static placard the
+ * operator's app never shows — so this is a capability, not a wait.
  */
-function expressWaitFor(item: BoardItem, operatorSlug: string | null | undefined): number | null {
-  if (!isUniversal(operatorSlug) || item.status !== "OPERATING") return null;
-  return item.paidStandbyWait;
-}
-
-function ExpressWaitValue({ minutes, className }: { minutes: number; className?: string }) {
+function ExpressAcceptedBadge({ className }: { className?: string }) {
   return (
-    <span
-      className={cn("inline-flex items-center gap-1 tabular-nums", className)}
-      title="Live wait in the Universal Express line"
+    <Badge
+      variant="outline"
+      className={cn("gap-1", className)}
+      title="Accepts Universal Express Pass"
     >
-      <ZapIcon className="text-primary size-3.5" aria-hidden />
-      {minutes}
-      <span className="text-muted-foreground text-xs font-normal">min Express</span>
-    </span>
+      <ZapIcon className="text-primary size-3" aria-hidden />
+      Express
+    </Badge>
   );
 }
 
@@ -259,18 +255,14 @@ function PaidLineCell({
   operatorSlug: string | null | undefined;
 }) {
   const ll = paidLineInfo(item, operatorSlug);
-  const expressWait = expressWaitFor(item, operatorSlug);
+  const express = ll.expressPass === true;
   if (!ll.has) {
-    return expressWait != null ? (
-      <ExpressWaitValue minutes={expressWait} />
-    ) : (
-      <span className="text-muted-foreground">—</span>
-    );
+    return express ? <ExpressAcceptedBadge /> : <span className="text-muted-foreground">—</span>;
   }
   const price = formatPriceCents(ll.priceCents, item.lightningLane.currency);
   return (
     <div className="flex items-center gap-2">
-      {expressWait != null ? <ExpressWaitValue minutes={expressWait} /> : null}
+      {express ? <ExpressAcceptedBadge /> : null}
       {ll.state ? (
         <Badge variant={ll.soldOut ? "destructive" : "secondary"}>
           {ll.state.toLowerCase().replace("_", " ")}
@@ -937,21 +929,18 @@ function PaidLineFooter({
   timeZone: string | null | undefined;
 }) {
   const ll = paidLineInfo(item, operatorSlug);
-  const expressWait = expressWaitFor(item, operatorSlug);
+  const express = ll.expressPass === true;
   if (!ll.has) {
-    // No virtual line, but a posted Express wait is still worth the strip:
-    // it's the number an Express holder actually stands in.
-    if (expressWait != null) {
+    // No virtual line, but a ride that accepts Express Pass still earns the
+    // strip — it's the line an Express holder walks into.
+    if (express) {
       return (
         <div className="border-border/50 bg-muted/30 flex items-center justify-between gap-2 border-t px-3 py-2.5 text-xs">
           <span className="text-muted-foreground flex items-center gap-1.5 font-medium">
             <ZapIcon className="text-primary size-3.5" />
             Express
           </span>
-          <span className="tabular-nums">
-            {expressWait}
-            <span className="text-muted-foreground"> min</span>
-          </span>
+          <span className="text-muted-foreground">accepted</span>
         </div>
       );
     }
@@ -988,12 +977,7 @@ function PaidLineFooter({
         {ll.soldOut ? <Badge variant="destructive">sold out</Badge> : null}
         {price ? <span className="tabular-nums">{price}</span> : null}
         {window ? <span className="text-muted-foreground tabular-nums">{window}</span> : null}
-        {expressWait != null ? (
-          <span className="tabular-nums" title="Live wait in the Universal Express line">
-            Express {expressWait}
-            <span className="text-muted-foreground"> min</span>
-          </span>
-        ) : null}
+        {express ? <ExpressAcceptedBadge /> : null}
       </div>
     </div>
   );

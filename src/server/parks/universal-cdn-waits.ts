@@ -1,15 +1,12 @@
 /**
- * Universal Express and single-rider waits, overlaid onto the ThemeParks.wiki
- * `/live` feed.
+ * Universal single-rider waits, overlaid onto the ThemeParks.wiki `/live`
+ * feed — and the removal of Universal's Express "waits" from it.
  *
  * WHY THIS EXISTS. TP.wiki carries a STANDBY wait for every Universal ride but
- * a PAID_STANDBY (Express) or SINGLE_RIDER queue for only a handful — Islands
- * of Adventure on 2026-09-03 showed 3 and 2 rides. Universal's own app reads a
- * public CDN JSON that types every queue per ride — `STANDBY`, `EXPRESS`,
- * `SINGLE` — and on the same day published 30 Express and 13 single-rider lines
- * across the resort. No auth, no cookies, ~50 KB, republished about once a
- * minute (research/universal-app-data-mining.md §1). Nobody else shows live
- * Express waits.
+ * a SINGLE_RIDER queue for only a handful. Universal's own app reads a public
+ * CDN JSON that types every queue per ride — `STANDBY`, `EXPRESS`, `SINGLE` —
+ * with a live status on the single-rider line. No auth, no cookies, ~50 KB,
+ * republished about once a minute (research/universal-app-data-mining.md §1).
  *
  * THE JOIN. `wait_time_attraction_id` is the operator's place id
  * (`uor.<venue>.rides.<slug>`), and TP.wiki hands us the very same id as the
@@ -18,24 +15,32 @@
  * spell differently (`…seuss_trolley_train_ride!` vs `…train_ride_`), so a
  * normalized-name key within the park is the fallback.
  *
- * WHAT IS BELIEVED, measured 2026-09-03 at midday on an operating day:
+ * WHAT IS BELIEVED, measured 2026-09-03 across an operating day:
  *   • `display_wait_time: 995` is the feed's "nothing posted" sentinel — every
- *     closed Express and single-rider queue carried it. Anything that large is
- *     read as null, never as a wait.
- *   • The EXPRESS queue's own `status` read `CLOSED` on all 30 rides while
- *     their STANDBY queues were `OPEN` and Express waits of 5–15 min were
- *     posted: ops evidently don't maintain a status on the Express line. So an
- *     Express wait is taken whenever the ride's STANDBY queue is open in the
- *     same feed, and the Express status is ignored.
- *   • SINGLE queues DO carry a live status (`OPEN` / `CLOSED` / `AT_CAPACITY`),
- *     so a single-rider wait is only taken while that line is `OPEN`.
+ *     closed single-rider queue carried it. Anything that large is read as
+ *     null, never as a wait.
+ *   • SINGLE queues carry a live status (`OPEN` / `CLOSED` / `AT_CAPACITY`) and
+ *     an ops wait-board (SharePoint) id like the standby queues do, so a
+ *     single-rider wait is only taken while that line is `OPEN`.
+ *   • The EXPRESS queue is NOT a live wait. Its status reads `CLOSED` on all
+ *     30 rides at all times (which is why the operator's app never shows it),
+ *     none of the 30 carries an ops wait-board id, and over 24 hours of
+ *     minute-level samples the value never moved on 29 of them (a flat 5, 10
+ *     or 0 all day; Hulk "Express 10" beside a 5-minute standby; Despicable Me
+ *     "Express 15" while closed). We published those for a day as
+ *     PAID_STANDBY; they are now dropped, and any PAID_STANDBY queue TP.wiki
+ *     reports for a Universal ride — it had relayed the same placard for 7–18
+ *     rides since June 2026, six distinct values in three months — is
+ *     stripped too. Whether a ride ACCEPTS Express is a different fact, from
+ *     the places feed's `ExpressPassAccepted` (`attraction_meta.express_pass`).
  *   • Standby itself is never touched — TP.wiki stays the primary for it, and
  *     the two agree (it is where TP.wiki sources UOR from).
  *
- * Unlike the Virtual Line overlay, this one ADDS queues TP.wiki did not
+ * Unlike the Virtual Line overlay, this one ADDS a queue TP.wiki did not
  * report. That is deliberate: an `attraction_queue_support` row for
- * PAID_STANDBY is exactly the claim the feed makes ("this ride has an Express
- * line"), and a live Express wait with no queue row would have nowhere to go.
+ * SINGLE_RIDER is exactly the claim the feed makes ("this ride has a
+ * single-rider line"), and a live wait with no queue row would have nowhere
+ * to go.
  */
 import { QueueType, normalizeUniversalName } from "./codes.ts";
 import { config } from "./config.ts";
@@ -68,21 +73,12 @@ export function waitMinutes(value: number | null | undefined): number | null {
   return value >= WAIT_SENTINEL_MIN ? null : Math.round(value);
 }
 
-/** Queue statuses under which a standby line is taking guests. */
-const STANDBY_OPEN = new Set(["OPEN", "CLOSES_AT", "RIDE_NOW"]);
-
 export interface UniversalWaitRow {
   placeId: string;
   parkSlug: string;
   /** Normalized ride name, the fallback join key when place ids disagree. */
   nameKey: string;
-  /** The ride's standby line is open in this feed. */
-  standbyOpen: boolean;
-  /** The ride has an Express line (a queue of type EXPRESS in the feed). */
-  hasExpress: boolean;
-  /** Express wait to publish — null when unposted or the ride isn't open. */
-  expressWait: number | null;
-  /** The ride has a single-rider line. */
+  /** The ride has a single-rider line (a queue of type SINGLE in the feed). */
   hasSingle: boolean;
   /** Single-rider wait to publish — null unless that line is OPEN with a wait. */
   singleWait: number | null;
@@ -106,19 +102,11 @@ export function waitRow(a: UniversalWaitAttraction): UniversalWaitRow | null {
   const parkSlug = parkSlugForPlaceId(placeId);
   if (!parkSlug) return null;
 
-  const byType = new Map(a.queues.map((q) => [q.queue_type ?? "", q]));
-  const standby = byType.get("STANDBY");
-  const express = byType.get("EXPRESS");
-  const single = byType.get("SINGLE");
-  const standbyOpen = STANDBY_OPEN.has(standby?.status ?? "");
-
+  const single = a.queues.find((q) => q.queue_type === "SINGLE");
   return {
     placeId,
     parkSlug,
     nameKey: normalizeUniversalName(a.name),
-    standbyOpen,
-    hasExpress: express != null,
-    expressWait: express != null && standbyOpen ? waitMinutes(express.display_wait_time) : null,
     hasSingle: single != null,
     singleWait: single?.status === "OPEN" ? waitMinutes(single.display_wait_time) : null,
   };
@@ -163,9 +151,11 @@ function upsertWait(
 }
 
 /**
- * Overlay the CDN's Express and single-rider waits onto a park's normalized
- * entities, in place. Exact place-id join first, normalized name second, both
- * scoped to the park. Returns the number of entities that received a queue.
+ * Overlay the CDN's single-rider waits onto a park's normalized entities, in
+ * place, and strip any PAID_STANDBY (Express) queue from every entity — see
+ * the header for why Universal's Express "wait" is not one. Exact place-id
+ * join first, normalized name second, both scoped to the park. Returns the
+ * number of entities that received a single-rider queue.
  */
 export function applyUniversalWaits(
   entities: Array<NormalizedEntity>,
@@ -175,13 +165,12 @@ export function applyUniversalWaits(
   const names = index.byName.get(parkSlug);
   let applied = 0;
   for (const e of entities) {
+    e.queues = e.queues.filter((q) => q.queueType !== QueueType.PAID_STANDBY);
     const byId = e.operatorExternalId ? index.byPlaceId.get(e.operatorExternalId) : undefined;
     const row =
       byId && byId.parkSlug === parkSlug ? byId : names?.get(normalizeUniversalName(e.name ?? ""));
-    if (!row) continue;
-    if (!row.hasExpress && !row.hasSingle) continue;
-    if (row.hasExpress) upsertWait(e.queues, QueueType.PAID_STANDBY, row.expressWait);
-    if (row.hasSingle) upsertWait(e.queues, QueueType.SINGLE_RIDER, row.singleWait);
+    if (!row?.hasSingle) continue;
+    upsertWait(e.queues, QueueType.SINGLE_RIDER, row.singleWait);
     applied++;
   }
   return applied;

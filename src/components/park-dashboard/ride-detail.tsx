@@ -424,9 +424,9 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
   const liveWait = isOpen ? ride.standbyWait : null;
   const waitValue = liveWait ?? ride.histStandbyWait;
   const waitIsLive = liveWait != null;
-  // Universal's other two lines, from the operator's own wait board: the paid
-  // Express line and the single-rider line. Live-only, like the standby chip.
-  const expressWait = isOpen && isUniversal(operatorSlug) ? ride.paidStandbyWait : null;
+  // Universal's single-rider line, from the operator's own wait board.
+  // Live-only, like the standby chip. (Express has no per-ride live wait —
+  // whether the ride accepts it is the "Express Pass" chip below.)
   const singleRiderWait = isOpen && isUniversal(operatorSlug) ? ride.singleRiderWait : null;
 
   // Today's windows, split: the Early Entry flag is a badge of its own
@@ -545,30 +545,16 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
         </div>
       </header>
 
-      {/* Universal's Express and single-rider waits (CDN wait-board overlay). */}
-      {(expressWait != null || singleRiderWait != null) && (
+      {/* Universal's single-rider wait (CDN wait-board overlay). */}
+      {singleRiderWait != null && (
         <Card size="sm">
-          <CardContent className="flex flex-wrap gap-x-8 gap-y-3">
-            {expressWait != null && (
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Express line
-                </span>
-                <span className="text-base">
-                  <span className="font-semibold tabular-nums">{expressWait}</span> min
-                </span>
-              </div>
-            )}
-            {singleRiderWait != null && (
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Single rider
-                </span>
-                <span className="text-base">
-                  <span className="font-semibold tabular-nums">{singleRiderWait}</span> min
-                </span>
-              </div>
-            )}
+          <CardContent className="flex flex-col gap-1">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Single rider
+            </span>
+            <span className="text-base">
+              <span className="font-semibold tabular-nums">{singleRiderWait}</span> min
+            </span>
           </CardContent>
         </Card>
       )}
