@@ -2390,3 +2390,160 @@ export const userParkTransition = pgTable(
     index("user_park_transition_park_idx").on(t.parkId, t.at.desc()),
   ],
 );
+
+// ---------------------------------------------------------------------------
+// Public-records intelligence (docs/plans/public-records-intelligence.md).
+//
+// One ledger of government records (permits, trademarks, patents, dockets, …)
+// keyed by (source, external_id), a revision log for status/content changes,
+// a many-to-many link table onto OUR entity graph (parks, attractions, venues),
+// a curated filer→operator alias table, a per-adapter cursor, and user watch
+// subscriptions. Created by drizzle/*_public_records/migration.sql (hand-written
+// per the repo convention); these declarations mirror that SQL.
+// ---------------------------------------------------------------------------
+
+/** One row per government record. Immutable identity = (source, external_id). */
+export const publicRecord = pgTable(
+  "public_record",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    // Adapter id: 'orlando_soda' | 'cftod_aca' | 'uspto_tm' | 'uspto_patent' | …
+    source: text("source").notNull(),
+    // Permit number / serial / study number / docket id / accession / cert id.
+    externalId: text("external_id").notNull(),
+    // 'permit' | 'noc' | 'deed' | 'airspace' | 'erp' | 'planning_case' |
+    // 'board_item' | 'trademark' | 'patent_app' | 'patent_grant' | 'assignment'
+    // | 'lawsuit' | 'sec_filing' | 'corp_filing' | 'incident' | 'license' | 'tls_cert'
+    kind: text("kind").notNull(),
+    // 'disney' | 'universal' | 'seaworld' | null (unattributed but in a park polygon).
+    operator: text("operator"),
+    // 'walt-disney-world' | 'universal-orlando' | … (resorts.slug), when known.
+    resortSlug: text("resort_slug"),
+    parkId: bigint("park_id", { mode: "number" }).references(() => parks.id),
+    // Verbatim owner / applicant / assignee / party, and its normalized form
+    // (uppercase, punctuation stripped, legal suffixes dropped) for alias joins.
+    filer: text("filer"),
+    filerNorm: text("filer_norm"),
+    // Human headline as filed ("SPC: Carrier Drive Roadway Improvements").
+    title: text("title").notNull(),
+    // Longer as-filed text (goods/services, NOC description, abstract).
+    description: text("description"),
+    // Canonical government URL for the record.
+    url: text("url").notNull(),
+    filedAt: timestamp("filed_at", { withTimezone: true }),
+    // As-filed status vocabulary, per source.
+    status: text("status"),
+    statusAt: timestamp("status_at", { withTimezone: true }),
+    latitude: doublePrecision("latitude"),
+    longitude: doublePrecision("longitude"),
+    parcelId: text("parcel_id"),
+    address: text("address"),
+    // Normalized source-native fields, PII-stripped (plan §9).
+    payload: jsonb("payload").notNull().$type<Record<string, unknown>>(),
+    // sha256 of the normalized content — a change here writes a revision.
+    contentHash: char("content_hash", { length: 64 }).notNull(),
+    // Newsworthiness, comparable within a kind (plan §4.4).
+    score: real("score").notNull().default(0),
+    // Admin "public but not ours to amplify" toggle — hidden from every public
+    // surface, still in the ledger (plan §9 "right to suppress").
+    suppressed: boolean("suppressed").notNull().default(false),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    changedAt: timestamp("changed_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("public_record_identity_uq").on(t.source, t.externalId),
+    index("public_record_feed_idx").on(t.resortSlug, t.firstSeenAt.desc()),
+    index("public_record_kind_idx").on(t.kind, t.firstSeenAt.desc()),
+    index("public_record_filer_idx").on(t.filerNorm),
+    index("public_record_park_idx").on(t.parkId, t.firstSeenAt.desc()),
+  ],
+);
+
+/** One row per observed status/content change of a record — diff only. */
+export const publicRecordRevision = pgTable(
+  "public_record_revision",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    recordId: bigint("record_id", { mode: "number" })
+      .notNull()
+      .references(() => publicRecord.id, { onDelete: "cascade" }),
+    seenAt: timestamp("seen_at", { withTimezone: true }).notNull().defaultNow(),
+    prevStatus: text("prev_status"),
+    nextStatus: text("next_status"),
+    // {field: [before, after]} for every changed payload key.
+    diff: jsonb("diff").notNull().$type<Record<string, [unknown, unknown]>>(),
+  },
+  (t) => [index("public_record_revision_idx").on(t.recordId, t.seenAt.desc())],
+);
+
+/**
+ * Which of OUR entities a record concerns. Auto links carry the method that
+ * produced them and a confidence so admins can audit/override.
+ */
+export const publicRecordLink = pgTable(
+  "public_record_link",
+  {
+    recordId: bigint("record_id", { mode: "number" })
+      .notNull()
+      .references(() => publicRecord.id, { onDelete: "cascade" }),
+    // 'park' | 'resort' | 'attraction' | 'facility' | 'shop' | 'poi'
+    entityKind: text("entity_kind").notNull(),
+    // parks.id / resorts.slug / attractions.id / facility_id / … as text.
+    entityId: text("entity_id").notNull(),
+    // 'polygon' | 'filer' | 'name' | 'lexicon' | 'admin'
+    method: text("method").notNull(),
+    confidence: real("confidence").notNull(),
+    createdBy: text("created_by").notNull().default("auto"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.recordId, t.entityKind, t.entityId] }),
+    index("public_record_link_entity_idx").on(t.entityKind, t.entityId),
+  ],
+);
+
+/** Curated filer → operator aliases (plan §2). Seeded by migration. */
+export const publicRecordFilerAlias = pgTable("public_record_filer_alias", {
+  // SQL LIKE pattern on filer_norm, e.g. 'UNIVERSAL CITY DEVELOPMENT%'.
+  pattern: text("pattern").primaryKey(),
+  operator: text("operator").notNull(),
+  resortSlug: text("resort_slug"),
+});
+
+/** Per-adapter incremental cursor (SODA :updated_at, TDXF file date, …). */
+export const publicRecordCursor = pgTable("public_record_cursor", {
+  source: text("source").primaryKey(),
+  cursor: jsonb("cursor").notNull().$type<Record<string, unknown>>(),
+  ranAt: timestamp("ran_at", { withTimezone: true }).notNull().defaultNow(),
+  // Last run's counts, for the admin health view + zero-row alerting.
+  stats: jsonb("stats").$type<Record<string, number>>(),
+});
+
+/** User "filing watch" subscriptions (plan §6.3). Any dimension null = any. */
+export const publicRecordWatch = pgTable(
+  "public_record_watch",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    resortSlug: text("resort_slug"),
+    parkId: bigint("park_id", { mode: "number" }).references(() => parks.id),
+    entityKind: text("entity_kind"),
+    entityId: text("entity_id"),
+    kinds: text("kinds")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    keywords: text("keywords")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    channel: text("channel").notNull().default("push"), // 'push' | 'email' | 'both'
+    active: boolean("active").notNull().default(true),
+    lastFiredAt: timestamp("last_fired_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("public_record_watch_active_idx").on(t.active, t.resortSlug, t.parkId)],
+);

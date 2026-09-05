@@ -37,6 +37,7 @@
     "forecast:publish": "bun services/forecast-publish/main.ts",
     "cron:park-news": "bun services/cron-park-news/main.ts",
     "cron:park-report": "bun services/cron-park-report/main.ts",
+    "cron:public-records": "bun services/cron-public-records/main.ts",
     "cron:pin-catalog": "bun services/pin-catalog/main.ts",
     "cron:coaster-stats": "bun services/coaster-stats/main.ts",
     "pins:identify": "bun services/pin-identify/main.ts",

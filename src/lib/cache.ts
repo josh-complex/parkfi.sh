@@ -80,6 +80,11 @@ export const CACHEABLE_TRPC_PATHS: ReadonlyMap<string, string> = new Map([
   ["parks.poi", CACHE.TRPC_DATA],
   ["stays.catalog", CACHE.TRPC_DATA],
   ["stays.availability", CACHE.TRPC_DATA],
+  // Public-records feed — refreshed by a daily cron, identical for everyone.
+  ["records.feed", CACHE.TRPC_DATA],
+  ["records.byId", CACHE.TRPC_DATA],
+  ["records.byEntity", CACHE.TRPC_DATA],
+  ["records.summary", CACHE.TRPC_DATA],
 ]);
 
 /**

@@ -14,6 +14,7 @@ import { pinCatalogRouter } from "./routers/pinCatalog.ts";
 import { pinCollectionRouter } from "./routers/pinCollection.ts";
 import { pinIdentifyRouter } from "./routers/pinIdentify.ts";
 import { pinTradeRouter } from "./routers/pinTrade.ts";
+import { recordsRouter } from "./routers/records.ts";
 import { removalRouter } from "./routers/removal.ts";
 import { rideAlertsRouter } from "./routers/rideAlerts.ts";
 import { routingRouter } from "./routers/routing.ts";
@@ -45,6 +46,8 @@ export const trpcRouter = createTRPCRouter({
   pinCollection: pinCollectionRouter,
   pinTrade: pinTradeRouter,
   removal: removalRouter,
+  // Public-records intelligence (permits, filings) — read-only public feed.
+  records: recordsRouter,
   // Living Layer (M3) — public read + discovery-pin loop. Inert for the UI
   // until the PostHog `living-layer` flag is on (no existing page calls it).
   living: livingRouter,

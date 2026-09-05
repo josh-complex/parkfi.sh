@@ -43,6 +43,7 @@ import { Route as AppPinsCollectionRouteImport } from './routes/_app/pins_.colle
 import { Route as AppPinsPinIdRouteImport } from './routes/_app/pins_.$pinId'
 import { Route as AppDiningFacilityIdRouteImport } from './routes/_app/dining_.$facilityId'
 import { Route as AppDashMapRouteImport } from './routes/_app/_dash/map'
+import { Route as AppDashFilingsRouteImport } from './routes/_app/_dash/filings'
 import { Route as AppDashAlertsRouteImport } from './routes/_app/_dash/alerts'
 import { Route as AppDashAdminRouteImport } from './routes/_app/_dash/admin'
 import { Route as AppDashActivityRouteImport } from './routes/_app/_dash/activity'
@@ -55,6 +56,7 @@ import { Route as OgParkSlugCardDotjpgRouteImport } from './routes/og.park.$slug
 import { Route as OgDiningFacilityIdCardDotjpgRouteImport } from './routes/og.dining.$facilityId.card[.]jpg'
 import { Route as AppDashShopSlugRouteImport } from './routes/_app/_dash/shop.$slug'
 import { Route as AppDashParkSlugRouteImport } from './routes/_app/_dash/park.$slug'
+import { Route as AppDashFilingsIdRouteImport } from './routes/_app/_dash/filings_.$id'
 import { Route as AppDashAdminRemovalRequestsRouteImport } from './routes/_app/_dash/admin.removal-requests'
 import { Route as AppDashAdminBlogRouteImport } from './routes/_app/_dash/admin.blog'
 import { Route as AppDashAdminAlertsRouteImport } from './routes/_app/_dash/admin.alerts'
@@ -235,6 +237,11 @@ const AppDashMapRoute = AppDashMapRouteImport.update({
   path: '/map',
   getParentRoute: () => AppDashRoute,
 } as any)
+const AppDashFilingsRoute = AppDashFilingsRouteImport.update({
+  id: '/filings',
+  path: '/filings',
+  getParentRoute: () => AppDashRoute,
+} as any)
 const AppDashAlertsRoute = AppDashAlertsRouteImport.update({
   id: '/alerts',
   path: '/alerts',
@@ -294,6 +301,11 @@ const AppDashShopSlugRoute = AppDashShopSlugRouteImport.update({
 const AppDashParkSlugRoute = AppDashParkSlugRouteImport.update({
   id: '/park/$slug',
   path: '/park/$slug',
+  getParentRoute: () => AppDashRoute,
+} as any)
+const AppDashFilingsIdRoute = AppDashFilingsIdRouteImport.update({
+  id: '/filings_/$id',
+  path: '/filings/$id',
   getParentRoute: () => AppDashRoute,
 } as any)
 const AppDashAdminRemovalRequestsRoute =
@@ -383,6 +395,7 @@ export interface FileRoutesByFullPath {
   '/activity': typeof AppDashActivityRoute
   '/admin': typeof AppDashAdminRouteWithChildren
   '/alerts': typeof AppDashAlertsRoute
+  '/filings': typeof AppDashFilingsRoute
   '/map': typeof AppDashMapRoute
   '/dining/$facilityId': typeof AppDiningFacilityIdRoute
   '/pins/$pinId': typeof AppPinsPinIdRoute
@@ -404,6 +417,7 @@ export interface FileRoutesByFullPath {
   '/admin/alerts': typeof AppDashAdminAlertsRoute
   '/admin/blog': typeof AppDashAdminBlogRoute
   '/admin/removal-requests': typeof AppDashAdminRemovalRequestsRoute
+  '/filings/$id': typeof AppDashFilingsIdRoute
   '/park/$slug': typeof AppDashParkSlugRoute
   '/shop/$slug': typeof AppDashShopSlugRoute
   '/og/dining/$facilityId/card.jpg': typeof OgDiningFacilityIdCardDotjpgRoute
@@ -438,6 +452,7 @@ export interface FileRoutesByTo {
   '/achievements': typeof AppDashAchievementsRoute
   '/activity': typeof AppDashActivityRoute
   '/alerts': typeof AppDashAlertsRoute
+  '/filings': typeof AppDashFilingsRoute
   '/map': typeof AppDashMapRoute
   '/dining/$facilityId': typeof AppDiningFacilityIdRoute
   '/pins/$pinId': typeof AppPinsPinIdRoute
@@ -459,6 +474,7 @@ export interface FileRoutesByTo {
   '/admin/alerts': typeof AppDashAdminAlertsRoute
   '/admin/blog': typeof AppDashAdminBlogRoute
   '/admin/removal-requests': typeof AppDashAdminRemovalRequestsRoute
+  '/filings/$id': typeof AppDashFilingsIdRoute
   '/park/$slug': typeof AppDashParkSlugRoute
   '/shop/$slug': typeof AppDashShopSlugRoute
   '/og/dining/$facilityId/card.jpg': typeof OgDiningFacilityIdCardDotjpgRoute
@@ -497,6 +513,7 @@ export interface FileRoutesById {
   '/_app/_dash/activity': typeof AppDashActivityRoute
   '/_app/_dash/admin': typeof AppDashAdminRouteWithChildren
   '/_app/_dash/alerts': typeof AppDashAlertsRoute
+  '/_app/_dash/filings': typeof AppDashFilingsRoute
   '/_app/_dash/map': typeof AppDashMapRoute
   '/_app/dining_/$facilityId': typeof AppDiningFacilityIdRoute
   '/_app/pins_/$pinId': typeof AppPinsPinIdRoute
@@ -519,6 +536,7 @@ export interface FileRoutesById {
   '/_app/_dash/admin/alerts': typeof AppDashAdminAlertsRoute
   '/_app/_dash/admin/blog': typeof AppDashAdminBlogRoute
   '/_app/_dash/admin/removal-requests': typeof AppDashAdminRemovalRequestsRoute
+  '/_app/_dash/filings_/$id': typeof AppDashFilingsIdRoute
   '/_app/_dash/park/$slug': typeof AppDashParkSlugRoute
   '/_app/_dash/shop/$slug': typeof AppDashShopSlugRoute
   '/og/dining/$facilityId/card.jpg': typeof OgDiningFacilityIdCardDotjpgRoute
@@ -557,6 +575,7 @@ export interface FileRouteTypes {
     | '/activity'
     | '/admin'
     | '/alerts'
+    | '/filings'
     | '/map'
     | '/dining/$facilityId'
     | '/pins/$pinId'
@@ -578,6 +597,7 @@ export interface FileRouteTypes {
     | '/admin/alerts'
     | '/admin/blog'
     | '/admin/removal-requests'
+    | '/filings/$id'
     | '/park/$slug'
     | '/shop/$slug'
     | '/og/dining/$facilityId/card.jpg'
@@ -612,6 +632,7 @@ export interface FileRouteTypes {
     | '/achievements'
     | '/activity'
     | '/alerts'
+    | '/filings'
     | '/map'
     | '/dining/$facilityId'
     | '/pins/$pinId'
@@ -633,6 +654,7 @@ export interface FileRouteTypes {
     | '/admin/alerts'
     | '/admin/blog'
     | '/admin/removal-requests'
+    | '/filings/$id'
     | '/park/$slug'
     | '/shop/$slug'
     | '/og/dining/$facilityId/card.jpg'
@@ -670,6 +692,7 @@ export interface FileRouteTypes {
     | '/_app/_dash/activity'
     | '/_app/_dash/admin'
     | '/_app/_dash/alerts'
+    | '/_app/_dash/filings'
     | '/_app/_dash/map'
     | '/_app/dining_/$facilityId'
     | '/_app/pins_/$pinId'
@@ -692,6 +715,7 @@ export interface FileRouteTypes {
     | '/_app/_dash/admin/alerts'
     | '/_app/_dash/admin/blog'
     | '/_app/_dash/admin/removal-requests'
+    | '/_app/_dash/filings_/$id'
     | '/_app/_dash/park/$slug'
     | '/_app/_dash/shop/$slug'
     | '/og/dining/$facilityId/card.jpg'
@@ -966,6 +990,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDashMapRouteImport
       parentRoute: typeof AppDashRoute
     }
+    '/_app/_dash/filings': {
+      id: '/_app/_dash/filings'
+      path: '/filings'
+      fullPath: '/filings'
+      preLoaderRoute: typeof AppDashFilingsRouteImport
+      parentRoute: typeof AppDashRoute
+    }
     '/_app/_dash/alerts': {
       id: '/_app/_dash/alerts'
       path: '/alerts'
@@ -1048,6 +1079,13 @@ declare module '@tanstack/react-router' {
       path: '/park/$slug'
       fullPath: '/park/$slug'
       preLoaderRoute: typeof AppDashParkSlugRouteImport
+      parentRoute: typeof AppDashRoute
+    }
+    '/_app/_dash/filings_/$id': {
+      id: '/_app/_dash/filings_/$id'
+      path: '/filings/$id'
+      fullPath: '/filings/$id'
+      preLoaderRoute: typeof AppDashFilingsIdRouteImport
       parentRoute: typeof AppDashRoute
     }
     '/_app/_dash/admin/removal-requests': {
@@ -1176,8 +1214,10 @@ interface AppDashRouteChildren {
   AppDashActivityRoute: typeof AppDashActivityRoute
   AppDashAdminRoute: typeof AppDashAdminRouteWithChildren
   AppDashAlertsRoute: typeof AppDashAlertsRoute
+  AppDashFilingsRoute: typeof AppDashFilingsRoute
   AppDashMapRoute: typeof AppDashMapRoute
   AppDashIndexRoute: typeof AppDashIndexRoute
+  AppDashFilingsIdRoute: typeof AppDashFilingsIdRoute
   AppDashParkSlugRoute: typeof AppDashParkSlugRoute
   AppDashShopSlugRoute: typeof AppDashShopSlugRoute
   AppDashParkSlugRideRideSlugRoute: typeof AppDashParkSlugRideRideSlugRoute
@@ -1189,8 +1229,10 @@ const AppDashRouteChildren: AppDashRouteChildren = {
   AppDashActivityRoute: AppDashActivityRoute,
   AppDashAdminRoute: AppDashAdminRouteWithChildren,
   AppDashAlertsRoute: AppDashAlertsRoute,
+  AppDashFilingsRoute: AppDashFilingsRoute,
   AppDashMapRoute: AppDashMapRoute,
   AppDashIndexRoute: AppDashIndexRoute,
+  AppDashFilingsIdRoute: AppDashFilingsIdRoute,
   AppDashParkSlugRoute: AppDashParkSlugRoute,
   AppDashShopSlugRoute: AppDashShopSlugRoute,
   AppDashParkSlugRideRideSlugRoute: AppDashParkSlugRideRideSlugRoute,

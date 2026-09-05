@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ActivityIcon,
   BedDoubleIcon,
+  FileTextIcon,
   FootprintsIcon,
   ShapesIcon,
   TicketIcon,
@@ -37,6 +38,7 @@ const NAV: Array<{ title: string; to: string; icon: React.ReactNode }> = [
   { title: "Stays", to: "/stays", icon: <BedDoubleIcon /> },
   { title: "Pins", to: "/pins", icon: <ShapesIcon /> },
   { title: "Forecast", to: "/predictions", icon: <TrendingUpIcon /> },
+  { title: "Filings", to: "/filings", icon: <FileTextIcon /> },
   { title: "Activity", to: "/activity", icon: <FootprintsIcon /> },
   { title: "Badges", to: "/achievements", icon: <TrophyIcon /> },
 ];
