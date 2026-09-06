@@ -120,6 +120,36 @@ export function scorePatent(input: PublicRecordInput, ctx: ScoreContext): number
   return Math.round(score * 10) / 10;
 }
 
+/**
+ * FAA aeronautical studies (§5.5). Inside a park polygon or within a few
+ * hundred metres of one, permanent, tall, and an amusement/building type
+ * leads; cell-tower and utility-pole filings (the bulk of the region) sink.
+ */
+export function scoreAirspace(input: PublicRecordInput, ctx: ScoreContext): number {
+  const p = input.payload;
+  const type = str(p.structureType);
+  const nearest = p.nearestPark as { km?: number } | null | undefined;
+  let score = 15;
+  if (ctx.links.polygonParkId != null) score += 30;
+  else if (nearest && typeof nearest.km === "number") score += nearest.km <= 1 ? 15 : 8;
+  if (ctx.operatorFiler) score += 20;
+  if (type.startsWith("AMUSEMENT")) score += 30;
+  else if (type.startsWith("BUILDING")) score += 20;
+  else if (type.startsWith("CRANE")) score += 10;
+  else if (/TOWER\$ANTENNA|^POLE|TRANSMISSION|SOLAR/.test(type)) score -= 15;
+  const agl =
+    typeof p.aglDetermined === "number"
+      ? p.aglDetermined
+      : typeof p.aglProposed === "number"
+        ? p.aglProposed
+        : 0;
+  if (agl > 0) score += Math.min(25, agl / 10);
+  if (/permanent/i.test(str(p.duration))) score += 10;
+  if (/determined/i.test(str(p.status))) score += 5;
+  if (ctx.links.links.some((l) => l.entityKind === "attraction")) score += 15;
+  return Math.round(Math.max(score, 1) * 10) / 10;
+}
+
 /** Dispatch by kind. Kinds without a formula yet get a flat baseline. */
 export function scoreRecord(input: PublicRecordInput, ctx: ScoreContext): number {
   switch (input.kind) {
@@ -130,6 +160,8 @@ export function scoreRecord(input: PublicRecordInput, ctx: ScoreContext): number
     case "patent_app":
     case "patent_grant":
       return scorePatent(input, ctx);
+    case "airspace":
+      return scoreAirspace(input, ctx);
     default:
       return ctx.operatorFiler ? 40 : 10;
   }

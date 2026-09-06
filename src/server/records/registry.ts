@@ -3,6 +3,7 @@
  * agency label from here so "View on City of Orlando" never drifts from the
  * adapter that produced the record.
  */
+import { faaOeaaaAdapter } from "./adapters/faa-oeaaa.ts";
 import { orlandoSodaAdapter } from "./adapters/orlando-soda.ts";
 import { usptoPatentAdapter } from "./adapters/uspto-patent.ts";
 import { usptoTmAdapter } from "./adapters/uspto-tm.ts";
@@ -13,6 +14,7 @@ export const ADAPTERS: ReadonlyArray<Adapter> = [
   orlandoSodaAdapter,
   usptoTmAdapter,
   usptoPatentAdapter,
+  faaOeaaaAdapter,
 ];
 
 const BY_SOURCE = new Map(ADAPTERS.map((a) => [a.source, a]));
