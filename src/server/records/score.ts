@@ -69,11 +69,67 @@ export function scorePermit(input: PublicRecordInput, ctx: ScoreContext): number
   return Math.round(score * 10) / 10;
 }
 
+/**
+ * Trademarks (§5.9). Class 041 (amusement park / entertainment services) and
+ * 043 (restaurant, hotel) filed as intent-to-use = an unreleased place or
+ * show name → top. Merch classes for existing IP → floor. Registration and
+ * abandonment are both news (a dead name is a story too).
+ */
+export function scoreTrademark(input: PublicRecordInput, ctx: ScoreContext): number {
+  const p = input.payload;
+  const classes = Array.isArray(p.classes) ? (p.classes as string[]) : [];
+  let score = 15;
+  if (ctx.operatorFiler) score += 25;
+  if (classes.includes("041")) score += 25;
+  if (classes.includes("043")) score += 20;
+  if (classes.includes("035") || classes.includes("039")) score += 5;
+  if (p.intentToUse === true) score += 20;
+  if (!p.markText) score -= 10; // design-only marks rarely name a place
+  const merchOnly =
+    classes.length > 0 && classes.every((c) => ["009", "016", "025", "028"].includes(c));
+  if (merchOnly) score -= 15;
+  if (ctx.links.links.some((l) => l.entityKind === "attraction")) score -= 5; // existing brand
+  if (p.registrationDate) score += 5;
+  if (p.abandonmentDate) score += 5;
+  if (ctx.statusTransition && ctx.statusTransition.to !== ctx.statusTransition.from) {
+    const to = str(ctx.statusTransition.to);
+    if (/published|registered|abandoned|allowance/i.test(to)) score += 10;
+  }
+  return Math.round(Math.max(score, 1) * 10) / 10;
+}
+
+/**
+ * Patents (§5.10). Ride systems (CPC A63G), stage/illusion effects (A63J)
+ * and animatronics (A63H) from an operator lead; software/business-method
+ * filings that merely mention parks trail.
+ */
+export function scorePatent(input: PublicRecordInput, ctx: ScoreContext): number {
+  const p = input.payload;
+  const cpc = Array.isArray(p.cpc) ? (p.cpc as string[]) : [];
+  let score = 20;
+  if (ctx.operatorFiler) score += 30;
+  if (cpc.some((c) => /^A63G\b/.test(c))) score += 30;
+  else if (cpc.some((c) => /^A63J\b/.test(c))) score += 20;
+  else if (cpc.some((c) => /^A63H\b/.test(c))) score += 10;
+  if (
+    /\b(ride|attraction|show|theme park|amusement|queue|guest|vehicle|animatron)/i.test(input.title)
+  )
+    score += 10;
+  if (input.kind === "patent_grant") score += 5;
+  if (ctx.links.links.some((l) => l.entityKind === "attraction")) score += 15;
+  return Math.round(score * 10) / 10;
+}
+
 /** Dispatch by kind. Kinds without a formula yet get a flat baseline. */
 export function scoreRecord(input: PublicRecordInput, ctx: ScoreContext): number {
   switch (input.kind) {
     case "permit":
       return scorePermit(input, ctx);
+    case "trademark":
+      return scoreTrademark(input, ctx);
+    case "patent_app":
+    case "patent_grant":
+      return scorePatent(input, ctx);
     default:
       return ctx.operatorFiler ? 40 : 10;
   }

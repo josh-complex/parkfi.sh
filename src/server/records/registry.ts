@@ -4,10 +4,16 @@
  * adapter that produced the record.
  */
 import { orlandoSodaAdapter } from "./adapters/orlando-soda.ts";
+import { usptoPatentAdapter } from "./adapters/uspto-patent.ts";
+import { usptoTmAdapter } from "./adapters/uspto-tm.ts";
 
 import type { Adapter } from "./types.ts";
 
-export const ADAPTERS: ReadonlyArray<Adapter> = [orlandoSodaAdapter];
+export const ADAPTERS: ReadonlyArray<Adapter> = [
+  orlandoSodaAdapter,
+  usptoTmAdapter,
+  usptoPatentAdapter,
+];
 
 const BY_SOURCE = new Map(ADAPTERS.map((a) => [a.source, a]));
 

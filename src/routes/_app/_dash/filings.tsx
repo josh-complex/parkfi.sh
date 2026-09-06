@@ -5,7 +5,6 @@ import { FileTextIcon } from "lucide-react";
 
 import {
   KIND_LABELS,
-  RESORT_LABELS,
   RecordCard,
   dayKey,
   fmtDay,
@@ -22,7 +21,7 @@ import {
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { seo } from "#/lib/seo.ts";
-import type { PublicRecordKind } from "#/lib/records.ts";
+import type { Operator, PublicRecordKind } from "#/lib/records.ts";
 import { cn } from "#/lib/utils.ts";
 
 /**
@@ -49,10 +48,15 @@ const WINDOWS: Array<{ label: string; days: number | undefined }> = [
   { label: "All time", days: undefined },
 ];
 
-const RESORTS: Array<{ label: string; slug: string | undefined }> = [
-  { label: "All", slug: undefined },
-  { label: RESORT_LABELS["walt-disney-world"]!, slug: "walt-disney-world" },
-  { label: RESORT_LABELS["universal-orlando"]!, slug: "universal-orlando" },
+/**
+ * Filter by OPERATOR, not resort: permits carry a resort, but trademarks and
+ * patents name IP and attach only to the operator (Disney Enterprises,
+ * Universal City Studios), so a resort chip would hide every Disney filing.
+ */
+const OPERATORS: Array<{ label: string; operator: Operator | undefined }> = [
+  { label: "All", operator: undefined },
+  { label: "Disney", operator: "disney" },
+  { label: "Universal", operator: "universal" },
 ];
 
 function Chip({
@@ -83,15 +87,15 @@ function Chip({
 
 function FilingsPage() {
   const trpc = useTRPC();
-  const [resortSlug, setResortSlug] = React.useState<string | undefined>(undefined);
+  const [operator, setOperator] = React.useState<Operator | undefined>(undefined);
   const [kind, setKind] = React.useState<string | undefined>(undefined);
   const [days, setDays] = React.useState<number | undefined>(90);
 
-  const summaryQ = useQuery(trpc.records.summary.queryOptions({ resortSlug, days: days ?? 365 }));
+  const summaryQ = useQuery(trpc.records.summary.queryOptions({ operator, days: days ?? 365 }));
   const feedQ = useInfiniteQuery(
     trpc.records.feed.infiniteQueryOptions(
       {
-        resortSlug,
+        operator,
         kinds: kind ? [kind as PublicRecordKind] : undefined,
         days,
         limit: 30,
@@ -129,13 +133,13 @@ function FilingsPage() {
 
       <div className="space-y-2">
         <div className="flex flex-wrap gap-1.5">
-          {RESORTS.map((r) => (
+          {OPERATORS.map((o) => (
             <Chip
-              key={r.label}
-              active={resortSlug === r.slug}
-              onClick={() => setResortSlug(r.slug)}
+              key={o.label}
+              active={operator === o.operator}
+              onClick={() => setOperator(o.operator)}
             >
-              {r.label}
+              {o.label}
             </Chip>
           ))}
         </div>
@@ -183,8 +187,8 @@ function FilingsPage() {
             </EmptyMedia>
             <EmptyTitle>No filings in this window</EmptyTitle>
             <EmptyDescription>
-              Try a wider window or another resort. Records land here after each daily check of the
-              government portals.
+              Try a wider window or another operator. Records land here after each daily check of
+              the government portals.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>

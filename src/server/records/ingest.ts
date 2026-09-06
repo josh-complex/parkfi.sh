@@ -127,7 +127,7 @@ export function prepareRecord(
     (operator && adapter.resortFor ? adapter.resortFor(operator) : null);
 
   const linkResult = computeLinks({ ...input, operator, resortSlug: resortHint }, catalog);
-  if (!linkResult.operator && linkResult.polygonParkId == null) return null;
+  if (!linkResult.operator && linkResult.polygonParkId == null && !input.alwaysKeep) return null;
 
   const operatorFiler = alias != null || input.operator != null;
   const score = scoreRecord(input, { operatorFiler, links: linkResult });
@@ -287,6 +287,16 @@ export async function runAdapter(adapter: Adapter, opts: IngestOptions): Promise
           .returning({ id: publicRecord.id });
         if (!row) continue; // raced with a concurrent run; next run reconciles
         await writeLinks(row.id, p.links);
+        // A later occurrence of the same record in THIS run (a mark whose
+        // status moved across several daily files) must take the change path
+        // below, not collide with the row we just inserted and get dropped.
+        byExternalId.set(input.externalId, {
+          id: row.id,
+          externalId: input.externalId,
+          contentHash: p.hash,
+          status: input.status ?? null,
+          payload: input.payload,
+        });
         stats.inserted++;
         scores.push(p.score);
         continue;
@@ -335,6 +345,12 @@ export async function runAdapter(adapter: Adapter, opts: IngestOptions): Promise
           );
         await writeLinks(prev.id, p.links);
       }
+      byExternalId.set(input.externalId, {
+        ...prev,
+        contentHash: p.hash,
+        status: input.status ?? null,
+        payload: input.payload,
+      });
       stats.changed++;
       scores.push(score);
     }

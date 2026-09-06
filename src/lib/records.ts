@@ -23,3 +23,6 @@ export const RECORD_KINDS = [
 ] as const;
 
 export type PublicRecordKind = (typeof RECORD_KINDS)[number];
+
+export const OPERATORS = ["disney", "universal", "seaworld"] as const;
+export type Operator = (typeof OPERATORS)[number];

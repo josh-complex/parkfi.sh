@@ -104,13 +104,18 @@ function soqlString(value: string): string {
 /**
  * The source-side filter. Alias patterns are LIKE patterns on our normalized
  * filer; the raw Socrata columns aren't normalized, so only plain
- * `PREFIX%` patterns are pushed down (the rest still match in `normalize`).
+ * `PREFIX%` patterns are pushed down — as a CONTAINS match, because rows
+ * exported since the City's 2026-06-02 restamp carry a leading space in the
+ * owner columns (" UNIVERSAL CITY DEVELOPMENT PAR"; found 2026-09-05 when the
+ * prefix form returned zero rows for three months). The exact prefix rule is
+ * re-applied on the trimmed, normalized filer in `prepareRecord`, so the
+ * looser source clause can't let a tenant through.
  */
 export function buildSodaFilter(ctx: Pick<AdapterContext, "parks" | "aliases">): string {
   const clauses: string[] = [];
   for (const alias of ctx.aliases) {
     if (!/^[A-Z0-9 ]+%$/.test(alias.pattern)) continue;
-    const literal = soqlString(alias.pattern);
+    const literal = soqlString(`%${alias.pattern}`);
     for (const col of ["parcel_owner_name", "property_owner_name", "contractor_name"]) {
       clauses.push(`upper(${col}) like ${literal}`);
     }

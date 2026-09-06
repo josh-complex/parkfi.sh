@@ -47,6 +47,13 @@ export interface PublicRecordInput {
   /** Attribution the adapter already knows from jurisdiction (CFTOD = WDW). */
   operator?: Operator | null;
   resortSlug?: string | null;
+  /**
+   * Adapter-asserted relevance that bypasses the "attributable or in a park
+   * polygon" persistence rule — e.g. a ride-system patent (CPC A63G) from a
+   * vendor. Such records carry no operator/resort and appear only in the
+   * all-resorts feed.
+   */
+  alwaysKeep?: boolean;
 }
 
 /** A park's geo + ownership, as the linker and source filters need it. */
@@ -92,6 +99,8 @@ export interface Adapter {
   /** Human label for logs and the UI's "View on <agency>" link. */
   agency: string;
   cadence: "daily" | "weekly";
+  /** Env vars that must be set for this adapter to run; the cron skips it otherwise. */
+  requiredEnv?: string[];
   /** Pull everything new/changed since `cursor`. Must be idempotent. */
   fetchSince(cursor: Record<string, unknown> | null, ctx: AdapterContext): Promise<FetchResult>;
   /** Pure: source body → ledger input. Throw on schema drift; null = not ours. */

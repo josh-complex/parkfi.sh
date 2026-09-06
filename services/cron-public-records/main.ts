@@ -10,8 +10,9 @@
  * broken portal logs and is skipped, never fails the run, and its cursor is
  * held so the next run re-drains.
  *
- * Adapters are feature-flagged by `RECORDS_SOURCES` (comma list); weekly
- * adapters skip when they ran within the last six days. `--dry-run` fetches
+ * Adapters are feature-flagged by `RECORDS_SOURCES` (comma list) and skip
+ * themselves when a key they need (`requiredEnv`, e.g. `USPTO_ODP_API_KEY`)
+ * is unset; weekly adapters skip when they ran within the last six days. `--dry-run` fetches
  * and normalizes without touching the ledger (prints what would be kept).
  *
  * Run:  bun run cron:public-records [--dry-run] [--source=orlando_soda]
@@ -37,7 +38,7 @@ import type { Adapter } from "#/server/records/types.ts";
 const SERVICE = "cron-public-records";
 
 const ENABLED = new Set(
-  (process.env.RECORDS_SOURCES ?? "orlando_soda")
+  (process.env.RECORDS_SOURCES ?? "orlando_soda,uspto_tm,uspto_patent")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean),
@@ -126,6 +127,11 @@ async function main() {
   const aliases = DRY_RUN ? undefined : await loadAliases();
   for (const adapter of ADAPTERS) {
     if (ONLY ? adapter.source !== ONLY : !ENABLED.has(adapter.source)) continue;
+    const missing = (adapter.requiredEnv ?? []).filter((k) => !process.env[k]?.trim());
+    if (missing.length > 0) {
+      log(`${adapter.source}: skipped — ${missing.join(", ")} not set`);
+      continue;
+    }
     await runStep(adapter.source, async () => {
       if (DRY_RUN) return dryRun(adapter);
       if (adapter.cadence === "weekly") {

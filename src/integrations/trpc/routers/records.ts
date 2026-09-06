@@ -11,7 +11,7 @@ import {
   publicRecordLink,
   publicRecordRevision,
 } from "#/db/schema.ts";
-import { RECORD_KINDS } from "#/lib/records.ts";
+import { OPERATORS, RECORD_KINDS } from "#/lib/records.ts";
 import { agencyFor } from "#/server/records/registry.ts";
 import { publicProcedure } from "../init.ts";
 
@@ -193,7 +193,7 @@ export const recordsRouter = {
         resortSlug: z.string().min(1).optional(),
         parkId: z.number().int().positive().optional(),
         kinds: z.array(z.enum(RECORD_KINDS)).max(RECORD_KINDS.length).optional(),
-        operator: z.enum(["disney", "universal", "seaworld"]).optional(),
+        operator: z.enum(OPERATORS).optional(),
         /** Only records with as-filed activity in the last N days. */
         days: z.number().int().min(1).max(3650).optional(),
         limit: z.number().int().min(1).max(100).default(30),
@@ -310,6 +310,7 @@ export const recordsRouter = {
     .input(
       z.object({
         resortSlug: z.string().min(1).optional(),
+        operator: z.enum(OPERATORS).optional(),
         days: z.number().int().min(1).max(365).default(90),
       }),
     )
@@ -323,6 +324,7 @@ export const recordsRouter = {
             eq(publicRecord.suppressed, false),
             sql`${activityAt} >= ${since}`,
             input.resortSlug ? eq(publicRecord.resortSlug, input.resortSlug) : undefined,
+            input.operator ? eq(publicRecord.operator, input.operator) : undefined,
           ),
         )
         .groupBy(publicRecord.kind);
@@ -333,6 +335,7 @@ export const recordsRouter = {
           and(
             eq(publicRecord.suppressed, false),
             input.resortSlug ? eq(publicRecord.resortSlug, input.resortSlug) : undefined,
+            input.operator ? eq(publicRecord.operator, input.operator) : undefined,
           ),
         );
       const sources = await db

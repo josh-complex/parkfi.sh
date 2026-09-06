@@ -116,11 +116,12 @@ describe("buildSodaFilter", () => {
     },
   ];
 
-  it("pushes prefix aliases down on all three name columns and a radius per park", () => {
+  it("pushes aliases down as contains-matches on all three name columns and a radius per park", () => {
     const where = buildSodaFilter({ aliases, parks });
-    expect(where).toContain("upper(parcel_owner_name) like 'UNIVERSAL CITY DEVELOPMENT%'");
-    expect(where).toContain("upper(property_owner_name) like 'UNIVERSAL CITY DEVELOPMENT%'");
-    expect(where).toContain("upper(contractor_name) like 'UNIVERSAL CITY DEVELOPMENT%'");
+    // Contains, not prefix: recent exports lead owner names with a space.
+    expect(where).toContain("upper(parcel_owner_name) like '%UNIVERSAL CITY DEVELOPMENT%'");
+    expect(where).toContain("upper(property_owner_name) like '%UNIVERSAL CITY DEVELOPMENT%'");
+    expect(where).toContain("upper(contractor_name) like '%UNIVERSAL CITY DEVELOPMENT%'");
     expect(where).toContain("within_circle(geocoded_column, 28.47770, -81.46840, 1200)");
     expect(where).not.toContain("WEIRD_PATTERN");
     expect(where).not.toContain("no-geo");
