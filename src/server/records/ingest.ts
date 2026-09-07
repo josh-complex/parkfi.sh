@@ -303,9 +303,11 @@ export async function runAdapter(adapter: Adapter, opts: IngestOptions): Promise
       }
 
       if (prev.contentHash === p.hash) {
+        // `url` is derived, not content: refresh it so a link-format fix
+        // reaches every re-fetched row without faking a revision.
         await db
           .update(publicRecord)
-          .set({ lastSeenAt: sql`now()` })
+          .set({ lastSeenAt: sql`now()`, url: input.url })
           .where(eq(publicRecord.id, prev.id));
         stats.unchanged++;
         continue;

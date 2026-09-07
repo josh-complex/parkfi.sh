@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  cleanText,
   contentHash,
+  decodeEscapedWhitespace,
   diffPayload,
   latestDate,
   likeToRegExp,
@@ -118,5 +120,16 @@ describe("date + number helpers", () => {
     expect(toNumber("$1,250")).toBe(1250);
     expect(toNumber("")).toBeNull();
     expect(toNumber("n/a")).toBeNull();
+  });
+});
+
+describe("decodeEscapedWhitespace", () => {
+  it("turns literal \\r\\n / \\n / \\t sequences into whitespace", () => {
+    expect(decodeEscapedWhitespace("a\\r\\nb\\nc\\td")).toBe("a\nb\nc\td");
+    expect(cleanText(decodeEscapedWhitespace("Drive\\nOrlando FL"))).toBe("Drive Orlando FL");
+  });
+
+  it("leaves real whitespace and other backslashes alone", () => {
+    expect(decodeEscapedWhitespace("a\nb \\x c\\")).toBe("a\nb \\x c\\");
   });
 });

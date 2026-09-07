@@ -22,7 +22,18 @@ import { isNative } from "#/lib/platform.ts";
 export type GeoState =
   | { status: "idle" }
   | { status: "prompting" }
-  | { status: "granted"; coords: [number, number]; accuracy: number; heading: number | null }
+  | {
+      status: "granted";
+      coords: [number, number];
+      accuracy: number;
+      heading: number | null;
+      /** The fix's own timestamp (epoch ms, from the platform — not delivery
+       *  time). Lets the achievement tracker age its own fix: a `watchPosition`
+       *  that stopped delivering while the app was frozen leaves a stale
+       *  coordinate here, and replaying it on resume was how a home fix landed
+       *  as an "in-park" ping 600 ms before the geofence exit (R3). */
+      capturedAt: number;
+    }
   | { status: "denied" }
   | { status: "unavailable" }
   | { status: "error"; message: string };
@@ -216,7 +227,7 @@ export function useGeolocation(opts?: {
         countedRef.current = true;
         activeWatchesStore.setState((n) => n + 1);
       }
-      const { coords, accuracy, heading } = fix;
+      const { coords, accuracy, heading, capturedAt } = fix;
       // Identical re-deliveries (cached maximumAge fixes while stationary) keep
       // the same object so subscribers don't re-render ~1×/s — but refresh
       // `capturedAt` once it's grown stale enough to matter for the tracker's
@@ -234,15 +245,20 @@ export function useGeolocation(opts?: {
       // A fix identical to the last one (common while stationary: cached
       // `maximumAge` re-delivery, wifi positioning) bails the update — the map
       // stage and every other subscriber would otherwise re-render ~1×/s off a
-      // fresh-but-equal state object while the user stands still.
+      // fresh-but-equal state object while the user stands still. The one
+      // exception is age: once the held fix is > 30 s older than the fix just
+      // delivered, take the new object so `capturedAt` keeps advancing and a
+      // live-but-stationary watch never reads as stale to the tracker's
+      // 90 s age bound (a frozen watch delivers nothing, so it still goes stale).
       setState((s) =>
         s.status === "granted" &&
         s.coords[0] === coords[0] &&
         s.coords[1] === coords[1] &&
         s.accuracy === accuracy &&
-        s.heading === heading
+        s.heading === heading &&
+        capturedAt - s.capturedAt < 30_000
           ? s
-          : { status: "granted", coords, accuracy, heading },
+          : { status: "granted", coords, accuracy, heading, capturedAt },
       );
     },
     [rememberActive, watch],
@@ -320,6 +336,7 @@ export function useGeolocation(opts?: {
           coords: [sim.coords.lng, sim.coords.lat],
           accuracy: sim.coords.accuracy,
           heading: null,
+          capturedAt: Date.now(),
         }
       : state;
 

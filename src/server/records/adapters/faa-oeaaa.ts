@@ -25,7 +25,13 @@ import { gunzipSync } from "node:zlib";
 import { distanceMeters } from "#/server/achievements/geo.ts";
 
 import { parseCsvRecords } from "../faa/csv.ts";
-import { cleanText, matchAlias, normalizeFiler, toNumber } from "../normalize.ts";
+import {
+  cleanText,
+  decodeEscapedWhitespace,
+  matchAlias,
+  normalizeFiler,
+  toNumber,
+} from "../normalize.ts";
 
 import type {
   Adapter,
@@ -116,12 +122,49 @@ export interface FaaRow {
   nearest: NearestPark | null;
 }
 
+/**
+ * One cell as display text. The archive writes line breaks inside a cell as
+ * the literal characters `\r\n`; decode them before collapsing whitespace so
+ * they neither reach the UI nor leave a stray "n" glued to the next word.
+ */
+function cell(row: Record<string, string>, key: string): string | null {
+  return cleanText(decodeEscapedWhitespace(row[key] ?? ""));
+}
+
+/**
+ * The location description is a typed address, one line per escaped break
+ * ("Near 6040 Lakehurst Drive\nOrlando FL 32819\nOrange county"). Join the
+ * lines with commas and drop any line the sponsor typed twice.
+ */
+export function joinAddressLines(raw: string | null | undefined): string | null {
+  const lines: string[] = [];
+  for (const line of decodeEscapedWhitespace(raw ?? "").split(/\r?\n/)) {
+    const s = cleanText(line);
+    if (!s) continue;
+    if (lines.some((l) => l.toLowerCase() === s.toLowerCase())) continue;
+    lines.push(s);
+  }
+  return lines.length > 0 ? lines.join(", ") : null;
+}
+
+/** Proposal text + the location, as one paragraph without doubling a final period. */
+export function composeDescription(
+  proposal: string | null,
+  location: string | null,
+): string | null {
+  const parts: string[] = [];
+  if (proposal) parts.push(proposal);
+  if (location) parts.push(`Location: ${location}`);
+  if (parts.length === 0) return null;
+  return parts.reduce((acc, part) => (/[.!?]$/.test(acc) ? `${acc} ${part}` : `${acc}. ${part}`));
+}
+
 function textMatchesAlias(
   row: Record<string, string>,
   ctx: Pick<AdapterContext, "aliases">,
 ): boolean {
   for (const key of ["SPONSOR NAME", "STRUCTURE NAME", "PROPOSAL DESCRIPTION"]) {
-    if (matchAlias(normalizeFiler(row[key] ?? null), ctx.aliases)) return true;
+    if (matchAlias(normalizeFiler(cell(row, key)), ctx.aliases)) return true;
   }
   return false;
 }
@@ -178,10 +221,10 @@ export const faaOeaaaAdapter: Adapter = {
     const asn = cleanText(r["STUDY (ASN)"]);
     if (!asn) return null;
     const structureType = cleanText(r["STRUCTURE TYPE"]);
-    const structureName = cleanText(r["STRUCTURE NAME"]);
-    const proposal = cleanText(r["PROPOSAL DESCRIPTION"]);
-    const location = cleanText(r["LOCATION DESCRIPTION"]);
-    const sponsor = cleanText(r["SPONSOR NAME"]);
+    const structureName = cell(r, "STRUCTURE NAME");
+    const proposal = cell(r, "PROPOSAL DESCRIPTION");
+    const location = joinAddressLines(r["LOCATION DESCRIPTION"]);
+    const sponsor = cell(r, "SPONSOR NAME");
     const status = cleanText(r.STATUS);
     const entered = cleanText(r["ENTERED DATE"]);
     const completed = cleanText(r["COMPLETION DATE"]);
@@ -198,8 +241,7 @@ export const faaOeaaaAdapter: Adapter = {
       externalId: asn,
       url: raw.url,
       title,
-      description:
-        [proposal, location ? `Location: ${location}` : null].filter(Boolean).join(". ") || null,
+      description: composeDescription(proposal, location),
       filer: sponsor,
       filedAt: day(entered),
       status,
@@ -218,10 +260,10 @@ export const faaOeaaaAdapter: Adapter = {
         structureType,
         structureLabel: label,
         structureName,
-        city: cleanText(r["STRUCTURE CITY"]),
-        county: cleanText(r["STRUCTURE COUNTY NAME"]),
+        city: cell(r, "STRUCTURE CITY"),
+        county: cell(r, "STRUCTURE COUNTY NAME"),
         state: cleanText(r["STRUCTURE STATE"]),
-        nearestAirport: cleanText(r["NEAREST AIRPORT"]),
+        nearestAirport: cell(r, "NEAREST AIRPORT"),
         distanceFromAirportFt: toNumber(r["DISTANCE FROM AIRPORT"]),
         noticeOf: cleanText(r["NOTICE OF"]),
         duration: cleanText(r.DURATION),
@@ -233,7 +275,7 @@ export const faaOeaaaAdapter: Adapter = {
         amslProposed: toNumber(r["AMSL HEIGHT PROPOSED"]),
         amslDetermined: toNumber(r["AMSL HEIGHT DET"]),
         groundElevation: toNumber(r.ELEVATION),
-        markingLighting: cleanText(r["MARKING LIGHTING TYPE"]),
+        markingLighting: cell(r, "MARKING LIGHTING TYPE"),
         sponsor,
         nearestPark: body.nearest,
       },

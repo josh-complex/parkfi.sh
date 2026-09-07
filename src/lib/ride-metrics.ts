@@ -14,15 +14,28 @@ export interface RideMetrics {
   endedAt: string; // ISO
   durationS: number;
   dropCount: number;
-  airtimeS: number; // cumulative seconds |a| < 0.4 g
+  airtimeS: number; // cumulative seconds |a| < 0.4 g (stats only — the gate uses airtimeBurstS)
   maxG: number; // peak of 0.3–0.5 s windowed-median |a|/9.81
   inversions: number;
-  verticalM: number; // Σ|Δaltitude| (barometric), 0 if !baroAvailable
+  verticalM: number; // Σ|Δaltitude| (barometric, 5 Hz-decimated, noise-floored), 0 if !baroAvailable
   maxDropM: number; // largest single barometric descent
   estTopSpeedKmh: number | null; // 3.6·√(2·9.81·maxDropM) — ALWAYS an estimate, label it so
   baroAvailable: boolean;
   gyroAvailable: boolean;
   confidence: number; // 0..1 ride-signature score
+  // --- Round-2 detector fields (park-tracking fixes 2, Workstream E). Optional
+  // for one release so traces from pre-round-2 native builds still parse; the
+  // gate falls back to the old rule when they're absent.
+  /** Longest CONTIGUOUS sub-0.4 g burst, seconds. Cumulative `airtimeS` let a
+   *  few brief phone-handling dips over a 5-minute queue capture add up past
+   *  the 0.5 s gate; weightlessness on a coaster is one sustained burst. */
+  airtimeBurstS?: number;
+  /** Longest run, seconds, during which the windowed-median g stayed ≥ 2.0.
+   *  Walking impacts peak briefly; a launch or helix holds the g. */
+  maxGSustainS?: number;
+  /** Capture ran past MAX_SIGNATURE_DURATION_S — computed for telemetry, never
+   *  a ride (a 345 s capture is a queue shuffle, not a coaster). */
+  overlong?: boolean;
 }
 
 /** One downsampled audit sample (~4 Hz) for server plausibility checks. */
@@ -55,28 +68,52 @@ export interface RideTrace {
 export const RIDE_SIGNATURE = {
   /** Any detected barometric descent counts. */
   minDropCount: 1,
-  /** Cumulative airtime (|a| < 0.4 g), in seconds. */
+  /** Longest contiguous airtime burst (|a| < 0.4 g), in seconds. Applied to
+   *  `airtimeBurstS`; cumulative `airtimeS` stands in only for pre-round-2
+   *  clients that don't report the burst. */
   minAirtimeS: 0.5,
   /** Peak windowed-median g — above the walking-impact band (1.5–2.5 g). */
   minMaxG: 2.3,
   /** A maxG-only signature (no drop/airtime/inversion evidence) must also last
    *  this long — walking impacts spike briefly; real g-force is sustained. */
   maxGMinDurationS: 40,
+  /** …and the windowed median must hold ≥ 2.0 g for at least this long
+   *  (`maxGSustainS`). With END_SUSTAIN at 20 s every queue capture ran to the
+   *  cap, so the 40 s floor was always met and the maxG-only branch collapsed
+   *  to "maxG ≥ 2.3" — squarely the walking band on a bumpy shuffle (R7). */
+  maxGMinSustainS: 1.0,
   /** Any gyroscope-confirmed inversion counts. */
   minInversions: 1,
+  /** A capture longer than this is not a ride, whatever else it shows. No
+   *  coaster in the catalog runs 4 minutes; a queue does. */
+  maxSignatureDurationS: 240,
 } as const;
+
+/** Whether the capture is too long to be a ride: the device's `overlong` flag
+ *  when present, else inferred from duration (so pre-round-2 345 s queue
+ *  captures are caught server-side too). Pure. */
+export function isOverlong(m: Pick<RideMetrics, "durationS" | "overlong">): boolean {
+  return m.overlong ?? m.durationS > RIDE_SIGNATURE.maxSignatureDurationS;
+}
 
 /**
  * Whether a trace shows coaster-like evidence, not just walking jitter. Pure and
  * shared by the client suppression gate (`use-detected-ride.ts`), the
  * authoritative server gate (`ingestRideTrace`), and — as a native mirror —
- * the local recap-notification gate on both platforms.
+ * the local recap-notification gate on both platforms. Round-2 fields are
+ * optional: a trace without `airtimeBurstS` is gated on cumulative airtime, and
+ * one without `maxGSustainS` keeps the W5 duration-only maxG rule.
  */
 export function hasRideSignature(m: RideMetrics): boolean {
+  if (isOverlong(m)) return false;
+  const burst = m.airtimeBurstS ?? m.airtimeS;
+  const sustain = m.maxGSustainS ?? Number.POSITIVE_INFINITY;
   return (
     m.dropCount >= RIDE_SIGNATURE.minDropCount ||
-    m.airtimeS >= RIDE_SIGNATURE.minAirtimeS ||
+    burst >= RIDE_SIGNATURE.minAirtimeS ||
     m.inversions >= RIDE_SIGNATURE.minInversions ||
-    (m.maxG >= RIDE_SIGNATURE.minMaxG && m.durationS >= RIDE_SIGNATURE.maxGMinDurationS)
+    (m.maxG >= RIDE_SIGNATURE.minMaxG &&
+      m.durationS >= RIDE_SIGNATURE.maxGMinDurationS &&
+      sustain >= RIDE_SIGNATURE.maxGMinSustainS)
   );
 }

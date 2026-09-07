@@ -4,7 +4,9 @@ import { prepareRecord } from "../ingest.ts";
 import { parseCsvObjects } from "../faa/csv.ts";
 import {
   FAA_SEARCH_URL,
+  composeDescription,
   faaOeaaaAdapter,
+  joinAddressLines,
   nearestPark,
   structureLabel,
   yearsToRead,
@@ -115,6 +117,45 @@ describe("faaOeaaaAdapter", () => {
       aliases,
     );
     expect(crane!.score).toBeGreaterThan(tower!.score);
+  });
+
+  it("decodes the archive's literal \\r\\n escapes instead of showing them", () => {
+    const escaped = {
+      ...row,
+      "PROPOSAL DESCRIPTION":
+        "RE-FILING as site is still viable -\\nProposed 195' Monopole with a 4' rod for an overall height of 199'.",
+      "LOCATION DESCRIPTION":
+        "Near 6040 Lakehurst Drive\\r\\nOrlando FL 32819\\nOrange county\\nOrange county",
+      "STRUCTURE CITY": "Orlando\\r\\n",
+    };
+    const out = faaOeaaaAdapter.normalize({
+      externalId: "z",
+      url: FAA_SEARCH_URL,
+      fetchedAt: new Date(),
+      body: { row: escaped, nearest: null },
+    })!;
+    expect(out.address).toBe("Near 6040 Lakehurst Drive, Orlando FL 32819, Orange county");
+    expect(out.description).toBe(
+      "RE-FILING as site is still viable - Proposed 195' Monopole with a 4' rod for an overall height of 199'. Location: Near 6040 Lakehurst Drive, Orlando FL 32819, Orange county",
+    );
+    expect(out.payload.city).toBe("Orlando");
+    expect(JSON.stringify(out)).not.toContain("\\\\");
+  });
+
+  it("joins address lines and composes descriptions without doubled periods", () => {
+    expect(joinAddressLines("632 W Wilderness Way\\r\\nBay Lake Florida 32830")).toBe(
+      "632 W Wilderness Way, Bay Lake Florida 32830",
+    );
+    expect(joinAddressLines("\\r\\n")).toBeNull();
+    expect(composeDescription("Add C-band.", "7698 Greenbriar Pkwy")).toBe(
+      "Add C-band. Location: 7698 Greenbriar Pkwy",
+    );
+    expect(composeDescription("Add C-band", "7698 Greenbriar Pkwy")).toBe(
+      "Add C-band. Location: 7698 Greenbriar Pkwy",
+    );
+    expect(composeDescription(null, "7698 Greenbriar Pkwy")).toBe("Location: 7698 Greenbriar Pkwy");
+    expect(composeDescription("Add C-band", null)).toBe("Add C-band");
+    expect(composeDescription(null, null)).toBeNull();
   });
 
   it("labels structure codes and picks the years to read", () => {

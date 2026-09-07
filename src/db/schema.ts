@@ -2266,6 +2266,37 @@ export const userGeoState = pgTable("user_geo_state", {
   transitAt: timestamp("transit_at", { withTimezone: true }),
 });
 
+/**
+ * Short-retention log of accepted in-park pings (park-tracking fixes 2,
+ * Workstream D). `user_geo_state` is a single cursor — "where the user is now"
+ * — but a sensor ride trace that reaches the server late (drained from the
+ * native event queue on the next app open, hours after the ride) needs "where
+ * the user was when the ride STARTED". One row per accepted in-park ping,
+ * stamped with the post-ping dwell anchor; out-of-park pings are not stored.
+ * Pruned past 7 days by ingestPing. Created by
+ * drizzle/20260907120000_user_geo_ping/migration.sql (hand-written).
+ */
+export const userGeoPing = pgTable(
+  "user_geo_ping",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    at: timestamp("at", { withTimezone: true }).notNull(),
+    parkId: bigint("park_id", { mode: "number" }).references(() => parks.id),
+    lng: doublePrecision("lng").notNull(),
+    lat: doublePrecision("lat").notNull(),
+    accuracyM: real("accuracy_m").notNull(),
+    anchorAttractionId: bigint("anchor_attraction_id", { mode: "number" }).references(
+      () => attractions.id,
+    ),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.at] }),
+    index("user_geo_ping_user_at_idx").on(t.userId, t.at.desc()),
+  ],
+);
+
 /** Event counters with no day/park dimension (pin scans, alert creations, …). */
 export const userStat = pgTable(
   "user_stat",

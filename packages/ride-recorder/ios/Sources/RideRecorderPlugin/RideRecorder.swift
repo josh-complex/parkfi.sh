@@ -5,9 +5,9 @@ import CoreMotion
 ///
 /// Monitoring runs `deviceMotion` at ~10 Hz (accel-only, cheap) and watches a
 /// rolling 5 s variance of specific-force magnitude. When the ride-start trigger
-/// fires it escalates to 50 Hz, starts the altimeter, seeds the capture with the
-/// 10 s pre-trigger ring buffer, and emits `rideStarted`. On ride end (quiet for
-/// 20 s or a 6 min cap) it computes metrics and emits `rideDetected`, then
+/// fires it escalates to 50 Hz, seeds the capture with the last 3 s of the
+/// pre-trigger ring buffer, and emits `rideStarted`. On ride end (quiet for
+/// 8 s — trimmed off the capture — or the cap) it computes metrics and emits `rideDetected`, then
 /// reverts to monitoring. Callers arm/disarm this only while in-park (see the JS
 /// `AchievementTracker`), which is what bounds battery.
 final class RideRecorder {
@@ -134,7 +134,7 @@ final class RideRecorder {
     func startRecording() {
         guard monitoring, !recording else { return }
         manual = true
-        beginRecording(seedFromRing: true)
+        beginRecording(seedFromRing: true, now: ring.last?.t ?? 0)
     }
 
     func stopRecording() -> RideResult? {
@@ -264,7 +264,7 @@ final class RideRecorder {
         if variance > RideConst.startVarThreshold {
             if highVarSince == nil { highVarSince = now }
             else if now - highVarSince! >= RideConst.startSustainS {
-                beginRecording(seedFromRing: true)
+                beginRecording(seedFromRing: true, now: now)
             }
         } else {
             highVarSince = nil
@@ -286,20 +286,24 @@ final class RideRecorder {
         if variance < RideConst.endVarThreshold {
             if lowVarSince == nil { lowVarSince = now }
             else if now - lowVarSince! >= RideConst.endSustainS {
-                _ = finishRecording()
+                // The quiet tail that ended the capture is the unload/walk-off,
+                // not the ride — trim it so durationS/endedAt describe the ride.
+                _ = finishRecording(trimTailS: RideConst.endSustainS)
             }
         } else {
             lowVarSince = nil
         }
     }
 
-    private func beginRecording(seedFromRing: Bool) {
+    private func beginRecording(seedFromRing: Bool, now: Double) {
         guard !recording else { return }
         recording = true
         lowVarSince = nil
         highVarSince = nil
-        capture = seedFromRing ? ring : []
-        recordStart = capture.first?.t ?? (ring.last?.t ?? Date().timeIntervalSince1970)
+        // Seed with the last preTriggerKeepS of the ring (round 2: was the
+        // whole 10 s ring, which front-loaded every capture with queue shuffle).
+        capture = seedFromRing ? ring.filter { now - $0.t <= RideConst.preTriggerKeepS } : []
+        recordStart = capture.first?.t ?? (ring.last?.t ?? now)
         // Altimeter already running from startMonitoring (W3) — do not restart it
         // here or the ring's pre-trigger altitude baseline resets to the trigger
         // point, losing the lift hill.
@@ -307,12 +311,15 @@ final class RideRecorder {
         onRideStarted?()
     }
 
-    private func finishRecording() -> RideResult? {
+    /// - Parameter trimTailS: seconds of trailing samples to drop before
+    ///   computing — the low-variance tail that triggered the end. 0 for the
+    ///   cap/manual paths.
+    private func finishRecording(trimTailS: Double = 0) -> RideResult? {
         guard recording else { return nil }
         recording = false
         let wasManual = manual
         manual = false
-        let samples = capture
+        let raw = capture
         capture = []
         // Leave the altimeter running — it's owned by the monitoring lifecycle
         // now (started in startMonitoring, stopped in stopMonitoring), so the
@@ -321,10 +328,22 @@ final class RideRecorder {
         // back down to monitoring rate (unless we're fully stopping)
         if monitoring { startDeviceMotion(hz: RideConst.monitorHz) }
 
+        let samples: [RawSample]
+        if trimTailS > 0, let last = raw.last {
+            let cut = last.t - trimTailS
+            samples = raw.filter { $0.t <= cut }
+        } else {
+            samples = raw
+        }
+        // The last raw sample is "now"; the last kept sample was tailS earlier.
+        let tailS = (raw.last?.t ?? 0) - (samples.last?.t ?? raw.last?.t ?? 0)
+        let endedAt = Date().addingTimeInterval(-tailS)
+
         let result = RideMetricsComputer.compute(
             samples,
             baroAvailable: baroAvailable,
-            gyroAvailable: gyroAvailable
+            gyroAvailable: gyroAvailable,
+            endedAt: endedAt
         )
         if let result = result, !wasManual {
             onRideDetected?(result)

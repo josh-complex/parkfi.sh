@@ -32,6 +32,7 @@ import { Route as AppDashRouteImport } from './routes/_app/_dash'
 import { Route as AppDashIndexRouteImport } from './routes/_app/_dash/index'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api.trpc.$'
 import { Route as ApiPushSubscribeRouteImport } from './routes/api/push/subscribe'
+import { Route as ApiNativePingRouteImport } from './routes/api/native/ping'
 import { Route as ApiMapStyleThemeRouteImport } from './routes/api/map-style/$theme'
 import { Route as ApiAvatarSeedRouteImport } from './routes/api/avatar/$seed'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -180,6 +181,11 @@ const ApiTrpcSplatRoute = ApiTrpcSplatRouteImport.update({
 const ApiPushSubscribeRoute = ApiPushSubscribeRouteImport.update({
   id: '/api/push/subscribe',
   path: '/api/push/subscribe',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiNativePingRoute = ApiNativePingRouteImport.update({
+  id: '/api/native/ping',
+  path: '/api/native/ping',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiMapStyleThemeRoute = ApiMapStyleThemeRouteImport.update({
@@ -407,6 +413,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/avatar/$seed': typeof ApiAvatarSeedRoute
   '/api/map-style/$theme': typeof ApiMapStyleThemeRoute
+  '/api/native/ping': typeof ApiNativePingRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/account/alerts': typeof AppDashAccountAlertsRoute
@@ -464,6 +471,7 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/avatar/$seed': typeof ApiAvatarSeedRoute
   '/api/map-style/$theme': typeof ApiMapStyleThemeRoute
+  '/api/native/ping': typeof ApiNativePingRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/account/alerts': typeof AppDashAccountAlertsRoute
@@ -525,6 +533,7 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/avatar/$seed': typeof ApiAvatarSeedRoute
   '/api/map-style/$theme': typeof ApiMapStyleThemeRoute
+  '/api/native/ping': typeof ApiNativePingRoute
   '/api/push/subscribe': typeof ApiPushSubscribeRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/_app/_dash/': typeof AppDashIndexRoute
@@ -587,6 +596,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/avatar/$seed'
     | '/api/map-style/$theme'
+    | '/api/native/ping'
     | '/api/push/subscribe'
     | '/api/trpc/$'
     | '/account/alerts'
@@ -644,6 +654,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/avatar/$seed'
     | '/api/map-style/$theme'
+    | '/api/native/ping'
     | '/api/push/subscribe'
     | '/api/trpc/$'
     | '/account/alerts'
@@ -704,6 +715,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/avatar/$seed'
     | '/api/map-style/$theme'
+    | '/api/native/ping'
     | '/api/push/subscribe'
     | '/api/trpc/$'
     | '/_app/_dash/'
@@ -742,6 +754,7 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiAvatarSeedRoute: typeof ApiAvatarSeedRoute
   ApiMapStyleThemeRoute: typeof ApiMapStyleThemeRoute
+  ApiNativePingRoute: typeof ApiNativePingRoute
   ApiPushSubscribeRoute: typeof ApiPushSubscribeRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
   OgDiningFacilityIdCardDotjpgRoute: typeof OgDiningFacilityIdCardDotjpgRoute
@@ -911,6 +924,13 @@ declare module '@tanstack/react-router' {
       path: '/api/push/subscribe'
       fullPath: '/api/push/subscribe'
       preLoaderRoute: typeof ApiPushSubscribeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/native/ping': {
+      id: '/api/native/ping'
+      path: '/api/native/ping'
+      fullPath: '/api/native/ping'
+      preLoaderRoute: typeof ApiNativePingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/map-style/$theme': {
@@ -1299,6 +1319,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiAvatarSeedRoute: ApiAvatarSeedRoute,
   ApiMapStyleThemeRoute: ApiMapStyleThemeRoute,
+  ApiNativePingRoute: ApiNativePingRoute,
   ApiPushSubscribeRoute: ApiPushSubscribeRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,
   OgDiningFacilityIdCardDotjpgRoute: OgDiningFacilityIdCardDotjpgRoute,

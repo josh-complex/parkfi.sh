@@ -1,6 +1,7 @@
 import { WebPlugin } from "@capacitor/core";
 
 import type {
+  DrainedEvents,
   LocationPermissionState,
   MotionPermissionState,
   RideRecorderPlugin,
@@ -48,6 +49,10 @@ export class RideRecorderWeb extends WebPlugin implements RideRecorderPlugin {
 
   async queryStepSpan(): Promise<{ steps: number | null }> {
     return { steps: null };
+  }
+
+  async drainPending(): Promise<DrainedEvents> {
+    return { transitions: 0, rides: 0, oldestAgeMs: null };
   }
 
   // Region monitoring is a native-OS capability; the browser has no equivalent

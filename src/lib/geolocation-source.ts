@@ -18,8 +18,19 @@ import { isNative } from "#/lib/platform.ts";
  * plugin is dynamically imported so it stays out of the web bundle.
  */
 
-/** Normalized fix in `[lng, lat]` order (GeoJSON / MapLibre). */
-export type GeoFix = { coords: [number, number]; accuracy: number; heading: number | null };
+/**
+ * Normalized fix in `[lng, lat]` order (GeoJSON / MapLibre). `capturedAt` is the
+ * platform's own fix timestamp (epoch ms), NOT the delivery time — a cached
+ * `maximumAge` re-delivery keeps its original time, so consumers can age a fix
+ * honestly (the achievement tracker drops fixes older than its age bound
+ * rather than replaying a pre-background coordinate on resume).
+ */
+export type GeoFix = {
+  coords: [number, number];
+  accuracy: number;
+  heading: number | null;
+  capturedAt: number;
+};
 
 /**
  * Normalized failure. `denied` is the user/OS refusal the hook treats specially
@@ -59,6 +70,7 @@ function webPositionToFix(pos: GeolocationPosition): GeoFix {
     coords: [pos.coords.longitude, pos.coords.latitude],
     accuracy: pos.coords.accuracy,
     heading: pos.coords.heading,
+    capturedAt: Number.isFinite(pos.timestamp) ? pos.timestamp : Date.now(),
   };
 }
 
@@ -70,6 +82,7 @@ function nativePositionToFix(pos: Position): GeoFix {
     // falling back to course — better than the web value, which is course-only
     // and null while stationary.
     heading: pos.coords.heading ?? null,
+    capturedAt: Number.isFinite(pos.timestamp) ? pos.timestamp : Date.now(),
   };
 }
 

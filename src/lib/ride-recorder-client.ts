@@ -39,6 +39,24 @@ export type GeofenceTransition = "enter" | "exit";
 export interface ParkTransitionEvent {
   regionId: string;
   transition: GeofenceTransition;
+  /** When the OS reported the crossing (epoch ms) — from the native event
+   *  queue, so an event delivered on the next app open still carries the real
+   *  time, not the resume time (R6). Absent from pre-queue native builds. */
+  at?: number;
+}
+
+/** A `rideDetected` event: the trace plus, from the native event queue, the
+ *  ride's start time (epoch ms) — set even when the event was queued while the
+ *  app was dead and delivered on the next open. */
+export type RideDetectedEvent = RideTrace & { at?: number };
+
+/** What `drainPending` flushed to the listeners: counts plus the age of the
+ *  oldest event (ms since it was queued), for the `native_events_drained`
+ *  telemetry that proves killed-process events now survive. */
+export interface DrainedNativeEvents {
+  transitions: number;
+  rides: number;
+  oldestAgeMs: number | null;
 }
 
 interface RideRecorderPlugin {
@@ -53,7 +71,11 @@ interface RideRecorderPlugin {
   requestBackgroundLocation(): Promise<{ location: LocationPermissionState }>;
   setParkGeofences(opts: { regions: ParkGeofence[] }): Promise<void>;
   clearParkGeofences(): Promise<void>;
-  addListener(event: "rideDetected", cb: (trace: RideTrace) => void): Promise<PluginListenerHandle>;
+  drainPending(): Promise<DrainedNativeEvents>;
+  addListener(
+    event: "rideDetected",
+    cb: (event: RideDetectedEvent) => void,
+  ): Promise<PluginListenerHandle>;
   addListener(event: "rideStarted", cb: () => void): Promise<PluginListenerHandle>;
   addListener(
     event: "parkTransition",
@@ -167,13 +189,36 @@ export async function stopRideRecording(): Promise<RideTrace | null> {
  * or `null` on web. Callers own the handle's lifecycle.
  */
 export async function addRideDetectedListener(
-  cb: (trace: RideTrace) => void,
+  cb: (event: RideDetectedEvent) => void,
 ): Promise<PluginListenerHandle | null> {
   if (!isNative()) return null;
   try {
     return await RideRecorder.addListener("rideDetected", cb);
   } catch (e) {
     captureBridgeFailure("addRideDetectedListener", e);
+    return null;
+  }
+}
+
+/**
+ * Flush the native event queue (Workstream A): transitions and rides the OS
+ * delivered while the app was killed or frozen are persisted on device and
+ * replayed to the `parkTransition` / `rideDetected` listeners here. The plugin
+ * also drains on its own `load()` and resume, so this is belt-and-suspenders
+ * for anything enqueued while the bridge existed but listeners didn't. Returns
+ * the drained counts (for telemetry); null on web or on bridge failure.
+ */
+export async function drainPendingNativeEvents(): Promise<DrainedNativeEvents | null> {
+  if (!isNative()) return null;
+  try {
+    const r = await RideRecorder.drainPending();
+    return {
+      transitions: Number(r?.transitions ?? 0),
+      rides: Number(r?.rides ?? 0),
+      oldestAgeMs: typeof r?.oldestAgeMs === "number" ? r.oldestAgeMs : null,
+    };
+  } catch (e) {
+    captureBridgeFailure("drainPending", e);
     return null;
   }
 }

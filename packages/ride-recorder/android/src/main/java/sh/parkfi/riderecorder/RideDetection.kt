@@ -19,13 +19,24 @@ object RideConst {
     const val START_VAR_THRESHOLD = 1.5
     const val START_SUSTAIN_S = 3.0
     const val END_VAR_THRESHOLD = 0.3
-    const val END_SUSTAIN_S = 20.0
+    // Round 2 (R7): 20 → 8. Real coasters brake to a stop and unload; 8 s of low
+    // variance is enough. At 20 s a queue shuffle never went quiet long enough
+    // and every capture ran to MAX_DURATION_S — which made the maxG-only
+    // signature's 40 s duration floor always-true.
+    const val END_SUSTAIN_S = 8.0
     // 15 s under the server's Zod cap (360) — the finish check fires one sample
     // past this, so an exact 360 here could compute durationS > 360 and get the
     // whole ride rejected server-side.
     const val MAX_DURATION_S = 345.0
     const val MIN_DURATION_S = 20.0
     const val RING_BUFFER_S = 10.0
+    // Of the ring, how much pre-trigger context seeds a capture (round 2: was
+    // the whole 10 s ring). The start trigger already fires 3 s into sustained
+    // variance; 3 s more of lead-in covers the ride's real start.
+    const val PRE_TRIGGER_KEEP_S = 3.0
+    // A capture longer than this is computed (telemetry) but flagged overlong —
+    // never a ride. Mirror of RIDE_SIGNATURE.maxSignatureDurationS.
+    const val MAX_SIGNATURE_DURATION_S = 240.0
 
     const val AIRTIME_G = 0.4
     const val AIRTIME_HYSTERESIS_S = 0.1
@@ -37,10 +48,18 @@ object RideConst {
     const val DROP_NO_BARO_LOW_G_MIN_S = 0.8
     const val DROP_MERGE_S = 2.0
     const val MAX_G_WINDOW_S = 0.4
+    // The windowed median must hold at least this many g to count toward
+    // maxGSustainS (the maxG-only signature's sustain gate).
+    const val MAX_G_SUSTAIN_G = 2.0
     const val INVERSION_ANGLE_DEG = 150.0
     const val INVERSION_GYRO_DEG_S = 90.0
     const val INVERSION_COOLDOWN_S = 1.5
     const val BARO_EMA_TAU_S = 1.0
+    // verticalM integrates the smoothed altitude at the barometer's real update
+    // rate, with a dead band at the sensor noise floor (R9): at 50 Hz every
+    // 0.02 m wobble summed over a 5-minute capture read as tens of metres.
+    const val BARO_DECIMATE_HZ = 5.0
+    const val BARO_STEP_FLOOR_M = 0.15
     const val GRAVITY_EMA_TAU_S = 5.0
 
     // Ride-signature thresholds — mirror of RIDE_SIGNATURE in
@@ -51,43 +70,60 @@ object RideConst {
     const val SIG_MIN_AIRTIME_S = 0.5
     const val SIG_MIN_MAX_G = 2.3
     const val SIG_MAX_G_MIN_DURATION_S = 40.0
+    const val SIG_MAX_G_MIN_SUSTAIN_S = 1.0
     const val SIG_MIN_INVERSIONS = 1
 }
 
 /**
  * Mirror of `hasRideSignature` in src/lib/ride-metrics.ts — whether a trace
- * shows coaster-like evidence rather than walking jitter. A maxG-only
- * signature additionally requires a sustained ride: step impacts read
- * 1.5–2.5 g in the 0.4 s windowed median but spike briefly, where launch/helix
- * g is sustained. Parity-tested against the TS numbers in RideSignatureTest.
+ * shows coaster-like evidence rather than walking jitter. Round 2: the airtime
+ * gate is the longest *contiguous* burst (cumulative dips from phone handling
+ * no longer add up), the maxG-only branch also needs the windowed median to
+ * hold ≥ 2.0 g for a full second (launch/helix, not a step impact), and an
+ * overlong capture is never a ride. The nullable round-2 inputs fall back to the
+ * old rule, matching how the server treats pre-round-2 clients.
+ * Parity-tested against the TS numbers in RideSignatureTest.
  */
 object RideSignature {
     fun hasSignature(
         dropCount: Int,
         airtimeS: Double,
+        airtimeBurstS: Double?,
         maxG: Double,
+        maxGSustainS: Double?,
         inversions: Int,
         durationS: Double,
-    ): Boolean =
-        dropCount >= RideConst.SIG_MIN_DROP_COUNT ||
-            airtimeS >= RideConst.SIG_MIN_AIRTIME_S ||
+        overlong: Boolean?,
+    ): Boolean {
+        if (overlong ?: (durationS > RideConst.MAX_SIGNATURE_DURATION_S)) return false
+        val burst = airtimeBurstS ?: airtimeS
+        val sustain = maxGSustainS ?: Double.POSITIVE_INFINITY
+        return dropCount >= RideConst.SIG_MIN_DROP_COUNT ||
+            burst >= RideConst.SIG_MIN_AIRTIME_S ||
             inversions >= RideConst.SIG_MIN_INVERSIONS ||
-            (maxG >= RideConst.SIG_MIN_MAX_G && durationS >= RideConst.SIG_MAX_G_MIN_DURATION_S)
+            (maxG >= RideConst.SIG_MIN_MAX_G &&
+                durationS >= RideConst.SIG_MAX_G_MIN_DURATION_S &&
+                sustain >= RideConst.SIG_MAX_G_MIN_SUSTAIN_S)
+    }
 
     /** Metrics-map overload for the service's recap gate. Missing/non-numeric
-     *  fields read as zero, which can only suppress, never over-notify. */
+     *  required fields read as zero (can only suppress); missing round-2
+     *  fields read as absent (the legacy fallback). */
     fun hasSignature(metrics: Map<String, Any?>): Boolean = hasSignature(
         (metrics["dropCount"] as? Number)?.toInt() ?: 0,
         (metrics["airtimeS"] as? Number)?.toDouble() ?: 0.0,
+        (metrics["airtimeBurstS"] as? Number)?.toDouble(),
         (metrics["maxG"] as? Number)?.toDouble() ?: 0.0,
+        (metrics["maxGSustainS"] as? Number)?.toDouble(),
         (metrics["inversions"] as? Number)?.toInt() ?: 0,
         (metrics["durationS"] as? Number)?.toDouble() ?: 0.0,
+        metrics["overlong"] as? Boolean,
     )
 }
 
 /** One captured motion sample (device-independent units). */
 data class RawSample(
-    val t: Double,          // seconds since recording start
+    val t: Double,          // seconds (sensor clock)
     val sfMs2: Double,      // |specific force| in m/s²
     val gx: Double,         // gravity unit vector, device frame
     val gy: Double,
@@ -96,42 +132,57 @@ data class RawSample(
     val altRel: Double?,    // relative altitude in m, null if no barometer
 )
 
-/** Computed ride summary + downsampled audit trace, ready to hand to JS. */
+/** Computed ride summary + downsampled audit trace, ready to hand to JS.
+ *  `startedAtMs` is the wall-clock ride start — the same instant as
+ *  `metrics["startedAt"]`, kept as a Long for the native event queue. */
 data class RideResult(
     val metrics: Map<String, Any?>,
     val samples: List<Map<String, Any?>>,
+    val startedAtMs: Long,
 )
 
 /** Pure metric computation from a captured sample array. Mirror of the iOS
  *  `RideMetricsComputer`. Stateless and independently testable. */
 object RideMetricsComputer {
 
-    fun compute(samples: List<RawSample>, baroAvailable: Boolean, gyroAvailable: Boolean): RideResult? {
+    /**
+     * @param endedAtMs wall-clock time of the LAST sample in `samples`. The
+     *   recorder trims the quiet tail that ended the capture before calling
+     *   this, so the caller — not `System.currentTimeMillis()` — knows when the
+     *   ride actually ended.
+     */
+    fun compute(
+        samples: List<RawSample>,
+        baroAvailable: Boolean,
+        gyroAvailable: Boolean,
+        endedAtMs: Long = System.currentTimeMillis(),
+    ): RideResult? {
         if (samples.size < 2) return null
         val first = samples.first()
         val last = samples.last()
         val duration = last.t - first.t
         if (duration < RideConst.MIN_DURATION_S) return null
 
-        val airtime = computeAirtime(samples)
-        val maxG = computeMaxG(samples)
+        val (airtime, airtimeBurst) = computeAirtime(samples)
+        val (maxG, maxGSustain) = computeMaxG(samples)
         val (drops, maxDropM, vertical) = computeBaroMetrics(samples, baroAvailable)
         val inversions = if (gyroAvailable) computeInversions(samples) else 0
         val estTopSpeed = if (maxDropM > 0) 3.6 * sqrt(2 * RideConst.G * maxDropM) else null
+        val overlong = duration > RideConst.MAX_SIGNATURE_DURATION_S
 
-        val confidence = computeConfidence(samples, duration, drops, airtime, baroAvailable)
+        val confidence = computeConfidence(samples, duration, drops, airtimeBurst, baroAvailable)
 
-        val now = System.currentTimeMillis()
-        val startedAt = isoUtc(now - (duration * 1000).toLong())
-        val endedAt = isoUtc(now)
+        val startedAtMs = endedAtMs - (duration * 1000).toLong()
 
         val metrics = linkedMapOf<String, Any?>(
-            "startedAt" to startedAt,
-            "endedAt" to endedAt,
+            "startedAt" to isoUtc(startedAtMs),
+            "endedAt" to isoUtc(endedAtMs),
             "durationS" to round1(duration),
             "dropCount" to drops,
             "airtimeS" to round1(airtime),
+            "airtimeBurstS" to round2(airtimeBurst),
             "maxG" to round2(maxG),
+            "maxGSustainS" to round2(maxGSustain),
             "inversions" to inversions,
             "verticalM" to round1(vertical),
             "maxDropM" to round1(maxDropM),
@@ -139,13 +190,18 @@ object RideMetricsComputer {
             "baroAvailable" to baroAvailable,
             "gyroAvailable" to gyroAvailable,
             "confidence" to round2(confidence),
+            "overlong" to overlong,
         )
-        return RideResult(metrics, downsample(samples))
+        return RideResult(metrics, downsample(samples), startedAtMs)
     }
 
-    private fun computeAirtime(s: List<RawSample>): Double {
+    /** (cumulative sub-0.4 g seconds, longest contiguous sub-0.4 g burst). Both
+     *  use the same 100 ms enter/exit hysteresis. */
+    internal fun computeAirtime(s: List<RawSample>): Pair<Double, Double> {
         val threshold = RideConst.AIRTIME_G * RideConst.G
         var total = 0.0
+        var burst = 0.0
+        var run = 0.0
         var inState = false
         var candidateSince: Double? = null
         for (i in 1 until s.size) {
@@ -156,15 +212,23 @@ object RideMetricsComputer {
                 else if (s[i].t - candidateSince!! >= RideConst.AIRTIME_HYSTERESIS_S) {
                     inState = low
                     candidateSince = null
+                    if (!inState) run = 0.0
                 }
             } else candidateSince = null
-            if (inState) total += dt
+            if (inState) {
+                total += dt
+                run += dt
+                if (run > burst) burst = run
+            }
         }
-        return total
+        return total to burst
     }
 
-    private fun computeMaxG(s: List<RawSample>): Double {
+    /** (peak windowed-median g, longest run with the median ≥ MAX_G_SUSTAIN_G). */
+    internal fun computeMaxG(s: List<RawSample>): Pair<Double, Double> {
         var maxG = 0.0
+        var sustain = 0.0
+        var runStart: Double? = null
         val window = ArrayDeque<Double>()
         var idx = 0
         for (i in s.indices) {
@@ -176,35 +240,42 @@ object RideMetricsComputer {
             val sorted = window.sorted()
             val median = sorted[sorted.size / 2]
             if (median > maxG) maxG = median
+            if (median >= RideConst.MAX_G_SUSTAIN_G) {
+                if (runStart == null) runStart = s[i].t
+                sustain = max(sustain, s[i].t - runStart!!)
+            } else runStart = null
         }
-        return maxG
+        return maxG to sustain
     }
 
-    private fun computeBaroMetrics(s: List<RawSample>, baroAvailable: Boolean): Triple<Int, Double, Double> {
+    internal fun computeBaroMetrics(s: List<RawSample>, baroAvailable: Boolean): Triple<Int, Double, Double> {
         if (!baroAvailable) {
             return Triple(countLowGDrops(s, RideConst.DROP_NO_BARO_LOW_G_MIN_S), 0.0, 0.0)
         }
 
+        // EMA with the REAL per-sample dt (R9): a hardcoded 10 Hz dt at the
+        // 50 Hz capture rate made the effective τ ≈ 0.2 s instead of 1 s.
         val smoothed = DoubleArray(s.size)
         var ema: Double? = null
         for (i in s.indices) {
             val alt = s[i].altRel ?: ema ?: 0.0
             ema = if (ema == null) alt else {
-                val alpha = 1 - exp(-0.1 / RideConst.BARO_EMA_TAU_S)
+                val dt = max(1e-3, s[i].t - s[i - 1].t)
+                val alpha = 1 - exp(-dt / RideConst.BARO_EMA_TAU_S)
                 ema!! + alpha * (alt - ema!!)
             }
             smoothed[i] = ema!!
         }
 
-        var vertical = 0.0
+        // Largest single descent (peak drawdown) on the smoothed series.
         var peak = smoothed.first()
         var maxDrop = 0.0
         for (i in 1 until smoothed.size) {
-            vertical += abs(smoothed[i] - smoothed[i - 1])
             if (smoothed[i] > peak) peak = smoothed[i]
             val drawdown = peak - smoothed[i]
             if (drawdown > maxDrop) maxDrop = drawdown
         }
+        val vertical = computeVertical(s, smoothed)
 
         val dropTimes = ArrayList<Double>()
         var descentSince: Double? = null
@@ -226,6 +297,31 @@ object RideMetricsComputer {
             } else descentSince = null
         }
         return Triple(dropTimes.size, maxDrop, vertical)
+    }
+
+    /**
+     * Σ|Δaltitude| over the smoothed series decimated to the barometer's real
+     * update rate, with a dead band at the noise floor: the reference altitude
+     * only advances once the series has moved ≥ BARO_STEP_FLOOR_M away from it,
+     * so ±0.1 m jitter integrates to zero while a slow lift-hill climb still
+     * accrues (in 0.15 m quanta) rather than being dropped step by step.
+     */
+    internal fun computeVertical(s: List<RawSample>, smoothed: DoubleArray): Double {
+        if (s.isEmpty()) return 0.0
+        val stepS = 1.0 / RideConst.BARO_DECIMATE_HZ
+        var vertical = 0.0
+        var lastT = s[0].t
+        var ref = smoothed[0]
+        for (i in 1 until s.size) {
+            if (s[i].t - lastT < stepS - 1e-6) continue
+            lastT = s[i].t
+            val d = smoothed[i] - ref
+            if (abs(d) >= RideConst.BARO_STEP_FLOOR_M) {
+                vertical += abs(d)
+                ref = smoothed[i]
+            }
+        }
+        return vertical
     }
 
     private fun countLowGDrops(s: List<RawSample>, minS: Double): Int {
@@ -295,24 +391,26 @@ object RideMetricsComputer {
         s: List<RawSample>,
         duration: Double,
         drops: Int,
-        airtime: Double,
+        airtimeBurst: Double,
         baroAvailable: Boolean,
     ): Double {
         var score = 0.0
         val mean = s.sumOf { it.sfMs2 } / s.size
         val variance = s.sumOf { (it.sfMs2 - mean) * (it.sfMs2 - mean) } / s.size
         if (variance > RideConst.START_VAR_THRESHOLD) score += 0.35
-        if (drops >= 1 || airtime > 0.5) score += 0.25
-        if (baroAvailable) {
+        if (drops >= 1 || airtimeBurst > 0.5) score += 0.25
+        // Barometric range is only ride evidence over a ride-length capture —
+        // across a 5-minute queue it's weather drift (round 2).
+        if (baroAvailable && duration <= RideConst.MAX_SIGNATURE_DURATION_S) {
             val alts = s.mapNotNull { it.altRel }
             if (alts.isNotEmpty() && (alts.max() - alts.min()) > 3) score += 0.2
         }
         if (duration in 30.0..240.0) score += 0.2
         // Ride-signature gate (W1): without ANY coaster evidence — no drop, no
-        // airtime — walking jitter still scores ~0.55 additively, enough to clear
-        // the server's 0.5 confidence floor. Collapse the score so only a trace
-        // with real signature can pass. Mirror in RideDetection.swift.
-        if (drops == 0 && airtime < 0.5) score *= 0.4
+        // airtime burst — walking jitter still scores ~0.55 additively, enough
+        // to clear the server's 0.5 confidence floor. Collapse the score so only
+        // a trace with real signature can pass. Mirror in RideDetection.swift.
+        if (drops == 0 && airtimeBurst < 0.5) score *= 0.4
         return min(1.0, score)
     }
 

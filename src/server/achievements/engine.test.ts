@@ -10,6 +10,7 @@ import {
   presenceDelta,
   dwellEventFloor,
   settleDay,
+  shouldContinueAnchor,
   stepDeltaFromCursor,
   stepsWindowSpansRollover,
   type CachedPark,
@@ -61,6 +62,42 @@ describe("presenceDelta", () => {
   it("contributes nothing for a zero or negative delta (clock skew / dup ping)", () => {
     expect(presenceDelta(true, 0, MAX_GAP_S)).toBe(0);
     expect(presenceDelta(true, -5, MAX_GAP_S)).toBe(0);
+  });
+});
+
+describe("anchor continuity", () => {
+  // R4 (round 2): three app-glances near one attraction over any span used to
+  // read as an 8-minute queue. A dwell now needs contiguous presence.
+  const anchored = { anchorId: 42, distM: 50 };
+
+  it("continues a dwell on a normal in-radius ping", () => {
+    expect(shouldContinueAnchor(anchored, 30, MAX_GAP_S)).toBe(true);
+  });
+
+  it("continues at the exact gap boundary (inclusive, like presence)", () => {
+    expect(shouldContinueAnchor(anchored, MAX_GAP_S, MAX_GAP_S)).toBe(true);
+  });
+
+  it("breaks the dwell when the gap exceeds the bound, even in radius", () => {
+    expect(shouldContinueAnchor(anchored, MAX_GAP_S + 1, MAX_GAP_S)).toBe(false);
+  });
+
+  it("breaks the dwell when the fix leaves the exit radius", () => {
+    expect(shouldContinueAnchor({ anchorId: 42, distM: 61 }, 30, MAX_GAP_S)).toBe(false);
+  });
+
+  it("keeps the dwell inside the exit hysteresis ring (40 < d ≤ 60)", () => {
+    expect(shouldContinueAnchor({ anchorId: 42, distM: 60 }, 30, MAX_GAP_S)).toBe(true);
+  });
+
+  it("never continues without a prior anchor or distance", () => {
+    expect(shouldContinueAnchor({ anchorId: null, distM: 10 }, 30, MAX_GAP_S)).toBe(false);
+    expect(shouldContinueAnchor({ anchorId: 42, distM: null }, 30, MAX_GAP_S)).toBe(false);
+  });
+
+  it("never continues without a prior ping time (elapsed null / negative)", () => {
+    expect(shouldContinueAnchor(anchored, null, MAX_GAP_S)).toBe(false);
+    expect(shouldContinueAnchor(anchored, -5, MAX_GAP_S)).toBe(false);
   });
 });
 

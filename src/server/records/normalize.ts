@@ -131,6 +131,16 @@ export function latestDate(...dates: Array<Date | null | undefined>): Date | nul
   return best;
 }
 
+/**
+ * Some agency exports (the FAA OE/AAA archive) write the line breaks inside
+ * a cell as the two-character sequences `\r\n` / `\n` / `\t`, which then
+ * show up verbatim in the UI. Turn them back into real whitespace so
+ * `cleanText` (or a line splitter) can deal with them.
+ */
+export function decodeEscapedWhitespace(value: string): string {
+  return value.replace(/\\r\\n|\\[nrt]/g, (m) => (m === "\\t" ? "\t" : "\n"));
+}
+
 /** Trim + collapse whitespace; empty → null. */
 export function cleanText(value: unknown): string | null {
   if (typeof value !== "string") return null;

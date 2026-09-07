@@ -20,6 +20,7 @@ import {
   coasterStats,
   parks,
   userAttraction,
+  userGeoPing,
   userGeoState,
   userParkDay,
   userRideEvent,
@@ -32,6 +33,11 @@ import type { LevelInfo } from "#/lib/achievements.ts";
 // A sensor submit must be backed by a location ping this recent, else there's
 // no trustworthy attraction anchor ("couch shake" rejection).
 const RIDE_FRESH_WINDOW_MS = 15 * 60 * 1000;
+// Historical anchor (Workstream D): the ping nearest the ride's START within
+// this window attributes the ride — not the current geo-state cursor, which
+// for a trace drained from the native queue hours later says where the user is
+// now, not where they rode.
+export const RIDE_ANCHOR_WINDOW_MS = 15 * 60 * 1000;
 // Nearest-active-attraction resolution radius when there's no live anchor.
 const NEAREST_MAX_M = 120;
 // Two events for the same (user, attraction) this close in time are the same
@@ -71,8 +77,19 @@ export const rideMetricsSchema = z
     baroAvailable: z.boolean(),
     gyroAvailable: z.boolean(),
     confidence: z.number().min(0).max(1),
+    // Round-2 detector fields (park-tracking fixes 2, Workstream E). Optional
+    // for one release: pre-round-2 native builds don't send them, and
+    // hasRideSignature falls back to the old rule when they're absent.
+    airtimeBurstS: z.number().min(0).optional(),
+    maxGSustainS: z.number().min(0).optional(),
+    overlong: z.boolean().optional(),
   })
   .refine((m) => m.airtimeS <= m.durationS, { message: "airtimeS exceeds durationS" })
+  .refine((m) => m.airtimeBurstS == null || m.airtimeBurstS <= m.airtimeS + 0.15, {
+    // The longest burst can't exceed the cumulative it's a part of (small slack
+    // for the two being rounded independently).
+    message: "airtimeBurstS exceeds airtimeS",
+  })
   .refine(
     (m) => {
       const wall = (Date.parse(m.endedAt) - Date.parse(m.startedAt)) / 1000;
@@ -84,6 +101,9 @@ export const rideMetricsSchema = z
 
 export const rideTraceSchema = z.object({
   metrics: rideMetricsSchema,
+  // When the native event queue recorded the ride (epoch ms). Telemetry only —
+  // attribution keys on metrics.startedAt (Workstream D).
+  detectedAt: z.number().optional(),
   samples: z
     .array(
       z.object({
@@ -112,6 +132,26 @@ export function isPingFresh(stateAt: Date | null | undefined, now: Date): boolea
   if (!stateAt) return false;
   const dt = now.getTime() - stateAt.getTime();
   return dt >= 0 && dt <= RIDE_FRESH_WINDOW_MS;
+}
+
+/**
+ * The ping that anchors a ride: the one whose `at` is nearest `startedAt`,
+ * within ±`windowMs`. Ties go to the earlier ping (the queue, not the exit
+ * walk). Null when nothing is in the window — the caller then falls back to
+ * the live cursor, or rejects. Pure; exported for tests.
+ */
+export function pickAnchorPing<T extends { at: Date }>(
+  pings: ReadonlyArray<T>,
+  startedAt: Date,
+  windowMs: number = RIDE_ANCHOR_WINDOW_MS,
+): T | null {
+  let best: { ping: T; gap: number } | null = null;
+  for (const p of pings) {
+    const gap = Math.abs(p.at.getTime() - startedAt.getTime());
+    if (gap > windowMs) continue;
+    if (!best || gap < best.gap) best = { ping: p, gap };
+  }
+  return best?.ping ?? null;
 }
 
 /**
@@ -212,18 +252,60 @@ export async function ingestRideTrace(
     });
   }
 
-  // 1. Geofence cross-check — a recent ping in a park is required.
+  // 1. Geofence cross-check against where the user was when the ride STARTED
+  // (Workstream D): the in-park ping nearest startedAt within ±15 min. A trace
+  // drained from the native event queue can arrive hours after the ride, when
+  // the live cursor is at the hotel — attribution keys on the ride's own time.
+  // Fallback: the live cursor, but only if IT is within the same window of
+  // startedAt (not of `now`). Neither ⇒ reject as before.
   const [state] = await db.select().from(userGeoState).where(eq(userGeoState.userId, userId));
-  if (!state || state.parkId == null || !isPingFresh(state.at, now)) {
+  const logged = await db
+    .select({
+      at: userGeoPing.at,
+      parkId: userGeoPing.parkId,
+      lng: userGeoPing.lng,
+      lat: userGeoPing.lat,
+      anchorAttractionId: userGeoPing.anchorAttractionId,
+    })
+    .from(userGeoPing)
+    .where(
+      and(
+        eq(userGeoPing.userId, userId),
+        gte(userGeoPing.at, new Date(startedAt.getTime() - RIDE_ANCHOR_WINDOW_MS)),
+        lte(userGeoPing.at, new Date(startedAt.getTime() + RIDE_ANCHOR_WINDOW_MS)),
+      ),
+    )
+    .orderBy(userGeoPing.at);
+  const anchorPing =
+    pickAnchorPing(
+      logged.filter((p) => p.parkId != null),
+      startedAt,
+    ) ??
+    (state && state.parkId != null && state.at && state.lng != null && state.lat != null
+      ? pickAnchorPing(
+          [
+            {
+              at: state.at,
+              parkId: state.parkId,
+              lng: state.lng,
+              lat: state.lat,
+              anchorAttractionId: state.anchorAttractionId,
+            },
+          ],
+          startedAt,
+        )
+      : null);
+  if (!anchorPing || anchorPing.parkId == null) {
     throw new TRPCError({
       code: "PRECONDITION_FAILED",
       message: "No recent in-park location to attribute this ride to.",
     });
   }
+  const anchorParkId = anchorPing.parkId;
 
-  // Resolve the attraction: prefer the live dwell anchor, else nearest active
-  // non-ghost attraction within range of the last ping.
-  let resolvedId = state.anchorAttractionId ?? null;
+  // Resolve the attraction: prefer that ping's dwell anchor, else nearest
+  // active non-ghost attraction within range of that ping's coordinates.
+  let resolvedId = anchorPing.anchorAttractionId ?? null;
   // The dwell machine also anchors SHOW entities now (show-goer detection); a
   // sensor ride trace must never attach to a theater — fall through to
   // nearest-ATTRACTION resolution instead.
@@ -234,20 +316,20 @@ export async function ingestRideTrace(
       .where(eq(attractions.id, resolvedId));
     if (anchorRow?.entityType !== "ATTRACTION") resolvedId = null;
   }
-  if (resolvedId == null && state.lng != null && state.lat != null) {
+  if (resolvedId == null) {
     const nearby = await db
       .select({ id: attractions.id, lat: attractions.latitude, lng: attractions.longitude })
       .from(attractions)
       .where(
         and(
-          eq(attractions.parkId, state.parkId),
+          eq(attractions.parkId, anchorParkId),
           eq(attractions.active, true),
           isNotNull(attractions.category), // drop un-enriched ghost duplicates
           isNotNull(attractions.latitude),
           isNotNull(attractions.longitude),
         ),
       );
-    const point: [number, number] = [state.lng, state.lat];
+    const point: [number, number] = [anchorPing.lng, anchorPing.lat];
     const candidates = nearby
       .filter((a): a is { id: number; lat: number; lng: number } => a.lat != null && a.lng != null)
       .map((a) => ({ id: a.id, distM: distanceMeters(point, [a.lng, a.lat]) }));
@@ -310,13 +392,18 @@ export async function ingestRideTrace(
       .set({ metrics, trace: input, source: "sensor+dwell", riddenAt: startedAt })
       .where(eq(userRideEvent.id, dupe.id));
   } else {
-    const decision = creditDecision(state.anchorAttractionId, resolvedId);
+    // The double-count guard keys on the LIVE anchor, not the historical
+    // ping's: only a dwell that is still open can settle later and credit this
+    // ride a second time. A historical anchor whose dwell has already closed
+    // either wrote its row (caught by the dedupe above) or fell short of the
+    // dwell floor and credited nothing — in which case the sensor must.
+    const decision = creditDecision(state?.anchorAttractionId, resolvedId);
 
     // 4. Write the per-ride fact row.
     await db.insert(userRideEvent).values({
       userId,
       attractionId: resolvedId,
-      parkId: state.parkId,
+      parkId: anchorParkId,
       riddenAt: startedAt,
       source: decision.source,
       metrics,
@@ -326,7 +413,7 @@ export async function ingestRideTrace(
     // 5. Credit the ride count — unless the dwell-settle path will (anchored to
     // the same attraction), which would double-count.
     if (decision.creditRideCount) {
-      await creditSensorRide(userId, resolvedId, state.parkId, startedAt, now);
+      await creditSensorRide(userId, resolvedId, anchorParkId, startedAt, now);
     }
   }
 

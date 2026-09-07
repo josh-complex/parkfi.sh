@@ -7,7 +7,6 @@
 
 @import "shadcn/tailwind.css";
 
-@import "@fontsource-variable/fredoka";
 @import "@fontsource-variable/rubik";
 
 @custom-variant dark (&:is(.dark *));
@@ -220,9 +219,9 @@ html.native [data-slot="sidebar-wrapper"] {
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --font-heading: var(--font-sans);
-  /* Rounded display face — the playful heavy numerals + wordmark on the
-     /activity recap (and available app-wide as `font-rounded`). */
-  --font-rounded: "Fredoka Variable", "Rubik Variable", sans-serif;
+  /* Display face for the heavy numerals + section headers (`font-rounded`).
+     Rubik on purpose — Fredoka was tried and rejected; never bring it back. */
+  --font-rounded: "Rubik Variable", sans-serif;
   /* Rubik — the app sans (also forced over font-rounded on /activity and
      /achievements via .font-rubik-all). */
   --font-rubik: "Rubik Variable", sans-serif;

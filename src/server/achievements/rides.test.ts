@@ -5,7 +5,9 @@ import {
   creditDecision,
   isPingFresh,
   isWithinDedupeWindow,
+  pickAnchorPing,
   resolveRideAttractionId,
+  RIDE_ANCHOR_WINDOW_MS,
   rideTraceSchema,
 } from "./rides.ts";
 
@@ -105,6 +107,77 @@ describe("rideTraceSchema — plausibility bounds", () => {
   it("rejects more than 600 trace samples", () => {
     const samples = Array.from({ length: 601 }, (_, i) => ({ t: i, aMag: 9.8, altRel: null }));
     expect(rideTraceSchema.safeParse({ metrics: metrics(), samples }).success).toBe(false);
+  });
+});
+
+describe("rideTraceSchema — round-2 detector fields", () => {
+  it("accepts the new optional fields", () => {
+    const parsed = rideTraceSchema.safeParse({
+      metrics: metrics({ airtimeBurstS: 1.2, maxGSustainS: 1.5, overlong: false }),
+      detectedAt: 1_757_000_000_000,
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.metrics.airtimeBurstS).toBe(1.2);
+      expect(parsed.data.detectedAt).toBe(1_757_000_000_000);
+    }
+  });
+
+  it("still accepts a pre-round-2 trace with none of them", () => {
+    expect(rideTraceSchema.safeParse({ metrics: metrics() }).success).toBe(true);
+  });
+
+  it("rejects a burst longer than the cumulative it belongs to", () => {
+    expect(
+      rideTraceSchema.safeParse({ metrics: metrics({ airtimeS: 1, airtimeBurstS: 2 }) }).success,
+    ).toBe(false);
+  });
+});
+
+describe("historical anchor selection (pickAnchorPing)", () => {
+  const startedAt = new Date("2026-08-29T18:00:00.000Z");
+  const ping = (offsetS: number, parkId = 5) => ({
+    at: new Date(startedAt.getTime() + offsetS * 1000),
+    parkId,
+  });
+
+  it("returns null for no pings", () => {
+    expect(pickAnchorPing([], startedAt)).toBeNull();
+  });
+
+  it("picks the ping nearest startedAt, on either side", () => {
+    const pings = [ping(-600), ping(-45), ping(30), ping(400)];
+    expect(pickAnchorPing(pings, startedAt)?.at.getTime()).toBe(startedAt.getTime() + 30_000);
+  });
+
+  it("ignores pings outside the ±15 min window", () => {
+    expect(pickAnchorPing([ping(-RIDE_ANCHOR_WINDOW_MS / 1000 - 1)], startedAt)).toBeNull();
+    expect(pickAnchorPing([ping(RIDE_ANCHOR_WINDOW_MS / 1000 + 1)], startedAt)).toBeNull();
+  });
+
+  it("accepts a ping exactly at the window edge", () => {
+    expect(pickAnchorPing([ping(-RIDE_ANCHOR_WINDOW_MS / 1000)], startedAt)).not.toBeNull();
+  });
+
+  it("prefers the earlier ping on a tie (the queue, not the exit walk)", () => {
+    const pings = [ping(-60), ping(60)];
+    expect(pickAnchorPing(pings, startedAt)?.at.getTime()).toBe(startedAt.getTime() - 60_000);
+  });
+
+  it("is order-independent", () => {
+    const a = pickAnchorPing([ping(200), ping(-10), ping(90)], startedAt);
+    const b = pickAnchorPing([ping(90), ping(200), ping(-10)], startedAt);
+    expect(a?.at.getTime()).toBe(b?.at.getTime());
+    expect(a?.at.getTime()).toBe(startedAt.getTime() - 10_000);
+  });
+
+  it("keys a late-arriving trace to where the user rode, not where they are now", () => {
+    // Ride at 18:00 in park 5; the trace uploads at 22:00 from the hotel
+    // (park null). The live cursor is useless; the logged 18:00 pings win.
+    const logged = [ping(-40, 5), ping(-10, 5), ping(20, 5)];
+    const live = { at: new Date("2026-08-29T22:00:00.000Z"), parkId: null };
+    expect(pickAnchorPing(logged, startedAt)?.parkId).toBe(5);
+    expect(pickAnchorPing([live], startedAt)).toBeNull();
   });
 });
 

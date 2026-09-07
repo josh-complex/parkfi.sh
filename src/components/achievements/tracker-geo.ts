@@ -4,11 +4,13 @@
  * unit-testable without React (see tracker-geo.test.ts).
  */
 
-/** A candidate fix for the ping loop, normalized to scalar fields. */
+/** A candidate fix for the ping loop, normalized to scalar fields. `capturedAt`
+ *  is the fix's own platform timestamp (epoch ms), used for the age bound. */
 export interface CandidateFix {
   lng: number;
   lat: number;
   accuracy: number;
+  capturedAt: number;
 }
 
 /** Shared-store fix shape (`lastFixStore`): [lng, lat] + accuracy + capture time. */
@@ -22,36 +24,53 @@ export interface SharedFix {
 export const LAST_FIX_FRESH_MS = 60_000;
 
 /**
+ * Oldest fix (by its own `capturedAt`) the ping loop will send at all. Three
+ * loop intervals: a live watch delivers far more often than this, so only a
+ * watch that stopped delivering — the WebView frozen in the background — leaves
+ * a fix this old. Replaying that fix on resume is how a pre-background,
+ * in-park coordinate was pinged 600 ms *after* the geofence exit on the
+ * 2026-08-29 hop day (R3); past this bound the tick treats it as "no fix".
+ */
+export const FIX_MAX_AGE_MS = 90_000;
+
+/**
  * Best-fix selection (W1): among the tracker's own watch fix and the shared
  * last-fix (fed by every other watch — the map's nav/high watch included),
  * prefer the shared fix when it's fresh (< {@link LAST_FIX_FRESH_MS}) and more
  * accurate. The old "own state first" rule made the tracker's coarse low-power
  * fix shadow a GPS-grade map fix, which is how outdoor park pings landed above
  * the server's 150 m accuracy gate all day.
+ *
+ * Either candidate older than {@link FIX_MAX_AGE_MS} is discarded first (R3);
+ * null when nothing usable remains.
  */
 export function selectBestFix(
   own: CandidateFix | null,
   shared: SharedFix | null,
   nowMs: number,
 ): (CandidateFix & { source: "own" | "shared" }) | null {
-  const alt = shared
+  const fresh = (capturedAt: number) => nowMs - capturedAt <= FIX_MAX_AGE_MS;
+  const ownOk = own && fresh(own.capturedAt) ? own : null;
+  const sharedOk = shared && fresh(shared.capturedAt) ? shared : null;
+  const alt = sharedOk
     ? {
-        lng: shared.coords[0],
-        lat: shared.coords[1],
-        accuracy: shared.accuracy,
+        lng: sharedOk.coords[0],
+        lat: sharedOk.coords[1],
+        accuracy: sharedOk.accuracy,
+        capturedAt: sharedOk.capturedAt,
         source: "shared" as const,
       }
     : null;
-  if (!own) return alt;
+  if (!ownOk) return alt;
   if (
     alt &&
-    shared &&
-    nowMs - shared.capturedAt < LAST_FIX_FRESH_MS &&
-    shared.accuracy < own.accuracy
+    sharedOk &&
+    nowMs - sharedOk.capturedAt < LAST_FIX_FRESH_MS &&
+    sharedOk.accuracy < ownOk.accuracy
   ) {
     return alt;
   }
-  return { ...own, source: "own" };
+  return { ...ownOk, source: "own" };
 }
 
 /** One park's geofence bbox (the `fence` field of `parks.list`, hull fallback). */

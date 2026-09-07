@@ -35,6 +35,7 @@ import {
   addRideDetectedListener,
   armRideMonitoring,
   disarmRideMonitoring,
+  drainPendingNativeEvents,
   queryStepSpan,
   readStepSample,
   requestBackgroundLocation,
@@ -54,6 +55,11 @@ const DISARM_AFTER_MISSES = 4;
 // Armed loop with no usable fix for this long ⇒ the pipeline is silently
 // starved (the 2026-07-26 field-test failure mode) — captured to PostHog.
 const FIX_STARVATION_MS = 2 * 60 * 1000;
+// On resume, how long the visible tick waits for a fresh high-accuracy one-shot
+// before falling through to the (age-checked) best fix. `watchPosition` doesn't
+// deliver while the WebView is frozen, so the held fix is the pre-background
+// coordinate (R3) — a real fix first is what stops the resume ping replaying it.
+const RESUME_FIX_WAIT_MS = 5_000;
 const NUDGE_DELAY_MS = 8_000;
 const NUDGE_STAGGER_MS = 300;
 const NUDGE_SNOOZE_MS = 14 * 24 * 60 * 60 * 1000;
@@ -82,10 +88,12 @@ function writeNudgeSnooze(): void {
 }
 
 /**
- * Headless, globally-mounted tracker (see `_dash.tsx`). Drives the achievement
- * ping loop off the existing geolocation hook, replays any unlock toasts that
- * never got acked, and — once per snooze window — nudges a logged-in user
- * with location off toward turning it on. Renders nothing.
+ * Headless, globally-mounted tracker (see `_app.tsx` — it lives on the
+ * persistent shell, not `_dash`, so a hop to dining/stays/pins doesn't unmount
+ * it and disarm the ride recorder mid-visit, R8). Drives the achievement ping
+ * loop off the existing geolocation hook, replays any unlock toasts that never
+ * got acked, and — once per snooze window — nudges a logged-in user with
+ * location off toward turning it on. Renders nothing.
  */
 export function AchievementTracker() {
   const { data: session } = authClient.useSession();
@@ -170,11 +178,36 @@ export function AchievementTracker() {
   // leftover one-shot shouldn't ping forever.
   const ownFix: CandidateFix | null =
     state.status === "granted"
-      ? { lng: state.coords[0], lat: state.coords[1], accuracy: state.accuracy }
+      ? {
+          lng: state.coords[0],
+          lat: state.coords[1],
+          accuracy: state.accuracy,
+          capturedAt: state.capturedAt,
+        }
       : null;
-  const bestFix = selectBestFix(ownFix, activeWatches > 0 ? lastFix : null, Date.now());
+  const sharedCandidate = activeWatches > 0 ? lastFix : null;
+  const bestFix = selectBestFix(ownFix, sharedCandidate, Date.now());
   const coordsRef = React.useRef<(CandidateFix & { source: "own" | "shared" }) | null>(null);
   coordsRef.current = bestFix;
+  // Ages of the candidates the selection just discarded (R3 telemetry): non-null
+  // only when a candidate existed but was dropped for age, so the tick can tell
+  // "no fix at all" from "held a fix, refused it as stale".
+  const staleAgesRef = React.useRef<{ ownAgeMs: number | null; sharedAgeMs: number | null } | null>(
+    null,
+  );
+  staleAgesRef.current =
+    bestFix == null && (ownFix || sharedCandidate)
+      ? {
+          ownAgeMs: ownFix ? Date.now() - ownFix.capturedAt : null,
+          sharedAgeMs: sharedCandidate ? Date.now() - sharedCandidate.capturedAt : null,
+        }
+      : null;
+  // Own-watch liveness + re-arm handle for the resume path (refs so the ping
+  // loop effect doesn't re-run on every fix).
+  const ownGrantedRef = React.useRef(state.status === "granted");
+  ownGrantedRef.current = state.status === "granted";
+  const locateRef = React.useRef(locate);
+  locateRef.current = locate;
 
   const nearPark =
     inParkState || (bestFix != null && isNearAnyPark(bestFix.lng, bestFix.lat, fenceBoxes));
@@ -313,21 +346,52 @@ export function AchievementTracker() {
   const sendPingRef = React.useRef(sendPing);
   sendPingRef.current = sendPing;
 
+  // --- Native event queue drain (Workstream A) --------------------------------
+  // Transitions/rides the OS delivered while the app was killed or frozen are
+  // persisted natively and replayed to the listeners below on drain. The plugin
+  // drains itself on load/resume; this is the JS-side belt-and-suspenders, run
+  // on every visibility→visible before the resume ping. Telemetry only fires
+  // when something was actually recovered — that count is the proof R1 is fixed.
+  const drainNativeEvents = React.useCallback(async () => {
+    if (!isNative()) return;
+    const drained = await drainPendingNativeEvents();
+    if (drained && drained.transitions + drained.rides > 0) {
+      posthog.capture("native_events_drained", {
+        transitions: drained.transitions,
+        rides: drained.rides,
+        oldestAgeMs: drained.oldestAgeMs,
+      });
+    }
+  }, []);
+
   // --- Ping loop -------------------------------------------------------------
   React.useEffect(() => {
     if (!loggedIn || !locationOn) return;
     const armedAt = Date.now();
     let lastUsableFixAt: number | null = null;
     let starvationReported = false;
-    const tick = async (trigger: PingTrigger) => {
+    let staleReported = false;
+    const tick = async (trigger: PingTrigger, freshFix: CandidateFix | null = null) => {
       if (pingRef.current.isPending) return;
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
       // Parks have terrible signal — don't fire (and fail) pings into a dead
       // radio. A backgrounded pedometer backlog still uploads on the first ping
       // once connectivity returns; nothing is lost by waiting.
       if (!isOnline()) return;
-      const coords = coordsRef.current;
+      const coords = freshFix ? { ...freshFix, source: "resume" } : coordsRef.current;
       if (!coords) {
+        // R3 telemetry: a fix was held but refused for age — once per episode.
+        // Distinct from starvation (no fix at all) so the two can be told apart.
+        const stale = staleAgesRef.current;
+        if (stale && !staleReported) {
+          staleReported = true;
+          posthog.capture("achv_fix_stale_dropped", {
+            ownAgeMs: stale.ownAgeMs,
+            sharedAgeMs: stale.sharedAgeMs,
+            trigger,
+            platform: isNative() ? "native" : "web",
+          });
+        }
         // Failure telemetry (W1): armed but starved of fixes — once per
         // starvation episode, so a session-long drought is one event.
         const since = lastUsableFixAt ?? armedAt;
@@ -343,23 +407,58 @@ export function AchievementTracker() {
       }
       lastUsableFixAt = Date.now();
       starvationReported = false;
+      staleReported = false;
       await sendPingRef.current(coords, trigger);
     };
     // Immediate first tick (W1): the old loop only fired on the 30 s interval,
     // so short glance-sessions contributed zero pings.
     void tick("loop");
     const id = setInterval(() => void tick("loop"), pingIntervalMs);
+    // Resume (R3): the frozen watch delivered nothing, so whatever fix we hold
+    // is from before the app went to the background. Re-arm the watch, take one
+    // high-accuracy one-shot (bounded wait), and only then tick — the age-bound
+    // in selectBestFix is the backstop if the one-shot never lands.
+    const freshFixOnResume = (): Promise<CandidateFix | null> =>
+      new Promise((resolve) => {
+        let settled = false;
+        const finish = (fix: CandidateFix | null) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(fix);
+        };
+        const timer = setTimeout(() => finish(null), RESUME_FIX_WAIT_MS);
+        getOnce(GEO_PROFILES.high, {
+          onFix: (fix) =>
+            finish({
+              lng: fix.coords[0],
+              lat: fix.coords[1],
+              accuracy: fix.accuracy,
+              capturedAt: fix.capturedAt,
+            }),
+          onError: () => finish(null),
+        });
+      });
     const onVisibility = () => {
-      if (typeof document !== "undefined" && document.visibilityState === "visible") {
-        void tick("visible");
-      }
+      if (typeof document === "undefined" || document.visibilityState !== "visible") return;
+      void (async () => {
+        // Workstream A: anything the native layer queued while we were
+        // frozen/killed comes first, so a drained `enter` is in effect before
+        // the resume ping's response can move the in-park edge.
+        await drainNativeEvents();
+        // Re-arm only an already-running own watch — `locate()` on a never-
+        // granted instance would surface a permission prompt without a gesture.
+        if (ownGrantedRef.current) locateRef.current();
+        const fresh = await freshFixOnResume();
+        await tick("visible", fresh);
+      })();
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       clearInterval(id);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [loggedIn, locationOn, pingIntervalMs]);
+  }, [loggedIn, locationOn, pingIntervalMs, drainNativeEvents]);
 
   // --- Native ride detection -------------------------------------------------
   // On device only: a sensor-detected coaster ride flows through the shared
@@ -373,16 +472,35 @@ export function AchievementTracker() {
     if (!loggedIn || !isNative()) return;
     let handle: PluginListenerHandle | null = null;
     let cancelled = false;
-    void addRideDetectedListener((trace) => handleRideRef.current(trace)).then((h) => {
+    void addRideDetectedListener((ev) => {
+      const { at, ...trace } = ev;
+      handleRideRef.current(trace, { detectedAt: at });
+    }).then((h) => {
       if (cancelled) void h?.remove();
       else handle = h;
     });
+    // Cleanup deliberately does NOT disarm the recorder (R8): this effect also
+    // tears down on unmount, and the tracker used to unmount on every hop to a
+    // non-dashboard tab, killing monitoring mid-visit. Disarm is owned by the
+    // ping-miss debounce, the geofence exit, and the logout effect below.
     return () => {
       cancelled = true;
       void handle?.remove();
-      void disarmRideMonitoring();
     };
   }, [loggedIn]);
+
+  // Logout is the one lifecycle edge that must disarm: no session means no
+  // pings to debounce and no server to submit to. Once, on the true→false
+  // transition (not on mount, not on every render).
+  const wasLoggedInRef = React.useRef(loggedIn);
+  React.useEffect(() => {
+    if (wasLoggedInRef.current && !loggedIn && isNative()) {
+      setInPark(false);
+      disarmMissesRef.current = 0;
+      void disarmRideMonitoring();
+    }
+    wasLoggedInRef.current = loggedIn;
+  }, [loggedIn, setInPark]);
 
   // --- Background park geofencing (native) -----------------------------------
   // Region monitoring wakes the app on park entry/exit even when suspended —
@@ -431,8 +549,12 @@ export function AchievementTracker() {
     if (!loggedIn || !isNative()) return;
     let handle: PluginListenerHandle | null = null;
     let cancelled = false;
-    void addParkTransitionListener(({ regionId, transition }) => {
+    void addParkTransitionListener(({ regionId, transition, at }) => {
       const parkId = Number(regionId);
+      // R6: the native queue stamps the OS-reported crossing time; only a
+      // pre-queue native build leaves it absent, and then delivery time is the
+      // best we have.
+      const transitionAt = at ?? Date.now();
       // Stable positive action events: geofencing demonstrably fired all day in
       // the field test while everything downstream was lost — these are the
       // recall baseline every other stat is measured against.
@@ -443,7 +565,7 @@ export function AchievementTracker() {
       // enter/exit flapping, platform asymmetry) — no stat credit yet.
       if (Number.isFinite(parkId)) {
         reportTransitionRef.current.mutate(
-          { parkId, transition, at: Date.now(), platform: nativePlatform() },
+          { parkId, transition, at: transitionAt, platform: nativePlatform() },
           {
             onError: (err) => {
               posthog.capture("park_transition_report_failed", {
@@ -458,17 +580,25 @@ export function AchievementTracker() {
       }
       if (transition === "enter") {
         disarmMissesRef.current = 0;
-        if (!inParkRef.current) {
-          setInPark(true);
-          void armRideMonitoring();
-        }
+        if (!inParkRef.current) setInPark(true);
+        // Arm unconditionally (R11): a native geofence arm can't prompt for
+        // ACTIVITY_RECOGNITION, so the first JS-side arm after a drained enter
+        // is what surfaces the one-time step-counter prompt. startMonitoring
+        // early-returns when already armed, so this is cheap when redundant.
+        void armRideMonitoring();
         // Entry-triggered ping (W1): one high-accuracy one-shot, fired for
         // fresh entries AND retained events consumed on resume — this is what
         // turns a geofence entry into a `user_park_day` row today.
         getOnce(GEO_PROFILES.high, {
           onFix: (fix) => {
             void sendPingRef.current(
-              { lng: fix.coords[0], lat: fix.coords[1], accuracy: fix.accuracy, source: "entry" },
+              {
+                lng: fix.coords[0],
+                lat: fix.coords[1],
+                accuracy: fix.accuracy,
+                capturedAt: fix.capturedAt,
+                source: "entry",
+              },
               "entry",
             );
           },

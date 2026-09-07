@@ -8,12 +8,15 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingEvent
+import org.json.JSONObject
 
 /**
  * Receives Play Services geofence transitions — which fire even when the app is
  * killed — and turns a park entry/exit into three things:
- *  1. forwards the transition to the plugin's JS listeners (retained until the
- *     WebView resumes and consumes it);
+ *  1. appends the transition to the durable [NativeEventQueue] with the time it
+ *     fired, then pokes the plugin (if a bridge exists) to drain it to JS. In a
+ *     geofence-revived process there is no bridge and the poke is a no-op; the
+ *     event waits in the file for the next `load()` (R1/R6);
  *  2. on entry, starts [RideMonitorService] so sensors run while pocketed;
  *  3. on a backgrounded entry, posts a "you're in the park" notification.
  *
@@ -39,9 +42,20 @@ class ParkGeofenceReceiver : BroadcastReceiver() {
         }
         val ids = event.triggeringGeofences?.map { it.requestId } ?: return
 
+        // Receiver time, not resume time. Play Services' own exit latency is
+        // real and unfixable, but this is still minutes better than the
+        // "whenever the app was next opened" stamp it replaces (R6).
+        val at = System.currentTimeMillis()
+        val queue = NativeEventQueue.forContext(context)
         for (id in ids) {
-            RideRecorderPlugin.parkTransitionCb?.invoke(id, transition)
+            queue.enqueue(
+                NativeEventQueue.KIND_TRANSITION,
+                at,
+                JSONObject().put("regionId", id).put("transition", transition).toString()
+            )
         }
+        // Live poke — carries no data; the plugin drains the queue.
+        RideRecorderPlugin.parkTransitionCb?.invoke()
 
         if (transition == "enter") {
             try {

@@ -136,6 +136,8 @@ describe("permitUrl", () => {
         "https://data.cityoforlando.net/Permitting/Permit-Applications/ryhf-m453/explore/query/",
       ),
     ).toBe(true);
-    expect(decodeURIComponent(url)).toContain("permit_number = 'BLD2026-17549'");
+    // Explicit columns + IN filter: the only form the explorer renders (and the WAF allows).
+    expect(decodeURIComponent(url)).toContain("SELECT `permit_number`, ");
+    expect(decodeURIComponent(url)).toContain('WHERE `permit_number` IN ("BLD2026-17549")');
   });
 });

@@ -25,9 +25,15 @@ import com.google.android.gms.location.LocationServices
  * backgrounding (W8); this plugin starts/stops that service and relays its
  * `rideStarted` / `rideDetected` events to JS.
  *
- * `rideDetected` is forwarded with `retainUntilConsumed = true` so a ride
- * detected while the WebView is suspended is still delivered to JS on resume
- * (paired with the service's local recap notification, W11).
+ * Events reach JS through the durable [NativeEventQueue] (park-tracking fixes 2,
+ * Workstream A): the receiver/service append at receipt, and this plugin drains
+ * the file in `load()`, on resume, on the JS `drainPending()` call, and on a
+ * live poke from either producer. Each drained event is forwarded with
+ * `retainUntilConsumed = true`, and because `load()` only ever runs with a
+ * bridge, that retention finally means what it says: listeners register →
+ * retained events flush. The old static data-carrying callbacks were wired
+ * only here, so a geofence-revived process (no `MainActivity`, no bridge)
+ * silently dropped every event (R1).
  */
 @CapacitorPlugin(
     name = "RideRecorder",
@@ -53,28 +59,72 @@ class RideRecorderPlugin : Plugin() {
     }
 
     override fun load() {
-        // Wire the service's static callbacks to this plugin's JS bridge. Set
-        // once; the service reads them on the sensor thread at event time.
+        // Wire the producers' static pokes to this plugin. They carry no data —
+        // the event is already in the queue; a poke just means "drain now".
         RideMonitorService.rideStartedCb = { notifyListeners("rideStarted", JSObject()) }
-        RideMonitorService.rideDetectedCb = { result ->
-            notifyListeners("rideDetected", resultToJs(result), /* retainUntilConsumed = */ true)
-        }
-        // Region transitions (fired by ParkGeofenceReceiver, possibly after a
-        // process restart) forward to JS retained so a suspended WebView still
-        // gets them on resume.
-        parkTransitionCb = { regionId, transition ->
-            notifyListeners(
-                "parkTransition",
-                JSObject().put("regionId", regionId).put("transition", transition),
-                /* retainUntilConsumed = */ true
-            )
-        }
+        RideMonitorService.rideDetectedCb = { drainToJs() }
+        parkTransitionCb = { drainToJs() }
+        // Anything queued while there was no bridge (killed process revived by
+        // a geofence, ride detected there) flushes now, retained until the JS
+        // listeners register.
+        drainToJs()
     }
 
     // Capacitor lifecycle → tells the service whether the app is foreground, so
     // it only posts the local recap notification when the in-app toast can't.
+    // Resume also drains: a frozen-WebView process may have queued events whose
+    // poke landed before the listeners existed.
     override fun handleOnResume() {
         RideMonitorService.appActive = true
+        drainToJs()
+    }
+
+    /** JS-side belt-and-suspenders drain (called on visibility → visible). */
+    @PluginMethod
+    fun drainPending(call: PluginCall) {
+        call.resolve(drainToJs())
+    }
+
+    /**
+     * Flush the on-device queue to the JS listeners. Each event's `at` (epoch ms
+     * — the receiver time for transitions, the ride start for rides) rides
+     * along in the payload. Returns the drained counts + the age of the oldest
+     * event for the `native_events_drained` telemetry. Serialized: producers
+     * poke from the receiver (main) and sensor threads while load/resume run
+     * on main.
+     */
+    @Synchronized
+    private fun drainToJs(): JSObject {
+        val events = NativeEventQueue.forContext(context).drain()
+        var transitions = 0
+        var rides = 0
+        var oldestAgeMs: Long? = null
+        val now = System.currentTimeMillis()
+        for (e in events) {
+            val data = try {
+                JSObject(e.payloadJson)
+            } catch (_: Exception) {
+                continue
+            }
+            data.put("at", e.at)
+            when (e.kind) {
+                NativeEventQueue.KIND_TRANSITION -> {
+                    transitions++
+                    notifyListeners("parkTransition", data, /* retainUntilConsumed = */ true)
+                }
+                NativeEventQueue.KIND_RIDE -> {
+                    rides++
+                    notifyListeners("rideDetected", data, /* retainUntilConsumed = */ true)
+                }
+                else -> continue
+            }
+            val age = now - e.at
+            if (oldestAgeMs == null || age > oldestAgeMs) oldestAgeMs = age
+        }
+        return JSObject()
+            .put("transitions", transitions)
+            .put("rides", rides)
+            .put("oldestAgeMs", oldestAgeMs ?: org.json.JSONObject.NULL)
     }
 
     override fun handleOnPause() {
@@ -96,6 +146,10 @@ class RideRecorderPlugin : Plugin() {
 
     @PermissionCallback
     fun motionPermissionCallback(call: PluginCall) {
+        // A grant that lands mid-session takes effect immediately (R11): the
+        // running service re-evaluates the step-counter permission and
+        // registers the sensor now, instead of reporting null steps for life.
+        RideMonitorService.instance?.refreshSensors()
         call.resolve(JSObject().put("motion", motionState()))
     }
 
@@ -268,26 +322,29 @@ class RideRecorderPlugin : Plugin() {
         )
     }
 
-    private fun resultToJs(result: RideResult): JSObject {
-        // JSONObject.put(k, null) REMOVES the key; emit explicit JSON nulls so
-        // no-baro metrics (estTopSpeedKmh, altRel) arrive as null, not missing.
-        // (The server schema also tolerates missing keys — belt and suspenders.)
-        val metrics = JSObject()
-        for ((k, v) in result.metrics) metrics.put(k, v ?: org.json.JSONObject.NULL)
-        val samples = JSArray()
-        for (s in result.samples) {
-            val obj = JSObject()
-            for ((k, v) in s) obj.put(k, v ?: org.json.JSONObject.NULL)
-            samples.put(obj)
-        }
-        return JSObject().put("metrics", metrics).put("samples", samples)
-    }
-
     companion object {
         // Wired in load(); read by ParkGeofenceReceiver, which may fire in a
         // freshly-restarted process (so it's static, not an instance field).
-        // @Volatile so the receiver thread sees the plugin's write.
+        // @Volatile so the receiver thread sees the plugin's write. A poke only
+        // — the transition itself is already in the NativeEventQueue.
         @Volatile
-        var parkTransitionCb: ((String, String) -> Unit)? = null
+        var parkTransitionCb: (() -> Unit)? = null
+
+        /** Ride result → the JSON shape JS expects (`{metrics, samples}`).
+         *  Static so the service can serialize the queue payload with it. */
+        fun resultToJs(result: RideResult): JSObject {
+            // JSONObject.put(k, null) REMOVES the key; emit explicit JSON nulls so
+            // no-baro metrics (estTopSpeedKmh, altRel) arrive as null, not missing.
+            // (The server schema also tolerates missing keys — belt and suspenders.)
+            val metrics = JSObject()
+            for ((k, v) in result.metrics) metrics.put(k, v ?: org.json.JSONObject.NULL)
+            val samples = JSArray()
+            for (s in result.samples) {
+                val obj = JSObject()
+                for ((k, v) in s) obj.put(k, v ?: org.json.JSONObject.NULL)
+                samples.put(obj)
+            }
+            return JSObject().put("metrics", metrics).put("samples", samples)
+        }
     }
 }

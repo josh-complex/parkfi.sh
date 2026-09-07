@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Outlet, createFileRoute, useParams } from "@tanstack/react-router";
 
+import { AchievementTracker } from "#/components/achievements/achievement-tracker.tsx";
 import { AppInset } from "#/components/app-inset.tsx";
 import { AppSidebar } from "#/components/app-sidebar.tsx";
 import { SelectionProvider } from "#/components/park-dashboard/selection-context.tsx";
@@ -27,6 +28,13 @@ import { SidebarProvider } from "#/components/ui/sidebar.tsx";
  * (the router's `defaultPendingComponent` skeleton) renders *inside* the shell
  * rather than replacing it — so the bottom nav stays put while a page loads
  * instead of vanishing behind the skeleton.
+ *
+ * The achievement tracker mounts here too (not on `_dash`): dining, stays,
+ * pins, tickets, resort and predictions are `_app` siblings of `_dash`, and
+ * mounting the tracker one level down meant every hop to one of them unmounted
+ * it — tearing down the ping loop and disarming the native ride recorder
+ * mid-visit (park-tracking fixes 2, R8). Its own queries are gated on
+ * `loggedIn`, so logged-out visitors on those routes pay nothing.
  */
 function AppShell() {
   // strict:false so this resolves on any route — the slug is only present on
@@ -49,6 +57,7 @@ function AppShell() {
         <SelectionProvider>
           <RideFilterProvider>
             <MapStageProvider activeSlug={activeSlug}>
+              <AchievementTracker />
               <Outlet />
             </MapStageProvider>
           </RideFilterProvider>

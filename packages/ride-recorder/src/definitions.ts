@@ -21,6 +21,12 @@ export interface RideMetrics {
   baroAvailable: boolean;
   gyroAvailable: boolean;
   confidence: number; // 0..1 ride-signature score
+  /** Longest contiguous sub-0.4 g burst, seconds (the airtime *gate* input). */
+  airtimeBurstS?: number;
+  /** Longest run with windowed-median g ≥ 2.0, seconds (maxG-only gate input). */
+  maxGSustainS?: number;
+  /** Capture exceeded MAX_SIGNATURE_DURATION_S — never a ride. */
+  overlong?: boolean;
 }
 
 /** One downsampled audit sample (~4 Hz) for server plausibility checks. */
@@ -54,6 +60,23 @@ export type GeofenceTransition = "enter" | "exit";
 export interface ParkTransitionEvent {
   regionId: string;
   transition: GeofenceTransition;
+  /** When the OS reported the crossing (epoch ms). Events are persisted to an
+   *  on-device queue at receipt and replayed on the next bridge boot/resume,
+   *  so a transition that fired while the app was killed still carries the
+   *  real time rather than the time the app was next opened. */
+  at?: number;
+}
+
+/** A detected ride as delivered to listeners: the trace plus the ride's start
+ *  time (epoch ms) from the on-device event queue. */
+export type RideDetectedEvent = RideTrace & { at?: number };
+
+/** Result of `drainPending`: what was flushed from the on-device queue. */
+export interface DrainedEvents {
+  transitions: number;
+  rides: number;
+  /** Age in ms of the oldest flushed event (since it was queued), or null. */
+  oldestAgeMs: number | null;
 }
 
 export type LocationPermissionState = "granted" | "denied" | "prompt";
@@ -114,8 +137,20 @@ export interface RideRecorderPlugin {
   /** Stop monitoring all park geofences. */
   clearParkGeofences(): Promise<void>;
 
+  /**
+   * Replay anything in the on-device event queue to the listeners below. Ride
+   * and transition events are appended to a JSON-lines file the moment the OS
+   * delivers them — including in a process the geofence revived with no
+   * bridge — and flushed on plugin load, on resume, and on this call. Web and
+   * an empty queue resolve zeros.
+   */
+  drainPending(): Promise<DrainedEvents>;
+
   addListener(event: "rideStarted", cb: () => void): Promise<PluginListenerHandle>;
-  addListener(event: "rideDetected", cb: (trace: RideTrace) => void): Promise<PluginListenerHandle>;
+  addListener(
+    event: "rideDetected",
+    cb: (event: RideDetectedEvent) => void,
+  ): Promise<PluginListenerHandle>;
   /** Background park entry/exit from region monitoring (retained until consumed). */
   addListener(
     event: "parkTransition",

@@ -5,6 +5,15 @@ import UserNotifications
 
 /// Capacitor bridge for the on-device ride recorder. Owns a single
 /// `RideRecorder` and forwards its `rideStarted` / `rideDetected` events to JS.
+///
+/// Events reach JS through the durable `NativeEventQueue` (park-tracking fixes
+/// 2, Workstream A): `onTransition` / `onRideDetected` append at receipt, and
+/// the queue drains to the listeners in `load()`, on `didBecomeActive`, on the
+/// JS `drainPending()` call, and right after each append. `load()` also
+/// creates the geofence manager eagerly — Apple only delivers a pending region
+/// event to a relaunched app if a `CLLocationManager` with a delegate exists at
+/// launch, and the old lazy manager didn't exist until JS first called
+/// `setParkGeofences` (R1-iOS).
 @objc(RideRecorderPlugin)
 public class RideRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "RideRecorderPlugin"
@@ -21,7 +30,84 @@ public class RideRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "requestBackgroundLocation", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setParkGeofences", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clearParkGeofences", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "drainPending", returnType: CAPPluginReturnPromise),
     ]
+
+    private let eventQueue = NativeEventQueue.shared()
+    private let drainLock = NSLock()
+
+    override public func load() {
+        // Touch the lazy manager so the CLLocationManager delegate exists from
+        // bridge boot — the precondition for receiving a region event that
+        // relaunched us in the background.
+        _ = geofences
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        _ = drainToJs()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc private func handleDidBecomeActive() {
+        _ = drainToJs()
+    }
+
+    /// JS-side belt-and-suspenders drain (called on visibility → visible).
+    @objc func drainPending(_ call: CAPPluginCall) {
+        call.resolve(drainToJs())
+    }
+
+    /// Flush the queue to the JS listeners (retained until consumed). Each
+    /// event's `at` rides along in the payload. Returns the drained counts +
+    /// the oldest event's age for `native_events_drained` telemetry.
+    private func drainToJs() -> [String: Any] {
+        drainLock.lock()
+        defer { drainLock.unlock() }
+        var transitions = 0
+        var rides = 0
+        var oldestAgeMs: Int64? = nil
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        for e in eventQueue.drain() {
+            guard
+                let data = e.payloadJson.data(using: .utf8),
+                var obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            else { continue }
+            obj["at"] = e.at
+            switch e.kind {
+            case NativeEventQueue.kindTransition:
+                transitions += 1
+                notifyListeners("parkTransition", data: obj, retainUntilConsumed: true)
+            case NativeEventQueue.kindRide:
+                rides += 1
+                notifyListeners("rideDetected", data: obj, retainUntilConsumed: true)
+            default:
+                continue
+            }
+            let age = now - e.at
+            if oldestAgeMs == nil || age > oldestAgeMs! { oldestAgeMs = age }
+        }
+        return [
+            "transitions": transitions,
+            "rides": rides,
+            "oldestAgeMs": oldestAgeMs.map { $0 as Any } ?? NSNull(),
+        ]
+    }
+
+    /// Serialize a dictionary to single-line JSON for the queue; nil if the
+    /// bridge dictionary isn't JSON-representable (it always is: numbers,
+    /// strings, bools, NSNull, arrays, dictionaries).
+    private static func json(_ obj: [String: Any]) -> String? {
+        guard JSONSerialization.isValidJSONObject(obj),
+              let data = try? JSONSerialization.data(withJSONObject: obj),
+              let s = String(data: data, encoding: .utf8) else { return nil }
+        return s
+    }
 
     /// Background park entry/exit via region monitoring. On enter we arm the
     /// recorder natively (so sensors run even if the app was suspended) and, when
@@ -39,11 +125,16 @@ public class RideRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
             } else {
                 self.recorder.stopMonitoring()
             }
-            self.notifyListeners(
-                "parkTransition",
-                data: ["regionId": regionId, "transition": transition],
-                retainUntilConsumed: true
-            )
+            // Durable first (R6: delegate time, not resume time), then drain —
+            // which forwards to JS retained until the listeners consume it.
+            if let payload = Self.json(["regionId": regionId, "transition": transition]) {
+                self.eventQueue.enqueue(
+                    kind: NativeEventQueue.kindTransition,
+                    at: Int64(Date().timeIntervalSince1970 * 1000),
+                    payloadJson: payload
+                )
+            }
+            _ = self.drainToJs()
         }
         return g
     }()
@@ -62,14 +153,18 @@ public class RideRecorderPlugin: CAPPlugin, CAPBridgedPlugin {
             // and phone handling. The JS forward always happens (the debug ring
             // and PostHog need suppressed traces too); retainUntilConsumed so the
             // submit still fires on resume even if no listener is attached now.
-            if RideSignature.hasSignature(result.metrics) {
-                self?.postRecapIfBackgrounded(result.metrics)
+            guard let self else { return }
+            if let payload = Self.json(["metrics": result.metrics, "samples": result.samples]) {
+                self.eventQueue.enqueue(
+                    kind: NativeEventQueue.kindRide,
+                    at: result.startedAtMs,
+                    payloadJson: payload
+                )
             }
-            self?.notifyListeners(
-                "rideDetected",
-                data: ["metrics": result.metrics, "samples": result.samples],
-                retainUntilConsumed: true
-            )
+            if RideSignature.hasSignature(result.metrics) {
+                self.postRecapIfBackgrounded(result.metrics)
+            }
+            _ = self.drainToJs()
         }
         return r
     }()

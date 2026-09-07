@@ -13,6 +13,7 @@ import {
   UtensilsIcon,
 } from "lucide-react";
 
+import { useIsAdmin } from "#/components/maintenance-gate.tsx";
 import { NavUser } from "#/components/nav-user.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import {
@@ -31,14 +32,15 @@ import {
 } from "#/components/ui/sidebar.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
-const NAV: Array<{ title: string; to: string; icon: React.ReactNode }> = [
+const NAV: Array<{ title: string; to: string; icon: React.ReactNode; adminOnly?: boolean }> = [
   { title: "Waits", to: "/", icon: <ActivityIcon /> },
   { title: "Tickets", to: "/tickets", icon: <TicketIcon /> },
   { title: "Eats", to: "/dining", icon: <UtensilsIcon /> },
   { title: "Stays", to: "/stays", icon: <BedDoubleIcon /> },
   { title: "Pins", to: "/pins", icon: <ShapesIcon /> },
   { title: "Forecast", to: "/predictions", icon: <TrendingUpIcon /> },
-  { title: "Filings", to: "/filings", icon: <FileTextIcon /> },
+  // Public-records feed is owner-only for now — hidden from everyone else.
+  { title: "Filings", to: "/filings", icon: <FileTextIcon />, adminOnly: true },
   { title: "Activity", to: "/activity", icon: <FootprintsIcon /> },
   { title: "Badges", to: "/achievements", icon: <TrophyIcon /> },
 ];
@@ -110,6 +112,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   const effectiveSlug = activeParkSlug;
 
+  const isAdmin = useIsAdmin();
+  const nav = React.useMemo(() => NAV.filter((item) => !item.adminOnly || isAdmin), [isAdmin]);
+
   const { ref: contentRef, style: contentFade } = useScrollFade<HTMLDivElement>();
 
   return (
@@ -136,7 +141,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SidebarGroup>
           <SidebarGroupContent className="flex flex-col gap-2">
             <SidebarMenu>
-              {NAV.map((item) => (
+              {nav.map((item) => (
                 <SidebarMenuItem key={item.to}>
                   <SidebarMenuButton
                     tooltip={item.title}

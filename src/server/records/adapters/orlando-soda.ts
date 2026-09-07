@@ -129,9 +129,34 @@ export function buildSodaFilter(ctx: Pick<AdapterContext, "parks" | "aliases">):
   return `(${clauses.join(" OR ")})`;
 }
 
-/** Human page for one permit: the dataset explorer pre-filtered to the row. */
+/**
+ * Human page for one permit: the dataset explorer pre-filtered to the row.
+ * The explorer is picky (verified in a browser 2026-09-06): it needs an
+ * explicit column list (`SELECT *` renders blank) and an `IN (...)` filter —
+ * a `=` comparison trips the site's WAF with "Access Denied".
+ */
+const EXPLORE_COLUMNS = [
+  "permit_number",
+  "application_type",
+  "worktype",
+  "project_name",
+  "permit_address",
+  "parcel_number",
+  "property_owner_name",
+  "parcel_owner_name",
+  "contractor_name",
+  "estimated_cost",
+  "square_footage",
+  "application_status",
+  "processed_date",
+  "issue_permit_date",
+  "final_date",
+  "coo_date",
+];
+
 export function permitUrl(permitNumber: string): string {
-  const q = `SELECT * WHERE permit_number = '${permitNumber.replace(/'/g, "''")}'`;
+  const cols = EXPLORE_COLUMNS.map((c) => `\`${c}\``).join(", ");
+  const q = `SELECT ${cols} WHERE \`permit_number\` IN ("${permitNumber.replace(/"/g, "")}")`;
   return `https://data.cityoforlando.net/Permitting/Permit-Applications/${DATASET}/explore/query/${encodeURIComponent(q)}/page/filter`;
 }
 

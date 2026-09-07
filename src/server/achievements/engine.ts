@@ -17,6 +17,7 @@ import {
   pinHave,
   userAchievement,
   userAttraction,
+  userGeoPing,
   userGeoState,
   userParkDay,
   userRideEvent,
@@ -45,6 +46,7 @@ import {
   pointInPolygon,
   type LngLat,
 } from "./geo.ts";
+import { withUserLock } from "./ping-lock.ts";
 
 // Re-exported for the engine tests, which exercise the prefilter/park-point
 // pipeline through this module.
@@ -82,6 +84,13 @@ const STRIDE_MAX_M = 1.3;
 const ROPE_DROP_BEFORE = { h: 9, m: 30 }; // local
 const NIGHT_OWL_AFTER_H = 22; // local
 const CACHE_TTL_MS = 10 * 60 * 1000;
+// user_geo_ping retention (Workstream D): a late sensor ride only ever needs
+// the pings around its own start; nothing downstream reads further back.
+export const USER_GEO_PING_RETENTION_DAYS = 7;
+// Prune the ping log once per this many accepted in-park pings — cheap, and a
+// dedicated housekeeping cron doesn't exist for the web tier.
+const USER_GEO_PING_PRUNE_EVERY = 1000;
+let pingLogWrites = 0;
 
 export interface UnlockDTO {
   id: string;
@@ -173,6 +182,10 @@ async function getAttractions(parkId: number): Promise<CachedAttraction[]> {
         // dispatches on entityType so shows never count as rides.
         inArray(attractions.entityType, ["ATTRACTION", "SHOW"]),
         eq(attractions.active, true),
+        // Un-enriched duplicate rows ("ghosts") have a null category; left in,
+        // one can win the nearest-attraction race and take ride credit for a
+        // dwell that belongs to its real twin (R10).
+        isNotNull(attractions.category),
         isNotNull(attractions.latitude),
         isNotNull(attractions.longitude),
       ),
@@ -230,6 +243,27 @@ export function presenceDelta(
 ): number {
   if (!sameParkAsState || elapsed == null || elapsed <= 0 || elapsed > maxGapS) return 0;
   return elapsed;
+}
+
+/**
+ * Whether an existing queue-dwell anchor survives this ping. Two conditions:
+ * the fix is still within the exit radius of the anchored attraction, AND the
+ * gap since the previous ping is short enough to read as continuous presence
+ * (the same `maxGapS` presence uses). Before the gap bound, dwell seconds
+ * accrued `min(elapsed, maxGapS)` per ping with no continuity requirement —
+ * three app-glances near one attraction over any span read as an 8-minute
+ * queue and credited a ride (R4). Past the gap the prior dwell settles with
+ * what it had and the anchor is re-evaluated from scratch. Pure.
+ */
+export function shouldContinueAnchor(
+  prior: { anchorId: number | null; distM: number | null },
+  elapsed: number | null,
+  maxGapS: number,
+  exitRadiusM = QUEUE_EXIT_RADIUS_M,
+): boolean {
+  if (prior.anchorId == null || prior.distM == null) return false;
+  if (prior.distM > exitRadiusM) return false;
+  return elapsed != null && elapsed >= 0 && elapsed <= maxGapS;
 }
 
 /** One ping's pedometer report: the native session's cumulative step count and
@@ -497,10 +531,17 @@ function anchorEntityType(list: CachedAttraction[], id: number): string {
  * queue-dwell state machine, and re-evaluate achievements.
  *
  * The public `ping` procedure never forwards a client time — it calls this with
- * the default `now = new Date()`, so real pings still run on server time only.
- * The `now` parameter exists solely for the admin time-warp scenario runner
- * (`adminSimulateScenario`), which replays a scripted day through the real
- * pipeline with an injected clock. Keep the injectable path admin-only.
+ * the default `now = new Date()`, so foreground pings run on server time only.
+ * Two callers inject `now`: the admin time-warp scenario runner
+ * (`adminSimulateScenario`), which replays a scripted day with an injected
+ * clock, and the native presence beacon (`/api/native/ping`, Workstream B),
+ * which replays fixes batched on device with each fix's own capture time. The
+ * beacon route clamps `at` to a bounded window (6 h past … 5 min future)
+ * before calling in; nothing else may forward a client clock.
+ *
+ * Calls are serialized per user (`withUserLock`): the beacon and the
+ * foreground loop are two producers over one `user_geo_state` cursor, and an
+ * interleaved read-modify-write would corrupt the dwell anchor machine.
  *
  * `seededWeather` lets MANUAL_SEED weather rows (the dev panel's "Make it
  * rain") count as rain for this ping. Only admin pings may set it — a seeded
@@ -514,7 +555,7 @@ function anchorEntityType(list: CachedAttraction[], id: number): string {
  * (clampStepsDelta), and lets it cap the GPS distance credit
  * (creditedDistance).
  */
-export async function ingestPing(
+export function ingestPing(
   userId: string,
   lng: number,
   lat: number,
@@ -523,9 +564,19 @@ export async function ingestPing(
   opts: { seededWeather?: boolean; steps?: StepReport | null } = {},
 ): Promise<IngestResult> {
   if (accuracyM > PING_MAX_ACCURACY_M) {
-    return { inPark: null, newlyUnlocked: [] };
+    return Promise.resolve({ inPark: null, newlyUnlocked: [] });
   }
+  return withUserLock(userId, () => ingestPingLocked(userId, lng, lat, accuracyM, now, opts));
+}
 
+async function ingestPingLocked(
+  userId: string,
+  lng: number,
+  lat: number,
+  accuracyM: number,
+  now: Date,
+  opts: { seededWeather?: boolean; steps?: StepReport | null },
+): Promise<IngestResult> {
   const point: LngLat = [lng, lat];
   const allParks = await getParks();
   const park = parkForPoint(point, allParks);
@@ -682,13 +733,17 @@ export async function ingestPing(
   let anchorSince: Date | null;
   let anchorSeconds: number;
 
-  if (priorAnchorId != null && anchoredDist != null && anchoredDist <= QUEUE_EXIT_RADIUS_M) {
-    // Continue the existing dwell.
+  if (
+    shouldContinueAnchor({ anchorId: priorAnchorId, distM: anchoredDist }, elapsed, PING_MAX_GAP_S)
+  ) {
+    // Continue the existing dwell (contiguous: elapsed ≤ PING_MAX_GAP_S).
     anchorAttractionId = priorAnchorId;
     anchorSince = state?.anchorSince ?? now;
     anchorSeconds = priorAnchorSeconds + Math.min(elapsed ?? 0, PING_MAX_GAP_S);
   } else {
-    // Settle a dwell we just walked away from, then see if we entered a new one.
+    // Settle a dwell we just walked away from — or whose continuity broke on a
+    // gap (settles with what it had; < QUEUE_MIN_DWELL_S just doesn't credit)
+    // — then see if we're standing in a new one.
     if (priorAnchorId != null)
       await settleAnchorRow(
         userId,
@@ -732,6 +787,30 @@ export async function ingestPing(
     .insert(userGeoState)
     .values({ userId, ...inParkGeoState })
     .onConflictDoUpdate({ target: userGeoState.userId, set: inParkGeoState });
+
+  // Ping log (Workstream D): one row per accepted in-park ping, stamped with
+  // the POST-ping anchor so a late sensor trace resolves the attraction the
+  // user was actually queued at when the ride started. (user_id, at) is the
+  // key — a same-millisecond replay is the same ping.
+  await db
+    .insert(userGeoPing)
+    .values({
+      userId,
+      at: now,
+      parkId: park.id,
+      lng,
+      lat,
+      accuracyM,
+      anchorAttractionId,
+    })
+    .onConflictDoNothing();
+  if (++pingLogWrites % USER_GEO_PING_PRUNE_EVERY === 0) {
+    await db
+      .delete(userGeoPing)
+      .where(
+        sql`${userGeoPing.at} < now() - make_interval(days => ${USER_GEO_PING_RETENTION_DAYS})`,
+      );
+  }
 
   const [todayRow] = await db
     .select({

@@ -22,10 +22,11 @@ import java.util.Locale
  * in-process `HandlerThread`; a foreground service exempts the process so
  * sampling continues.
  *
- * Owns the single [RideRecorder]. On a detected ride it (1) posts a local recap
- * notification when the app isn't foreground (W11) and (2) forwards the event to
- * the plugin's JS listeners with retain-until-consumed semantics, so the submit
- * still fires when the WebView resumes.
+ * Owns the single [RideRecorder]. On a detected ride it (1) appends the result to
+ * the durable [NativeEventQueue] — so a ride detected in a geofence-revived
+ * process with no bridge is never lost (R1) — (2) posts a local recap
+ * notification when the app isn't foreground (W11) and (3) pokes the plugin,
+ * which drains the queue to JS with retain-until-consumed semantics.
  *
  * `foregroundServiceType` is **specialUse**: continuous accelerometer/barometer
  * sampling for novel ride detection fits none of the predefined types
@@ -47,6 +48,14 @@ class RideMonitorService : Service() {
         val r = RideRecorder(this)
         r.onRideStarted = { rideStartedCb?.invoke() }
         r.onRideDetected = { result ->
+            // Durability first: the queue line is the source of truth from
+            // here on. `at` is the ride's start, threaded out of the metrics
+            // computer as a Long.
+            NativeEventQueue.forContext(this).enqueue(
+                NativeEventQueue.KIND_RIDE,
+                result.startedAtMs,
+                RideRecorderPlugin.resultToJs(result).toString()
+            )
             // Local notification is the user-visible half when the WebView is
             // suspended; skip it when the app is foreground (the in-app recap
             // toast covers that case), and gate it on the ride signature (W3)
@@ -57,7 +66,8 @@ class RideMonitorService : Service() {
             if (!appActive && RideSignature.hasSignature(result.metrics)) {
                 postRecapNotification(result)
             }
-            rideDetectedCb?.invoke(result)
+            // Live poke — no data; the plugin drains the queue.
+            rideDetectedCb?.invoke()
         }
         recorder = r
     }
@@ -90,6 +100,12 @@ class RideMonitorService : Service() {
 
     /** Session step sample passthrough for the plugin's getStepSample. */
     fun stepSample(): RideRecorder.StepSample? = recorder?.stepSample()
+
+    /** Re-check the step-counter grant and apply it (R11) — called from the
+     *  plugin when the ACTIVITY_RECOGNITION prompt resolves mid-session. */
+    fun refreshSensors() {
+        recorder?.refreshSensors()
+    }
 
     private fun startForegroundCompat() {
         ensureChannels(this)
@@ -139,12 +155,15 @@ class RideMonitorService : Service() {
         const val DEAD_MAN_MS = 12L * 60 * 60 * 1000
 
         // Wired by the plugin; read on the recorder's thread at event time.
-        // @Volatile so the sensor thread sees the plugin's writes.
+        // @Volatile so the sensor thread sees the plugin's writes. Both are
+        // pokes — `rideDetectedCb` carries no data (the event is already in the
+        // NativeEventQueue; the plugin drains it), so a null callback in a
+        // bridge-less process loses nothing.
         @Volatile
         var rideStartedCb: (() -> Unit)? = null
 
         @Volatile
-        var rideDetectedCb: ((RideResult) -> Unit)? = null
+        var rideDetectedCb: (() -> Unit)? = null
 
         // Toggled by the plugin's resume/pause lifecycle so the service knows
         // whether to post the local recap notification (skip when foreground).

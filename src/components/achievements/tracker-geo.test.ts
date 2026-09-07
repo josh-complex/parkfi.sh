@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  FIX_MAX_AGE_MS,
   isNearAnyPark,
   LAST_FIX_FRESH_MS,
   NEAR_PARK_PAD_M,
@@ -16,7 +17,7 @@ function shared(overrides: Partial<SharedFix> = {}): SharedFix {
 }
 
 describe("selectBestFix", () => {
-  const own = { lng: -81.58, lat: 28.417, accuracy: 90 };
+  const own = { lng: -81.58, lat: 28.417, accuracy: 90, capturedAt: NOW - 2_000 };
 
   it("returns null with no fix at all", () => {
     expect(selectBestFix(null, null, NOW)).toBeNull();
@@ -44,6 +45,37 @@ describe("selectBestFix", () => {
 
   it("keeps the own fix on an accuracy tie (no churn for equal fixes)", () => {
     expect(selectBestFix(own, shared({ accuracy: own.accuracy }), NOW)?.source).toBe("own");
+  });
+
+  // R3 (round 2): a watch that stopped delivering while the app was frozen
+  // leaves a pre-background fix behind; resume must not replay it.
+  it("keeps the own fix under the age bound", () => {
+    const aging = { ...own, capturedAt: NOW - FIX_MAX_AGE_MS };
+    expect(selectBestFix(aging, null, NOW)?.source).toBe("own");
+  });
+
+  it("drops a stale own fix and falls back to a fresh shared one", () => {
+    const stale = { ...own, capturedAt: NOW - FIX_MAX_AGE_MS - 1 };
+    const f = selectBestFix(stale, shared({ accuracy: 150 }), NOW);
+    // The shared fix is LESS accurate and older than LAST_FIX_FRESH_MS would
+    // require to *beat* a live own fix — but the own fix is gone, so it wins.
+    expect(f?.source).toBe("shared");
+  });
+
+  it("drops a stale own fix even with no shared fix at all", () => {
+    const stale = { ...own, capturedAt: NOW - FIX_MAX_AGE_MS - 1 };
+    expect(selectBestFix(stale, null, NOW)).toBeNull();
+  });
+
+  it("drops both when both are stale", () => {
+    const stale = { ...own, capturedAt: NOW - FIX_MAX_AGE_MS - 1 };
+    const staleShared = shared({ capturedAt: NOW - FIX_MAX_AGE_MS - 1 });
+    expect(selectBestFix(stale, staleShared, NOW)).toBeNull();
+  });
+
+  it("carries capturedAt through on the selected fix", () => {
+    expect(selectBestFix(own, null, NOW)?.capturedAt).toBe(own.capturedAt);
+    expect(selectBestFix(null, shared(), NOW)?.capturedAt).toBe(NOW - 5_000);
   });
 });
 

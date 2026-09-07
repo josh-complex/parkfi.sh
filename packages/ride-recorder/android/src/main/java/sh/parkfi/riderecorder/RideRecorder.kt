@@ -28,6 +28,7 @@ class RideRecorder(context: Context) : SensorEventListener {
     var onRideStarted: (() -> Unit)? = null
     var onRideDetected: ((RideResult) -> Unit)? = null
 
+    private val appContext = context.applicationContext
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val linear = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
     private val gravity = sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY)
@@ -36,13 +37,21 @@ class RideRecorder(context: Context) : SensorEventListener {
     // TYPE_STEP_COUNTER is hardware-batched on a low-power hub; it keeps counting
     // through Doze / screen-off, so deltas read on the next foreground ping carry
     // the pocketed stretches too. Gated on ACTIVITY_RECOGNITION (API 29+) — see
-    // stepsPermitted; without the grant we never register and stepSample() stays
-    // null (the JS layer treats null as "no step sensor").
+    // stepsPermitted(); without the grant we never register and stepSample()
+    // stays null (the JS layer treats null as "no step sensor").
     private val stepCounter = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
-    private val stepsPermitted =
+
+    // Evaluated on every registration, not once at construction (R11): a
+    // service armed by a native geofence before the grant used to report null
+    // steps for its whole life, even after the user granted mid-visit.
+    private fun stepsPermitted(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.ACTIVITY_RECOGNITION) ==
+            ContextCompat.checkSelfPermission(appContext, Manifest.permission.ACTIVITY_RECOGNITION) ==
             PackageManager.PERMISSION_GRANTED
+
+    // The sensor delay currently registered, so refreshSensors() can re-register
+    // at the same rate.
+    private var currentDelay = SensorManager.SENSOR_DELAY_UI
 
     private var thread: HandlerThread? = null
     private var handler: Handler? = null
@@ -100,12 +109,28 @@ class RideRecorder(context: Context) : SensorEventListener {
         if (monitoring || linear == null) return
         monitoring = true
         stepBaseline = null
-        val stepsSupported = stepCounter != null && stepsPermitted
+        val stepsSupported = stepCounter != null && stepsPermitted()
         sessionSteps = if (stepsSupported) 0 else null
         sessionStartMs = if (stepsSupported) System.currentTimeMillis() else null
         thread = HandlerThread("ride-recorder").also { it.start() }
         handler = Handler(thread!!.looper)
         registerSensors(SensorManager.SENSOR_DELAY_UI)
+    }
+
+    /**
+     * Re-evaluate the step-counter permission and apply it now (R11). Called
+     * when the ACTIVITY_RECOGNITION grant lands mid-session: if steps were
+     * unavailable and are now permitted, start a fresh step session (the
+     * server keys its cursor on `sessionStartMs`, so a new identity here is
+     * exactly right) and re-register at the current rate. No-op otherwise.
+     */
+    fun refreshSensors() {
+        if (!monitoring) return
+        if (sessionSteps != null || stepCounter == null || !stepsPermitted()) return
+        stepBaseline = null
+        sessionSteps = 0
+        sessionStartMs = System.currentTimeMillis()
+        registerSensors(currentDelay)
     }
 
     fun stopMonitoring() {
@@ -127,7 +152,7 @@ class RideRecorder(context: Context) : SensorEventListener {
     fun startRecording() {
         if (!monitoring || recording) return
         manual = true
-        beginRecording()
+        beginRecording(ring.lastOrNull()?.t ?: 0.0)
     }
 
     fun stopRecording(): RideResult? {
@@ -136,6 +161,7 @@ class RideRecorder(context: Context) : SensorEventListener {
     }
 
     private fun registerSensors(delay: Int) {
+        currentDelay = delay
         sensorManager.unregisterListener(this)
         linear?.let { sensorManager.registerListener(this, it, delay, handler) }
         gravity?.let { sensorManager.registerListener(this, it, delay, handler) }
@@ -145,7 +171,7 @@ class RideRecorder(context: Context) : SensorEventListener {
         // Step counter: one event per step (or a hardware batch); NORMAL delay.
         // Re-registering across the UI↔GAME escalation is harmless — the value
         // is since-boot cumulative, so the baseline survives.
-        if (stepsPermitted) {
+        if (stepsPermitted()) {
             stepCounter?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL, handler) }
         }
     }
@@ -234,7 +260,7 @@ class RideRecorder(context: Context) : SensorEventListener {
         val variance = varWindow.sumOf { (it.v - mean) * (it.v - mean) } / varWindow.size
         if (variance > RideConst.START_VAR_THRESHOLD) {
             if (highVarSince == null) highVarSince = now
-            else if (now - highVarSince!! >= RideConst.START_SUSTAIN_S) beginRecording()
+            else if (now - highVarSince!! >= RideConst.START_SUSTAIN_S) beginRecording(now)
         } else highVarSince = null
     }
 
@@ -250,31 +276,49 @@ class RideRecorder(context: Context) : SensorEventListener {
         val variance = recent.sumOf { (it.sfMs2 - mean) * (it.sfMs2 - mean) } / recent.size
         if (variance < RideConst.END_VAR_THRESHOLD) {
             if (lowVarSince == null) lowVarSince = now
-            else if (now - lowVarSince!! >= RideConst.END_SUSTAIN_S) finishRecording()
+            else if (now - lowVarSince!! >= RideConst.END_SUSTAIN_S) {
+                // The quiet tail that ended the capture is the unload/walk-off,
+                // not the ride — trim it so durationS/endedAt describe the ride.
+                finishRecording(trimTailS = RideConst.END_SUSTAIN_S)
+            }
         } else lowVarSince = null
     }
 
-    private fun beginRecording() {
+    private fun beginRecording(now: Double) {
         if (recording) return
         recording = true
         highVarSince = null
         lowVarSince = null
-        capture = ArrayList(ring)
-        recordStart = capture.firstOrNull()?.t ?: ring.lastOrNull()?.t ?: 0.0
+        // Seed with the last PRE_TRIGGER_KEEP_S of the ring (round 2: was the
+        // whole 10 s ring, which front-loaded every capture with queue shuffle).
+        capture = ArrayList(ring.filter { now - it.t <= RideConst.PRE_TRIGGER_KEEP_S })
+        recordStart = capture.firstOrNull()?.t ?: ring.lastOrNull()?.t ?: now
         registerSensors(SensorManager.SENSOR_DELAY_GAME) // escalate to ~50 Hz
         onRideStarted?.invoke()
     }
 
-    private fun finishRecording(): RideResult? {
+    /**
+     * @param trimTailS seconds of trailing samples to drop before computing —
+     *   the low-variance tail that triggered the end. 0 for the cap/manual paths.
+     */
+    private fun finishRecording(trimTailS: Double = 0.0): RideResult? {
         if (!recording) return null
         recording = false
         val wasManual = manual
         manual = false
-        val samples = capture
+        val raw = capture
         capture = ArrayList()
         if (monitoring) registerSensors(SensorManager.SENSOR_DELAY_UI)
 
-        val result = RideMetricsComputer.compute(samples, baroAvailable, gyroAvailable)
+        val samples = if (trimTailS > 0 && raw.isNotEmpty()) {
+            val cut = raw.last().t - trimTailS
+            raw.filter { it.t <= cut }
+        } else raw
+        // The last raw sample is "now"; the last kept sample was tailS earlier.
+        val tailS = if (raw.isNotEmpty() && samples.isNotEmpty()) raw.last().t - samples.last().t else 0.0
+        val endedAtMs = System.currentTimeMillis() - (tailS * 1000).toLong()
+
+        val result = RideMetricsComputer.compute(samples, baroAvailable, gyroAvailable, endedAtMs)
         if (result != null && !wasManual) onRideDetected?.invoke(result)
         return result
     }
