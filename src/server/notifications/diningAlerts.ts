@@ -27,6 +27,13 @@ import {
   type DiningNotificationPayload,
 } from "#/server/notifications/diningFormat.ts";
 
+/**
+ * How stale a `dining_obs` generation may be and still count as availability.
+ * Comfortably wider than the sweep's cron interval (every 5h) so one missed run
+ * doesn't mute alerts, but far short of "forever".
+ */
+const OBS_FRESHNESS_HOURS = Number(process.env.DINING_OBS_FRESHNESS_HOURS) || 12;
+
 /** One active alert joined to the soonest matching available service date. */
 export interface DiningAlertRow {
   id: number;
@@ -212,13 +219,17 @@ export async function evaluateDiningAlerts(now: number = Date.now()): Promise<nu
       WHERE r.priority = true AND r.active = true AND r.bookable = true
         AND o.party_size = da.party_size
         AND (da.facility_id = '' OR o.facility_id = da.facility_id)
+        AND o.service_date >= current_date
         AND (
           (da.service_date IS NOT NULL AND o.service_date = da.service_date)
           OR (da.window_days IS NOT NULL
-              AND o.service_date >= current_date
               AND o.service_date < current_date + da.window_days)
         )
         AND o.meal_period <> ''
+        -- Only the CURRENT sweep generation counts as available-now. Without
+        -- this, the max(observed_at) pick below happily returns a months-old row
+        -- whenever the sweep stalls, and a stale hit reads as live availability.
+        AND o.observed_at >= now() - make_interval(hours => ${OBS_FRESHNESS_HOURS})
         AND o.observed_at = (
           SELECT max(o2.observed_at) FROM dining_obs o2
           WHERE o2.facility_id = o.facility_id
@@ -229,6 +240,9 @@ export async function evaluateDiningAlerts(now: number = Date.now()): Promise<nu
       LIMIT 1
     ) m ON true
     WHERE da.active = true
+      -- A single-date alert whose date has passed can never fire again; skip it
+      -- rather than paying for the lateral.
+      AND (da.service_date IS NULL OR da.service_date >= current_date)
   `);
 
   const rows: Array<DiningAlertRow> = result.rows.map((r) => ({

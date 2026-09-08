@@ -75,77 +75,92 @@ async function main() {
   }
 
   let total = 0;
-  await withUniversalSession(async (page, session) => {
-    // Flush per target so a mid-sweep timeout doesn't lose completed work.
-    for (const t of targets) {
-      const rows: Array<typeof diningObs.$inferInsert> = [];
-      // Reservation bounds ride on every response; capture from the first one so
-      // we can refresh restaurant_dim once per venue (plan item 3.2).
-      let bounds: {
-        min_party_size?: number;
-        max_party_size?: number;
-        min_advanced_minutes?: number;
-        max_advanced_days?: number;
-      } | null = null;
-      for (const partySize of PARTY_SIZES) {
-        const avail = await fetchUniversalReservationAvailability(
-          page,
-          session.headers,
-          t.facilityId,
-          startDate,
-          endDate,
-          partySize,
-        );
-        if (avail && bounds == null) bounds = avail;
-        for (const d of avail?.dates ?? []) {
-          const serviceDate = d.date.slice(0, 10);
-          const open = d.slots.filter((s) => s.availability_status === AVAILABLE);
-          if (open.length === 0) {
-            rows.push({
-              observedAt,
-              facilityId: t.facilityId,
-              serviceDate,
-              partySize,
-              source: Source.UNIVERSAL_DIRECT,
-            });
-          } else {
-            for (const s of open) {
+  const sweep = async () => {
+    total = 0;
+    await withUniversalSession(async (page, session) => {
+      // Flush per target so a mid-sweep timeout doesn't lose completed work.
+      for (const t of targets) {
+        const rows: Array<typeof diningObs.$inferInsert> = [];
+        // Reservation bounds ride on every response; capture from the first one so
+        // we can refresh restaurant_dim once per venue (plan item 3.2).
+        let bounds: {
+          min_party_size?: number;
+          max_party_size?: number;
+          min_advanced_minutes?: number;
+          max_advanced_days?: number;
+        } | null = null;
+        for (const partySize of PARTY_SIZES) {
+          const avail = await fetchUniversalReservationAvailability(
+            page,
+            session.headers,
+            t.facilityId,
+            startDate,
+            endDate,
+            partySize,
+          );
+          if (avail && bounds == null) bounds = avail;
+          for (const d of avail?.dates ?? []) {
+            const serviceDate = d.date.slice(0, 10);
+            const open = d.slots.filter((s) => s.availability_status === AVAILABLE);
+            if (open.length === 0) {
               rows.push({
                 observedAt,
                 facilityId: t.facilityId,
                 serviceDate,
                 partySize,
-                mealPeriod: universalMealPeriod(s.time),
-                offerTime: `${s.time}:00`,
                 source: Source.UNIVERSAL_DIRECT,
               });
+            } else {
+              for (const s of open) {
+                rows.push({
+                  observedAt,
+                  facilityId: t.facilityId,
+                  serviceDate,
+                  partySize,
+                  mealPeriod: universalMealPeriod(s.time),
+                  offerTime: `${s.time}:00`,
+                  source: Source.UNIVERSAL_DIRECT,
+                });
+              }
             }
           }
         }
-      }
-      await flush(rows);
-      total += rows.length;
+        await flush(rows);
+        total += rows.length;
 
-      // Refresh the venue's reservation bounds when the response carried any.
-      if (
-        bounds &&
-        (bounds.min_party_size != null ||
-          bounds.max_party_size != null ||
-          bounds.min_advanced_minutes != null ||
-          bounds.max_advanced_days != null)
-      ) {
-        await db
-          .update(restaurantDim)
-          .set({
-            minPartySize: bounds.min_party_size ?? null,
-            maxPartySize: bounds.max_party_size ?? null,
-            minAdvanceMinutes: bounds.min_advanced_minutes ?? null,
-            maxAdvanceDays: bounds.max_advanced_days ?? null,
-          })
-          .where(eq(restaurantDim.facilityId, t.facilityId));
+        // Refresh the venue's reservation bounds when the response carried any.
+        if (
+          bounds &&
+          (bounds.min_party_size != null ||
+            bounds.max_party_size != null ||
+            bounds.min_advanced_minutes != null ||
+            bounds.max_advanced_days != null)
+        ) {
+          await db
+            .update(restaurantDim)
+            .set({
+              minPartySize: bounds.min_party_size ?? null,
+              maxPartySize: bounds.max_party_size ?? null,
+              minAdvanceMinutes: bounds.min_advanced_minutes ?? null,
+              maxAdvanceDays: bounds.max_advanced_days ?? null,
+            })
+            .where(eq(restaurantDim.facilityId, t.facilityId));
+        }
       }
-    }
-  }, AbortSignal.timeout(config.browserlessTimeoutMs));
+    }, AbortSignal.timeout(config.browserlessTimeoutMs));
+  };
+
+  // The in-page harvest races the store SPA's own navigations, so a run can die
+  // on puppeteer's "Execution context was destroyed" even when the feed is
+  // perfectly healthy (~1 run in 18 observed). Rows are written with
+  // `onConflictDoNothing` under a single fixed `observedAt`, so a second attempt
+  // is idempotent — retry once rather than burning the hour's slot.
+  try {
+    await sweep();
+  } catch (err) {
+    console.warn("[dining-availability-universal] sweep failed, retrying once:", err);
+    await sweep();
+  }
 
   console.log(
     `[dining-availability-universal] ${targets.length} venues × ${PARTY_SIZES.length} parties × ${DAY_HORIZON}d → ${total} rows`,

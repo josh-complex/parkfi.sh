@@ -17,6 +17,7 @@ import { config as loadEnv } from "dotenv";
 loadEnv({ path: [".env.local", ".env"] });
 
 // Imported after loadEnv so the module-level PostHog client sees POSTHOG_KEY.
+import { withDeadline } from "../shared/deadline.ts";
 import { flushTelemetry, reportServiceError } from "../shared/telemetry.ts";
 
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -34,6 +35,8 @@ const PARTY_SIZES = (process.env.DINING_PARTY_SIZES ?? "1,2,3,4,5,6,7,8,9,10")
   .map((s) => Number(s.trim()))
   .filter((n) => Number.isFinite(n) && n > 0 && n <= 10);
 const DAY_HORIZON = Number(process.env.DINING_DAY_HORIZON ?? 30);
+/** Alerts are best-effort tail work — never let them outlive the sweep itself. */
+const ALERT_EVAL_TIMEOUT_MS = Number(process.env.DINING_ALERT_TIMEOUT_MS ?? 120_000);
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -199,11 +202,21 @@ async function main() {
 
   // Alerts read the obs we just wrote; isolate so a failure here never breaks the
   // sweep (the cache write is the primary job). Mirrors the stays sweep tail.
+  //
+  // Bounded as well as caught: the enqueue inside HANGS rather than throws when
+  // Redis is unreachable (see withDeadline), and an un-exiting run wedged this
+  // cron from 2026-06-16 to 2026-09-08. The deadline is the backstop; the
+  // REDIS_URL check below is the loud, fast failure when the var is simply
+  // missing on the service.
   let fired = 0;
-  try {
-    fired = await evaluateDiningAlerts();
-  } catch (err) {
-    console.error("[dining-availability] alert eval failed:", err);
+  if (!process.env.REDIS_URL) {
+    console.error("[dining-availability] REDIS_URL not set — skipping alert eval");
+  } else {
+    try {
+      fired = await withDeadline(evaluateDiningAlerts(), ALERT_EVAL_TIMEOUT_MS, "alert eval");
+    } catch (err) {
+      console.error("[dining-availability] alert eval failed:", err);
+    }
   }
 
   console.log(

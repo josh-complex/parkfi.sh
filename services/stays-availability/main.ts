@@ -18,6 +18,7 @@ import { config as loadEnv } from "dotenv";
 loadEnv({ path: [".env.local", ".env"] });
 
 // Imported after loadEnv so the module-level PostHog client sees POSTHOG_KEY.
+import { withDeadline } from "../shared/deadline.ts";
 import { flushTelemetry, reportServiceError } from "../shared/telemetry.ts";
 
 import { eq, sql } from "drizzle-orm";
@@ -44,6 +45,8 @@ const WARM_PARTIES = [
 // Stores kept warm every run. Each is a separate Disney availability endpoint;
 // one fetch per (store, dates, party) returns all of that store's resorts.
 const WARM_STORES: ReadonlyArray<ResortStore> = ["wdw", "dlr"];
+/** Alerts are best-effort tail work — never let them outlive the sweep itself. */
+const ALERT_EVAL_TIMEOUT_MS = Number(process.env.STAY_ALERT_TIMEOUT_MS) || 120_000;
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -155,10 +158,13 @@ async function main() {
   }
 
   // Alerts read the obs we just wrote; isolate so a failure here never breaks
-  // the sweep (the cache write is the primary job).
+  // the sweep (the cache write is the primary job). Bounded as well as caught —
+  // the enqueue inside hangs rather than throws when Redis is unreachable, and a
+  // one-shot cron that never exits is invisible until the data goes stale (see
+  // withDeadline).
   let fired = 0;
   try {
-    fired = await evaluateStayAlerts();
+    fired = await withDeadline(evaluateStayAlerts(), ALERT_EVAL_TIMEOUT_MS, "alert eval");
   } catch (err) {
     console.error("[stays-availability] alert eval failed:", err);
   }
