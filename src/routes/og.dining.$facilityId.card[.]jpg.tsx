@@ -51,10 +51,31 @@ async function loadStats(facilityId: string): Promise<VenueStats | null> {
   }
 }
 
+/**
+ * Squeeze a finder price descriptor into a chip. The raw value
+ * ("$$$ ($35 to $59.99 per adult)") is far too wide at the chip's 52px value
+ * size — it swallowed the whole bottom row and pushed the other chips off the
+ * card. Tier symbols become the value, the dollar figures a compact label.
+ */
+function priceChip(priceRange: string): OgChip | null {
+  const tier = /^\$+/.exec(priceRange.trim())?.[0];
+  if (!tier) return null;
+  const detail = /\(([^)]*)\)/.exec(priceRange)?.[1] ?? "";
+  const amounts = [...detail.matchAll(/\$\s*([\d.]+)/g)].map((m) => Math.round(Number(m[1])));
+  const perAdult = /per adult/i.test(detail);
+  let label = "Price";
+  if (amounts.length >= 2) label = `$${amounts[0]}\u2013$${amounts[1]}`;
+  else if (amounts.length === 1)
+    label = /under|less/i.test(detail) ? `Under $${amounts[0]}` : `$${amounts[0]}+`;
+  if (amounts.length > 0 && perAdult) label += " / adult";
+  return { value: tier, label };
+}
+
 async function renderJpeg(facilityId: string): Promise<Buffer> {
   const stats = await loadStats(facilityId);
   const chips: Array<OgChip> = [];
-  if (stats?.priceRange) chips.push({ value: stats.priceRange, label: "Price" });
+  const price = stats?.priceRange ? priceChip(stats.priceRange) : null;
+  if (price) chips.push(price);
   if (stats && stats.itemCount > 0)
     chips.push({ value: String(stats.itemCount), label: "Menu items" });
   let badge: OgBadge | null = null;

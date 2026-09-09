@@ -60,6 +60,7 @@ type Ride = {
   imageHeroUrl: string | null;
   imageAlt: string | null;
   imageThumbhash: string | null;
+  hauntedHouse: boolean;
 };
 
 type Sort = "wait" | "name";
@@ -458,25 +459,78 @@ export function CrossParkWaits() {
     return orderRef.current?.map ?? new Map<number, number>();
   }, [rides, sortKey, sortDir]);
 
+  // One shelf per park, plus a shelf of its own for a park's hard-ticket
+  // Halloween Horror Nights houses. Houses are ordinary attraction rows with
+  // real waits, but they only run on event nights and on a separate ticket, so
+  // they'd otherwise sit dead among the rides all day — and they'd drag the
+  // park's average wait around on event nights, when they're the only thing
+  // posting one. The houses shelf follows its park's, so the two read together.
   const groups = React.useMemo(() => {
     const filtered = (rides ?? []).filter((r) => rideMatchesFilter(r, filter));
-    const byPark = new Map<string, { parkName: string; parkSlug: string; rides: Array<Ride> }>();
+    const byPark = new Map<
+      string,
+      { parkName: string; parkSlug: string; rides: Array<Ride>; houses: Array<Ride> }
+    >();
     for (const r of filtered) {
-      const g = byPark.get(r.parkSlug) ?? { parkName: r.parkName, parkSlug: r.parkSlug, rides: [] };
-      g.rides.push(r);
+      const g = byPark.get(r.parkSlug) ?? {
+        parkName: r.parkName,
+        parkSlug: r.parkSlug,
+        rides: [],
+        houses: [],
+      };
+      (r.hauntedHouse ? g.houses : g.rides).push(r);
       byPark.set(r.parkSlug, g);
     }
     const rank = (r: Ride) => orderMap.get(r.id) ?? Number.MAX_SAFE_INTEGER;
-    return [...byPark.values()].map((g) => {
-      g.rides.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
-      const open = g.rides.filter((r) => r.status === "OPERATING");
+    const shelf = (input: {
+      key: string;
+      title: string;
+      rides: Array<Ride>;
+      noun: string;
+      note?: string;
+    }) => {
+      const list = [...input.rides].sort(
+        (a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name),
+      );
+      const open = list.filter((r) => r.status === "OPERATING");
       const withWait = open.filter((r) => r.standbyWait != null);
       const avg =
         withWait.length > 0
           ? Math.round(withWait.reduce((s, r) => s + (r.standbyWait ?? 0), 0) / withWait.length)
           : null;
-      return { ...g, isOpen: open.length > 0, avg };
-    });
+      const subtitle =
+        open.length > 0 && avg != null
+          ? `${avg} min average wait`
+          : [`${list.length} ${input.noun}${list.length === 1 ? "" : "s"}`, input.note]
+              .filter(Boolean)
+              .join(" · ");
+      return { key: input.key, title: input.title, rides: list, subtitle };
+    };
+    const out: Array<ReturnType<typeof shelf>> = [];
+    for (const g of byPark.values()) {
+      if (g.rides.length > 0) {
+        out.push(
+          shelf({
+            key: g.parkSlug,
+            title: formatParkName(g.parkName),
+            rides: g.rides,
+            noun: "ride",
+          }),
+        );
+      }
+      if (g.houses.length > 0) {
+        out.push(
+          shelf({
+            key: `${g.parkSlug}:haunted-houses`,
+            title: "Halloween Horror Nights",
+            rides: g.houses,
+            noun: "house",
+            note: "event nights only",
+          }),
+        );
+      }
+    }
+    return out;
   }, [rides, filter, orderMap]);
 
   const shown = groups.reduce((n, g) => n + g.rides.length, 0);
@@ -515,26 +569,20 @@ export function CrossParkWaits() {
         )}
 
         {groups.map((g, gi) => {
-          const subtitle =
-            g.isOpen && g.avg != null
-              ? `${g.avg} min average wait`
-              : `${g.rides.length} ride${g.rides.length === 1 ? "" : "s"}`;
           // Bleed the whole section to the container edges (canceling the page's
           // px-4/lg:px-6) so the card track scrolls flush to the device edge; the
           // heading, resting cards, and list re-inset to stay aligned.
           const section = (
             <Carousel
-              key={g.parkSlug}
+              key={g.key}
               opts={{ align: "start", dragFree: true }}
               className="-mx-4 lg:-mx-6"
             >
               <section className="flex flex-col gap-3">
                 <div className="flex items-end justify-between gap-4 px-4 lg:px-6">
                   <div className="flex min-w-0 flex-col gap-0.5">
-                    <h3 className="truncate text-lg font-semibold tracking-tight">
-                      {formatParkName(g.parkName)}
-                    </h3>
-                    <p className="truncate text-sm text-muted-foreground">{subtitle}</p>
+                    <h3 className="truncate text-lg font-semibold tracking-tight">{g.title}</h3>
+                    <p className="truncate text-sm text-muted-foreground">{g.subtitle}</p>
                   </div>
                   <CarouselArrows className="hidden shrink-0 md:flex" />
                 </div>
@@ -572,13 +620,13 @@ export function CrossParkWaits() {
           if (gi <= 1) return section;
           return (
             <LazyMount
-              key={g.parkSlug}
+              key={g.key}
               estimatedHeight={view === "grid" ? 320 : g.rides.length * 60 + 110}
               fallback={
                 view === "grid" ? (
                   <ShelfGhost
-                    title={formatParkName(g.parkName)}
-                    subtitle={subtitle}
+                    title={g.title}
+                    subtitle={g.subtitle}
                     items={g.rides.map((r) => ({
                       thumbhash: r.imageThumbhash,
                       name: r.name,

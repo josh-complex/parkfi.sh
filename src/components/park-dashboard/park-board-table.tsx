@@ -10,6 +10,7 @@ import {
   useReactTable,
   type ColumnDef,
   type SortingState,
+  type Table as ReactTable,
 } from "@tanstack/react-table";
 import {
   ArrowDownIcon,
@@ -18,6 +19,7 @@ import {
   ChevronRightIcon,
   ChevronsUpDownIcon,
   GemIcon,
+  GhostIcon,
   InfoIcon,
   SlidersHorizontalIcon,
   ZapIcon,
@@ -68,6 +70,7 @@ import { cn } from "#/lib/utils.ts";
 import {
   baseRideName,
   formatPriceCents,
+  isHauntedHouse,
   isSingleRiderName,
   isUniversal,
   normalizeRideName,
@@ -477,6 +480,26 @@ export function ParkBoardTable({
     return lineFiltered.filter((r) => r.status === filter);
   }, [rides, filter, lineFilter]);
 
+  // Haunted houses run on their own hard-ticket event nights, so they sit in a
+  // section of their own below the rides: all day they'd otherwise be ten dead
+  // CLOSED rows in the middle of an operating board, and on an event night
+  // they're the only thing posting a wait. `allHouses` (pre status-filter)
+  // decides whether the section exists and what its summary says; `houseRows`
+  // is what the filter left to draw.
+  const allHouses = React.useMemo(() => rides.filter(isHauntedHouse), [rides]);
+  const houseRows = React.useMemo(() => data.filter(isHauntedHouse), [data]);
+  const boardRows = React.useMemo(
+    () => (allHouses.length > 0 ? data.filter((r) => !isHauntedHouse(r)) : data),
+    [data, allHouses],
+  );
+  const houseSummary = React.useMemo(() => {
+    const noun = allHouses.length === 1 ? "house" : "houses";
+    const open = allHouses.filter((h) => h.status === "OPERATING" && h.standbyWait != null);
+    if (open.length === 0) return `${allHouses.length} ${noun} · no waits posted right now`;
+    const longest = Math.max(...open.map((h) => h.standbyWait ?? 0));
+    return `${open.length} of ${allHouses.length} ${noun} open · longest ${longest} min`;
+  }, [allHouses]);
+
   const columns = React.useMemo<Array<ColumnDef<BoardItem>>>(
     () => [
       {
@@ -593,17 +616,10 @@ export function ParkBoardTable({
     [sparkByRide, operatorSlug, alertByAttraction, loggedIn, selectedId, parkSlug, singleRiderIds],
   );
 
-  const table = useReactTable({
-    data,
-    columns,
-    state: { sorting },
-    onSortingChange: setSorting,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getRowId: (row) => String(row.id),
-  });
-
-  const sortedRows = table.getRowModel().rows;
+  // One sort state, two tables: the rides board and the houses section reorder
+  // together, so the sort control still reads as one control over one board.
+  const table = useBoardTable(boardRows, columns, sorting, setSorting);
+  const houseTable = useBoardTable(houseRows, columns, sorting, setSorting);
 
   // Changing sort/filter reshuffles the list, so snap back to the section start
   // (heading) rather than leaving the user stranded mid-list looking at a
@@ -644,7 +660,7 @@ export function ParkBoardTable({
           <p className="text-muted-foreground text-sm">
             {loading
               ? "Loading…"
-              : `${data.length} attractions · select a ride to chart its history`}
+              : `${boardRows.length} attractions · select a ride to chart its history`}
           </p>
         </div>
         {/* Desktop controls live beside the heading; mobile gets a FAB (below). */}
@@ -674,90 +690,67 @@ export function ParkBoardTable({
             <Skeleton key={i} className="h-16 w-full" />
           ))}
         </div>
-      ) : sortedRows.length === 0 ? (
+      ) : boardRows.length === 0 && houseRows.length === 0 ? (
         <div className="text-muted-foreground py-12 text-center text-sm">
           No attractions match this filter.
         </div>
-      ) : isMobile ? (
-        <MobileCardList
-          rows={sortedRows.map((r) => r.original)}
-          selectedId={selectedId}
-          parkSlug={parkSlug}
-          operatorSlug={operatorSlug}
-          timezone={timezone}
-          sparkByRide={sparkByRide}
-          alertByAttraction={alertByAttraction}
-          loggedIn={loggedIn}
-          singleRiderIds={singleRiderIds}
-        />
       ) : (
-        <div className="min-h-0 flex-1 overflow-x-auto">
-          <Table>
-            <TableHeader>
-              {table.getHeaderGroups().map((hg) => (
-                <TableRow key={hg.id}>
-                  {hg.headers.map((header) => {
-                    const align =
-                      (header.column.columnDef.meta as { align?: string } | undefined)?.align ??
-                      "left";
-                    const canSort = header.column.getCanSort();
-                    return (
-                      <TableHead
-                        key={header.id}
-                        className={cn(
-                          header.column.id === "alert" && "w-10 text-center",
-                          header.column.id === "chevron" && "w-8",
-                          align === "right" && "text-right",
-                        )}
-                      >
-                        {header.isPlaceholder ? null : canSort ? (
-                          <SortHeader
-                            label={flexRender(header.column.columnDef.header, header.getContext())}
-                            sorted={header.column.getIsSorted()}
-                            onClick={() => header.column.toggleSorting()}
-                          />
-                        ) : (
-                          flexRender(header.column.columnDef.header, header.getContext())
-                        )}
-                      </TableHead>
-                    );
-                  })}
-                </TableRow>
-              ))}
-            </TableHeader>
-            <TableBody>
-              {sortedRows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  onClick={() => onSelect(row.original)}
-                  data-state={row.original.id === selectedId ? "selected" : undefined}
-                  className={cn(
-                    "h-16 cursor-pointer",
-                    row.original.id === selectedId && "bg-muted/60",
-                  )}
-                >
-                  {row.getVisibleCells().map((cell) => {
-                    const align =
-                      (cell.column.columnDef.meta as { align?: string } | undefined)?.align ??
-                      "left";
-                    return (
-                      <TableCell
-                        key={cell.id}
-                        className={cn(
-                          cell.column.id === "attraction" && "max-w-0 w-full",
-                          cell.column.id === "alert" && "text-center",
-                          align === "right" && "text-right",
-                        )}
-                      >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </TableCell>
-                    );
-                  })}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <>
+          {boardRows.length === 0 ? (
+            <div className="text-muted-foreground py-8 text-center text-sm">
+              No rides match this filter.
+            </div>
+          ) : (
+            <BoardRows
+              table={table}
+              isMobile={isMobile}
+              selectedId={selectedId}
+              onSelect={onSelect}
+              parkSlug={parkSlug}
+              operatorSlug={operatorSlug}
+              timezone={timezone}
+              sparkByRide={sparkByRide}
+              alertByAttraction={alertByAttraction}
+              loggedIn={loggedIn}
+              singleRiderIds={singleRiderIds}
+            />
+          )}
+
+          {/* Hard-ticket event attractions get their own heading — same shape as
+              the board's, so the two read as sections of one page. */}
+          {allHouses.length > 0 ? (
+            <div className="mt-2 flex flex-col gap-4 border-t pt-6">
+              <div className="flex flex-col gap-0.5">
+                <h3 className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+                  <GhostIcon className="text-muted-foreground size-4.5" aria-hidden />
+                  Halloween Horror Nights
+                </h3>
+                <p className="text-muted-foreground text-sm">
+                  {houseSummary} · event nights only, separate ticket
+                </p>
+              </div>
+              {houseRows.length === 0 ? (
+                <div className="text-muted-foreground py-8 text-center text-sm">
+                  No houses match this filter.
+                </div>
+              ) : (
+                <BoardRows
+                  table={houseTable}
+                  isMobile={isMobile}
+                  selectedId={selectedId}
+                  onSelect={onSelect}
+                  parkSlug={parkSlug}
+                  operatorSlug={operatorSlug}
+                  timezone={timezone}
+                  sparkByRide={sparkByRide}
+                  alertByAttraction={alertByAttraction}
+                  loggedIn={loggedIn}
+                  singleRiderIds={singleRiderIds}
+                />
+              )}
+            </div>
+          ) : null}
+        </>
       )}
 
       {/* Mobile-only sort/filter FAB, center-bottom, above the safe area. */}
@@ -769,6 +762,132 @@ export function ParkBoardTable({
           onFilter={handleFilter}
         />
       )}
+    </div>
+  );
+}
+
+/** The board's table instance — one per section, sharing the parent's sort state. */
+function useBoardTable(
+  data: Array<BoardItem>,
+  columns: Array<ColumnDef<BoardItem>>,
+  sorting: SortingState,
+  onSortingChange: React.Dispatch<React.SetStateAction<SortingState>>,
+): ReactTable<BoardItem> {
+  return useReactTable({
+    data,
+    columns,
+    state: { sorting },
+    onSortingChange,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getRowId: (row) => String(row.id),
+  });
+}
+
+/** One section's rows: the sortable table on desktop, stacked cards on mobile. */
+function BoardRows({
+  table,
+  isMobile,
+  selectedId,
+  onSelect,
+  parkSlug,
+  operatorSlug,
+  timezone,
+  sparkByRide,
+  alertByAttraction,
+  loggedIn,
+  singleRiderIds,
+}: {
+  table: ReactTable<BoardItem>;
+  isMobile: boolean;
+  selectedId: number | null;
+  onSelect: (item: BoardItem) => void;
+  parkSlug: string | null;
+  operatorSlug: string | null | undefined;
+  timezone: string | null | undefined;
+  sparkByRide: Map<number, { values: Array<number | null>; closed: Array<boolean> }>;
+  alertByAttraction: Map<number, RideAlertEntry>;
+  loggedIn: boolean;
+  singleRiderIds: Set<number>;
+}) {
+  const sortedRows = table.getRowModel().rows;
+  if (isMobile) {
+    return (
+      <MobileCardList
+        rows={sortedRows.map((r) => r.original)}
+        selectedId={selectedId}
+        parkSlug={parkSlug}
+        operatorSlug={operatorSlug}
+        timezone={timezone}
+        sparkByRide={sparkByRide}
+        alertByAttraction={alertByAttraction}
+        loggedIn={loggedIn}
+        singleRiderIds={singleRiderIds}
+      />
+    );
+  }
+  return (
+    <div className="min-h-0 flex-1 overflow-x-auto">
+      <Table>
+        <TableHeader>
+          {table.getHeaderGroups().map((hg) => (
+            <TableRow key={hg.id}>
+              {hg.headers.map((header) => {
+                const align =
+                  (header.column.columnDef.meta as { align?: string } | undefined)?.align ?? "left";
+                const canSort = header.column.getCanSort();
+                return (
+                  <TableHead
+                    key={header.id}
+                    className={cn(
+                      header.column.id === "alert" && "w-10 text-center",
+                      header.column.id === "chevron" && "w-8",
+                      align === "right" && "text-right",
+                    )}
+                  >
+                    {header.isPlaceholder ? null : canSort ? (
+                      <SortHeader
+                        label={flexRender(header.column.columnDef.header, header.getContext())}
+                        sorted={header.column.getIsSorted()}
+                        onClick={() => header.column.toggleSorting()}
+                      />
+                    ) : (
+                      flexRender(header.column.columnDef.header, header.getContext())
+                    )}
+                  </TableHead>
+                );
+              })}
+            </TableRow>
+          ))}
+        </TableHeader>
+        <TableBody>
+          {sortedRows.map((row) => (
+            <TableRow
+              key={row.id}
+              onClick={() => onSelect(row.original)}
+              data-state={row.original.id === selectedId ? "selected" : undefined}
+              className={cn("h-16 cursor-pointer", row.original.id === selectedId && "bg-muted/60")}
+            >
+              {row.getVisibleCells().map((cell) => {
+                const align =
+                  (cell.column.columnDef.meta as { align?: string } | undefined)?.align ?? "left";
+                return (
+                  <TableCell
+                    key={cell.id}
+                    className={cn(
+                      cell.column.id === "attraction" && "max-w-0 w-full",
+                      cell.column.id === "alert" && "text-center",
+                      align === "right" && "text-right",
+                    )}
+                  >
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </TableCell>
+                );
+              })}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </div>
   );
 }

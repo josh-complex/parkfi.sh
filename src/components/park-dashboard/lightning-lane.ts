@@ -1,4 +1,4 @@
-import { QueueType } from "#/server/parks/codes.ts";
+import { HAUNTED_HOUSE_TAG, QueueType } from "#/server/parks/codes.ts";
 
 import type { BoardItem } from "./types.ts";
 
@@ -81,6 +81,19 @@ export function isSingleRiderName(name: string): boolean {
 /** The parent ride's name, with the "Single Rider" suffix stripped. */
 export function baseRideName(name: string): string {
   return name.replace(SINGLE_RIDER_RE, "").trim();
+}
+
+/**
+ * A Halloween Horror Nights house (`HAUNTED_HOUSE_TAG`), which the board lists
+ * in its own section: houses are ordinary ATTRACTION rows with real standby
+ * waits, but they only run on hard-ticket event nights, so all day they'd sit
+ * dead in the middle of an operating board. No tag (off-season, or the tile
+ * feed goes dark) just means no section.
+ */
+export function isHauntedHouse(item: {
+  meta?: { tags?: ReadonlyArray<string> | null } | null;
+}): boolean {
+  return item.meta?.tags?.includes(HAUNTED_HOUSE_TAG) ?? false;
 }
 
 /** Loose key for matching a single-rider row to its parent ride row. */

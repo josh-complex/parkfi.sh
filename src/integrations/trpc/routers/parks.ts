@@ -6,7 +6,7 @@ import { UOR_PARKS } from "#/lib/parks.ts";
 import { capacityFromUnits, type CapacityLevel } from "#/lib/ticket-scarcity.ts";
 import { geofenceBounds } from "#/server/achievements/geo.ts";
 import { buildLightningLaneDeepLink } from "#/server/notifications/lightningLaneDeepLink.ts";
-import { disneyCardUrl, QueueState, QueueType } from "#/server/parks/codes.ts";
+import { disneyCardUrl, HAUNTED_HOUSE_TAG, QueueState, QueueType } from "#/server/parks/codes.ts";
 import { config } from "#/server/parks/config.ts";
 import { suppressedFields } from "#/server/content/suppression.ts";
 import { publicProcedure } from "../init.ts";
@@ -612,6 +612,7 @@ export const parksRouter = {
       meta_image_hero_url: string | null;
       meta_image_alt: string | null;
       meta_image_thumbhash: string | null;
+      is_haunted_house: boolean;
       is_open: boolean | null;
       has_schedule: boolean;
     }>(sql`
@@ -653,6 +654,10 @@ export const parksRouter = {
              m.image_hero_url AS meta_image_hero_url,
              m.image_alt AS meta_image_alt,
              m.image_thumbhash AS meta_image_thumbhash,
+             -- Hard-ticket Halloween Horror Nights houses, which the Waits page
+             -- shelves separately from the park's rides (they only run on event
+             -- nights). Universal types them itself, via attraction_meta.tags.
+             coalesce(${HAUNTED_HOUSE_TAG}::text = ANY(m.tags), false) AS is_haunted_house,
              po.is_open, coalesce(po.has_schedule, false) AS has_schedule
       FROM attractions a
       JOIN parks p ON p.id = a.park_id AND p.active = true
@@ -693,6 +698,7 @@ export const parksRouter = {
         imageHeroUrl: r.meta_image_hero_url,
         imageAlt: r.meta_image_alt,
         imageThumbhash: r.meta_image_thumbhash,
+        hauntedHouse: r.is_haunted_house,
       };
     });
   }),

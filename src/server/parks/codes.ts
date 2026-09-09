@@ -869,10 +869,21 @@ export function parseHeightRequirementInches(label?: string | null): {
   return /shorter|under|maximum|below/i.test(text) ? { min: null, max: n } : { min: n, max: null };
 }
 
+/**
+ * The tag a Halloween Horror Nights house wears in `attraction_meta.tags` —
+ * Universal's own `HHNHouse` type, humanized below. It's the only marker that
+ * separates an event house from a ride: houses are ordinary ATTRACTION rows
+ * with real standby waits, but they run on hard-ticket event nights, so the
+ * wait surfaces list them in their own section. Shared with the client (the
+ * Waits page and the park board both read it), which is why it lives here
+ * rather than in either surface.
+ */
+export const HAUNTED_HOUSE_TAG = "Haunted House";
+
 /** "KidFriendly" / "Video3D4D" / "HHNHouse" -> "Kid Friendly" / "3D/4D" / "HHN House". */
 const UNIVERSAL_TYPE_LABELS: Record<string, string> = {
   Video3D4D: "3D/4D",
-  HHNHouse: "Haunted House",
+  HHNHouse: HAUNTED_HOUSE_TAG,
   WaterThrill: "Water Thrill",
   WaterFamily: "Water Family",
   WaterRelax: "Water Relax",
