@@ -71,6 +71,7 @@ export const CACHEABLE_TRPC_PATHS: ReadonlyMap<string, string> = new Map([
   ["dining.menu", CACHE.TRPC_DATA],
   ["dining.hours", CACHE.TRPC_DATA],
   ["dining.availability", CACHE.TRPC_DATA],
+  ["dining.offers", CACHE.TRPC_DATA],
   ["dining.restaurants", CACHE.TRPC_DATA],
   ["dining.picks", CACHE.TRPC_DATA],
   ["dining.menuChanges", CACHE.TRPC_DATA],

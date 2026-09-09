@@ -8,7 +8,14 @@ import { ExternalLinkIcon, PhoneIcon } from "lucide-react";
 
 import { DetailHero, HERO_BLEED, HERO_OVERLAY_TOP } from "#/components/detail-hero.tsx";
 import { DiningAlertButton } from "#/components/dining/dining-alert-button.tsx";
-import { taxonomyLabel } from "#/components/dining/dining-filters.ts";
+import {
+  byMealPeriod,
+  daysOutLabel,
+  offerTimeLabel,
+  taxonomyLabel,
+  type DayEntry,
+  type Offer,
+} from "#/components/dining/dining-filters.ts";
 import {
   hoursLabel,
   openStatus,
@@ -279,6 +286,8 @@ function DiningHero({
 }
 
 const PARTY_SIZES = [1, 2, 3, 4, 5, 6, 7, 8];
+/** Days in the availability strip under the picker. */
+const STRIP_DAYS = 7;
 const AVAIL_HORIZON = 60;
 const ISO = "yyyy-MM-dd";
 
@@ -294,6 +303,138 @@ function diningReserveUrl(urlFriendlyId: string | null, detailUrl: string | null
     return `https://disneyworld.disney.go.com/dine-res/restaurant/${urlFriendlyId}`;
   }
   return detailUrl;
+}
+
+/** Resolves an offer's link for the current platform, or null when unbookable. */
+type OfferHref = (deepLink: string | null) => string | null;
+
+/** Times per meal period before the "+N more" fold, and per nearest-day row. */
+const TIMES_PER_PERIOD = 8;
+const TIMES_PER_NEAREST_DAY = 3;
+
+/** A single bookable time. Inert when there's no link to send the guest to. */
+function TimeChip({ offer, href }: { offer: Offer; href: OfferHref }) {
+  const url = href(offer.deepLink);
+  const className =
+    "bg-primary text-primary-foreground rounded-md px-2.5 py-1.5 text-[13px] leading-none font-medium tabular-nums";
+  const label = offerTimeLabel(offer.time);
+  return url ? (
+    <a href={url} target="_blank" rel="noreferrer" className={cn(className, "hover:opacity-90")}>
+      {label}
+    </a>
+  ) : (
+    <span className={className}>{label}</span>
+  );
+}
+
+/**
+ * The selected day's real times, grouped by meal period — the thing a guest can
+ * actually act on, in place of a bare count. Long lists fold behind "+N more";
+ * mount it with a `key` on the date so the fold resets when the day changes.
+ */
+function OfferTimes({
+  offers,
+  loading,
+  href,
+}: {
+  offers: Array<Offer>;
+  loading: boolean;
+  href: OfferHref;
+}) {
+  const [expanded, setExpanded] = React.useState(false);
+  // Chip-shaped placeholders, so the block lands at roughly the height it will
+  // occupy rather than growing under whatever sits below it.
+  if (offers.length === 0)
+    return loading ? (
+      <div className="flex flex-wrap gap-1.5" aria-hidden>
+        {Array.from({ length: 6 }, (_, i) => (
+          <Skeleton key={i} className="h-[29px] w-[86px] rounded-md" />
+        ))}
+      </div>
+    ) : null;
+
+  const groups = byMealPeriod(offers);
+  const folded = groups.reduce((n, [, list]) => n + Math.max(0, list.length - TIMES_PER_PERIOD), 0);
+  return (
+    <div className="flex flex-col gap-2">
+      {groups.map(([period, list]) => (
+        <div
+          key={period}
+          className="flex flex-col gap-1.5 sm:grid sm:grid-cols-[5.5rem_1fr] sm:items-start sm:gap-x-3"
+        >
+          <span className="text-muted-foreground text-[11px] tracking-wide uppercase sm:pt-2">
+            {period}
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            {(expanded ? list : list.slice(0, TIMES_PER_PERIOD)).map((offer) => (
+              <TimeChip key={`${offer.mealPeriod}-${offer.time}`} offer={offer} href={href} />
+            ))}
+          </div>
+        </div>
+      ))}
+      {folded > 0 && !expanded && (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="text-muted-foreground w-fit text-xs underline underline-offset-2"
+        >
+          +{folded} more time{folded === 1 ? "" : "s"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A day that does have tables, offered when the chosen one doesn't. The date
+ * and the overflow both move the picker to that day, so the full-date case ends
+ * in a next step rather than a sentence.
+ */
+function NearestDayRow({
+  day,
+  offers,
+  todayIso,
+  href,
+  onPick,
+}: {
+  day: DayEntry;
+  offers: Array<Offer>;
+  todayIso: string;
+  href: OfferHref;
+  onPick: () => void;
+}) {
+  const shown = offers.slice(0, TIMES_PER_NEAREST_DAY);
+  const extra = day.offerCount - shown.length;
+  return (
+    <div className="bg-muted flex flex-wrap items-center gap-2 rounded-lg px-3 py-2">
+      <button
+        type="button"
+        onClick={onPick}
+        className="text-sm font-medium underline-offset-2 hover:underline"
+      >
+        {format(new Date(`${day.date}T00:00:00`), "EEE, MMM d")}
+      </button>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {shown.map((offer) => (
+          <TimeChip key={`${offer.mealPeriod}-${offer.time}`} offer={offer} href={href} />
+        ))}
+        {extra > 0 && (
+          <button
+            type="button"
+            onClick={onPick}
+            className="border-border text-muted-foreground rounded-md border border-dashed px-2 py-1.5 text-[13px] leading-none"
+          >
+            {shown.length > 0
+              ? `+${extra} more`
+              : `${day.offerCount} table${day.offerCount === 1 ? "" : "s"}`}
+          </button>
+        )}
+      </div>
+      <span className="text-muted-foreground ml-auto text-xs">
+        {daysOutLabel(todayIso, day.date)}
+      </span>
+    </div>
+  );
 }
 
 /**
@@ -354,9 +495,46 @@ function ReservationsSection({
     trpc.dining.availability.queryOptions({ facilityId, partySize, days: AVAIL_HORIZON }),
   );
   const days = availabilityQ.data?.find((e) => e.facilityId === facilityId)?.days ?? [];
-  const fromSelected = days.filter((d) => d.date >= selectedIso);
   const selected = days.find((d) => d.date === selectedIso);
   const dateLabel = date ? format(date, "EEE, MMM d") : "your date";
+
+  // The strip stays anchored on today and only slides once the chosen day would
+  // fall off its right edge — picking Wednesday must not hide Sunday through
+  // Tuesday, which is what slicing from the selected date used to do.
+  const stripDays = React.useMemo(() => {
+    const idx = days.findIndex((d) => d.date === selectedIso);
+    const start =
+      idx < 0 ? 0 : Math.max(0, Math.min(idx - (STRIP_DAYS - 1), days.length - STRIP_DAYS));
+    return days.slice(start, start + STRIP_DAYS);
+  }, [days, selectedIso]);
+
+  // The nearest days that *do* have tables, so a full date offers an exit
+  // instead of a dead end.
+  const nextOpen = React.useMemo(
+    () => days.filter((d) => d.date > selectedIso && d.available).slice(0, 2),
+    [days, selectedIso],
+  );
+
+  // Times are only fetched for what we actually render: the chosen day when it
+  // has tables, otherwise the two nearest days that do. Changing the date
+  // refetches this narrow query — the 60-day `availability` slice above doesn't.
+  const offerDates = React.useMemo(
+    () => (selected?.available ? [selectedIso] : nextOpen.map((d) => d.date)),
+    [selected?.available, selectedIso, nextOpen],
+  );
+  const offersQ = useQuery({
+    ...trpc.dining.offers.queryOptions({ facilityId, partySize, dates: offerDates }),
+    enabled: offerDates.length > 0,
+  });
+  const offersByDate = React.useMemo(
+    () => new Map((offersQ.data ?? []).map((e) => [e.date, e.offers])),
+    [offersQ.data],
+  );
+
+  // Native opens MDE at the exact offer; a browser can't resolve `mdx://` (and
+  // Universal offers carry no such link at all), so those fall back to the
+  // venue's own reservation page — the same target as the button below.
+  const chipHref = (deepLink: string | null) => (native && deepLink ? deepLink : webUrl);
 
   return (
     <section className="flex flex-col gap-3">
@@ -414,41 +592,91 @@ function ReservationsSection({
               {selected?.available ? (
                 <>
                   <span className="font-medium text-emerald-700 dark:text-emerald-400">
-                    {selected.offerCount} reservation{selected.offerCount === 1 ? "" : "s"}
+                    {selected.offerCount} table{selected.offerCount === 1 ? "" : "s"}
                   </span>{" "}
                   <span className="text-muted-foreground">
-                    on {dateLabel} · party of {partySize}
-                    {selected.mealPeriods.length > 0 ? ` · ${selected.mealPeriods.join(", ")}` : ""}
+                    on {dateLabel} · party of {partySize} · tap a time to book
                   </span>
                 </>
               ) : (
-                <span className="text-muted-foreground">
-                  No reservations on {dateLabel} for a party of {partySize} — try another date or
-                  party size, or set an alert.
-                </span>
+                <>
+                  <span className="font-medium">
+                    {selected ? `${dateLabel} is full` : `We haven't checked ${dateLabel} yet`}
+                  </span>{" "}
+                  <span className="text-muted-foreground">
+                    for a party of {partySize}.
+                    {nextOpen.length === 0 && " Try another party size or date."}
+                  </span>
+                </>
               )}
             </p>
+            {/* The picker's own row of days — pinned above everything that
+                loads or expands, so it never moves under the cursor. */}
+            {stripDays.length > 0 && (
+              <AvailabilityCalendar
+                days={stripDays}
+                windowDays={STRIP_DAYS}
+                referenceDate={todayIso}
+                selectedDate={selectedIso}
+                showCounts
+                onSelect={(d) => setDate(new Date(`${d}T00:00:00`))}
+              />
+            )}
+            {/* Open day: the day's real times, grouped by meal period. */}
+            {selected?.available && (
+              <OfferTimes
+                key={selectedIso}
+                offers={offersByDate.get(selectedIso) ?? []}
+                loading={offersQ.isLoading}
+                href={chipHref}
+              />
+            )}
+            {/* Full day: the nearest days that aren't, with their first times. */}
+            {!selected?.available && nextOpen.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <span className="text-muted-foreground text-[11px] tracking-wide uppercase">
+                  Nearest tables
+                </span>
+                {nextOpen.map((d) => (
+                  <NearestDayRow
+                    key={d.date}
+                    day={d}
+                    offers={offersByDate.get(d.date) ?? []}
+                    todayIso={todayIso}
+                    href={chipHref}
+                    onPick={() => setDate(new Date(`${d.date}T00:00:00`))}
+                  />
+                ))}
+              </div>
+            )}
             {selected?.available &&
               // Native: the `mdx://` link opens MDE straight into the booking
-              // flow. Web: that scheme dead-ends in a browser, so fall back to
-              // Disney's reservable venue page.
+              // flow. Web (and every Universal venue, which has no such scheme)
+              // falls back to the venue's own reservation page. Demoted to a
+              // secondary action once the chips above carry a link per offer.
               (() => {
-                const href = native ? selected.deepLink : webUrl;
+                const mde = native ? selected.deepLink : null;
+                const href = mde ?? webUrl;
                 if (!href) return null;
+                // The server only builds an `mdx://` link for Disney-sourced
+                // venues, so its presence is also the "whose site is this" test.
+                const where = mde
+                  ? "in Disney App"
+                  : selected.deepLink
+                    ? "on Disney.com"
+                    : "on the official site";
                 return (
                   <Button
                     size="sm"
+                    variant="outline"
                     className="w-fit gap-1.5"
                     render={<a href={href} target="_blank" rel="noreferrer" />}
                   >
-                    {native ? "Book in Disney App" : "Reserve on Disney.com"}
+                    Open {where}
                     <ExternalLinkIcon className="size-3.5" />
                   </Button>
                 );
               })()}
-            {fromSelected.length > 0 && (
-              <AvailabilityCalendar days={fromSelected} windowDays={7} referenceDate={todayIso} />
-            )}
           </div>
         ) : (
           <p className="py-4 text-center text-sm text-muted-foreground">

@@ -100,6 +100,49 @@ export interface DayEntry {
   observedAt: string;
 }
 
+/** One bookable time from `dining.offers`, with its own MDE deep link. */
+export interface Offer {
+  time: string;
+  mealPeriod: string;
+  /** Null for Universal venues — `mdx://` is My Disney Experience's scheme. */
+  deepLink: string | null;
+}
+
+/** "17:15:00" → "5:15 PM". Offer times are park-local, never UTC. */
+export function offerTimeLabel(time: string): string {
+  const [h, m] = time.split(":");
+  const hour = Number(h);
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${hour12}:${m} ${hour < 12 ? "AM" : "PM"}`;
+}
+
+/**
+ * Offers bucketed by meal period. `dining.offers` returns them time-ordered, so
+ * both the buckets and their contents come out earliest-first — which is also
+ * the order guests read (breakfast, lunch, dinner) without hard-coding names
+ * Disney sometimes writes as "Jaleo Lunch".
+ */
+export function byMealPeriod(offers: Array<Offer>): Array<[string, Array<Offer>]> {
+  const groups = new Map<string, Array<Offer>>();
+  for (const offer of offers) {
+    const list = groups.get(offer.mealPeriod);
+    if (list) list.push(offer);
+    else groups.set(offer.mealPeriod, [offer]);
+  }
+  return [...groups.entries()];
+}
+
+/** "today" / "tomorrow" / "in 4 days" — how far out a nearest-day row sits. */
+export function daysOutLabel(todayIso: string, dateIso: string): string {
+  const diff = Math.round(
+    (new Date(`${dateIso}T00:00:00`).getTime() - new Date(`${todayIso}T00:00:00`).getTime()) /
+      86_400_000,
+  );
+  if (diff <= 0) return "today";
+  if (diff === 1) return "tomorrow";
+  return `in ${diff} days`;
+}
+
 export interface AvailabilityEntry {
   facilityId: string;
   name: string;

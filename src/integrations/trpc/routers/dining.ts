@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "#/db/index.ts";
 import { suppressedFields } from "#/server/content/suppression.ts";
 import { buildDiningDeepLink } from "#/server/notifications/diningFormat.ts";
+import { Source } from "#/server/parks/codes.ts";
 import { config } from "#/server/parks/config.ts";
 import { publicProcedure } from "../init.ts";
 
@@ -1026,6 +1027,7 @@ export const diningRouter = {
       const result = await db.execute<{
         facility_id: string;
         name: string;
+        source: number;
         service_date: string;
         observed_at: string;
         available: boolean;
@@ -1057,7 +1059,7 @@ export const diningRouter = {
             AND lt.observed_at = d.observed_at
           GROUP BY d.facility_id, d.service_date, lt.observed_at
         )
-        SELECT r.facility_id, r.name,
+        SELECT r.facility_id, r.name, r.source,
                s.service_date, s.observed_at, s.available,
                s.offer_count, s.earliest_offer_time, s.meal_periods
         FROM restaurant_dim r
@@ -1101,7 +1103,10 @@ export const diningRouter = {
           mealPeriods: row.meal_periods ?? [],
           observedAt: row.observed_at,
           deepLink:
-            row.available && row.earliest_offer_time
+            row.available &&
+            row.earliest_offer_time &&
+            // Universal venues are swept too, and `mdx://` is Disney-only.
+            Number(row.source) === Source.DISNEY_DIRECT
               ? buildDiningDeepLink({
                   facilityId: row.facility_id,
                   partySize: input.partySize,
@@ -1114,5 +1119,95 @@ export const diningRouter = {
       }
 
       return [...byFacility.values()];
+    }),
+
+  /**
+   * The actual bookable times behind `availability`'s per-day counts, for a
+   * handful of dates at one venue. `availability` deliberately collapses a day
+   * to `count(*)` + `min(offer_time)` because it spans 60 days × every priority
+   * venue; the individual offers are only ever wanted for the day the guest is
+   * looking at (and the nearest days with tables), so they get their own narrow
+   * query rather than fattening that payload.
+   *
+   * Each offer carries its own MDE deep link, pre-scoped to that exact time —
+   * the same link shape the alert mailer sends, so a tapped time lands in the
+   * booking flow instead of on the venue's search page.
+   */
+  offers: publicProcedure
+    .input(
+      z.object({
+        facilityId: z.string(),
+        partySize: z.number().int().min(1).max(8).default(2),
+        // The selected day plus the nearest days with tables — a small, bounded
+        // set. Anything larger belongs in `availability`.
+        dates: z
+          .array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/))
+          .min(1)
+          .max(5),
+      }),
+    )
+    .query(async ({ input }) => {
+      // A bare JS array interpolates as a record, not an array literal — so the
+      // date list is built the same way the rest of the routers build one.
+      const dateArray = sql`ARRAY[${sql.join(
+        input.dates.map((d) => sql`${d}`),
+        sql`, `,
+      )}]::date[]`;
+
+      const result = await db.execute<{
+        service_date: string;
+        meal_period: string;
+        offer_time: string;
+        source: number;
+      }>(sql`
+        WITH latest_ts AS (
+          SELECT service_date, max(observed_at) AS observed_at
+          FROM dining_obs
+          WHERE facility_id = ${input.facilityId}
+            AND party_size = ${input.partySize}
+            AND service_date = ANY(${dateArray})
+          GROUP BY service_date
+        )
+        SELECT DISTINCT d.service_date, d.meal_period, d.offer_time, r.source
+        FROM dining_obs d
+        JOIN latest_ts lt
+          ON lt.service_date = d.service_date
+          AND lt.observed_at = d.observed_at
+        JOIN restaurant_dim r ON r.facility_id = d.facility_id
+        WHERE d.facility_id = ${input.facilityId}
+          AND d.party_size = ${input.partySize}
+          -- '' is the "nothing available" sentinel row, not a bookable offer.
+          AND d.meal_period <> ''
+        ORDER BY d.service_date, d.offer_time
+      `);
+
+      const byDate = new Map<
+        string,
+        Array<{ time: string; mealPeriod: string; deepLink: string | null }>
+      >();
+      for (const row of result.rows) {
+        const date = String(row.service_date).slice(0, 10);
+        const offers = byDate.get(date) ?? [];
+        offers.push({
+          time: row.offer_time,
+          mealPeriod: row.meal_period,
+          // `mdx://` is My Disney Experience's scheme — the sweep also covers 15
+          // Universal venues, which have no equivalent, so they get no link and
+          // the caller falls back to the operator's own page.
+          deepLink:
+            Number(row.source) === Source.DISNEY_DIRECT
+              ? buildDiningDeepLink({
+                  facilityId: input.facilityId,
+                  partySize: input.partySize,
+                  serviceDate: date,
+                  offerTime: row.offer_time,
+                  completionDeepLink: `${config.appBaseUrl}/dining/${input.facilityId}`,
+                })
+              : null,
+        });
+        byDate.set(date, offers);
+      }
+
+      return [...byDate.entries()].map(([date, offers]) => ({ date, offers }));
     }),
 } satisfies TRPCRouterRecord;

@@ -28,10 +28,19 @@ export function AvailabilityCalendar({
   days,
   windowDays,
   referenceDate,
+  selectedDate,
+  onSelect,
+  showCounts = false,
 }: {
   days: Array<DayEntry>;
   windowDays: number;
   referenceDate: string;
+  /** Outlined day, when the strip sits under a date picker it should track. */
+  selectedDate?: string;
+  /** Makes each day a button that moves the picker — omit for a read-only strip. */
+  onSelect?: (date: string) => void;
+  /** Prints the table count on the tile instead of hiding it in a tooltip. */
+  showCounts?: boolean;
 }) {
   const shown = days.slice(0, Math.min(windowDays, 7));
   return (
@@ -41,24 +50,41 @@ export function AvailabilityCalendar({
         const dayName = date.toLocaleDateString("en-US", { weekday: "short" });
         const dayNum = date.getDate();
         const isToday = d.date === referenceDate;
-        return (
-          <div
-            key={d.date}
-            title={
-              d.available
-                ? `${d.offerCount} slot${d.offerCount === 1 ? "" : "s"}`
-                : "No availability"
-            }
-            className={cn(
-              "flex flex-1 flex-col items-center gap-0.5 rounded py-1",
-              d.available
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground/60",
-              isToday && "ring-2 ring-inset ring-foreground/20",
-            )}
-          >
+        const label = d.available
+          ? `${d.offerCount} table${d.offerCount === 1 ? "" : "s"}`
+          : "No tables";
+        const className = cn(
+          "flex flex-1 flex-col items-center gap-0.5 rounded py-1",
+          d.available ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground/60",
+          isToday && "ring-2 ring-inset ring-foreground/20",
+          d.date === selectedDate && "outline-foreground/70 outline-2 outline-offset-1",
+          onSelect && "cursor-pointer transition-opacity hover:opacity-85",
+        );
+        const body = (
+          <>
             <span className="text-[10px] leading-none">{dayName}</span>
             <span className="text-xs font-medium leading-none">{dayNum}</span>
+            {showCounts && (
+              <span className="text-[10px] leading-none tabular-nums opacity-90">
+                {d.available ? d.offerCount : "—"}
+              </span>
+            )}
+          </>
+        );
+        return onSelect ? (
+          <button
+            key={d.date}
+            type="button"
+            title={label}
+            aria-label={`${date.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })} — ${label}`}
+            onClick={() => onSelect(d.date)}
+            className={className}
+          >
+            {body}
+          </button>
+        ) : (
+          <div key={d.date} title={label} className={className}>
+            {body}
           </div>
         );
       })}
