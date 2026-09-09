@@ -35,12 +35,22 @@ function handler({ request }: { request: Request }) {
     // stable URL. `trpcCacheControl` picks the per-path policy (and the shortest
     // TTL if a batch ever mixes paths), returning undefined for any unlisted
     // path so mutations and auth-scoped/non-listed queries stay uncached.
+    //
+    // EVERYTHING ELSE MUST SAY `private, no-store` EXPLICITLY — silence is not
+    // "don't cache". tRPC sends *queries* as GET (only mutations are POST), so
+    // auth-scoped reads travel on cacheable URLs, and a Cloudflare cache rule
+    // that makes /api/trpc eligible for cache will apply its own default TTL to
+    // any response whose origin omitted `cache-control`. That is exactly how the
+    // admin blog queue got pinned to a half-hour-old copy of itself
+    // (`cf-cache-status: HIT`, `age: 1927` on a `blog.drafts` batch) — the same
+    // failure the `no-cache-html` plugin exists to prevent for HTML shells.
+    // `private` keeps it out of shared caches; `no-store` stops disk reuse too.
     responseMeta({ paths, type, errors }) {
       if (type === "query" && errors.length === 0 && paths) {
         const cacheControl = trpcCacheControl(paths);
         if (cacheControl) return { headers: { "cache-control": cacheControl } };
       }
-      return {};
+      return { headers: { "cache-control": "private, no-store" } };
     },
   });
 }
