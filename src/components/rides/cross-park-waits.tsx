@@ -21,7 +21,6 @@ import {
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
-import { Carousel, CarouselArrows, CarouselContent } from "#/components/ui/carousel.tsx";
 import { LazyMount } from "#/components/ui/lazy-mount.tsx";
 import {
   Drawer,
@@ -49,7 +48,9 @@ import {
   RailCardMeta,
   RailCardTitle,
   RailItem,
-  SHELF_VIEWPORT,
+  RailShelf,
+  RailShelfHeader,
+  RailTrack,
 } from "#/components/ui/rail.tsx";
 
 type Ride = {
@@ -574,39 +575,27 @@ export function CrossParkWaits() {
           // px-4/lg:px-6) so the card track scrolls flush to the device edge; the
           // heading, resting cards, and list re-inset to stay aligned.
           const section = (
-            <Carousel
-              key={g.key}
-              opts={{ align: "start", dragFree: true }}
-              className="-mx-4 lg:-mx-6"
-            >
-              <section className="flex flex-col gap-3">
-                <div className="flex items-end justify-between gap-4 px-4 lg:px-6">
-                  <div className="flex min-w-0 flex-col gap-0.5">
-                    <h3 className="truncate text-lg font-semibold tracking-tight">{g.title}</h3>
-                    <p className="truncate text-sm text-muted-foreground">{g.subtitle}</p>
-                  </div>
-                  <CarouselArrows className="hidden shrink-0 md:flex" />
-                </div>
+            <RailShelf key={g.key}>
+              <RailShelfHeader title={g.title} subtitle={g.subtitle} />
 
-                {view === "grid" ? (
-                  <CarouselContent className="-ml-4" viewportClassName={SHELF_VIEWPORT}>
+              {view === "grid" ? (
+                <RailTrack>
+                  {g.rides.map((r, i) => (
+                    <RailItem key={r.id}>
+                      <RideCard ride={r} eager={gi === 0 && i < 5} />
+                    </RailItem>
+                  ))}
+                </RailTrack>
+              ) : (
+                <div className="px-4 lg:px-6">
+                  <div className="mx-auto flex w-full max-w-3xl flex-col rounded-2xl border bg-card/40 p-1">
                     {g.rides.map((r, i) => (
-                      <RailItem key={r.id}>
-                        <RideCard ride={r} eager={gi === 0 && i < 5} />
-                      </RailItem>
+                      <RideRow key={r.id} ride={r} eager={gi === 0 && i < 10} />
                     ))}
-                  </CarouselContent>
-                ) : (
-                  <div className="px-4 lg:px-6">
-                    <div className="mx-auto flex w-full max-w-3xl flex-col rounded-2xl border bg-card/40 p-1">
-                      {g.rides.map((r, i) => (
-                        <RideRow key={r.id} ride={r} eager={gi === 0 && i < 10} />
-                      ))}
-                    </div>
                   </div>
-                )}
-              </section>
-            </Carousel>
+                </div>
+              )}
+            </RailShelf>
           );
           // First two parks mount eagerly — enough real content to fill the
           // first viewport — and the rest defer until scrolled near or their

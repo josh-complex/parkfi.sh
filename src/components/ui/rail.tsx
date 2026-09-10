@@ -2,7 +2,12 @@
 
 import * as React from "react";
 
-import { CarouselItem } from "#/components/ui/carousel.tsx";
+import {
+  Carousel,
+  CarouselArrows,
+  CarouselContent,
+  CarouselItem,
+} from "#/components/ui/carousel.tsx";
 import { cn } from "#/lib/utils.ts";
 
 /**
@@ -12,9 +17,12 @@ import { cn } from "#/lib/utils.ts";
  * 1. `ChipRail` + `RailChip` — the quick-filter pill row that tucks under a
  *    header (cuisine on Eats, area on Stays, resort on Tickets, category on
  *    Waits, jump-to-section on a menu).
- * 2. `SHELF_VIEWPORT` + `RailItem` — the viewport and the per-card width ladder
- *    for a full-bleed `Carousel` shelf, so every shelf hits the page gutter and
- *    shows the same number of cards at a given width.
+ * 2. `RailShelf` + `RailShelfHeader` + `RailTrack` + `RailItem` — the shelf
+ *    itself: the full-bleed carousel, its title/subtitle/arrows row, the track,
+ *    and the per-card width ladder. Split into parts rather than one closed
+ *    component because a couple of shelves put something else in the section
+ *    (the Waits board swaps the track for a list view; a badge family adds a
+ *    progress bar under it).
  * 3. `RailCard` and friends — the card that rides in one of those shelves:
  *    4:3 art with badges over it, then a title and a line or two of meta. Every
  *    shelf in the app (rides, resorts, restaurants, shows, tickets, menu items)
@@ -102,6 +110,88 @@ export function RailChip({
       {...props}
     />
   );
+}
+
+/**
+ * A full-bleed shelf: the carousel that bleeds past the page gutter, wrapping a
+ * `<section>` that holds a `RailShelfHeader`, a `RailTrack`, and whatever else
+ * the shelf needs. Embla options are fixed here (`align: "start"`, `dragFree`) so
+ * every shelf in the app flicks identically.
+ *
+ * `className` styles the section — the thing callers actually tweak (extra top
+ * padding, say). `carouselClassName` is the escape hatch for the bleeding outer
+ * element, which only wants touching to add outer margin.
+ */
+export function RailShelf({
+  className,
+  carouselClassName,
+  children,
+  ...props
+}: React.ComponentProps<"section"> & { carouselClassName?: string }) {
+  return (
+    <Carousel
+      opts={{ align: "start", dragFree: true }}
+      className={cn("-mx-4 lg:-mx-6", carouselClassName)}
+    >
+      <section data-slot="rail-shelf" className={cn("flex flex-col gap-3", className)} {...props}>
+        {children}
+      </section>
+    </Carousel>
+  );
+}
+
+/**
+ * A shelf's title row: heading and blurb on the left, the desktop prev/next pair
+ * on the right (they hide themselves when there's nothing to scroll). Both text
+ * slots take nodes, so a shelf whose heading is a button — tapping a Stays tier
+ * heading filters to it — passes that button as `title` and keeps the heading
+ * semantics.
+ *
+ * The title/subtitle truncate rather than wrap, so a long park or resort name
+ * can't push the arrows off the row; `titleClassName`/`subtitleClassName` are for
+ * the one or two shelves with their own type treatment. `arrows={false}` for a
+ * header outside a carousel — a loading ghost, which has nothing to scroll yet.
+ */
+export function RailShelfHeader({
+  title,
+  subtitle,
+  arrows = true,
+  className,
+  titleClassName,
+  subtitleClassName,
+  ...props
+}: Omit<React.ComponentProps<"div">, "title"> & {
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
+  arrows?: boolean;
+  titleClassName?: string;
+  subtitleClassName?: string;
+}) {
+  return (
+    <div
+      data-slot="rail-shelf-header"
+      className={cn("flex items-end justify-between gap-4", SHELF_VIEWPORT, className)}
+      {...props}
+    >
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <h3 className={cn("truncate text-lg font-semibold tracking-tight", titleClassName)}>
+          {title}
+        </h3>
+        {subtitle ? (
+          <p className={cn("truncate text-sm text-muted-foreground", subtitleClassName)}>
+            {subtitle}
+          </p>
+        ) : null}
+      </div>
+      {arrows ? <CarouselArrows className="hidden shrink-0 md:flex" /> : null}
+    </div>
+  );
+}
+
+/** A shelf's scrolling track. Holds `RailItem`s; the negative gutter that pairs
+ *  with their `pl-4` is `CarouselContent`'s own default. */
+export function RailTrack({ ...props }: React.ComponentProps<typeof CarouselContent>) {
+  return <CarouselContent data-slot="rail-track" viewportClassName={SHELF_VIEWPORT} {...props} />;
 }
 
 /** One slot in a shelf's carousel track: the shared width ladder plus the track's

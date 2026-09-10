@@ -7,14 +7,15 @@ import { useStore } from "@tanstack/react-store";
 import { PickCard, type PickVenue } from "#/components/dining/dining-picks.tsx";
 import { diningStore } from "#/components/dining/dining-store.ts";
 import { parkNowMinutes, type ScheduleEntry } from "#/components/dining/dining-hours.ts";
-import { Carousel, CarouselArrows, CarouselContent } from "#/components/ui/carousel.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { cn } from "#/lib/utils.ts";
 import {
   RAIL_GHOST_GRID,
   RAIL_MEDIA_ASPECT,
   RailItem,
-  SHELF_VIEWPORT,
+  RailShelf,
+  RailShelfHeader,
+  RailTrack,
 } from "#/components/ui/rail.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
@@ -45,29 +46,21 @@ function Shelf({
 }) {
   if (!venues.length) return null;
   return (
-    <Carousel opts={{ align: "start", dragFree: true }} className="-mx-4 lg:-mx-6">
-      <section className="flex flex-col gap-3">
-        <div className="flex items-end justify-between gap-4 px-4 lg:px-6">
-          <div className="flex flex-col gap-0.5">
-            <h3 className="text-lg font-semibold tracking-tight">{title}</h3>
-            <p className="text-muted-foreground text-sm">{subtitle}</p>
-          </div>
-          <CarouselArrows className="hidden md:flex" />
-        </div>
-        <CarouselContent className="-ml-4" viewportClassName={SHELF_VIEWPORT}>
-          {venues.map((v) => (
-            <RailItem key={v.facilityId}>
-              <PickCard
-                venue={v}
-                nextAvail={nextAvail.get(v.facilityId)}
-                schedules={hoursMap.get(v.facilityId)}
-                nowMin={nowMin}
-              />
-            </RailItem>
-          ))}
-        </CarouselContent>
-      </section>
-    </Carousel>
+    <RailShelf>
+      <RailShelfHeader title={title} subtitle={subtitle} />
+      <RailTrack>
+        {venues.map((v) => (
+          <RailItem key={v.facilityId}>
+            <PickCard
+              venue={v}
+              nextAvail={nextAvail.get(v.facilityId)}
+              schedules={hoursMap.get(v.facilityId)}
+              nowMin={nowMin}
+            />
+          </RailItem>
+        ))}
+      </RailTrack>
+    </RailShelf>
   );
 }
 

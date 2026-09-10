@@ -1,4 +1,4 @@
-import { disneyHeroUrl } from "../parks/codes.ts";
+import { disneyHeroUrl, operatorSiteUrl } from "../parks/codes.ts";
 import { config } from "../parks/config.ts";
 import { DisneyMerchandiseListSchema, type DisneyMerchandiseEntity } from "../parks/schemas.ts";
 import { UpstreamError } from "../parks/sources/themeparks.ts";
@@ -41,10 +41,7 @@ async function getJson(url: string, signal: AbortSignal): Promise<unknown> {
 
 /** Resolve a finder detail link (relative or http) to an absolute https URL. */
 function resolveDetailUrl(entity: DisneyMerchandiseEntity): string | null {
-  const href = entity.webLinks?.wdwDetail?.href ?? entity.url ?? null;
-  if (!href) return null;
-  if (/^https?:\/\//i.test(href)) return href.replace(/^http:/, "https:");
-  return `${config.disneyTicketBase}${href.startsWith("/") ? "" : "/"}${href}`;
+  return operatorSiteUrl(entity.webLinks?.wdwDetail?.href ?? entity.url, config.disneyTicketBase);
 }
 
 function toRow(entity: DisneyMerchandiseEntity): ShopCatalogRow {

@@ -42,7 +42,6 @@ import { SortDirToggle, SortRows, flipDir, type SortDir } from "#/components/ui/
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Calendar } from "#/components/ui/calendar.tsx";
-import { Carousel, CarouselArrows, CarouselContent } from "#/components/ui/carousel.tsx";
 import { Empty, EmptyDescription, EmptyTitle } from "#/components/ui/empty.tsx";
 import { Image } from "#/components/ui/image.tsx";
 import { Label } from "#/components/ui/label.tsx";
@@ -81,7 +80,9 @@ import {
   RailCardMeta,
   RailCardTitle,
   RailItem,
-  SHELF_VIEWPORT,
+  RailShelf,
+  RailShelfHeader,
+  RailTrack,
 } from "#/components/ui/rail.tsx";
 import { disneyThumbUrl } from "#/server/parks/codes.ts";
 import {
@@ -897,42 +898,35 @@ function BrowseView({
   return (
     <div className="flex flex-col gap-4">
       {groups.map(({ meta, resorts }) => (
-        <Carousel
-          key={meta.key}
-          opts={{ align: "start", dragFree: true }}
-          className="-mx-4 lg:-mx-6"
-        >
-          <section className="flex flex-col gap-3">
-            <div className="flex items-end justify-between gap-4 px-4 lg:px-6">
-              <div className="flex flex-col gap-0.5">
-                <button
-                  type="button"
-                  onClick={() => onPickTier(meta.key)}
-                  className="text-left text-lg font-semibold tracking-tight hover:underline"
-                >
-                  {meta.heading}
-                </button>
-                <p className="text-muted-foreground text-sm">{meta.blurb}</p>
-              </div>
-              <CarouselArrows className="hidden md:flex" />
-            </div>
-            <CarouselContent className="-ml-4" viewportClassName={SHELF_VIEWPORT}>
-              {resorts.map((r) => (
-                <RailItem key={r.id}>
-                  <ResortCard
-                    name={r.name}
-                    area={r.area}
-                    image={r.image}
-                    imageThumbhash={r.imageThumbhash}
-                    detailUrl={r.detailUrl}
-                    slug={r.slug}
-                    tier={r.tier}
-                  />
-                </RailItem>
-              ))}
-            </CarouselContent>
-          </section>
-        </Carousel>
+        <RailShelf key={meta.key}>
+          <RailShelfHeader
+            title={
+              <button
+                type="button"
+                onClick={() => onPickTier(meta.key)}
+                className="text-left hover:underline"
+              >
+                {meta.heading}
+              </button>
+            }
+            subtitle={meta.blurb}
+          />
+          <RailTrack>
+            {resorts.map((r) => (
+              <RailItem key={r.id}>
+                <ResortCard
+                  name={r.name}
+                  area={r.area}
+                  image={r.image}
+                  imageThumbhash={r.imageThumbhash}
+                  detailUrl={r.detailUrl}
+                  slug={r.slug}
+                  tier={r.tier}
+                />
+              </RailItem>
+            ))}
+          </RailTrack>
+        </RailShelf>
       ))}
     </div>
   );

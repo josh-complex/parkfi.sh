@@ -18,7 +18,6 @@ import {
   CardHeader,
   CardTitle,
 } from "#/components/ui/card.tsx";
-import { Carousel, CarouselArrows, CarouselContent } from "#/components/ui/carousel.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { cn } from "#/lib/utils.ts";
@@ -30,7 +29,9 @@ import {
   RailCardMeta,
   RailCardTitle,
   RailItem,
-  SHELF_VIEWPORT,
+  RailShelf,
+  RailShelfHeader,
+  RailTrack,
 } from "#/components/ui/rail.tsx";
 
 function formatPrice(price: number | null, currency: string | null): string | null {
@@ -266,36 +267,31 @@ export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug:
       {/* Same item name at other venues — many items recur verbatim across the
           resort, and the shared title slug deep-links to each venue's copy. */}
       {elsewhere.length > 0 && (
-        <Carousel opts={{ align: "start", dragFree: true }} className="-mx-4 mt-2 lg:-mx-6">
-          <section className="flex flex-col gap-3">
-            <div className="flex items-end justify-between gap-4 px-4 lg:px-6">
-              <div className="flex flex-col gap-0.5">
-                <h3 className="text-lg font-semibold tracking-tight">Also found at</h3>
-                <p className="text-sm text-muted-foreground">
-                  {elsewhere.length === 1
-                    ? "One other location serves an item by this name"
-                    : `${elsewhere.length} other locations serve an item by this name`}
-                </p>
-              </div>
-              <CarouselArrows className="hidden md:flex" />
-            </div>
-            <CarouselContent className="-ml-4" viewportClassName={SHELF_VIEWPORT}>
-              {elsewhere.map((e) => (
-                <RailItem key={e.facilityId}>
-                  <ElsewhereCard
-                    facilityId={e.facilityId}
-                    slug={slug}
-                    name={e.name}
-                    parkResort={e.parkResort}
-                    imageUrl={e.imageUrl}
-                    price={e.price}
-                    currency={e.currency}
-                  />
-                </RailItem>
-              ))}
-            </CarouselContent>
-          </section>
-        </Carousel>
+        <RailShelf carouselClassName="mt-2">
+          <RailShelfHeader
+            title="Also found at"
+            subtitle={
+              elsewhere.length === 1
+                ? "One other location serves an item by this name"
+                : `${elsewhere.length} other locations serve an item by this name`
+            }
+          />
+          <RailTrack>
+            {elsewhere.map((e) => (
+              <RailItem key={e.facilityId}>
+                <ElsewhereCard
+                  facilityId={e.facilityId}
+                  slug={slug}
+                  name={e.name}
+                  parkResort={e.parkResort}
+                  imageUrl={e.imageUrl}
+                  price={e.price}
+                  currency={e.currency}
+                />
+              </RailItem>
+            ))}
+          </RailTrack>
+        </RailShelf>
       )}
 
       {/* Tracked-range stats — its own card now that the price lives above. */}

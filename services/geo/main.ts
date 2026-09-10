@@ -62,6 +62,8 @@ import {
   normalizeUniversalName,
   parseDisneyFacets,
   Source,
+  operatorSiteUrl,
+  UNIVERSAL_WEB_ORIGIN,
   universalDetailUrl,
   universalLandLabel,
   universalPlaceImages,
@@ -331,9 +333,7 @@ async function upsertAttractionMeta(
 
 /** Resolve a finder `card.url` (usually a relative path) to an absolute URL. */
 function resolveDetailUrl(url?: string | null): string | null {
-  if (!url) return null;
-  if (/^https?:\/\//i.test(url)) return url;
-  return `${config.disneyTicketBase}${url.startsWith("/") ? "" : "/"}${url}`;
+  return operatorSiteUrl(url, config.disneyTicketBase);
 }
 
 // The finder marker `type`s that aren't attractions/dining/shops — the
@@ -1447,7 +1447,7 @@ async function upsertUniversalPoi(
           category === "info" || !trustedUniversalPoiVenue(venueId)
             ? null
             : universalAssetUrl(poi.ListImage ?? poi.ThumbnailImage ?? null),
-        detailUrl: poi.SiteUrl ?? null,
+        detailUrl: operatorSiteUrl(poi.SiteUrl, UNIVERSAL_WEB_ORIGIN),
         schedule: universalShowtimes(poi),
         source: Source.UNIVERSAL_DIRECT,
       });

@@ -18,7 +18,6 @@ import { diningStore } from "#/components/dining/dining-store.ts";
 import { cn } from "#/lib/utils.ts";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Image } from "#/components/ui/image.tsx";
-import { Carousel, CarouselArrows, CarouselContent } from "#/components/ui/carousel.tsx";
 import { LazyMount } from "#/components/ui/lazy-mount.tsx";
 import { ShelfGhost } from "#/components/skeletons.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
@@ -32,7 +31,9 @@ import {
   RailCardMeta,
   RailCardTitle,
   RailItem,
-  SHELF_VIEWPORT,
+  RailShelf,
+  RailShelfHeader,
+  RailTrack,
 } from "#/components/ui/rail.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
@@ -228,29 +229,21 @@ export function DiningPicks({
             />
           }
         >
-          <Carousel opts={{ align: "start", dragFree: true }} className="-mx-4 lg:-mx-6">
-            <section className="flex flex-col gap-3">
-              <div className="flex items-end justify-between gap-4 px-4 lg:px-6">
-                <div className="flex flex-col gap-0.5">
-                  <h3 className="text-lg font-semibold tracking-tight">{shelf.title}</h3>
-                  <p className="text-muted-foreground text-sm">{shelf.subtitle}</p>
-                </div>
-                <CarouselArrows className="hidden md:flex" />
-              </div>
-              <CarouselContent className="-ml-4" viewportClassName={SHELF_VIEWPORT}>
-                {shelf.venues.map((v) => (
-                  <RailItem key={v.facilityId}>
-                    <PickCard
-                      venue={v}
-                      nextAvail={nextAvail.get(v.facilityId)}
-                      schedules={hoursMap.get(v.facilityId)}
-                      nowMin={nowMin}
-                    />
-                  </RailItem>
-                ))}
-              </CarouselContent>
-            </section>
-          </Carousel>
+          <RailShelf>
+            <RailShelfHeader title={shelf.title} subtitle={shelf.subtitle} />
+            <RailTrack>
+              {shelf.venues.map((v) => (
+                <RailItem key={v.facilityId}>
+                  <PickCard
+                    venue={v}
+                    nextAvail={nextAvail.get(v.facilityId)}
+                    schedules={hoursMap.get(v.facilityId)}
+                    nowMin={nowMin}
+                  />
+                </RailItem>
+              ))}
+            </RailTrack>
+          </RailShelf>
         </LazyMount>
       ))}
     </div>

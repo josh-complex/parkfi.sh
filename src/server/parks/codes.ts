@@ -771,12 +771,53 @@ export function universalLandLabel(landId?: string | null): string | null {
   return label || null;
 }
 
-/** The official detail-page URL from a place's `urls[]`, if present. */
+/** Origins the operators' feeds root their site-relative URLs at. Hardcoded
+ *  rather than read from the ingest config: these are the public websites, not
+ *  tunable endpoints, and this module is a dependency-free helpers file. The
+ *  Disney one is only a default — the finder ingests pass `disneyTicketBase`, so
+ *  `DISNEY_TICKET_BASE` still redirects them. */
+export const UNIVERSAL_WEB_ORIGIN = "https://www.universalorlando.com";
+export const DISNEY_WEB_ORIGIN = "https://disneyworld.disney.go.com";
+
+/**
+ * Absolutize an operator's site URL against `origin`, or null if it can't be
+ * one. Both feeds need this and both need it for a different reason:
+ *
+ * - Universal's places feed mixes absolute `https://www.universalorlando.com/…`
+ *   URLs with site-relative paths (`/web/en/us/things-to-do/dining/…`). Stored
+ *   raw, a relative one becomes a "View on the official site" link that resolves
+ *   against *our* origin and 404s on parkfi.sh.
+ * - The feeds also put non-URLs in these fields. Universal's mobile-services POI
+ *   records carry the literal string `"Placeholder"` where a show has no page
+ *   yet, which as a bare href points at parkfi.sh/Placeholder.
+ *
+ * So a value has to look like a URL to survive: absolute, rooted at `/`, or at
+ * least containing a path separator. Bare words are dropped. `http:` is upgraded
+ * to `https:` — both operators are https-only and the feeds are inconsistent.
+ */
+export function operatorSiteUrl(raw: string | null | undefined, origin: string): string | null {
+  const href = (raw ?? "").trim();
+  if (!href) return null;
+  if (!/^https?:\/\//i.test(href) && !href.includes("/")) return null;
+  try {
+    const url = new URL(href, origin);
+    if (url.protocol === "http:") url.protocol = "https:";
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The official detail-page URL from a place's `urls[]`, if present — always
+ * absolute (see `operatorSiteUrl` for why that isn't a given).
+ */
 export function universalDetailUrl(
   urls?: Array<{ url?: string; url_type?: string }> | null,
 ): string | null {
   for (const u of urls ?? []) {
-    if ((u.url_type ?? "") === "PLACE_POI_DETAILS" && u.url) return u.url;
+    if ((u.url_type ?? "") !== "PLACE_POI_DETAILS" || !u.url) continue;
+    return operatorSiteUrl(u.url, UNIVERSAL_WEB_ORIGIN);
   }
   return null;
 }

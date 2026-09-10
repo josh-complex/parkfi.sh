@@ -9,6 +9,9 @@ import {
   normalizeUniversalName,
   parseDisneyFacets,
   parseDisneyWaterParkTickets,
+  operatorSiteUrl,
+  DISNEY_WEB_ORIGIN,
+  UNIVERSAL_WEB_ORIGIN,
   universalDetailUrl,
   universalDiningBookable,
   universalDiningExperience,
@@ -104,6 +107,44 @@ describe("universalPlaceTags + universalLandLabel + universalDetailUrl", () => {
     ];
     expect(universalDetailUrl(urls)).toBe("https://x/details");
     expect(universalDetailUrl([])).toBeNull();
+  });
+
+  // The feed mixes absolute and site-relative detail URLs; a relative one stored
+  // raw renders a "View on the official site" link that 404s on our own origin.
+  it("absolutizes a site-relative detail path against universalorlando.com", () => {
+    expect(
+      universalDetailUrl([
+        {
+          url: "/web/en/us/things-to-do/dining/nbc-sports-grill-brew",
+          url_type: "PLACE_POI_DETAILS",
+        },
+      ]),
+    ).toBe("https://www.universalorlando.com/web/en/us/things-to-do/dining/nbc-sports-grill-brew");
+  });
+});
+
+describe("operatorSiteUrl — outbound operator links", () => {
+  it("keeps an absolute URL, upgrading http to https", () => {
+    expect(operatorSiteUrl("http://www.universalorlando.com/web/x", UNIVERSAL_WEB_ORIGIN)).toBe(
+      "https://www.universalorlando.com/web/x",
+    );
+  });
+
+  it("resolves a relative path, with or without the leading slash", () => {
+    expect(operatorSiteUrl("/shops/foo/", DISNEY_WEB_ORIGIN)).toBe(
+      "https://disneyworld.disney.go.com/shops/foo/",
+    );
+    expect(operatorSiteUrl("shops/foo/", DISNEY_WEB_ORIGIN)).toBe(
+      "https://disneyworld.disney.go.com/shops/foo/",
+    );
+  });
+
+  // Universal's mobile-services POI feed ships this literal string for shows
+  // with no page yet; as a bare href it points at parkfi.sh/Placeholder.
+  it("drops a bare word that can't be a URL", () => {
+    expect(operatorSiteUrl("Placeholder", UNIVERSAL_WEB_ORIGIN)).toBeNull();
+    expect(operatorSiteUrl(null, UNIVERSAL_WEB_ORIGIN)).toBeNull();
+    expect(operatorSiteUrl("  ", UNIVERSAL_WEB_ORIGIN)).toBeNull();
   });
 });
 

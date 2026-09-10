@@ -4,7 +4,6 @@ import * as React from "react";
 import { Link } from "@tanstack/react-router";
 
 import { Badge } from "#/components/ui/badge.tsx";
-import { Carousel, CarouselArrows, CarouselContent } from "#/components/ui/carousel.tsx";
 import { Image } from "#/components/ui/image.tsx";
 import { disneyResizeUrl } from "#/lib/image.ts";
 import {
@@ -15,7 +14,9 @@ import {
   RailCardMeta,
   RailCardTitle,
   RailItem,
-  SHELF_VIEWPORT,
+  RailShelf,
+  RailShelfHeader,
+  RailTrack,
 } from "#/components/ui/rail.tsx";
 import {
   nextShowtime,
@@ -140,25 +141,18 @@ export function EntertainmentRail({
   if (!parkSlug || shows.length === 0) return null;
 
   return (
-    <Carousel opts={{ align: "start", dragFree: true }} className="-mx-4 lg:-mx-6">
-      <section className="flex flex-col gap-3">
-        <div className="flex items-end justify-between gap-4 px-4 lg:px-6">
-          <div className="flex flex-col gap-0.5">
-            <h3 className="text-lg font-semibold tracking-tight">Entertainment today</h3>
-            <p className="text-muted-foreground text-sm">
-              Shows, parades, and fireworks by next start time.
-            </p>
-          </div>
-          <CarouselArrows className="hidden md:flex" />
-        </div>
-        <CarouselContent className="-ml-4" viewportClassName={SHELF_VIEWPORT}>
-          {shows.map((row) => (
-            <RailItem key={row.item.id}>
-              <ShowCard row={row} parkSlug={parkSlug} tz={tz} nowMs={nowMs} />
-            </RailItem>
-          ))}
-        </CarouselContent>
-      </section>
-    </Carousel>
+    <RailShelf>
+      <RailShelfHeader
+        title="Entertainment today"
+        subtitle="Shows, parades, and fireworks by next start time."
+      />
+      <RailTrack>
+        {shows.map((row) => (
+          <RailItem key={row.item.id}>
+            <ShowCard row={row} parkSlug={parkSlug} tz={tz} nowMs={nowMs} />
+          </RailItem>
+        ))}
+      </RailTrack>
+    </RailShelf>
   );
 }

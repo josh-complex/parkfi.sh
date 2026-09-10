@@ -6,20 +6,15 @@
  */
 import { TierBadge } from "#/components/achievements/tier-badge.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
-import {
-  Carousel,
-  CarouselArrows,
-  CarouselContent,
-  CarouselItem,
-} from "#/components/ui/carousel.tsx";
 import { Progress } from "#/components/ui/progress.tsx";
+import { CarouselItem } from "#/components/ui/carousel.tsx";
+import { RailShelf, RailShelfHeader, RailTrack } from "#/components/ui/rail.tsx";
 import {
   ACHIEVEMENTS,
   formatStatValue,
   type AchievementFamily,
   type Stats,
 } from "#/lib/achievements.ts";
-import { SHELF_VIEWPORT } from "#/components/ui/rail.tsx";
 
 export function FamilyShelf({
   family,
@@ -40,60 +35,57 @@ export function FamilyShelf({
   const featured = nextTier ?? family.tiers[tierCount - 1];
 
   return (
-    <Carousel opts={{ align: "start", dragFree: true }} className="-mx-4 lg:-mx-6">
-      <section className="flex flex-col gap-3">
-        <div className="flex items-end justify-between gap-4 px-4 lg:px-6">
-          <div className="flex min-w-0 flex-col gap-0.5">
-            <h3 className="font-rounded flex items-center gap-2 text-base font-bold tracking-tight">
-              <span className="text-xl leading-none" aria-hidden>
-                {family.icon}
+    <RailShelf>
+      <RailShelfHeader
+        title={
+          <>
+            <span className="text-xl leading-none" aria-hidden>
+              {family.icon}
+            </span>
+            {family.title}
+          </>
+        }
+        titleClassName="font-rounded flex items-center gap-2 text-base font-bold"
+        subtitle={featured.description}
+        subtitleClassName="line-clamp-2 text-pretty whitespace-normal"
+      />
+
+      <RailTrack>
+        {family.tiers.map((tier, i) => (
+          <CarouselItem key={tier.id} className="basis-auto">
+            <TierBadge
+              familyKey={family.key}
+              icon={family.icon}
+              name={tier.name}
+              description={tier.description}
+              rank={tierCount > 1 ? i / (tierCount - 1) : 1}
+              unlocked={unlockedIds.has(tier.id)}
+              next={tier.id === nextTier?.id}
+            />
+          </CarouselItem>
+        ))}
+      </RailTrack>
+
+      <div className="px-4 lg:px-6">
+        {maxed ? (
+          <Badge variant="secondary">Maxed</Badge>
+        ) : nextTier ? (
+          <div className="space-y-1">
+            <Progress value={Math.min(100, (value / nextTier.threshold) * 100)} />
+            <div className="flex items-baseline justify-between gap-3 text-xs text-muted-foreground tabular-nums">
+              {/* left: badges earned in this family; right: progress to next tier */}
+              <span>
+                {unlockedCount}/{tierCount} badges
               </span>
-              {family.title}
-            </h3>
-            <p className="text-muted-foreground line-clamp-2 text-sm text-pretty">
-              {featured.description}
-            </p>
-          </div>
-          <CarouselArrows className="hidden md:flex" />
-        </div>
-
-        <CarouselContent viewportClassName={SHELF_VIEWPORT}>
-          {family.tiers.map((tier, i) => (
-            <CarouselItem key={tier.id} className="basis-auto">
-              <TierBadge
-                familyKey={family.key}
-                icon={family.icon}
-                name={tier.name}
-                description={tier.description}
-                rank={tierCount > 1 ? i / (tierCount - 1) : 1}
-                unlocked={unlockedIds.has(tier.id)}
-                next={tier.id === nextTier?.id}
-              />
-            </CarouselItem>
-          ))}
-        </CarouselContent>
-
-        <div className="px-4 lg:px-6">
-          {maxed ? (
-            <Badge variant="secondary">Maxed</Badge>
-          ) : nextTier ? (
-            <div className="space-y-1">
-              <Progress value={Math.min(100, (value / nextTier.threshold) * 100)} />
-              <div className="flex items-baseline justify-between gap-3 text-xs text-muted-foreground tabular-nums">
-                {/* left: badges earned in this family; right: progress to next tier */}
-                <span>
-                  {unlockedCount}/{tierCount} badges
-                </span>
-                <span>
-                  {formatStatValue(family.unit, value)} /{" "}
-                  {formatStatValue(family.unit, nextTier.threshold)}
-                </span>
-              </div>
+              <span>
+                {formatStatValue(family.unit, value)} /{" "}
+                {formatStatValue(family.unit, nextTier.threshold)}
+              </span>
             </div>
-          ) : null}
-        </div>
-      </section>
-    </Carousel>
+          </div>
+        ) : null}
+      </div>
+    </RailShelf>
   );
 }
 

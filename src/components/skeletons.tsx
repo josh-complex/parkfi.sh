@@ -8,6 +8,7 @@ import {
   RailCardMedia,
   RailCardMeta,
   RailCardTitle,
+  RailShelfHeader,
   SHELF_VIEWPORT,
 } from "#/components/ui/rail.tsx";
 
@@ -106,12 +107,9 @@ export function ShelfGhost({
   return (
     <div className={cn("-mx-4 lg:-mx-6", className)} aria-hidden>
       <div className="flex flex-col gap-3">
-        <div className="flex items-end justify-between gap-4 px-4 lg:px-6">
-          <div className="flex flex-col gap-0.5">
-            <h3 className="text-lg font-semibold tracking-tight">{title}</h3>
-            {subtitle && <p className="text-muted-foreground text-sm">{subtitle}</p>}
-          </div>
-        </div>
+        {/* `arrows={false}`: a ghost is outside any carousel, so there's no
+            prev/next state for `CarouselArrows` to read. */}
+        <RailShelfHeader title={title} subtitle={subtitle} arrows={false} />
         <div className={cn("overflow-hidden", SHELF_VIEWPORT)}>
           <div className="-ml-4 flex">
             {items.slice(0, 8).map((item, i) => {

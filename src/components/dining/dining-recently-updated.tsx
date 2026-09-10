@@ -8,7 +8,6 @@ import { ReceiptTextIcon } from "lucide-react";
 import { menuItemAnchorId } from "#/components/dining/menu-content.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Image } from "#/components/ui/image.tsx";
-import { Carousel, CarouselArrows, CarouselContent } from "#/components/ui/carousel.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { cn } from "#/lib/utils.ts";
 import {
@@ -21,7 +20,9 @@ import {
   RailCardMeta,
   RailCardTitle,
   RailItem,
-  SHELF_VIEWPORT,
+  RailShelf,
+  RailShelfHeader,
+  RailTrack,
 } from "#/components/ui/rail.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
@@ -51,25 +52,6 @@ type UpdatedVenue = {
  * back to the menu section. Renders nothing until at least one change has been
  * observed, so it stays invisible during cold start.
  */
-function ShelfHeader({
-  title,
-  subtitle,
-  withArrows,
-}: {
-  title: string;
-  subtitle: string;
-  withArrows?: boolean;
-}) {
-  return (
-    <div className="flex items-end justify-between gap-4 px-4 lg:px-6">
-      <div className="flex flex-col gap-0.5">
-        <h3 className="text-lg font-semibold tracking-tight">{title}</h3>
-        <p className="text-muted-foreground text-sm">{subtitle}</p>
-      </div>
-      {withArrows && <CarouselArrows className="hidden md:flex" />}
-    </div>
-  );
-}
 
 /**
  * Placeholder shelf shown while `dining.recentlyUpdated` loads, so the section
@@ -78,9 +60,10 @@ function ShelfHeader({
 function RecentlyUpdatedSkeleton() {
   return (
     <section className="flex flex-col gap-3">
-      <ShelfHeader
+      <RailShelfHeader
         title="Recently updated menus"
         subtitle="Fresh prices & items in the last 30 days"
+        arrows={false}
       />
       <div className="flex gap-4 overflow-hidden px-4 lg:px-6">
         {Array.from({ length: 6 }).map((_, i) => (
@@ -144,18 +127,16 @@ function UpdatedShelf({
 }) {
   if (!venues.length) return null;
   return (
-    <Carousel opts={{ align: "start", dragFree: true }} className="-mx-4 lg:-mx-6">
-      <section className="flex flex-col gap-3">
-        <ShelfHeader title={title} subtitle={subtitle} withArrows />
-        <CarouselContent className="-ml-4" viewportClassName={SHELF_VIEWPORT}>
-          {venues.map((v) => (
-            <RailItem key={v.facilityId}>
-              <UpdatedCard v={v} />
-            </RailItem>
-          ))}
-        </CarouselContent>
-      </section>
-    </Carousel>
+    <RailShelf>
+      <RailShelfHeader title={title} subtitle={subtitle} />
+      <RailTrack>
+        {venues.map((v) => (
+          <RailItem key={v.facilityId}>
+            <UpdatedCard v={v} />
+          </RailItem>
+        ))}
+      </RailTrack>
+    </RailShelf>
   );
 }
 

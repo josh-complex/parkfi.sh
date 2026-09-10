@@ -4,7 +4,6 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CloudRainIcon, DropletIcon, TicketIcon, WindIcon } from "lucide-react";
 
-import { Carousel, CarouselArrows, CarouselContent } from "#/components/ui/carousel.tsx";
 import {
   Drawer,
   DrawerContent,
@@ -38,7 +37,9 @@ import {
   RailCardMeta,
   RailCardTitle,
   RailItem,
-  SHELF_VIEWPORT,
+  RailShelf,
+  RailShelfHeader,
+  RailTrack,
 } from "#/components/ui/rail.tsx";
 
 /** One park's summary row, mirroring the `tickets.parkShelf` endpoint payload. */
@@ -160,155 +161,142 @@ function ParkShelf({
       : typeLabel(park);
 
   return (
-    <Carousel opts={{ align: "start", dragFree: true }} className="-mx-4 lg:-mx-6">
-      <section className="flex flex-col gap-3 pt-4">
-        <div className="flex items-end justify-between gap-4 px-4 lg:px-6">
-          <div className="flex min-w-0 flex-col gap-0.5">
-            <h3 className="truncate text-lg font-semibold tracking-tight">{park.label}</h3>
-            <p className="text-muted-foreground truncate text-sm">{subtitle}</p>
-          </div>
-          <CarouselArrows className="hidden shrink-0 md:flex" />
-        </div>
+    <RailShelf className="pt-4">
+      <RailShelfHeader title={park.label} subtitle={subtitle} />
+      <RailTrack>
+        {/* Today's price — opens the calendar on today */}
+        <RailItem>
+          <StatCard label="Today" onClick={() => onOpenCalendar(todayIso)}>
+            {park.todayCents != null ? (
+              <span
+                className={cn(
+                  "text-2xl font-bold tabular-nums",
+                  !park.todayAvailable && "text-muted-foreground/50 line-through",
+                )}
+              >
+                {dollars(park.todayCents)}
+              </span>
+            ) : (
+              <span className="text-2xl font-bold text-muted-foreground/30">—</span>
+            )}
+            {units && (
+              <span
+                className={cn(
+                  "absolute left-2 top-2 rounded-full px-1.5 py-[3px] text-[9px] font-bold uppercase tracking-widest leading-none",
+                  units.pill,
+                )}
+              >
+                {units.label}
+              </span>
+            )}
+            {apBlockedToday && (
+              <span className="absolute left-2 top-2 rounded-full bg-red-100 px-1.5 py-[3px] text-[9px] font-bold uppercase tracking-widest leading-none text-red-600 dark:bg-red-900/50 dark:text-red-300">
+                AP blocked
+              </span>
+            )}
+          </StatCard>
+        </RailItem>
 
-        <CarouselContent className="-ml-4" viewportClassName={SHELF_VIEWPORT}>
-          {/* Today's price — opens the calendar on today */}
-          <RailItem>
-            <StatCard label="Today" onClick={() => onOpenCalendar(todayIso)}>
-              {park.todayCents != null ? (
-                <span
-                  className={cn(
-                    "text-2xl font-bold tabular-nums",
-                    !park.todayAvailable && "text-muted-foreground/50 line-through",
-                  )}
-                >
-                  {dollars(park.todayCents)}
-                </span>
-              ) : (
-                <span className="text-2xl font-bold text-muted-foreground/30">—</span>
-              )}
-              {units && (
-                <span
-                  className={cn(
-                    "absolute left-2 top-2 rounded-full px-1.5 py-[3px] text-[9px] font-bold uppercase tracking-widest leading-none",
-                    units.pill,
-                  )}
-                >
-                  {units.label}
-                </span>
-              )}
-              {apBlockedToday && (
-                <span className="absolute left-2 top-2 rounded-full bg-red-100 px-1.5 py-[3px] text-[9px] font-bold uppercase tracking-widest leading-none text-red-600 dark:bg-red-900/50 dark:text-red-300">
-                  AP blocked
-                </span>
-              )}
-            </StatCard>
-          </RailItem>
+        {/* Upcoming cheapest — opens the calendar on that date */}
+        <RailItem>
+          <StatCard
+            label="Cheapest"
+            sub={park.cheapestDate ? shortDate(park.cheapestDate) : null}
+            thumbClassName="bg-primary/10"
+            onClick={() => onOpenCalendar(park.cheapestDate ?? undefined)}
+          >
+            {park.cheapestCents != null ? (
+              <span className="text-2xl font-bold tabular-nums text-primary">
+                {dollars(park.cheapestCents)}
+              </span>
+            ) : (
+              <span className="text-2xl font-bold text-muted-foreground/30">—</span>
+            )}
+          </StatCard>
+        </RailItem>
 
-          {/* Upcoming cheapest — opens the calendar on that date */}
-          <RailItem>
-            <StatCard
-              label="Cheapest"
-              sub={park.cheapestDate ? shortDate(park.cheapestDate) : null}
-              thumbClassName="bg-primary/10"
-              onClick={() => onOpenCalendar(park.cheapestDate ?? undefined)}
-            >
-              {park.cheapestCents != null ? (
-                <span className="text-2xl font-bold tabular-nums text-primary">
-                  {dollars(park.cheapestCents)}
-                </span>
-              ) : (
-                <span className="text-2xl font-bold text-muted-foreground/30">—</span>
-              )}
-            </StatCard>
-          </RailItem>
-
-          {/* Buy tickets — on the native MDE shell (Disney) this deep links to
+        {/* Buy tickets — on the native MDE shell (Disney) this deep links to
               the app's `mdx://tickets/buy` purchase flow; on web (and Universal)
               it's the https ticket store, which hands off to the app via App
               Links. */}
-          <RailItem>
-            <StatCard
-              label="Buy tickets"
-              sub={
-                native && ticketPurchaseDeepLink(park.resort) != null
-                  ? "in the Disney app"
-                  : `on ${ticketStoreLabel(park.resort)}`
-              }
-              thumbClassName="bg-primary/10 text-primary"
-              href={buyTicketsHref(park.resort, native)}
-            >
-              <TicketIcon className="size-9" strokeWidth={1.75} />
-            </StatCard>
-          </RailItem>
+        <RailItem>
+          <StatCard
+            label="Buy tickets"
+            sub={
+              native && ticketPurchaseDeepLink(park.resort) != null
+                ? "in the Disney app"
+                : `on ${ticketStoreLabel(park.resort)}`
+            }
+            thumbClassName="bg-primary/10 text-primary"
+            href={buyTicketsHref(park.resort, native)}
+          >
+            <TicketIcon className="size-9" strokeWidth={1.75} />
+          </StatCard>
+        </RailItem>
 
-          {/* Today's weather — icon + precip up top, high/low + wind/humidity below */}
-          <RailItem>
-            <StatCard label="Weather" sub={park.condition} fill={park.highF != null}>
-              {park.highF != null ? (
-                <>
-                  <div className="flex w-full items-start justify-between gap-1">
-                    <WeatherIcon
-                      condition={park.condition}
-                      precipProb={park.precipProb}
-                      size={44}
-                    />
-                    {precip && (
-                      <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-sky-600 dark:text-sky-400">
-                        <CloudRainIcon className="size-2.5" />
-                        {park.precipPeak ? `${precip} at ${park.precipPeak}` : precip}
+        {/* Today's weather — icon + precip up top, high/low + wind/humidity below */}
+        <RailItem>
+          <StatCard label="Weather" sub={park.condition} fill={park.highF != null}>
+            {park.highF != null ? (
+              <>
+                <div className="flex w-full items-start justify-between gap-1">
+                  <WeatherIcon condition={park.condition} precipProb={park.precipProb} size={44} />
+                  {precip && (
+                    <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-sky-600 dark:text-sky-400">
+                      <CloudRainIcon className="size-2.5" />
+                      {park.precipPeak ? `${precip} at ${park.precipPeak}` : precip}
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-baseline gap-1.5 leading-none">
+                    <span className="text-2xl font-bold tabular-nums">{park.highF}°</span>
+                    {park.lowF != null && (
+                      <span className="text-sm font-medium tabular-nums text-muted-foreground">
+                        {park.lowF}°
                       </span>
                     )}
                   </div>
-                  <div className="flex flex-col gap-1">
-                    <div className="flex items-baseline gap-1.5 leading-none">
-                      <span className="text-2xl font-bold tabular-nums">{park.highF}°</span>
-                      {park.lowF != null && (
-                        <span className="text-sm font-medium tabular-nums text-muted-foreground">
-                          {park.lowF}°
+                  {(park.windMph != null || park.humidity != null) && (
+                    <div className="flex items-center gap-2 text-[10px] font-medium text-muted-foreground">
+                      {park.windMph != null && (
+                        <span className="flex items-center gap-0.5">
+                          <WindIcon className="size-2.5" />
+                          {park.windMph} mph
+                        </span>
+                      )}
+                      {park.humidity != null && (
+                        <span className="flex items-center gap-0.5">
+                          <DropletIcon className="size-2.5" />
+                          {park.humidity}%
                         </span>
                       )}
                     </div>
-                    {(park.windMph != null || park.humidity != null) && (
-                      <div className="flex items-center gap-2 text-[10px] font-medium text-muted-foreground">
-                        {park.windMph != null && (
-                          <span className="flex items-center gap-0.5">
-                            <WindIcon className="size-2.5" />
-                            {park.windMph} mph
-                          </span>
-                        )}
-                        {park.humidity != null && (
-                          <span className="flex items-center gap-0.5">
-                            <DropletIcon className="size-2.5" />
-                            {park.humidity}%
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <span className="text-2xl font-bold text-muted-foreground/30">—</span>
-              )}
-            </StatCard>
-          </RailItem>
+                  )}
+                </div>
+              </>
+            ) : (
+              <span className="text-2xl font-bold text-muted-foreground/30">—</span>
+            )}
+          </StatCard>
+        </RailItem>
 
-          {/* Today's crowd level */}
-          <RailItem>
-            <StatCard
-              label="Crowd"
-              sub={park.crowdIndex != null ? `${park.crowdIndex}/10` : null}
-              thumbClassName={cn(crowd?.pill, park.crowdIsEstimate && "opacity-70")}
-            >
-              {crowd ? (
-                <span className="text-lg font-bold uppercase tracking-wide">{crowd.label}</span>
-              ) : (
-                <span className="text-2xl font-bold text-muted-foreground/30">—</span>
-              )}
-            </StatCard>
-          </RailItem>
-        </CarouselContent>
-      </section>
-    </Carousel>
+        {/* Today's crowd level */}
+        <RailItem>
+          <StatCard
+            label="Crowd"
+            sub={park.crowdIndex != null ? `${park.crowdIndex}/10` : null}
+            thumbClassName={cn(crowd?.pill, park.crowdIsEstimate && "opacity-70")}
+          >
+            {crowd ? (
+              <span className="text-lg font-bold uppercase tracking-wide">{crowd.label}</span>
+            ) : (
+              <span className="text-2xl font-bold text-muted-foreground/30">—</span>
+            )}
+          </StatCard>
+        </RailItem>
+      </RailTrack>
+    </RailShelf>
   );
 }
 
