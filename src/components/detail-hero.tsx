@@ -27,6 +27,20 @@ export const HERO_BLEED = [
   "md:mt-0 md:h-80 md:rounded-2xl",
 ].join(" ");
 
+/**
+ * Page padding for a detail page that opens with a `HERO_BLEED` hero. The
+ * mobile top pad has to be exactly the `0.5rem` HERO_BLEED folds into its
+ * pull-up (above): the hero reaches the top edge by cancelling the header plus
+ * *that* much padding, so a page padded `p-4` instead stops 0.5rem short and
+ * shows a strip of page background above the photo.
+ *
+ * Spelled out in longhand at every breakpoint on purpose — a later `p-*`
+ * shorthand loses to a `pt-*` longhand in Tailwind's ordering, so mixing the
+ * two (`p-4 pt-2 lg:p-6`) silently keeps the mobile value at `lg` and puts the
+ * gap back.
+ */
+export const HERO_PAGE_PADDING = "px-4 pb-4 pt-2 md:pt-4 lg:px-6 lg:pb-6 lg:pt-6";
+
 /** Top-pinned hero overlays, dropped clear of the floating search pill. */
 export const HERO_OVERLAY_TOP = "top-[calc(var(--safe-top)_+_var(--app-header-h))] md:top-4";
 

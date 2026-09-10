@@ -6,7 +6,12 @@ import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { ExternalLinkIcon, PhoneIcon } from "lucide-react";
 
-import { DetailHero, HERO_BLEED, HERO_OVERLAY_TOP } from "#/components/detail-hero.tsx";
+import {
+  DetailHero,
+  HERO_BLEED,
+  HERO_OVERLAY_TOP,
+  HERO_PAGE_PADDING,
+} from "#/components/detail-hero.tsx";
 import { DiningAlertButton } from "#/components/dining/dining-alert-button.tsx";
 import {
   byMealPeriod,
@@ -817,7 +822,7 @@ export function DiningVenueDetail({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-4 lg:p-6">
+    <div className={cn("mx-auto flex w-full max-w-5xl flex-col gap-6", HERO_PAGE_PADDING)}>
       {/* Cast-member-only; renders nothing for everyone else, so it adds no gap. */}
       <RemovalRequestDialog
         entityType="restaurant"

@@ -91,8 +91,10 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
         { rel: "stylesheet", href: appCss },
         { rel: "manifest", href: "/manifest.json" },
         // iOS home-screen icon: Safari doesn't reliably decode webp for
-        // apple-touch-icon, so point at the brand PNG.
-        { rel: "apple-touch-icon", href: "/img/brand/full_white.png" },
+        // apple-touch-icon, so point at the brand PNG. It must also be one that
+        // *exists* — iOS silently falls back to a screenshot of the page when
+        // this 404s, which is what `full_white.png` (deleted in c77031a) got us.
+        { rel: "apple-touch-icon", href: "/img/brand/icon-192.png" },
         // Tab favicon. The SVG carries a prefers-color-scheme media query so the
         // mark flips to white on dark tab bars (and stays brand blue on light) —
         // honored by SVG-favicon browsers (Chrome/Edge/Firefox/Safari 16+). The

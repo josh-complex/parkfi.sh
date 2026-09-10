@@ -535,7 +535,9 @@ export function MenuBody({
   React.useEffect(() => {
     if (!activeType) return;
     const strip = pillsRef.current;
-    const pill = strip?.querySelector<HTMLElement>(`[data-pill="${activeType}"]`);
+    // Escaped: type keys are operator copy and carry quotes (`"Grip It" Sandwiches`),
+    // which make a raw attribute selector throw and take the page down with it.
+    const pill = strip?.querySelector<HTMLElement>(`[data-pill="${CSS.escape(activeType)}"]`);
     if (!strip || !pill) return;
     strip.scrollTo({
       left: pill.offsetLeft - strip.clientWidth / 2 + pill.clientWidth / 2,
@@ -547,7 +549,9 @@ export function MenuBody({
   React.useEffect(() => {
     if (!highlightSlug) return;
     const el = scrollRef.current?.querySelector<HTMLElement>(
-      `[data-anchor="menu-${highlightSlug}"]`,
+      // Escaped as well: the slug reaches us from the URL, so it isn't
+      // guaranteed to be the sanitized form `slugifyMenuItem` produces.
+      `[data-anchor="menu-${CSS.escape(highlightSlug)}"]`,
     );
     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [highlightSlug, scrollRef, activePeriodIdx]);

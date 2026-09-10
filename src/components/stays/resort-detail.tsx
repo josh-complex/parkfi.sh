@@ -7,7 +7,7 @@ import { differenceInCalendarDays, format } from "date-fns";
 import { type DateRange } from "react-day-picker";
 import { CalendarIcon, ExternalLinkIcon } from "lucide-react";
 
-import { DetailHero } from "#/components/detail-hero.tsx";
+import { DetailHero, HERO_PAGE_PADDING } from "#/components/detail-hero.tsx";
 import { LocationMap } from "#/components/maps/location-map.tsx";
 import { ResortDiningShelf } from "#/components/dining/resort-dining-shelf.tsx";
 import { heroFlightKey } from "#/components/park-map/card-flight.ts";
@@ -426,7 +426,7 @@ export function ResortDetail({ slug }: { slug: string }) {
     : "";
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-4 lg:p-6">
+    <div className={cn("mx-auto flex w-full max-w-5xl flex-col gap-6", HERO_PAGE_PADDING)}>
       {/* Cast-member-only; renders nothing for everyone else, so it adds no gap. */}
       <RemovalRequestDialog
         entityType="resort"

@@ -3,7 +3,7 @@ import { isServer, useQuery } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect } from "react";
 import { ExternalLinkIcon, ShoppingBagIcon } from "lucide-react";
 
-import { DetailHero, HERO_OVERLAY_TOP } from "#/components/detail-hero.tsx";
+import { DetailHero, HERO_OVERLAY_TOP, HERO_PAGE_PADDING } from "#/components/detail-hero.tsx";
 import {
   heroFlightKey,
   launchHeroReturn,
@@ -87,7 +87,7 @@ function ShopPage() {
     : (flight?.seed.subtitle ?? null);
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-4 lg:p-6">
+    <div className={cn("mx-auto flex w-full max-w-3xl flex-col gap-6", HERO_PAGE_PADDING)}>
       {/* Cast-member-only; renders nothing for everyone else, so it adds no gap. */}
       {shop && (
         <RemovalRequestDialog

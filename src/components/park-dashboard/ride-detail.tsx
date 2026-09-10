@@ -5,7 +5,12 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect, type CSSProperties } from "react";
 import { ExternalLinkIcon } from "lucide-react";
 
-import { DetailHero, HERO_BLEED, HERO_OVERLAY_TOP } from "#/components/detail-hero.tsx";
+import {
+  DetailHero,
+  HERO_BLEED,
+  HERO_OVERLAY_TOP,
+  HERO_PAGE_PADDING,
+} from "#/components/detail-hero.tsx";
 import {
   launchHeroReturn,
   releaseHeroFlight,
@@ -343,7 +348,7 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
          DOM node when the query lands. The query usually resolves mid-flight,
          and a hero that remounted then would replay its image fade, orphan the
          flight's settle listeners, and replay the chips' entrance stagger. */
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-4 lg:p-6">
+      <div className={cn("mx-auto flex w-full max-w-4xl flex-col gap-6", HERO_PAGE_PADDING)}>
         <div className="hidden h-8 md:block" />
         <header className="flex flex-col gap-4">
           {/* Arriving from a map card, the hero is already known — paint it from
@@ -462,7 +467,7 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
   const hasAccessibility = (ride.meta?.accessibility?.length ?? 0) > 0;
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-4 lg:p-6">
+    <div className={cn("mx-auto flex w-full max-w-4xl flex-col gap-6", HERO_PAGE_PADDING)}>
       {/* Cast-member-only; renders nothing for everyone else, so it adds no gap. */}
       <RemovalRequestDialog
         entityType="attraction"
