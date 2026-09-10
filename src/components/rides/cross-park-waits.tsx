@@ -9,6 +9,7 @@ import { BoardTableSkeleton, ShelfGhost } from "#/components/skeletons.tsx";
 import {
   MAP_FILTER_PILL,
   MAP_FILTER_STACK,
+  MAP_FILTER_STACK_RIGHT,
   RideFilterControls,
   RideFilterFooter,
 } from "#/components/rides/ride-filter-button.tsx";
@@ -20,12 +21,7 @@ import {
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
-import {
-  Carousel,
-  CarouselArrows,
-  CarouselContent,
-  CarouselItem,
-} from "#/components/ui/carousel.tsx";
+import { Carousel, CarouselArrows, CarouselContent } from "#/components/ui/carousel.tsx";
 import { LazyMount } from "#/components/ui/lazy-mount.tsx";
 import {
   Drawer,
@@ -43,6 +39,18 @@ import { preloadImage } from "#/lib/image-preload.ts";
 import { disneyResizeUrl, HERO_IMAGE, resolveImageUrls } from "#/lib/image.ts";
 import { cn } from "#/lib/utils.ts";
 import { formatParkName } from "#/lib/parks.ts";
+import {
+  RAIL_ITEM_BASIS,
+  RAIL_MEDIA_ASPECT,
+  RAIL_MEDIA_RATIO,
+  RailCard,
+  RailCardBody,
+  RailCardMedia,
+  RailCardMeta,
+  RailCardTitle,
+  RailItem,
+  SHELF_VIEWPORT,
+} from "#/components/ui/rail.tsx";
 
 type Ride = {
   id: number;
@@ -162,29 +170,25 @@ function RideCard({ ride, eager }: { ride: Ride; eager?: boolean }) {
       onFocus={warmHero}
       className="block"
     >
-      <div className="group flex flex-col gap-2 outline-none">
-        <div className="bg-muted relative aspect-[4/3] w-full overflow-hidden rounded-2xl">
+      <RailCard>
+        <RailCardMedia>
           {ride.imageCardUrl ? (
             <Image
               src={ride.imageCardUrl}
               alt={ride.imageAlt ?? ride.name}
               loading={eager ? "eager" : "lazy"}
-              aspect={4 / 3}
+              aspect={RAIL_MEDIA_RATIO}
               placeholder={ride.imageThumbhash}
               className="size-full object-cover group-hover:scale-105"
             />
           ) : null}
           <WaitBadge ride={ride} className="absolute left-2 top-2" />
-        </div>
-        <div className="flex flex-col gap-0.5 px-0.5">
-          <span className="line-clamp-1 text-sm font-medium group-hover:underline">
-            {ride.name}
-          </span>
-          {ride.land && (
-            <span className="text-muted-foreground line-clamp-1 text-xs">{ride.land}</span>
-          )}
-        </div>
-      </div>
+        </RailCardMedia>
+        <RailCardBody>
+          <RailCardTitle>{ride.name}</RailCardTitle>
+          {ride.land && <RailCardMeta>{ride.land}</RailCardMeta>}
+        </RailCardBody>
+      </RailCard>
     </Link>
   );
 }
@@ -236,11 +240,8 @@ function WaitsSkeleton({ view }: { view: View }) {
           {view === "grid" ? (
             <div className="flex gap-4 overflow-hidden px-4 lg:px-6">
               {Array.from({ length: 5 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="flex shrink-0 basis-[42%] flex-col gap-2 md:basis-1/3 lg:basis-1/4 xl:basis-1/5 2xl:basis-1/6"
-                >
-                  <Skeleton className="aspect-[4/3] w-full rounded-2xl" />
+                <div key={i} className={cn("flex shrink-0 flex-col gap-2", RAIL_ITEM_BASIS)}>
+                  <Skeleton className={cn(RAIL_MEDIA_ASPECT, "w-full rounded-2xl")} />
                   <Skeleton className="h-4 w-3/4 rounded-md" />
                   <Skeleton className="h-3 w-1/2 rounded-md" />
                 </div>
@@ -588,17 +589,11 @@ export function CrossParkWaits() {
                 </div>
 
                 {view === "grid" ? (
-                  <CarouselContent
-                    className="-ml-4"
-                    viewportClassName="px-4 lg:px-6 [mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%_-_1.5rem),transparent)]"
-                  >
+                  <CarouselContent className="-ml-4" viewportClassName={SHELF_VIEWPORT}>
                     {g.rides.map((r, i) => (
-                      <CarouselItem
-                        key={r.id}
-                        className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5 2xl:basis-1/6"
-                      >
+                      <RailItem key={r.id}>
                         <RideCard ride={r} eager={gi === 0 && i < 5} />
-                      </CarouselItem>
+                      </RailItem>
                     ))}
                   </CarouselContent>
                 ) : (
@@ -660,7 +655,7 @@ export function CrossParkWaits() {
             <FilterDrawer variant="pill" />
           </div>
           <div
-            className="pointer-events-none fixed right-4 z-40 flex md:hidden"
+            className={MAP_FILTER_STACK_RIGHT}
             style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1.4rem)" }}
           >
             <ViewToggle view={view} onView={setViewPersist} variant="pill" />

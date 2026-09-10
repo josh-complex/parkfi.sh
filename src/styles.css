@@ -67,6 +67,14 @@
   --app-header-h: 4.75rem;
   --safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
   --safe-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+  /* Horizontal inset for the *floating* mobile chrome — the bottom-nav island,
+     the top search/back row, the map control clusters and the filter/sort FABs.
+     Deliberately one notch tighter than the content gutter (`px-4` / 1rem) so
+     the chrome overhangs the page content very slightly, reading as a layer
+     above it rather than a column beside it. Desktop restores the 1rem gutter
+     (below), so every `*-(--chrome-gutter)` usage is mobile-only by construction
+     and needs no `md:` override of its own. */
+  --chrome-gutter: 0.75rem;
   /* Bottom inset for the floating mobile nav and every bit of map chrome that
      clears it. In an installed standalone PWA there is no browser toolbar, so on
      the full-bleed map that tall reservation reads as dead space under the nav —
@@ -79,18 +87,29 @@
      so the nav formula below resolves to the designed 2.5rem rounding. */
   --device-corner-radius-bl: 3.5rem;
   --device-corner-radius-br: 3.5rem;
-  /* Bottom-nav outer corners, concentric with the bezel: the bar sits 1rem in
-     from the screen edges (mx-4; --safe-bottom is 0 in the native shell and
-     standalone PWA), so concentric = device radius − 1rem. Clamped to ≥1rem so
-     square-cornered devices match the bar's 1rem top rounding, and ≤2.5rem (the
-     designed web look) so big-bezel-radius devices don't balloon the bar. */
-  --nav-corner-bl: clamp(1rem, calc(var(--device-corner-radius-bl) - 1rem), 2.5rem);
-  --nav-corner-br: clamp(1rem, calc(var(--device-corner-radius-br) - 1rem), 2.5rem);
+  /* Bottom-nav outer corners, concentric with the bezel: the bar sits
+     `--chrome-gutter` in from the screen edges (--safe-bottom is 0 in the native
+     shell and standalone PWA), so concentric = device radius − that gutter.
+     Clamped to ≥1rem so square-cornered devices match the bar's 1rem top
+     rounding, and ≤2.5rem (the designed web look) so big-bezel-radius devices
+     don't balloon the bar. */
+  --nav-corner-bl: clamp(1rem, calc(var(--device-corner-radius-bl) - var(--chrome-gutter)), 2.5rem);
+  --nav-corner-br: clamp(1rem, calc(var(--device-corner-radius-br) - var(--chrome-gutter)), 2.5rem);
   /* Bottom-drawer card corners (ui/drawer.tsx). On web there's no bezel to hug,
      so the card keeps the fixed 2.5rem design radius (matching its top corners).
      Native overrides these below to the true concentric radius. */
   --drawer-corner-bl: 2.5rem;
   --drawer-corner-br: 2.5rem;
+}
+
+/* Desktop (≥ `md`) has no floating island — the sidebar and the blue toolbar own
+   the chrome — so the tightened mobile inset goes back to the 1rem gutter the
+   map controls and overlays were designed around. Keeping this as one media
+   override means call sites just write `left-(--chrome-gutter)` once. */
+@media (width >= 48rem) {
+  :root {
+    --chrome-gutter: 1rem;
+  }
 }
 
 /* Installed PWA (home-screen, no Safari chrome): drop the safe-area padding the

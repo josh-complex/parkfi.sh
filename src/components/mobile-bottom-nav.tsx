@@ -169,6 +169,33 @@ function PlayButton() {
   );
 }
 
+/**
+ * The band of page background that fades in under the floating nav island. Content
+ * scrolling toward the bar dissolves into the page rather than sliding behind it
+ * mid-word, which is what made the bottom of a scrolling list read as clutter.
+ *
+ * It stops at the floating controls, not through them. The band tops out exactly at
+ * the offset every bottom-anchored control uses (`--bottom-nav-height` + the bar's
+ * `max(--safe-bottom, 1rem)` floor + the 1.4rem lift shared by the filter/sort FABs
+ * and the map clusters), so the gradient has already reached full transparency by
+ * the row those buttons sit in — they never sit on a washed-out patch, and the
+ * translucent `backdrop-blur` ones have nothing of ours behind them to pick up.
+ *
+ * `z-0` for the same reason: it beats plain page content (which paints in tree
+ * order, and the fade is last) while losing to every floating control, all of which
+ * carry a positive z — map clusters at z-10, the FAB stacks and this nav at z-40,
+ * the offline banner at z-50. `pointer-events-none`, so it never eats a tap.
+ */
+function BottomScrollFade() {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-0 bg-linear-to-t from-background from-70% to-transparent md:hidden"
+      style={{ height: "calc(var(--bottom-nav-height) + max(var(--safe-bottom), 1rem) + 1.4rem)" }}
+    />
+  );
+}
+
 export function MobileBottomNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const livingEnabled = useLivingLayerEnabled();
@@ -178,46 +205,56 @@ export function MobileBottomNav() {
   const mapActive = pathname === "/map";
 
   return (
-    <nav
-      aria-label="Primary"
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center md:hidden"
-      style={{ paddingBottom: "max(var(--safe-bottom), 1rem)" }}
-    >
-      {livingEnabled && mapActive ? <PlayButton /> : null}
-      {/* One connected row of equal-height segments; `items-end` aligns every
-          segment's base so the bar reads as a single piece. */}
-      <div className="pointer-events-auto mx-4 flex w-full max-w-md items-end">
-        <Seg
-          to="/"
-          active={pathname === "/"}
-          icon={<ActivityIcon />}
-          label="Waits"
-          className="rounded-bl-(--nav-corner-bl) rounded-tl-2xl"
-        />
-        <Seg
-          to="/tickets"
-          active={pathname.startsWith("/tickets")}
-          icon={<TicketIcon />}
-          label="Tickets"
-          offline={offline.has("tickets")}
-        />
-        <MapButton active={mapActive} />
-        <Seg
-          to="/dining"
-          active={pathname.startsWith("/dining")}
-          icon={<UtensilsIcon />}
-          label="Eats"
-          offline={offline.has("dining")}
-        />
-        <Seg
-          to="/stays"
-          active={pathname.startsWith("/stays")}
-          icon={<BedDoubleIcon />}
-          label="Stays"
-          offline={offline.has("stays")}
-          className="rounded-br-(--nav-corner-br) rounded-tr-2xl"
-        />
-      </div>
-    </nav>
+    <>
+      {/* Scroll fade: a gradient dissolving the page into its own background as
+          it passes under the island, so rows don't crowd the bar mid-scroll.
+          Sits under every floating control and above the content, and is skipped
+          on the fullscreen map — nothing scrolls there, and a wash of background
+          over the map would only dim it. */}
+      {!mapActive ? <BottomScrollFade /> : null}
+      <nav
+        aria-label="Primary"
+        className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center md:hidden"
+        style={{ paddingBottom: "max(var(--safe-bottom), 1rem)" }}
+      >
+        {livingEnabled && mapActive ? <PlayButton /> : null}
+        {/* One connected row of equal-height segments; `items-end` aligns every
+            segment's base so the bar reads as a single piece. Inset by
+            `--chrome-gutter` — a touch tighter than the content's `px-4`, so the
+            island overhangs the page slightly. */}
+        <div className="pointer-events-auto mx-(--chrome-gutter) flex w-full max-w-md items-end">
+          <Seg
+            to="/"
+            active={pathname === "/"}
+            icon={<ActivityIcon />}
+            label="Waits"
+            className="rounded-bl-(--nav-corner-bl) rounded-tl-2xl"
+          />
+          <Seg
+            to="/tickets"
+            active={pathname.startsWith("/tickets")}
+            icon={<TicketIcon />}
+            label="Tickets"
+            offline={offline.has("tickets")}
+          />
+          <MapButton active={mapActive} />
+          <Seg
+            to="/dining"
+            active={pathname.startsWith("/dining")}
+            icon={<UtensilsIcon />}
+            label="Eats"
+            offline={offline.has("dining")}
+          />
+          <Seg
+            to="/stays"
+            active={pathname.startsWith("/stays")}
+            icon={<BedDoubleIcon />}
+            label="Stays"
+            offline={offline.has("stays")}
+            className="rounded-br-(--nav-corner-br) rounded-tr-2xl"
+          />
+        </div>
+      </nav>
+    </>
   );
 }

@@ -78,7 +78,10 @@ export function SiteHeader(_props?: { title?: string; mobileTitle?: string }) {
         minHeight: "calc(var(--safe-top) + var(--app-header-h))",
       }}
     >
-      <div className="relative w-full px-4">
+      {/* `--chrome-gutter` (a touch tighter than the content's `px-4`) so the
+          floating search pill and back button overhang the page slightly, in step
+          with the bottom-nav island and the map's control clusters. */}
+      <div className="relative w-full px-(--chrome-gutter)">
         <div className="relative flex w-full items-center gap-2">
           {/* An inset search pill (thicker top border like our inputs) sitting
               inline next to the account avatar. The search owns its own pill chrome

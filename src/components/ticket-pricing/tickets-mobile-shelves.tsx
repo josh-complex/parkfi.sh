@@ -4,12 +4,7 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CloudRainIcon, DropletIcon, TicketIcon, WindIcon } from "lucide-react";
 
-import {
-  Carousel,
-  CarouselArrows,
-  CarouselContent,
-  CarouselItem,
-} from "#/components/ui/carousel.tsx";
+import { Carousel, CarouselArrows, CarouselContent } from "#/components/ui/carousel.tsx";
 import {
   Drawer,
   DrawerContent,
@@ -35,6 +30,16 @@ import { buyTicketsHref, ticketPurchaseDeepLink, ticketStoreLabel } from "#/lib/
 import { useIsNative } from "#/hooks/use-is-native.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { cn } from "#/lib/utils.ts";
+import {
+  RAIL_MEDIA_ASPECT,
+  RailCard,
+  RailCardBody,
+  RailCardMedia,
+  RailCardMeta,
+  RailCardTitle,
+  RailItem,
+  SHELF_VIEWPORT,
+} from "#/components/ui/rail.tsx";
 
 /** One park's summary row, mirroring the `tickets.parkShelf` endpoint payload. */
 interface ShelfPark {
@@ -97,26 +102,22 @@ function StatCard({
 }) {
   const interactive = onClick != null || href != null;
   const inner = (
-    <div className="group flex flex-col gap-2 outline-none">
-      <div
+    <RailCard>
+      <RailCardMedia
         className={cn(
-          "bg-muted relative flex aspect-[4/3] w-full overflow-hidden rounded-2xl",
+          "flex",
           fill ? "flex-col justify-between p-2.5" : "items-center justify-center",
           interactive && "transition-transform group-hover:scale-[1.02]",
           thumbClassName,
         )}
       >
         {children}
-      </div>
-      <div className="flex flex-col gap-0.5 px-0.5">
-        <span
-          className={cn("line-clamp-1 text-sm font-medium", interactive && "group-hover:underline")}
-        >
-          {label}
-        </span>
-        {sub && <span className="text-muted-foreground line-clamp-1 text-xs">{sub}</span>}
-      </div>
-    </div>
+      </RailCardMedia>
+      <RailCardBody>
+        <RailCardTitle interactive={interactive}>{label}</RailCardTitle>
+        {sub && <RailCardMeta>{sub}</RailCardMeta>}
+      </RailCardBody>
+    </RailCard>
   );
   if (href) {
     return (
@@ -169,12 +170,9 @@ function ParkShelf({
           <CarouselArrows className="hidden shrink-0 md:flex" />
         </div>
 
-        <CarouselContent
-          className="-ml-4"
-          viewportClassName="px-4 lg:px-6 [mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%_-_1.5rem),transparent)]"
-        >
+        <CarouselContent className="-ml-4" viewportClassName={SHELF_VIEWPORT}>
           {/* Today's price — opens the calendar on today */}
-          <CarouselItem className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5">
+          <RailItem>
             <StatCard label="Today" onClick={() => onOpenCalendar(todayIso)}>
               {park.todayCents != null ? (
                 <span
@@ -204,10 +202,10 @@ function ParkShelf({
                 </span>
               )}
             </StatCard>
-          </CarouselItem>
+          </RailItem>
 
           {/* Upcoming cheapest — opens the calendar on that date */}
-          <CarouselItem className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5">
+          <RailItem>
             <StatCard
               label="Cheapest"
               sub={park.cheapestDate ? shortDate(park.cheapestDate) : null}
@@ -222,13 +220,13 @@ function ParkShelf({
                 <span className="text-2xl font-bold text-muted-foreground/30">—</span>
               )}
             </StatCard>
-          </CarouselItem>
+          </RailItem>
 
           {/* Buy tickets — on the native MDE shell (Disney) this deep links to
               the app's `mdx://tickets/buy` purchase flow; on web (and Universal)
               it's the https ticket store, which hands off to the app via App
               Links. */}
-          <CarouselItem className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5">
+          <RailItem>
             <StatCard
               label="Buy tickets"
               sub={
@@ -241,10 +239,10 @@ function ParkShelf({
             >
               <TicketIcon className="size-9" strokeWidth={1.75} />
             </StatCard>
-          </CarouselItem>
+          </RailItem>
 
           {/* Today's weather — icon + precip up top, high/low + wind/humidity below */}
-          <CarouselItem className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5">
+          <RailItem>
             <StatCard label="Weather" sub={park.condition} fill={park.highF != null}>
               {park.highF != null ? (
                 <>
@@ -292,10 +290,10 @@ function ParkShelf({
                 <span className="text-2xl font-bold text-muted-foreground/30">—</span>
               )}
             </StatCard>
-          </CarouselItem>
+          </RailItem>
 
           {/* Today's crowd level */}
-          <CarouselItem className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5">
+          <RailItem>
             <StatCard
               label="Crowd"
               sub={park.crowdIndex != null ? `${park.crowdIndex}/10` : null}
@@ -307,7 +305,7 @@ function ParkShelf({
                 <span className="text-2xl font-bold text-muted-foreground/30">—</span>
               )}
             </StatCard>
-          </CarouselItem>
+          </RailItem>
         </CarouselContent>
       </section>
     </Carousel>
@@ -324,7 +322,7 @@ function LoadingShelf() {
       <div className="flex gap-4 overflow-hidden">
         {Array.from({ length: 3 }).map((_, i) => (
           <div key={i} className="w-[42%] shrink-0">
-            <Skeleton className="aspect-[4/3] rounded-2xl" />
+            <Skeleton className={cn(RAIL_MEDIA_ASPECT, "rounded-2xl")} />
           </div>
         ))}
       </div>

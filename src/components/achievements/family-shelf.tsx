@@ -19,6 +19,7 @@ import {
   type AchievementFamily,
   type Stats,
 } from "#/lib/achievements.ts";
+import { SHELF_VIEWPORT } from "#/components/ui/rail.tsx";
 
 export function FamilyShelf({
   family,
@@ -56,7 +57,7 @@ export function FamilyShelf({
           <CarouselArrows className="hidden md:flex" />
         </div>
 
-        <CarouselContent viewportClassName="px-4 lg:px-6 [mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%_-_1.5rem),transparent)]">
+        <CarouselContent viewportClassName={SHELF_VIEWPORT}>
           {family.tiers.map((tier, i) => (
             <CarouselItem key={tier.id} className="basis-auto">
               <TierBadge

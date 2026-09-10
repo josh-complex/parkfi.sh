@@ -466,7 +466,7 @@ export function NavOverlay({
       <div
         data-map-chrome="bottom"
         className={cn(
-          "pointer-events-auto absolute inset-x-4 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+1.4rem)] z-10 mx-auto flex max-w-md flex-col gap-3 rounded-3xl border-t-3 bg-green-700 px-4 py-4 text-white ring-1 ring-white/15 dark:ring-transparent md:bottom-3",
+          "pointer-events-auto absolute inset-x-(--chrome-gutter) bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+1.4rem)] z-10 mx-auto flex max-w-md flex-col gap-3 rounded-3xl border-t-3 bg-green-700 px-4 py-4 text-white ring-1 ring-white/15 dark:ring-transparent md:bottom-3",
           GREEN_PANEL_BORDER,
         )}
       >
@@ -539,7 +539,7 @@ export function NavOverlay({
       <div
         data-map-chrome="top"
         className={cn(
-          "pointer-events-auto absolute inset-x-4 top-[calc(var(--safe-top)+4.5rem)] z-10 mx-auto max-w-md overflow-hidden rounded-3xl bg-green-700 text-white ring-1 ring-white/15 dark:ring-transparent md:top-3",
+          "pointer-events-auto absolute inset-x-(--chrome-gutter) top-[calc(var(--safe-top)+4.5rem)] z-10 mx-auto max-w-md overflow-hidden rounded-3xl bg-green-700 text-white ring-1 ring-white/15 dark:ring-transparent md:top-3",
           GREEN_PANEL_3D,
         )}
       >
@@ -596,7 +596,7 @@ export function NavOverlay({
           edge is pinned; buttons stack upward — the compass sits lowest (where it
           always has), the route-overview peek above it. */}
       {started && (
-        <div className="pointer-events-none absolute left-4 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+7rem)] z-10 flex flex-col gap-2 md:bottom-[6.25rem]">
+        <div className="pointer-events-none absolute left-(--chrome-gutter) bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+7rem)] z-10 flex flex-col gap-2 md:bottom-[6.25rem]">
           {/* Route overview — frame the whole remaining route, then the recenter
               button returns to follow (§3.4). */}
           <button
@@ -621,7 +621,7 @@ export function NavOverlay({
       <div
         data-map-chrome="bottom"
         className={cn(
-          "pointer-events-auto absolute inset-x-4 bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+1.4rem)] z-10 mx-auto flex max-w-md items-center gap-3 overflow-hidden rounded-3xl border-t-3 bg-green-700 px-4 py-2.5 text-white ring-1 ring-white/15 dark:ring-transparent md:bottom-3",
+          "pointer-events-auto absolute inset-x-(--chrome-gutter) bottom-[calc(var(--bottom-nav-height)+var(--safe-bottom)+1.4rem)] z-10 mx-auto flex max-w-md items-center gap-3 overflow-hidden rounded-3xl border-t-3 bg-green-700 px-4 py-2.5 text-white ring-1 ring-white/15 dark:ring-transparent md:bottom-3",
           GREEN_PANEL_BORDER,
         )}
       >

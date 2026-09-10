@@ -1,6 +1,15 @@
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { thumbhashToUrl } from "#/components/ui/image.tsx";
 import { cn } from "#/lib/utils.ts";
+import {
+  RAIL_ITEM_BASIS,
+  RailCard,
+  RailCardBody,
+  RailCardMedia,
+  RailCardMeta,
+  RailCardTitle,
+  SHELF_VIEWPORT,
+} from "#/components/ui/rail.tsx";
 
 /** A row of at-a-glance metric tiles (park stat bar, account overview, …). */
 export function StatCardsSkeleton({
@@ -103,33 +112,22 @@ export function ShelfGhost({
             {subtitle && <p className="text-muted-foreground text-sm">{subtitle}</p>}
           </div>
         </div>
-        <div className="overflow-hidden px-4 lg:px-6 [mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%_-_1.5rem),transparent)]">
+        <div className={cn("overflow-hidden", SHELF_VIEWPORT)}>
           <div className="-ml-4 flex">
             {items.slice(0, 8).map((item, i) => {
               const url = thumbhashToUrl(item.thumbhash);
               return (
-                <div
-                  key={i}
-                  className="min-w-0 shrink-0 grow-0 basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5 2xl:basis-1/6"
-                >
-                  <div className="flex flex-col gap-2">
-                    <div className="bg-muted relative aspect-[4/3] w-full overflow-hidden rounded-2xl">
+                <div key={i} className={cn("min-w-0 shrink-0 grow-0 pl-4", RAIL_ITEM_BASIS)}>
+                  <RailCard>
+                    <RailCardMedia>
                       {url && <img src={url} alt="" className="size-full object-cover" />}
-                    </div>
-                    <div className="flex flex-col gap-0.5 px-0.5">
-                      <span className="line-clamp-1 text-sm font-medium">{item.name}</span>
-                      {item.sub && (
-                        <span className="text-muted-foreground line-clamp-1 text-xs">
-                          {item.sub}
-                        </span>
-                      )}
-                      {item.sub2 && (
-                        <span className="text-muted-foreground line-clamp-1 text-xs">
-                          {item.sub2}
-                        </span>
-                      )}
-                    </div>
-                  </div>
+                    </RailCardMedia>
+                    <RailCardBody>
+                      <RailCardTitle interactive={false}>{item.name}</RailCardTitle>
+                      {item.sub && <RailCardMeta>{item.sub}</RailCardMeta>}
+                      {item.sub2 && <RailCardMeta>{item.sub2}</RailCardMeta>}
+                    </RailCardBody>
+                  </RailCard>
                 </div>
               );
             })}

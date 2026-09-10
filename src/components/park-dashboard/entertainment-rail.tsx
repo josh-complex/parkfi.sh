@@ -4,14 +4,19 @@ import * as React from "react";
 import { Link } from "@tanstack/react-router";
 
 import { Badge } from "#/components/ui/badge.tsx";
-import {
-  Carousel,
-  CarouselArrows,
-  CarouselContent,
-  CarouselItem,
-} from "#/components/ui/carousel.tsx";
+import { Carousel, CarouselArrows, CarouselContent } from "#/components/ui/carousel.tsx";
 import { Image } from "#/components/ui/image.tsx";
 import { disneyResizeUrl } from "#/lib/image.ts";
+import {
+  RAIL_MEDIA_RATIO,
+  RailCard,
+  RailCardBody,
+  RailCardMedia,
+  RailCardMeta,
+  RailCardTitle,
+  RailItem,
+  SHELF_VIEWPORT,
+} from "#/components/ui/rail.tsx";
 import {
   nextShowtime,
   parseShowtimes,
@@ -53,14 +58,14 @@ function ShowCard({
       params={{ slug: parkSlug, rideSlug: item.slug }}
       className="block"
     >
-      <div className="group flex flex-col gap-2 outline-none">
-        <div className="bg-muted relative aspect-[4/3] w-full overflow-hidden rounded-2xl">
+      <RailCard>
+        <RailCardMedia>
           {hero ? (
             <Image
               src={disneyResizeUrl(hero, 400)}
               alt={item.meta?.imageAlt ?? item.name}
               loading="lazy"
-              aspect={4 / 3}
+              aspect={RAIL_MEDIA_RATIO}
               placeholder={item.meta?.imageThumbhash ?? undefined}
               className="size-full object-cover group-hover:scale-105"
             />
@@ -74,21 +79,17 @@ function ShowCard({
               Done today
             </Badge>
           )}
-        </div>
-        <div className="flex flex-col gap-0.5 px-0.5">
-          <span className="line-clamp-1 text-sm font-medium group-hover:underline">
-            {item.name}
-          </span>
-          <span className="text-muted-foreground line-clamp-1 text-xs">
+        </RailCardMedia>
+        <RailCardBody>
+          <RailCardTitle>{item.name}</RailCardTitle>
+          <RailCardMeta>
             {next && minutes != null
               ? `Next show ${untilLabel(minutes)}`
               : `${times.length} ${times.length === 1 ? "show" : "shows"} today`}
-          </span>
-          {item.meta?.land && (
-            <span className="text-muted-foreground line-clamp-1 text-xs">{item.meta.land}</span>
-          )}
-        </div>
-      </div>
+          </RailCardMeta>
+          {item.meta?.land && <RailCardMeta>{item.meta.land}</RailCardMeta>}
+        </RailCardBody>
+      </RailCard>
     </Link>
   );
 }
@@ -150,17 +151,11 @@ export function EntertainmentRail({
           </div>
           <CarouselArrows className="hidden md:flex" />
         </div>
-        <CarouselContent
-          className="-ml-4"
-          viewportClassName="px-4 lg:px-6 [mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%_-_1.5rem),transparent)]"
-        >
+        <CarouselContent className="-ml-4" viewportClassName={SHELF_VIEWPORT}>
           {shows.map((row) => (
-            <CarouselItem
-              key={row.item.id}
-              className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5"
-            >
+            <RailItem key={row.item.id}>
               <ShowCard row={row} parkSlug={parkSlug} tz={tz} nowMs={nowMs} />
-            </CarouselItem>
+            </RailItem>
           ))}
         </CarouselContent>
       </section>

@@ -18,15 +18,22 @@ import { diningStore } from "#/components/dining/dining-store.ts";
 import { cn } from "#/lib/utils.ts";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Image } from "#/components/ui/image.tsx";
-import {
-  Carousel,
-  CarouselArrows,
-  CarouselContent,
-  CarouselItem,
-} from "#/components/ui/carousel.tsx";
+import { Carousel, CarouselArrows, CarouselContent } from "#/components/ui/carousel.tsx";
 import { LazyMount } from "#/components/ui/lazy-mount.tsx";
 import { ShelfGhost } from "#/components/skeletons.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
+import {
+  RAIL_GHOST_GRID,
+  RAIL_MEDIA_ASPECT,
+  RAIL_MEDIA_RATIO,
+  RailCard,
+  RailCardBody,
+  RailCardMedia,
+  RailCardMeta,
+  RailCardTitle,
+  RailItem,
+  SHELF_VIEWPORT,
+} from "#/components/ui/rail.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
 export interface PickVenue {
@@ -67,14 +74,14 @@ export function PickCard({
   const status = schedules ? openStatus(schedules, nowMin) : null;
   const statusDetail = schedules ? openStatusDetail(schedules, nowMin) : null;
   const body = (
-    <div className="group flex flex-col gap-2 outline-none">
-      <div className="bg-muted relative aspect-[4/3] w-full overflow-hidden rounded-2xl">
+    <RailCard>
+      <RailCardMedia>
         {venue.imageUrl ? (
           <Image
             src={venue.imageUrl}
             alt={venue.name}
             loading="lazy"
-            aspect={4 / 3}
+            aspect={RAIL_MEDIA_RATIO}
             placeholder={venue.imageThumbhash}
             className="size-full object-cover group-hover:scale-105"
           />
@@ -104,17 +111,13 @@ export function PickCard({
             {nextAvail}
           </Badge>
         )}
-      </div>
-      <div className="flex flex-col gap-0.5 px-0.5">
-        <span className="line-clamp-1 text-sm font-medium group-hover:underline">{venue.name}</span>
-        {venue.parkResort && (
-          <span className="text-muted-foreground line-clamp-1 text-xs">{venue.parkResort}</span>
-        )}
-        {venue.cuisine && (
-          <span className="text-muted-foreground line-clamp-1 text-xs">{venue.cuisine}</span>
-        )}
-      </div>
-    </div>
+      </RailCardMedia>
+      <RailCardBody>
+        <RailCardTitle>{venue.name}</RailCardTitle>
+        {venue.parkResort && <RailCardMeta>{venue.parkResort}</RailCardMeta>}
+        {venue.cuisine && <RailCardMeta>{venue.cuisine}</RailCardMeta>}
+      </RailCardBody>
+    </RailCard>
   );
   // Always open our own detail page first; the external reservation link lives there.
   return (
@@ -183,9 +186,9 @@ export function DiningPicks({
         {Array.from({ length: 3 }).map((_, g) => (
           <div key={g} className="flex flex-col gap-4">
             <Skeleton className="h-6 w-56" />
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6">
+            <div className={RAIL_GHOST_GRID}>
               {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="aspect-[4/3] rounded-2xl" />
+                <Skeleton key={i} className={cn(RAIL_MEDIA_ASPECT, "rounded-2xl")} />
               ))}
             </div>
           </div>
@@ -234,22 +237,16 @@ export function DiningPicks({
                 </div>
                 <CarouselArrows className="hidden md:flex" />
               </div>
-              <CarouselContent
-                className="-ml-4"
-                viewportClassName="px-4 lg:px-6 [mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%_-_1.5rem),transparent)]"
-              >
+              <CarouselContent className="-ml-4" viewportClassName={SHELF_VIEWPORT}>
                 {shelf.venues.map((v) => (
-                  <CarouselItem
-                    key={v.facilityId}
-                    className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5 2xl:basis-1/6"
-                  >
+                  <RailItem key={v.facilityId}>
                     <PickCard
                       venue={v}
                       nextAvail={nextAvail.get(v.facilityId)}
                       schedules={hoursMap.get(v.facilityId)}
                       nowMin={nowMin}
                     />
-                  </CarouselItem>
+                  </RailItem>
                 ))}
               </CarouselContent>
             </section>

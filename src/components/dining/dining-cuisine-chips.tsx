@@ -4,7 +4,8 @@ import { useStore } from "@tanstack/react-store";
 
 import { commitSearch, diningStore, patchFilters } from "#/components/dining/dining-store.ts";
 import { cuisineEmoji } from "#/components/dining/dining-filters.ts";
-import { cn } from "#/lib/utils.ts";
+
+import { ChipRail, RailChip } from "#/components/ui/rail.tsx";
 
 import type { FilterOptions } from "#/components/dining/dining-filters.ts";
 
@@ -29,30 +30,21 @@ export function DiningCuisineChips({ options }: { options: FilterOptions }) {
   };
 
   return (
-    <div
-      role="group"
-      aria-label="Filter by cuisine"
-      className="flex snap-x scroll-pl-4 gap-1.5 overflow-x-auto px-4 py-2 [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] [scrollbar-width:none] md:hidden [&::-webkit-scrollbar]:hidden"
-    >
+    <ChipRail role="group" aria-label="Filter by cuisine" className="md:hidden">
       {chips.map((c) => {
         const active = cuisine === c;
         return (
-          <button
+          <RailChip
             key={c}
-            type="button"
+            aria-pressed={active}
             onClick={() => select(active ? "ALL" : c)}
-            className={cn(
-              "flex shrink-0 snap-start items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-              active
-                ? "border-foreground bg-foreground text-background"
-                : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
-            )}
+            active={active}
           >
             <span aria-hidden>{cuisineEmoji(c)}</span>
             {c}
-          </button>
+          </RailChip>
         );
       })}
-    </div>
+    </ChipRail>
   );
 }

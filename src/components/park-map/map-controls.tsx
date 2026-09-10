@@ -97,7 +97,9 @@ export function BottomMapCluster({
       data-map-chrome="bottom"
       className={cn(
         "pointer-events-none absolute z-10 flex flex-col gap-2",
-        side === "left" ? "left-4 items-start" : "right-4 items-end",
+        side === "left"
+          ? "left-(--chrome-gutter) items-start"
+          : "right-(--chrome-gutter) items-end",
         fullBleed ? (lifted ? CLUSTER_BOTTOM_LIFTED : CLUSTER_BOTTOM) : "bottom-3",
         className,
       )}
@@ -280,7 +282,7 @@ export function ParkChipScroller({
   const others = focusSlug ? parks.filter((p) => p.slug !== focusSlug) : parks;
   if (others.length === 0) return null;
   return (
-    <div className="pointer-events-auto -mx-3 flex w-[calc(100%+1.5rem)] touch-pan-x items-center gap-1.5 overflow-x-auto overscroll-contain px-4 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="pointer-events-auto -mx-(--chrome-gutter) flex w-[calc(100%+var(--chrome-gutter)*2)] touch-pan-x items-center gap-1.5 overflow-x-auto overscroll-contain px-(--chrome-gutter) pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {others.map((p) => (
         <button
           key={p.slug}
@@ -399,7 +401,7 @@ export function MapToggleChips({ available }: { available?: ReadonlySet<MapToggl
   const toggleLayer = (key: keyof MapLayers) =>
     setFilter((f) => ({ ...f, layers: { ...f.layers, [key]: !f.layers[key] } }));
   return (
-    <div className="pointer-events-auto -mx-3 flex w-[calc(100%+1.5rem)] touch-pan-x gap-1.5 overflow-x-auto overscroll-contain px-4 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="pointer-events-auto -mx-(--chrome-gutter) flex w-[calc(100%+var(--chrome-gutter)*2)] touch-pan-x gap-1.5 overflow-x-auto overscroll-contain px-(--chrome-gutter) pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {MAP_TOGGLES.filter((t) => available?.has(t.toggle) ?? true).map((t) => {
         const active =
           t.kind === "category"

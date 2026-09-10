@@ -1,7 +1,7 @@
 "use client";
 
 import type { Resort } from "#/components/ticket-pricing/shared.tsx";
-import { cn } from "#/lib/utils.ts";
+import { ChipRail, RailChip } from "#/components/ui/rail.tsx";
 
 const RESORT_CHIPS: ReadonlyArray<{ value: Resort; label: string; emoji: string }> = [
   { value: "WDW", label: "Walt Disney World", emoji: "🏰" },
@@ -22,30 +22,21 @@ export function TicketsResortChips({
   onChange: (next: Resort | null) => void;
 }) {
   return (
-    <div
-      role="group"
-      aria-label="Filter by resort"
-      className="flex snap-x scroll-pl-4 gap-1.5 overflow-x-auto px-4 py-2 [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] [scrollbar-width:none] md:hidden [&::-webkit-scrollbar]:hidden"
-    >
+    <ChipRail role="group" aria-label="Filter by resort" className="md:hidden">
       {RESORT_CHIPS.map((c) => {
         const active = value === c.value;
         return (
-          <button
+          <RailChip
             key={c.value}
-            type="button"
+            aria-pressed={active}
             onClick={() => onChange(active ? null : c.value)}
-            className={cn(
-              "flex shrink-0 snap-start items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-              active
-                ? "border-foreground bg-foreground text-background"
-                : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
-            )}
+            active={active}
           >
             <span aria-hidden>{c.emoji}</span>
             {c.label}
-          </button>
+          </RailChip>
         );
       })}
-    </div>
+    </ChipRail>
   );
 }

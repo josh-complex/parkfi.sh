@@ -1,7 +1,7 @@
 "use client";
 
 import { areaEmoji, areaLabel } from "#/components/stays/stays-filters.ts";
-import { cn } from "#/lib/utils.ts";
+import { ChipRail, RailChip } from "#/components/ui/rail.tsx";
 
 /**
  * Mobile-only quick area filters — a horizontally scrolling chip row that
@@ -21,30 +21,21 @@ export function StaysAreaChips({
   if (!areas.length) return null;
 
   return (
-    <div
-      role="group"
-      aria-label="Filter by resort area"
-      className="flex snap-x scroll-pl-4 gap-1.5 overflow-x-auto px-4 py-2 [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] [scrollbar-width:none] md:hidden [&::-webkit-scrollbar]:hidden"
-    >
+    <ChipRail role="group" aria-label="Filter by resort area" className="md:hidden">
       {areas.map((a) => {
         const active = value === a;
         return (
-          <button
+          <RailChip
             key={a}
-            type="button"
+            aria-pressed={active}
             onClick={() => onChange(active ? null : a)}
-            className={cn(
-              "flex shrink-0 snap-start items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-              active
-                ? "border-foreground bg-foreground text-background"
-                : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
-            )}
+            active={active}
           >
             <span aria-hidden>{areaEmoji(a)}</span>
             {areaLabel(a)}
-          </button>
+          </RailChip>
         );
       })}
-    </div>
+    </ChipRail>
   );
 }

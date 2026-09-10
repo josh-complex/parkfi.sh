@@ -7,13 +7,15 @@ import { useStore } from "@tanstack/react-store";
 import { PickCard, type PickVenue } from "#/components/dining/dining-picks.tsx";
 import { diningStore } from "#/components/dining/dining-store.ts";
 import { parkNowMinutes, type ScheduleEntry } from "#/components/dining/dining-hours.ts";
-import {
-  Carousel,
-  CarouselArrows,
-  CarouselContent,
-  CarouselItem,
-} from "#/components/ui/carousel.tsx";
+import { Carousel, CarouselArrows, CarouselContent } from "#/components/ui/carousel.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
+import { cn } from "#/lib/utils.ts";
+import {
+  RAIL_GHOST_GRID,
+  RAIL_MEDIA_ASPECT,
+  RailItem,
+  SHELF_VIEWPORT,
+} from "#/components/ui/rail.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
 /** "YYYY-MM-DD" → "Today" / "Tomorrow" / "Jun 21" relative to the reference day. */
@@ -52,22 +54,16 @@ function Shelf({
           </div>
           <CarouselArrows className="hidden md:flex" />
         </div>
-        <CarouselContent
-          className="-ml-4"
-          viewportClassName="px-4 lg:px-6 [mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%_-_1.5rem),transparent)]"
-        >
+        <CarouselContent className="-ml-4" viewportClassName={SHELF_VIEWPORT}>
           {venues.map((v) => (
-            <CarouselItem
-              key={v.facilityId}
-              className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5"
-            >
+            <RailItem key={v.facilityId}>
               <PickCard
                 venue={v}
                 nextAvail={nextAvail.get(v.facilityId)}
                 schedules={hoursMap.get(v.facilityId)}
                 nowMin={nowMin}
               />
-            </CarouselItem>
+            </RailItem>
           ))}
         </CarouselContent>
       </section>
@@ -111,9 +107,9 @@ export function ResortDiningShelf({ resortName }: { resortName: string }) {
     return (
       <div className="flex flex-col gap-4">
         <Skeleton className="h-6 w-56" />
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-5">
+        <div className={RAIL_GHOST_GRID}>
           {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="aspect-[4/3] rounded-2xl" />
+            <Skeleton key={i} className={cn(RAIL_MEDIA_ASPECT, "rounded-2xl")} />
           ))}
         </div>
       </div>

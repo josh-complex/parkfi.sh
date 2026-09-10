@@ -8,13 +8,21 @@ import { ReceiptTextIcon } from "lucide-react";
 import { menuItemAnchorId } from "#/components/dining/menu-content.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Image } from "#/components/ui/image.tsx";
-import {
-  Carousel,
-  CarouselArrows,
-  CarouselContent,
-  CarouselItem,
-} from "#/components/ui/carousel.tsx";
+import { Carousel, CarouselArrows, CarouselContent } from "#/components/ui/carousel.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
+import { cn } from "#/lib/utils.ts";
+import {
+  RAIL_ITEM_BASIS,
+  RAIL_MEDIA_ASPECT,
+  RAIL_MEDIA_RATIO,
+  RailCard,
+  RailCardBody,
+  RailCardMedia,
+  RailCardMeta,
+  RailCardTitle,
+  RailItem,
+  SHELF_VIEWPORT,
+} from "#/components/ui/rail.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
 type UpdatedVenue = {
@@ -76,11 +84,8 @@ function RecentlyUpdatedSkeleton() {
       />
       <div className="flex gap-4 overflow-hidden px-4 lg:px-6">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div
-            key={i}
-            className="flex shrink-0 basis-[42%] flex-col gap-2 md:basis-1/3 lg:basis-1/4 xl:basis-1/5 2xl:basis-1/6"
-          >
-            <Skeleton className="aspect-[4/3] w-full rounded-2xl" />
+          <div key={i} className={cn("flex shrink-0 flex-col gap-2", RAIL_ITEM_BASIS)}>
+            <Skeleton className={cn(RAIL_MEDIA_ASPECT, "w-full rounded-2xl")} />
             <Skeleton className="h-4 w-3/4" />
             <Skeleton className="h-3 w-1/2" />
             <Skeleton className="h-3 w-2/3" />
@@ -99,14 +104,14 @@ function UpdatedCard({ v }: { v: UpdatedVenue }) {
       hash={v.sampleTitles[0] ? menuItemAnchorId(v.sampleTitles[0]) : "menu"}
       className="block"
     >
-      <div className="group flex flex-col gap-2 outline-none">
-        <div className="bg-muted relative aspect-[4/3] w-full overflow-hidden rounded-2xl">
+      <RailCard>
+        <RailCardMedia>
           {v.imageUrl ? (
             <Image
               src={v.imageUrl}
               alt={v.name}
               loading="lazy"
-              aspect={4 / 3}
+              aspect={RAIL_MEDIA_RATIO}
               placeholder={v.imageThumbhash}
               className="size-full object-cover group-hover:scale-105"
             />
@@ -115,17 +120,15 @@ function UpdatedCard({ v }: { v: UpdatedVenue }) {
             <ReceiptTextIcon className="size-3" />
             {v.changeCount} {v.changeCount === 1 ? "update" : "updates"}
           </Badge>
-        </div>
-        <div className="flex flex-col gap-0.5 px-0.5">
-          <span className="line-clamp-1 text-sm font-medium group-hover:underline">{v.name}</span>
-          {v.parkResort && (
-            <span className="text-muted-foreground line-clamp-1 text-xs">{v.parkResort}</span>
-          )}
+        </RailCardMedia>
+        <RailCardBody>
+          <RailCardTitle>{v.name}</RailCardTitle>
+          {v.parkResort && <RailCardMeta>{v.parkResort}</RailCardMeta>}
           <span className="text-muted-foreground/70 text-xs">
             Updated {formatDistanceToNowStrict(new Date(v.lastChangedAt))} ago
           </span>
-        </div>
-      </div>
+        </RailCardBody>
+      </RailCard>
     </Link>
   );
 }
@@ -144,17 +147,11 @@ function UpdatedShelf({
     <Carousel opts={{ align: "start", dragFree: true }} className="-mx-4 lg:-mx-6">
       <section className="flex flex-col gap-3">
         <ShelfHeader title={title} subtitle={subtitle} withArrows />
-        <CarouselContent
-          className="-ml-4"
-          viewportClassName="px-4 lg:px-6 [mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%_-_1.5rem),transparent)]"
-        >
+        <CarouselContent className="-ml-4" viewportClassName={SHELF_VIEWPORT}>
           {venues.map((v) => (
-            <CarouselItem
-              key={v.facilityId}
-              className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5 2xl:basis-1/6"
-            >
+            <RailItem key={v.facilityId}>
               <UpdatedCard v={v} />
-            </CarouselItem>
+            </RailItem>
           ))}
         </CarouselContent>
       </section>

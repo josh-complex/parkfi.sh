@@ -18,15 +18,20 @@ import {
   CardHeader,
   CardTitle,
 } from "#/components/ui/card.tsx";
-import {
-  Carousel,
-  CarouselArrows,
-  CarouselContent,
-  CarouselItem,
-} from "#/components/ui/carousel.tsx";
+import { Carousel, CarouselArrows, CarouselContent } from "#/components/ui/carousel.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { cn } from "#/lib/utils.ts";
+import {
+  RAIL_MEDIA_RATIO,
+  RailCard,
+  RailCardBody,
+  RailCardMedia,
+  RailCardMeta,
+  RailCardTitle,
+  RailItem,
+  SHELF_VIEWPORT,
+} from "#/components/ui/rail.tsx";
 
 function formatPrice(price: number | null, currency: string | null): string | null {
   if (price === null) return null;
@@ -82,28 +87,26 @@ function ElsewhereCard({
 }) {
   return (
     <Link to="/dining/$facilityId/item/$slug" params={{ facilityId, slug }} className="block">
-      <div className="group flex flex-col gap-2 outline-none">
-        <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-muted">
+      <RailCard>
+        <RailCardMedia>
           {imageUrl ? (
             <Image
               src={imageUrl}
               alt={name}
               loading="lazy"
-              aspect={4 / 3}
+              aspect={RAIL_MEDIA_RATIO}
               className="size-full object-cover group-hover:scale-105"
             />
           ) : null}
           <Badge className="absolute bottom-2 right-2 border-0 bg-black/60 text-xs font-normal text-white shadow-none backdrop-blur-sm">
             {formatPrice(price, currency) ?? "—"}
           </Badge>
-        </div>
-        <div className="flex flex-col gap-0.5 px-0.5">
-          <span className="line-clamp-1 text-sm font-medium group-hover:underline">{name}</span>
-          {parkResort && (
-            <span className="line-clamp-1 text-xs text-muted-foreground">{parkResort}</span>
-          )}
-        </div>
-      </div>
+        </RailCardMedia>
+        <RailCardBody>
+          <RailCardTitle>{name}</RailCardTitle>
+          {parkResort && <RailCardMeta>{parkResort}</RailCardMeta>}
+        </RailCardBody>
+      </RailCard>
     </Link>
   );
 }
@@ -276,15 +279,9 @@ export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug:
               </div>
               <CarouselArrows className="hidden md:flex" />
             </div>
-            <CarouselContent
-              className="-ml-4"
-              viewportClassName="px-4 lg:px-6 [mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%_-_1.5rem),transparent)]"
-            >
+            <CarouselContent className="-ml-4" viewportClassName={SHELF_VIEWPORT}>
               {elsewhere.map((e) => (
-                <CarouselItem
-                  key={e.facilityId}
-                  className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5"
-                >
+                <RailItem key={e.facilityId}>
                   <ElsewhereCard
                     facilityId={e.facilityId}
                     slug={slug}
@@ -294,7 +291,7 @@ export function MenuItemDetail({ facilityId, slug }: { facilityId: string; slug:
                     price={e.price}
                     currency={e.currency}
                   />
-                </CarouselItem>
+                </RailItem>
               ))}
             </CarouselContent>
           </section>

@@ -42,12 +42,7 @@ import { SortDirToggle, SortRows, flipDir, type SortDir } from "#/components/ui/
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Calendar } from "#/components/ui/calendar.tsx";
-import {
-  Carousel,
-  CarouselArrows,
-  CarouselContent,
-  CarouselItem,
-} from "#/components/ui/carousel.tsx";
+import { Carousel, CarouselArrows, CarouselContent } from "#/components/ui/carousel.tsx";
 import { Empty, EmptyDescription, EmptyTitle } from "#/components/ui/empty.tsx";
 import { Image } from "#/components/ui/image.tsx";
 import { Label } from "#/components/ui/label.tsx";
@@ -76,6 +71,18 @@ import { queryUnavailable } from "#/hooks/use-online-status.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
 import { cn } from "#/lib/utils.ts";
+import {
+  RAIL_CARD,
+  RAIL_GHOST_GRID,
+  RAIL_MEDIA_ASPECT,
+  RAIL_MEDIA_RATIO,
+  RailCardBody,
+  RailCardMedia,
+  RailCardMeta,
+  RailCardTitle,
+  RailItem,
+  SHELF_VIEWPORT,
+} from "#/components/ui/rail.tsx";
 import { disneyThumbUrl } from "#/server/parks/codes.ts";
 import {
   RESORT_CATALOG,
@@ -138,19 +145,16 @@ function ResortCard({
   alertSlot?: React.ReactNode;
 }) {
   const hasResult = pricePerNight !== undefined;
-  const className = cn(
-    "group flex flex-col gap-2 outline-none",
-    hasResult && available === false && "opacity-60",
-  );
+  const className = cn(RAIL_CARD, hasResult && available === false && "opacity-60");
   const inner = (
     <>
-      <div className="bg-muted relative aspect-[4/3] w-full overflow-hidden rounded-2xl">
+      <RailCardMedia>
         {image ? (
           <Image
             src={disneyThumbUrl(image) ?? image}
             alt={name}
             loading="lazy"
-            aspect={4 / 3}
+            aspect={RAIL_MEDIA_RATIO}
             placeholder={imageThumbhash}
             className="size-full object-cover group-hover:scale-105"
           />
@@ -168,12 +172,12 @@ function ResortCard({
             </Badge>
           </div>
         )}
-      </div>
-      <div className="flex flex-col gap-0.5 px-0.5">
+      </RailCardMedia>
+      <RailCardBody>
         <div className="flex items-start justify-between gap-2">
-          <span className="line-clamp-1 text-sm font-medium group-hover:underline">{name}</span>
+          <RailCardTitle>{name}</RailCardTitle>
         </div>
-        {area && <span className="text-muted-foreground line-clamp-1 text-xs">{area}</span>}
+        {area && <RailCardMeta>{area}</RailCardMeta>}
         {hasResult && available && pricePerNight != null && (
           <div className="mt-0.5 flex flex-col leading-tight">
             <span className="text-sm">
@@ -188,7 +192,7 @@ function ResortCard({
             ) : null}
           </div>
         )}
-      </div>
+      </RailCardBody>
     </>
   );
   const card = slug ? (
@@ -875,10 +879,10 @@ function BrowseView({
         {Array.from({ length: 3 }).map((_, g) => (
           <div key={g} className="flex flex-col gap-4">
             <Skeleton className="h-6 w-56" />
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6">
+            <div className={RAIL_GHOST_GRID}>
               {Array.from({ length: 5 }).map((_, i) => (
                 <div key={i} className="flex flex-col gap-2">
-                  <Skeleton className="aspect-[4/3] rounded-2xl" />
+                  <Skeleton className={cn(RAIL_MEDIA_ASPECT, "rounded-2xl")} />
                   <Skeleton className="h-4 w-3/4" />
                   <Skeleton className="h-3 w-1/2" />
                 </div>
@@ -912,15 +916,9 @@ function BrowseView({
               </div>
               <CarouselArrows className="hidden md:flex" />
             </div>
-            <CarouselContent
-              className="-ml-4"
-              viewportClassName="px-4 lg:px-6 [mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%_-_1.5rem),transparent)]"
-            >
+            <CarouselContent className="-ml-4" viewportClassName={SHELF_VIEWPORT}>
               {resorts.map((r) => (
-                <CarouselItem
-                  key={r.id}
-                  className="basis-[42%] pl-4 md:basis-1/3 lg:basis-1/4 xl:basis-1/5 2xl:basis-1/6"
-                >
+                <RailItem key={r.id}>
                   <ResortCard
                     name={r.name}
                     area={r.area}
@@ -930,7 +928,7 @@ function BrowseView({
                     slug={r.slug}
                     tier={r.tier}
                   />
-                </CarouselItem>
+                </RailItem>
               ))}
             </CarouselContent>
           </section>
@@ -1140,7 +1138,7 @@ function ResultsView({
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
           {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="flex flex-col gap-2">
-              <Skeleton className="aspect-[4/3] rounded-2xl" />
+              <Skeleton className={cn(RAIL_MEDIA_ASPECT, "rounded-2xl")} />
               <Skeleton className="h-4 w-3/4" />
               <Skeleton className="h-3 w-1/2" />
             </div>

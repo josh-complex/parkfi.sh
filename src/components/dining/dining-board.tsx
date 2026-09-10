@@ -36,6 +36,8 @@ import {
   type ScheduleEntry,
 } from "#/components/dining/dining-hours.ts";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
+import { RAIL_GHOST_GRID, RAIL_MEDIA_ASPECT } from "#/components/ui/rail.tsx";
+import { cn } from "#/lib/utils.ts";
 import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { queryUnavailable } from "#/hooks/use-online-status.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
@@ -68,9 +70,9 @@ function BrowseView({
         {Array.from({ length: 3 }).map((_, g) => (
           <div key={g} className="flex flex-col gap-4">
             <Skeleton className="h-6 w-56" />
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6">
+            <div className={RAIL_GHOST_GRID}>
               {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="aspect-[4/3] rounded-2xl" />
+                <Skeleton key={i} className={cn(RAIL_MEDIA_ASPECT, "rounded-2xl")} />
               ))}
             </div>
           </div>

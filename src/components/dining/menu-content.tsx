@@ -6,6 +6,7 @@ import { formatDistanceToNowStrict } from "date-fns";
 import { TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 
 import { Skeleton } from "#/components/ui/skeleton.tsx";
+import { ChipRail, RailChip } from "#/components/ui/rail.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "#/lib/utils.ts";
@@ -604,20 +605,15 @@ export function MenuBody({
 
   function renderPill(s: TypeSection) {
     return (
-      <button
+      <RailChip
         key={s.typeKey}
-        type="button"
         data-pill={s.typeKey}
+        active={activeTypes.includes(s.typeKey)}
         onClick={() => onJumpToType(s.typeKey)}
-        className={cn(
-          "shrink-0 snap-start rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-          activeTypes.includes(s.typeKey)
-            ? "border-foreground bg-foreground text-background"
-            : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
-        )}
+        className="py-1"
       >
         {s.label}
-      </button>
+      </RailChip>
     );
   }
 
@@ -663,36 +659,26 @@ export function MenuBody({
       {viewingChanges
         ? hasChanges && (
             <div className="shrink-0 border-b">
-              <div
-                ref={pillsRef}
-                className="flex snap-x snap-mandatory gap-1.5 overflow-x-auto scroll-px-4 px-4 py-2.5 [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-              >
+              <ChipRail ref={pillsRef} className="snap-mandatory py-2.5">
                 {changeKindTabs.map((t) => (
-                  <button
+                  <RailChip
                     key={t.key}
-                    type="button"
+                    active={activeKind === t.key}
+                    aria-pressed={activeKind === t.key}
                     onClick={() => setActiveChangeKind(t.key)}
-                    className={cn(
-                      "shrink-0 snap-start rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                      activeKind === t.key
-                        ? "border-foreground bg-foreground text-background"
-                        : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
-                    )}
+                    className="py-1"
                   >
                     {t.label} ({t.items.length})
-                  </button>
+                  </RailChip>
                 ))}
-              </div>
+              </ChipRail>
             </div>
           )
         : hasTypeSections && (
             <div className="shrink-0 border-b">
-              <div
-                ref={pillsRef}
-                className="flex snap-x snap-mandatory gap-1.5 overflow-x-auto scroll-px-4 px-4 py-2.5 [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-              >
+              <ChipRail ref={pillsRef} className="snap-mandatory py-2.5">
                 {typeSections.map((s) => renderPill(s))}
-              </div>
+              </ChipRail>
             </div>
           )}
 

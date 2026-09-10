@@ -30,9 +30,15 @@ export const MAP_FILTER_PILL =
   "btn-3d-outline border-3d shadow-3d pointer-events-auto inline-flex w-fit items-center gap-1.5 rounded-full bg-background px-4 py-2 text-sm font-medium transition active:scale-95 dark:border-[color-mix(in_oklch,var(--border),white_25%)] [&>svg]:size-4";
 
 /** Vertical stack wrapper matching the map's bottom-left control cluster:
- *  left-anchored, above the mobile nav island, mobile-only. */
+ *  left-anchored, above the mobile nav island, mobile-only. Hugs the same
+ *  `--chrome-gutter` as the nav island and the map clusters. */
 export const MAP_FILTER_STACK =
-  "pointer-events-none fixed left-4 z-40 flex flex-col items-start gap-2 md:hidden";
+  "pointer-events-none fixed left-(--chrome-gutter) z-40 flex flex-col items-start gap-2 md:hidden";
+
+/** Right-hand mirror of `MAP_FILTER_STACK` for the view/layout toggles that sit
+ *  opposite the filter pills (see the Waits board). */
+export const MAP_FILTER_STACK_RIGHT =
+  "pointer-events-none fixed right-(--chrome-gutter) z-40 flex flex-col items-end gap-2 md:hidden";
 
 function Chip({
   active,

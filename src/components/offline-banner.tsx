@@ -23,7 +23,7 @@ export function OfflineBanner() {
     <div
       aria-hidden={online}
       className={cn(
-        "pointer-events-none fixed inset-x-0 z-50 flex justify-center px-4 transition-[opacity,transform] duration-300 ease-out",
+        "pointer-events-none fixed inset-x-0 z-50 flex justify-center px-(--chrome-gutter) transition-[opacity,transform] duration-300 ease-out",
         online ? "translate-y-2 opacity-0" : "translate-y-0 opacity-100",
       )}
       style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1rem)" }}
