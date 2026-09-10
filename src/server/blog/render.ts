@@ -66,6 +66,22 @@ export function renderMarkdown(md: string): string {
       `color:var(--muted-foreground)">${caption}</figcaption></figure>`,
   );
 
+  // A data table (the dining-diff roundups run six or seven columns) is far wider
+  // than a phone. Without this the table forces the whole article to scroll
+  // sideways and the right-hand columns sit under the viewport edge. Wrap each one
+  // in its own horizontally scrollable block instead: `min-width:max-content` lets
+  // the table take its natural width — Tailwind Typography's `width:100%` still
+  // wins whenever that natural width fits — and the wrapper does the scrolling.
+  // Inline styles because the rendered body ships without a stylesheet hook of its
+  // own. Markdown can't nest tables, so the naive open/close pairing is safe.
+  html = html
+    .replace(
+      /<table\b/gi,
+      '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%">' +
+        '<table style="min-width:max-content"',
+    )
+    .replace(/<\/table>/gi, "</table></div>");
+
   // Inject embeds last, so our trusted iframes survive the strip above. marked
   // wraps a lone token in <p>…</p>; swap the whole paragraph for the embed.
   embeds.forEach((embed, i) => {
