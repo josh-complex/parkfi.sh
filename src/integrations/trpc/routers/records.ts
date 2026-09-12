@@ -37,6 +37,7 @@ const activityAt = sql<Date>`coalesce(${publicRecord.statusAt}, ${publicRecord.f
 const recordColumns = {
   id: publicRecord.id,
   source: publicRecord.source,
+  externalId: publicRecord.externalId,
   kind: publicRecord.kind,
   operator: publicRecord.operator,
   resortSlug: publicRecord.resortSlug,
@@ -83,8 +84,8 @@ const statusClass = sql<string>`case
  */
 const routine = sql<boolean>`(
   coalesce(${publicRecord.payload}->>'worktype', '') ~* '(fence|sign|temp|asbuilt|as-built|repair|reroof|re-roof|demo|pool|irrigation|lowvoltage|tent)'
-  or ${publicRecord.title} ~* '\yannual\y'
-  or coalesce(${publicRecord.payload}->>'projectName', '') ~* '\yannual\y'
+  or ${publicRecord.title} ~* '\\y(annual|afp)\\y'
+  or coalesce(${publicRecord.payload}->>'projectName', '') ~* '\\y(annual|afp)\\y'
 )`;
 
 /** Permit family from the record number (BLD2019-15795 → BLD); other sources use the kind. */
@@ -359,8 +360,8 @@ export const recordsRouter = {
    * The feed grouped by job (plan §6.1a): one row per project / mark / study
    * family with its ticket count, trade mix, status roll-up and date span.
    * Records with no job key are their own single-ticket job, so this is a
-   * superset view of `feed`, not a filter on it. Offset-paginated (jobs are
-   * few thousand and the result is edge-cached).
+   * superset view of `feed`, not a filter on it. Offset-paginated via `cursor`
+   * (jobs are a few thousand and the result is edge-cached).
    */
   jobs: publicProcedure
     .input(
@@ -379,10 +380,12 @@ export const recordsRouter = {
         routine: z.boolean().default(false),
         sort: z.enum(JOB_SORTS).default("activity"),
         limit: z.number().int().min(1).max(100).default(30),
-        offset: z.number().int().min(0).max(5000).default(0),
+        /** Row offset — named `cursor` so tRPC's infinite-query helpers apply. */
+        cursor: z.number().int().min(0).max(5000).nullish(),
       }),
     )
     .query(async ({ input }) => {
+      const offset = input.cursor ?? 0;
       const since = input.days ? new Date(Date.now() - input.days * 86_400_000) : null;
       const q = input.q ? likeContains(input.q) : null;
       const ticketWhere = and(
@@ -468,15 +471,27 @@ export const recordsRouter = {
           ${input.routine ? sql`` : sql`and not j.routine`}
           ${since ? sql`and j.latest_at >= ${since}` : sql``}
         order by ${orderBy}
-        limit ${input.limit + 1} offset ${input.offset}
+        limit ${input.limit + 1} offset ${offset}
       `);
       const hasMore = rows.rows.length > input.limit;
       const page = hasMore ? rows.rows.slice(0, input.limit) : rows.rows;
       const topIds = page.flatMap((r) => r.top_ids.map(Number));
-      const links = await linksFor(topIds);
+      const leadIds = page.map((r) => Number(r.top_ids[0])).filter(Number.isFinite);
+      const [links, leadRows] = await Promise.all([
+        linksFor(topIds),
+        leadIds.length
+          ? db
+              .select(recordColumns)
+              .from(publicRecord)
+              .leftJoin(parks, eq(parks.id, publicRecord.parkId))
+              .where(inArray(publicRecord.id, leadIds))
+          : Promise.resolve([]),
+      ]);
+      const leadById = new Map(leadRows.map((r) => [r.id, r]));
       return {
         items: page.map((r) => {
           const ids = r.top_ids.map(Number);
+          const leadRow = leadById.get(ids[0] ?? -1);
           // Union of the top tickets' links, deduped by entity.
           const seen = new Set<string>();
           const jobLinks: ResolvedLink[] = [];
@@ -511,9 +526,11 @@ export const recordsRouter = {
             routine: r.routine,
             topIds: ids,
             links: jobLinks,
+            // The top ticket, presented — a singleton job renders as this card.
+            lead: leadRow ? present(leadRow, links.get(leadRow.id) ?? []) : null,
           };
         }),
-        nextOffset: hasMore ? input.offset + input.limit : null,
+        nextCursor: hasMore ? offset + input.limit : null,
       };
     }),
 
@@ -600,6 +617,20 @@ export const recordsRouter = {
           ),
         )
         .groupBy(publicRecord.kind);
+      const byPark = await db
+        .select({ id: parks.id, name: parks.name, n: sql<number>`count(*)::int` })
+        .from(publicRecord)
+        .innerJoin(parks, eq(parks.id, publicRecord.parkId))
+        .where(
+          and(
+            eq(publicRecord.suppressed, false),
+            sql`${activityAt} >= ${since}`,
+            input.resortSlug ? eq(publicRecord.resortSlug, input.resortSlug) : undefined,
+            input.operator ? eq(publicRecord.operator, input.operator) : undefined,
+          ),
+        )
+        .groupBy(parks.id, parks.name)
+        .orderBy(desc(sql`count(*)`));
       const [total] = await db
         .select({ n: sql<number>`count(*)::int` })
         .from(publicRecord)
@@ -620,6 +651,7 @@ export const recordsRouter = {
       return {
         days: input.days,
         byKind: byKind.map((r) => ({ kind: r.kind, n: r.n })),
+        byPark: byPark.map((r) => ({ id: r.id, name: r.name, n: r.n })),
         total: total?.n ?? 0,
         sources: sources.map((s) => ({ ...s, agency: agencyFor(s.source) })),
       };

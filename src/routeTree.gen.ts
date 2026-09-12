@@ -68,6 +68,7 @@ import { Route as AppDashAccountConnectionsRouteImport } from './routes/_app/_da
 import { Route as AppDashAccountAlertsRouteImport } from './routes/_app/_dash/account/alerts'
 import { Route as OgRideParkSlugRideSlugCardDotjpgRouteImport } from './routes/og.ride.$parkSlug.$rideSlug.card[.]jpg'
 import { Route as AppDiningFacilityIdItemSlugRouteImport } from './routes/_app/dining_.$facilityId_.item.$slug'
+import { Route as AppDashFilingsJobKeyRouteImport } from './routes/_app/_dash/filings_.job.$key'
 import { Route as AppDashParkSlugRideRideSlugRouteImport } from './routes/_app/_dash/park.$slug_.ride.$rideSlug'
 
 const WelcomeRoute = WelcomeRouteImport.update({
@@ -369,6 +370,11 @@ const AppDiningFacilityIdItemSlugRoute =
     path: '/dining/$facilityId/item/$slug',
     getParentRoute: () => AppRoute,
   } as any)
+const AppDashFilingsJobKeyRoute = AppDashFilingsJobKeyRouteImport.update({
+  id: '/filings_/job/$key',
+  path: '/filings/job/$key',
+  getParentRoute: () => AppDashRoute,
+} as any)
 const AppDashParkSlugRideRideSlugRoute =
   AppDashParkSlugRideRideSlugRouteImport.update({
     id: '/park/$slug_/ride/$rideSlug',
@@ -432,6 +438,7 @@ export interface FileRoutesByFullPath {
   '/og/resort/$slug/card.jpg': typeof OgResortSlugCardDotjpgRoute
   '/account/': typeof AppDashAccountIndexRoute
   '/admin/': typeof AppDashAdminIndexRoute
+  '/filings/job/$key': typeof AppDashFilingsJobKeyRoute
   '/dining/$facilityId/item/$slug': typeof AppDiningFacilityIdItemSlugRoute
   '/og/ride/$parkSlug/$rideSlug/card.jpg': typeof OgRideParkSlugRideSlugCardDotjpgRoute
   '/park/$slug/ride/$rideSlug': typeof AppDashParkSlugRideRideSlugRoute
@@ -490,6 +497,7 @@ export interface FileRoutesByTo {
   '/og/resort/$slug/card.jpg': typeof OgResortSlugCardDotjpgRoute
   '/account': typeof AppDashAccountIndexRoute
   '/admin': typeof AppDashAdminIndexRoute
+  '/filings/job/$key': typeof AppDashFilingsJobKeyRoute
   '/dining/$facilityId/item/$slug': typeof AppDiningFacilityIdItemSlugRoute
   '/og/ride/$parkSlug/$rideSlug/card.jpg': typeof OgRideParkSlugRideSlugCardDotjpgRoute
   '/park/$slug/ride/$rideSlug': typeof AppDashParkSlugRideRideSlugRoute
@@ -553,6 +561,7 @@ export interface FileRoutesById {
   '/og/resort/$slug/card.jpg': typeof OgResortSlugCardDotjpgRoute
   '/_app/_dash/account/': typeof AppDashAccountIndexRoute
   '/_app/_dash/admin/': typeof AppDashAdminIndexRoute
+  '/_app/_dash/filings_/job/$key': typeof AppDashFilingsJobKeyRoute
   '/_app/dining_/$facilityId_/item/$slug': typeof AppDiningFacilityIdItemSlugRoute
   '/og/ride/$parkSlug/$rideSlug/card.jpg': typeof OgRideParkSlugRideSlugCardDotjpgRoute
   '/_app/_dash/park/$slug_/ride/$rideSlug': typeof AppDashParkSlugRideRideSlugRoute
@@ -615,6 +624,7 @@ export interface FileRouteTypes {
     | '/og/resort/$slug/card.jpg'
     | '/account/'
     | '/admin/'
+    | '/filings/job/$key'
     | '/dining/$facilityId/item/$slug'
     | '/og/ride/$parkSlug/$rideSlug/card.jpg'
     | '/park/$slug/ride/$rideSlug'
@@ -673,6 +683,7 @@ export interface FileRouteTypes {
     | '/og/resort/$slug/card.jpg'
     | '/account'
     | '/admin'
+    | '/filings/job/$key'
     | '/dining/$facilityId/item/$slug'
     | '/og/ride/$parkSlug/$rideSlug/card.jpg'
     | '/park/$slug/ride/$rideSlug'
@@ -735,6 +746,7 @@ export interface FileRouteTypes {
     | '/og/resort/$slug/card.jpg'
     | '/_app/_dash/account/'
     | '/_app/_dash/admin/'
+    | '/_app/_dash/filings_/job/$key'
     | '/_app/dining_/$facilityId_/item/$slug'
     | '/og/ride/$parkSlug/$rideSlug/card.jpg'
     | '/_app/_dash/park/$slug_/ride/$rideSlug'
@@ -1178,6 +1190,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDiningFacilityIdItemSlugRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/_dash/filings_/job/$key': {
+      id: '/_app/_dash/filings_/job/$key'
+      path: '/filings/job/$key'
+      fullPath: '/filings/job/$key'
+      preLoaderRoute: typeof AppDashFilingsJobKeyRouteImport
+      parentRoute: typeof AppDashRoute
+    }
     '/_app/_dash/park/$slug_/ride/$rideSlug': {
       id: '/_app/_dash/park/$slug_/ride/$rideSlug'
       path: '/park/$slug/ride/$rideSlug'
@@ -1240,6 +1259,7 @@ interface AppDashRouteChildren {
   AppDashFilingsIdRoute: typeof AppDashFilingsIdRoute
   AppDashParkSlugRoute: typeof AppDashParkSlugRoute
   AppDashShopSlugRoute: typeof AppDashShopSlugRoute
+  AppDashFilingsJobKeyRoute: typeof AppDashFilingsJobKeyRoute
   AppDashParkSlugRideRideSlugRoute: typeof AppDashParkSlugRideRideSlugRoute
 }
 
@@ -1255,6 +1275,7 @@ const AppDashRouteChildren: AppDashRouteChildren = {
   AppDashFilingsIdRoute: AppDashFilingsIdRoute,
   AppDashParkSlugRoute: AppDashParkSlugRoute,
   AppDashShopSlugRoute: AppDashShopSlugRoute,
+  AppDashFilingsJobKeyRoute: AppDashFilingsJobKeyRoute,
   AppDashParkSlugRideRideSlugRoute: AppDashParkSlugRideRideSlugRoute,
 }
 

@@ -140,6 +140,20 @@ function FilingDetailPage() {
         </div>
       </div>
 
+      {r.jobKey && r.jobSize > 1 && (
+        <Link
+          to="/filings/job/$key"
+          params={{ key: r.jobKey }}
+          className="flex items-center justify-between gap-3 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3 text-sm hover:bg-primary/10"
+        >
+          <span>
+            Part of <span className="font-medium">{r.jobTitle ?? r.title}</span> — {r.jobSize}{" "}
+            filings for this job
+          </span>
+          <span className="shrink-0 text-xs font-medium text-primary">View job →</span>
+        </Link>
+      )}
+
       <section className="rounded-2xl border bg-card p-4 text-card-foreground">
         <h2 className="text-sm font-semibold">Details</h2>
         <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
