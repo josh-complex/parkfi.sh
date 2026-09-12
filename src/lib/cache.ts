@@ -86,6 +86,8 @@ export const CACHEABLE_TRPC_PATHS: ReadonlyMap<string, string> = new Map([
   ["records.byId", CACHE.TRPC_DATA],
   ["records.byEntity", CACHE.TRPC_DATA],
   ["records.summary", CACHE.TRPC_DATA],
+  ["records.jobs", CACHE.TRPC_DATA],
+  ["records.job", CACHE.TRPC_DATA],
 ]);
 
 /**

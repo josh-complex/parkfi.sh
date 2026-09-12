@@ -28,6 +28,7 @@ import { parseCsvRecords } from "../faa/csv.ts";
 import {
   cleanText,
   decodeEscapedWhitespace,
+  jobSlug,
   matchAlias,
   normalizeFiler,
   toNumber,
@@ -249,6 +250,10 @@ export const faaOeaaaAdapter: Adapter = {
       latitude: toNumber(r.LATITUDE),
       longitude: toNumber(r.LONGITUDE),
       address: location,
+      // Sponsors name the project in the structure field ("Project 913 crane");
+      // every crane study for one project groups there. No name → singleton.
+      jobKey: structureName ? jobSlug(structureName) : null,
+      jobTitle: structureName,
       payload: {
         asn,
         priorAsn: cleanText(r["PRIOR ASN"]),

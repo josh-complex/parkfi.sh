@@ -40,6 +40,15 @@ export interface PublicRecordInput {
   longitude?: number | null;
   parcelId?: string | null;
   address?: string | null;
+  /**
+   * Groups this record with the other tickets of the same job — the trade
+   * permits of one project, the classes of one mark (plan §6.1a). Adapter-local
+   * (ingest prefixes the source id); build it with `jobSlug()`. Omit when the
+   * source carries no grouping signal.
+   */
+  jobKey?: string | null;
+  /** Human title for the job, as filed ("SPC: LAKEWOOD PARKING GARAGE"). */
+  jobTitle?: string | null;
   /** Normalized source-native fields, already PII-stripped (plan §9). */
   payload: Record<string, unknown>;
   /** Extra as-filed text the linker may match entity names against. */

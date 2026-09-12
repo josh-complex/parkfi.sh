@@ -57,7 +57,57 @@ const recordColumns = {
   firstSeenAt: publicRecord.firstSeenAt,
   changedAt: publicRecord.changedAt,
   activityAt,
+  jobKey: publicRecord.jobKey,
+  jobTitle: publicRecord.jobTitle,
+  // How many tickets share this record's job (1 for a singleton) — lets a
+  // card say "part of a 15-permit job" without a second query.
+  jobSize: sql<number>`coalesce((select count(*)::int from public_record j
+    where j.job_key = ${publicRecord.jobKey} and j.suppressed = false), 1)`,
 } as const;
+
+/**
+ * Status text → one of four buckets, mirroring `StatusBadge` in the UI so the
+ * filter and the chip agree. Orlando: Open/Hold → open, Finaled/Closed → closed;
+ * USPTO: Registered/Granted → issued, Abandoned → closed.
+ */
+const statusClass = sql<string>`case
+  when ${publicRecord.status} ~* '(issued|approved|registered|granted|active)' then 'issued'
+  when ${publicRecord.status} ~* '(final|closed|complete|expired|abandoned|void|denied|cancel)' then 'closed'
+  when ${publicRecord.status} is null then 'unknown'
+  else 'open' end`;
+
+/**
+ * Maintenance noise (plan §6.1a "routine"): the same lists `score.ts` already
+ * penalises, plus low-voltage / tent work. A job is routine when EVERY ticket
+ * is; the feed hides those by default.
+ */
+const routine = sql<boolean>`(
+  coalesce(${publicRecord.payload}->>'worktype', '') ~* '(fence|sign|temp|asbuilt|as-built|repair|reroof|re-roof|demo|pool|irrigation|lowvoltage|tent)'
+  or ${publicRecord.title} ~* '\yannual\y'
+  or coalesce(${publicRecord.payload}->>'projectName', '') ~* '\yannual\y'
+)`;
+
+/** Permit family from the record number (BLD2019-15795 → BLD); other sources use the kind. */
+const family = sql<string>`case when ${publicRecord.source} = 'orlando_soda'
+  then coalesce(substring(${publicRecord.externalId} from '^[A-Z]+'), 'OTHER')
+  else ${publicRecord.kind} end`;
+
+/** A job's identity: its key, or the record itself when it has none. */
+const jobIdentity = sql<string>`coalesce(${publicRecord.jobKey}, 'rec:' || ${publicRecord.id})`;
+
+const JOB_SORTS = ["activity", "score", "size"] as const;
+const STATUS_FILTERS = ["open", "issued", "closed"] as const;
+
+/** Escape a user string for ILIKE — `%`/`_` become literals. */
+function likeContains(q: string): string {
+  return `%${q.replace(/[\\%_]/g, "\\$&")}%`;
+}
+
+function tally(values: string[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const v of values) out[v] = (out[v] ?? 0) + 1;
+  return out;
+}
 
 /** Minimal shape `present()` needs; the select above supplies the rest. */
 interface RecordRowBase {
@@ -303,6 +353,228 @@ export const recordsRouter = {
         .limit(input.limit);
       const links = await linksFor(rows.map((r) => r.id));
       return rows.map((r) => present(r, links.get(r.id) ?? []));
+    }),
+
+  /**
+   * The feed grouped by job (plan §6.1a): one row per project / mark / study
+   * family with its ticket count, trade mix, status roll-up and date span.
+   * Records with no job key are their own single-ticket job, so this is a
+   * superset view of `feed`, not a filter on it. Offset-paginated (jobs are
+   * few thousand and the result is edge-cached).
+   */
+  jobs: publicProcedure
+    .input(
+      z.object({
+        resortSlug: z.string().min(1).optional(),
+        parkId: z.number().int().positive().optional(),
+        kinds: z.array(z.enum(RECORD_KINDS)).max(RECORD_KINDS.length).optional(),
+        operator: z.enum(OPERATORS).optional(),
+        /** Only jobs whose latest as-filed activity is within N days. */
+        days: z.number().int().min(1).max(3650).optional(),
+        /** Substring over title, job title, filer, address, record number. */
+        q: z.string().trim().min(2).max(80).optional(),
+        /** Jobs with at least one ticket in this status bucket. */
+        status: z.enum(STATUS_FILTERS).optional(),
+        /** Include jobs made only of maintenance-noise tickets. */
+        routine: z.boolean().default(false),
+        sort: z.enum(JOB_SORTS).default("activity"),
+        limit: z.number().int().min(1).max(100).default(30),
+        offset: z.number().int().min(0).max(5000).default(0),
+      }),
+    )
+    .query(async ({ input }) => {
+      const since = input.days ? new Date(Date.now() - input.days * 86_400_000) : null;
+      const q = input.q ? likeContains(input.q) : null;
+      const ticketWhere = and(
+        eq(publicRecord.suppressed, false),
+        input.resortSlug ? eq(publicRecord.resortSlug, input.resortSlug) : undefined,
+        input.parkId ? eq(publicRecord.parkId, input.parkId) : undefined,
+        input.kinds?.length ? inArray(publicRecord.kind, input.kinds) : undefined,
+        input.operator ? eq(publicRecord.operator, input.operator) : undefined,
+      );
+      const searchHit = q
+        ? sql<boolean>`(${publicRecord.title} ilike ${q} or ${publicRecord.jobTitle} ilike ${q}
+            or ${publicRecord.filer} ilike ${q} or ${publicRecord.address} ilike ${q}
+            or ${publicRecord.externalId} ilike ${q})`
+        : sql<boolean>`true`;
+      const orderBy =
+        input.sort === "score"
+          ? sql`max_score desc, latest_at desc, job_key`
+          : input.sort === "size"
+            ? sql`ticket_count desc, latest_at desc, job_key`
+            : sql`latest_at desc, job_key`;
+
+      const rows = await db.execute<{
+        job_key: string;
+        job_title: string;
+        source: string;
+        kind: string;
+        operator: string | null;
+        resort_slug: string | null;
+        park_id: string | null;
+        park_slug: string | null;
+        park_name: string | null;
+        address: string | null;
+        filer: string | null;
+        ticket_count: number;
+        families: string[];
+        statuses: string[];
+        first_filed_at: Date;
+        latest_at: Date;
+        max_score: number;
+        routine: boolean;
+        top_ids: string[];
+      }>(sql`
+        with t as (
+          select ${publicRecord.id} as id, ${publicRecord.source} as source, ${publicRecord.kind} as kind,
+                 ${publicRecord.operator} as operator, ${publicRecord.resortSlug} as resort_slug,
+                 ${publicRecord.parkId} as park_id, ${publicRecord.address} as address,
+                 ${publicRecord.filer} as filer, ${publicRecord.score} as score,
+                 ${jobIdentity} as job_key,
+                 coalesce(${publicRecord.jobTitle}, ${publicRecord.title}) as job_title,
+                 ${activityAt} as activity_at,
+                 coalesce(${publicRecord.filedAt}, ${publicRecord.firstSeenAt}) as filed_at,
+                 ${statusClass} as status_class, ${routine} as routine, ${family} as family,
+                 ${searchHit} as search_hit
+          from ${publicRecord}
+          where ${ticketWhere}
+        ), j as (
+          select job_key,
+                 (array_agg(job_title order by score desc, id desc))[1] as job_title,
+                 (array_agg(source order by score desc, id desc))[1] as source,
+                 mode() within group (order by kind) as kind,
+                 mode() within group (order by operator) filter (where operator is not null) as operator,
+                 mode() within group (order by resort_slug) filter (where resort_slug is not null) as resort_slug,
+                 mode() within group (order by park_id) filter (where park_id is not null) as park_id,
+                 mode() within group (order by address) filter (where address is not null) as address,
+                 mode() within group (order by filer) filter (where filer is not null) as filer,
+                 count(*)::int as ticket_count,
+                 array_agg(family) as families,
+                 array_agg(status_class) as statuses,
+                 min(filed_at) as first_filed_at,
+                 max(activity_at) as latest_at,
+                 max(score) as max_score,
+                 bool_and(routine) as routine,
+                 (array_agg(id order by score desc, id desc))[1:3] as top_ids,
+                 bool_or(search_hit) as search_hit,
+                 bool_or(status_class = ${input.status ?? ""}) as status_hit
+          from t
+          group by job_key
+        )
+        select j.*, p.slug as park_slug, p.name as park_name
+        from j left join ${parks} p on p.id = j.park_id
+        where j.search_hit
+          ${input.status ? sql`and j.status_hit` : sql``}
+          ${input.routine ? sql`` : sql`and not j.routine`}
+          ${since ? sql`and j.latest_at >= ${since}` : sql``}
+        order by ${orderBy}
+        limit ${input.limit + 1} offset ${input.offset}
+      `);
+      const hasMore = rows.rows.length > input.limit;
+      const page = hasMore ? rows.rows.slice(0, input.limit) : rows.rows;
+      const topIds = page.flatMap((r) => r.top_ids.map(Number));
+      const links = await linksFor(topIds);
+      return {
+        items: page.map((r) => {
+          const ids = r.top_ids.map(Number);
+          // Union of the top tickets' links, deduped by entity.
+          const seen = new Set<string>();
+          const jobLinks: ResolvedLink[] = [];
+          for (const id of ids) {
+            for (const l of links.get(id) ?? []) {
+              const k = `${l.entityKind}:${l.entityId}`;
+              if (seen.has(k)) continue;
+              seen.add(k);
+              jobLinks.push(l);
+            }
+          }
+          return {
+            jobKey: r.job_key,
+            title: r.job_title,
+            source: r.source,
+            agency: agencyFor(r.source),
+            kind: r.kind,
+            operator: r.operator,
+            resortSlug: r.resort_slug,
+            park:
+              r.park_id != null && r.park_slug && r.park_name
+                ? { id: Number(r.park_id), slug: r.park_slug, name: r.park_name }
+                : null,
+            address: r.address,
+            filer: r.filer,
+            ticketCount: Number(r.ticket_count),
+            families: tally(r.families),
+            statuses: tally(r.statuses),
+            firstFiledAt: new Date(r.first_filed_at),
+            latestAt: new Date(r.latest_at),
+            maxScore: Number(r.max_score),
+            routine: r.routine,
+            topIds: ids,
+            links: jobLinks,
+          };
+        }),
+        nextOffset: hasMore ? input.offset + input.limit : null,
+      };
+    }),
+
+  /** One job: every ticket, newest activity first, plus the merged revision timeline. */
+  job: publicProcedure
+    .input(z.object({ jobKey: z.string().min(1).max(300) }))
+    .query(async ({ input }) => {
+      const rows = await db
+        .select(recordColumns)
+        .from(publicRecord)
+        .leftJoin(parks, eq(parks.id, publicRecord.parkId))
+        .where(and(eq(publicRecord.suppressed, false), sql`${jobIdentity} = ${input.jobKey}`))
+        .orderBy(desc(activityAt), desc(publicRecord.id));
+      if (rows.length === 0) throw new TRPCError({ code: "NOT_FOUND" });
+      const ids = rows.map((r) => r.id);
+      const [links, revisions] = await Promise.all([
+        linksFor(ids),
+        db
+          .select({
+            id: publicRecordRevision.id,
+            recordId: publicRecordRevision.recordId,
+            seenAt: publicRecordRevision.seenAt,
+            prevStatus: publicRecordRevision.prevStatus,
+            nextStatus: publicRecordRevision.nextStatus,
+          })
+          .from(publicRecordRevision)
+          .where(inArray(publicRecordRevision.recordId, ids))
+          .orderBy(desc(publicRecordRevision.seenAt))
+          .limit(200),
+      ]);
+      const tickets = rows.map((r) => present(r, links.get(r.id) ?? []));
+      const lead = rows[0]!;
+      const seen = new Set<string>();
+      const jobLinks: ResolvedLink[] = [];
+      for (const t of tickets) {
+        for (const l of t.links) {
+          const k = `${l.entityKind}:${l.entityId}`;
+          if (seen.has(k)) continue;
+          seen.add(k);
+          jobLinks.push(l);
+        }
+      }
+      return {
+        jobKey: input.jobKey,
+        title: lead.jobTitle ?? lead.title,
+        source: lead.source,
+        agency: agencyFor(lead.source),
+        operator: lead.operator,
+        resortSlug: lead.resortSlug,
+        park: tickets.find((t) => t.park)?.park ?? null,
+        address: rows.find((r) => r.address)?.address ?? null,
+        ticketCount: tickets.length,
+        firstFiledAt: rows.reduce<Date | null>((m, r) => {
+          const d = r.filedAt ?? r.firstSeenAt;
+          return !m || d < m ? d : m;
+        }, null),
+        latestAt: new Date(lead.activityAt),
+        links: jobLinks,
+        tickets,
+        revisions,
+      };
     }),
 
   /** Counts by kind over a window + adapter run health, for the feed header. */

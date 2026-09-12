@@ -13,6 +13,7 @@
  * Needs `USPTO_ODP_API_KEY`. Weekly cadence; the cursor overlaps three days
  * so late indexing can't lose a record (upserts are idempotent).
  */
+import { jobSlug } from "../normalize.ts";
 import { isoDaysAgo, ODP_API_KEY_ENV, odpJson } from "../uspto/odp.ts";
 
 import type {
@@ -201,6 +202,10 @@ export const usptoPatentAdapter: Adapter = {
           : publicationDate
             ? new Date(`${publicationDate}T12:00:00Z`)
             : null,
+      // An application and its grant share a title and first inventor; a
+      // continuation family usually does too. Good enough to fold them.
+      jobKey: `${jobSlug(title)}${inventors[0] ? `|${jobSlug(inventors[0])}` : ""}`,
+      jobTitle: title,
       payload: {
         applicationNumber: appNo,
         patentNumber: m.patentNumber ?? null,

@@ -154,3 +154,17 @@ export function toNumber(value: unknown): number | null {
   const n = typeof value === "number" ? value : Number(String(value).replace(/[$,]/g, ""));
   return Number.isFinite(n) ? n : null;
 }
+
+/**
+ * URL-safe grouping key for job titles, mark text, addresses (plan §6.1a):
+ * lowercase, every run of non-alphanumerics collapsed to one hyphen, trimmed.
+ * The migration's SQL backfill mirrors this exactly
+ * (`trim(both '-' from regexp_replace(lower(x), '[^a-z0-9]+', '-', 'g'))`), so
+ * keep the two in step if either changes.
+ */
+export function jobSlug(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}

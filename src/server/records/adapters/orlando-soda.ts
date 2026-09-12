@@ -18,7 +18,7 @@
  */
 import { config } from "#/server/parks/config.ts";
 
-import { cleanText, latestDate, parseFloatingDate, toNumber } from "../normalize.ts";
+import { cleanText, jobSlug, latestDate, parseFloatingDate, toNumber } from "../normalize.ts";
 
 import type {
   Adapter,
@@ -182,6 +182,33 @@ async function fetchPage(ctx: AdapterContext, where: string, offset: number): Pr
   return body as SodaRow[];
 }
 
+/** Annual blanket permits re-file every year under drifting names ("AFP-…", "ANNUAL FACILITY PERMIT- …"). */
+const ANNUAL_JOB_RE = /\bannual\b|^AFP\b/i;
+
+/**
+ * The job a permit belongs to (plan §6.1a). The City issues one permit per
+ * trade per phase, so the tickets of one project share `project_name` and
+ * `permit_address`; that pair is the key. Annual facility permits key per
+ * address + year instead, so each year's blanket is one job. No project name
+ * → no grouping signal (singleton).
+ *
+ * Must stay in step with the SQL backfill in
+ * `drizzle/20260912120000_public_record_jobs/migration.sql`.
+ */
+export function orlandoJob(
+  projectName: string | null,
+  address: string | null,
+  processedDate: string | null,
+): { key: string; title: string } | null {
+  if (!projectName) return null;
+  const addr = address ? jobSlug(address) : "";
+  if (ANNUAL_JOB_RE.test(projectName)) {
+    const year = processedDate?.slice(0, 4) ?? "unknown";
+    return { key: `afp:${year}@${addr}`, title: projectName };
+  }
+  return { key: `${jobSlug(projectName)}@${addr}`, title: projectName };
+}
+
 export const orlandoSodaAdapter: Adapter = {
   source: ORLANDO_SODA_SOURCE,
   agency: "City of Orlando",
@@ -278,6 +305,7 @@ export const orlandoSodaAdapter: Adapter = {
 
     // Prefer the untruncated owner column; Socrata clips parcel_owner_name at 30.
     const filer = propertyOwner ?? parcelOwner ?? null;
+    const job = orlandoJob(projectName, address, payload.processedDate);
     const description = [
       typeLabel ? `${typeLabel} permit` : null,
       contractor ? `Contractor: ${contractor}` : null,
@@ -311,6 +339,8 @@ export const orlandoSodaAdapter: Adapter = {
       longitude,
       parcelId: payload.parcelNumber,
       address,
+      jobKey: job?.key ?? null,
+      jobTitle: job?.title ?? null,
       payload,
       // Contractor names hit alias patterns too (Universal self-permits), and
       // the parcel owner is the truncated form the normalized filer may miss.

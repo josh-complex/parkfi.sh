@@ -270,6 +270,10 @@ export async function runAdapter(adapter: Adapter, opts: IngestOptions): Promise
         longitude: input.longitude ?? null,
         parcelId: input.parcelId ?? null,
         address: input.address ?? null,
+        // Source-prefixed so keys never collide across adapters and the
+        // `/filings/job/$key` route can name a job with one string.
+        jobKey: input.jobKey ? `${adapter.source}:${input.jobKey}` : null,
+        jobTitle: input.jobTitle ?? null,
         payload: input.payload,
         contentHash: p.hash,
       };

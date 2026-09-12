@@ -13,7 +13,7 @@
  * throttled catch-up — the cron walks forward a few days per run until
  * current, then stays current at one file per day).
  */
-import { matchAlias, normalizeFiler } from "../normalize.ts";
+import { jobSlug, matchAlias, normalizeFiler } from "../normalize.ts";
 import {
   downloadProductFile,
   isoDaysAgo,
@@ -134,6 +134,9 @@ export const usptoTmAdapter: Adapter = {
       filedAt: filed ? new Date(`${filed}T12:00:00Z`) : null,
       status,
       statusAt: statusAt ? new Date(`${statusAt}T12:00:00Z`) : null,
+      // One mark filed in several classes is several serials; group them.
+      jobKey: cf.markText ? jobSlug(cf.markText) : null,
+      jobTitle: cf.markText ?? null,
       payload: {
         serial: cf.serial,
         registrationNumber: cf.registrationNumber,

@@ -5,6 +5,7 @@ import {
   contentHash,
   decodeEscapedWhitespace,
   diffPayload,
+  jobSlug,
   latestDate,
   likeToRegExp,
   matchAlias,
@@ -131,5 +132,14 @@ describe("decodeEscapedWhitespace", () => {
 
   it("leaves real whitespace and other backslashes alone", () => {
     expect(decodeEscapedWhitespace("a\nb \\x c\\")).toBe("a\nb \\x c\\");
+  });
+});
+
+describe("jobSlug", () => {
+  it("lowercases and collapses punctuation runs to single hyphens, trimmed", () => {
+    expect(jobSlug("SPC: LAKEWOOD PARKING GARAGE")).toBe("spc-lakewood-parking-garage");
+    expect(jobSlug("  DISNEY'S LAKESHORE LODGE ")).toBe("disney-s-lakeshore-lodge");
+    expect(jobSlug("B-253B RENOVATION")).toBe("b-253b-renovation");
+    expect(jobSlug("***")).toBe("");
   });
 });

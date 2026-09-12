@@ -39,6 +39,9 @@ describe("usptoTmAdapter.normalize", () => {
     expect(out!.url).toContain("tsdr.uspto.gov/#caseNumber=99123456");
     // Street address must not be carried.
     expect(JSON.stringify(out!.payload)).not.toContain("Buena Vista");
+    // One mark across classes = one job.
+    expect(out!.jobKey).toBe("disney-s-lakeshore-lodge");
+    expect(out!.jobTitle).toBe("DISNEY'S LAKESHORE LODGE");
   });
 
   it("titles a design-only mark by serial", () => {
@@ -50,6 +53,7 @@ describe("usptoTmAdapter.normalize", () => {
     });
     expect(out!.title).toBe("Design mark (serial 99999999)");
     expect(out!.status).toBe("Registered");
+    expect(out!.jobKey).toBeNull();
   });
 
   it("attributes by owner alias through the shared pipeline and scores 041 + ITU high", () => {

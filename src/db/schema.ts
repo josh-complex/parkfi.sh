@@ -2470,6 +2470,11 @@ export const publicRecord = pgTable(
     longitude: doublePrecision("longitude"),
     parcelId: text("parcel_id"),
     address: text("address"),
+    // Groups the tickets of one job — the trade permits of one project, the
+    // classes of one mark (plan §6.1a). `'<source>:<adapter key>'`; null = a
+    // singleton with no grouping signal. Derived, so it is not content-hashed.
+    jobKey: text("job_key"),
+    jobTitle: text("job_title"),
     // Normalized source-native fields, PII-stripped (plan §9).
     payload: jsonb("payload").notNull().$type<Record<string, unknown>>(),
     // sha256 of the normalized content — a change here writes a revision.
@@ -2489,6 +2494,7 @@ export const publicRecord = pgTable(
     index("public_record_kind_idx").on(t.kind, t.firstSeenAt.desc()),
     index("public_record_filer_idx").on(t.filerNorm),
     index("public_record_park_idx").on(t.parkId, t.firstSeenAt.desc()),
+    index("public_record_job_idx").on(t.jobKey),
   ],
 );
 

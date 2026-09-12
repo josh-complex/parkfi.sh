@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildSodaFilter, orlandoSodaAdapter, permitUrl } from "./orlando-soda.ts";
+import { buildSodaFilter, orlandoJob, orlandoSodaAdapter, permitUrl } from "./orlando-soda.ts";
 
 import type { FilerAlias, ParkGeo, RawRecord } from "../types.ts";
 
@@ -73,6 +73,30 @@ describe("orlandoSodaAdapter.normalize", () => {
     expect(out!.title).toBe("Building Permit · Fence — 6801 TURKEY LAKE RD");
   });
 
+  it("keys the job as project @ address, with annual blankets per address + year", () => {
+    const annual = orlandoSodaAdapter.normalize(raw)!;
+    expect(annual.jobKey).toBe("afp:2026@6801-turkey-lake-rd");
+    expect(annual.jobTitle).toBe("ANNUAL FACILITY PERMIT UNIVERSAL VOLCANO BAY");
+
+    const named = orlandoSodaAdapter.normalize({
+      ...raw,
+      body: {
+        ...row,
+        project_name: "SPC: LAKEWOOD PARKING GARAGE",
+        permit_address: "6800 LAKEWOOD PLAZA DR",
+      },
+    })!;
+    expect(named.jobKey).toBe("spc-lakewood-parking-garage@6800-lakewood-plaza-dr");
+    expect(named.jobTitle).toBe("SPC: LAKEWOOD PARKING GARAGE");
+
+    const bare = orlandoSodaAdapter.normalize({
+      ...raw,
+      body: { ...row, project_name: undefined },
+    })!;
+    expect(bare.jobKey).toBeNull();
+    expect(bare.jobTitle).toBeNull();
+  });
+
   it("returns null for a row without a permit number", () => {
     expect(
       orlandoSodaAdapter.normalize({ ...raw, body: { ...row, permit_number: "" } }),
@@ -139,5 +163,30 @@ describe("permitUrl", () => {
     // Explicit columns + IN filter: the only form the explorer renders (and the WAF allows).
     expect(decodeURIComponent(url)).toContain("SELECT `permit_number`, ");
     expect(decodeURIComponent(url)).toContain('WHERE `permit_number` IN ("BLD2026-17549")');
+  });
+});
+
+describe("orlandoJob", () => {
+  it("normalizes the drifting annual-permit names to one key per address-year", () => {
+    for (const name of [
+      "ANNUAL FACILITY PERMIT UNIVERSAL STUDIOS FLORIDA",
+      "ANNUAL FACILITY PERMIT- UNIVERSAL STUDIOS FLORIDA",
+      "AFP-UNIVERSAL STUDIOS FLORIDA",
+    ]) {
+      expect(orlandoJob(name, "6000 UNIVERSAL BLVD", "2024-01-05")?.key).toBe(
+        "afp:2024@6000-universal-blvd",
+      );
+    }
+  });
+
+  it("treats sub-projects as separate jobs and tolerates a missing address", () => {
+    expect(orlandoJob("PROJECT 801", "5955 PRECISION DR", null)?.key).toBe(
+      "project-801@5955-precision-dr",
+    );
+    expect(orlandoJob("PROJECT 801 SOUTH GARAGE", "5942 PRECISION DR", null)?.key).toBe(
+      "project-801-south-garage@5942-precision-dr",
+    );
+    expect(orlandoJob("P801 PC", null, null)?.key).toBe("p801-pc@");
+    expect(orlandoJob(null, "5955 PRECISION DR", null)).toBeNull();
   });
 });
