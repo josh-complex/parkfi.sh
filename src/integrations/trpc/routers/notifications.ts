@@ -76,6 +76,7 @@ export const notificationsRouter = createTRPCRouter({
       .select({
         stayEmailOptOut: alertOptout.stayEmailOptOut,
         diningEmailOptOut: alertOptout.diningEmailOptOut,
+        filingEmailOptOut: alertOptout.filingEmailOptOut,
       })
       .from(alertOptout)
       .where(eq(alertOptout.userId, ctx.userId))
@@ -83,6 +84,7 @@ export const notificationsRouter = createTRPCRouter({
     return {
       stayEmailOptOut: row?.stayEmailOptOut ?? false,
       diningEmailOptOut: row?.diningEmailOptOut ?? false,
+      filingEmailOptOut: row?.filingEmailOptOut ?? false,
     };
   }),
 
@@ -92,6 +94,7 @@ export const notificationsRouter = createTRPCRouter({
       z.object({
         stayEmailOptOut: z.boolean().optional(),
         diningEmailOptOut: z.boolean().optional(),
+        filingEmailOptOut: z.boolean().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -101,6 +104,7 @@ export const notificationsRouter = createTRPCRouter({
           userId: ctx.userId,
           stayEmailOptOut: input.stayEmailOptOut ?? false,
           diningEmailOptOut: input.diningEmailOptOut ?? false,
+          filingEmailOptOut: input.filingEmailOptOut ?? false,
         })
         .onConflictDoUpdate({
           target: alertOptout.userId,
@@ -110,6 +114,9 @@ export const notificationsRouter = createTRPCRouter({
               : {}),
             ...(input.diningEmailOptOut !== undefined
               ? { diningEmailOptOut: input.diningEmailOptOut }
+              : {}),
+            ...(input.filingEmailOptOut !== undefined
+              ? { filingEmailOptOut: input.filingEmailOptOut }
               : {}),
             updatedAt: new Date(),
           },

@@ -1,5 +1,6 @@
 /**
- * Signed, login-less unsubscribe tokens for stay-alert email. The email click is
+ * Signed, login-less unsubscribe tokens for alert email (stays, dining, filing
+ * watches). The email click is
  * unauthenticated, so the signed token IS the auth — same crypto posture as the
  * `scraper_session` blob (key from env, never stored). HMAC-SHA256 over a base64url
  * JSON payload; `verify` is timing-safe. A token's `scope` is either a single
@@ -10,14 +11,14 @@ import crypto from "node:crypto";
 import { and, eq } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
-import { alertOptout, diningAlert, stayAlert } from "#/db/schema.ts";
+import { alertOptout, diningAlert, publicRecordWatch, stayAlert } from "#/db/schema.ts";
 
 export interface UnsubscribePayload {
   userId: string;
   /** An alert id to silence one alert, or "all" for the domain-wide opt-out. */
   scope: number | "all";
   /** Which alert domain this token controls. Defaults to "stay" (legacy tokens). */
-  kind?: "stay" | "dining";
+  kind?: "stay" | "dining" | "filing";
 }
 
 function secret(): string {
@@ -48,7 +49,7 @@ export function verifyUnsubscribeToken(token: string): UnsubscribePayload | null
     const p = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as UnsubscribePayload;
     if (typeof p.userId !== "string") return null;
     if (p.scope !== "all" && typeof p.scope !== "number") return null;
-    if (p.kind !== undefined && p.kind !== "stay" && p.kind !== "dining") return null;
+    if (p.kind !== undefined && !["stay", "dining", "filing"].includes(p.kind)) return null;
     return p;
   } catch {
     return null;
@@ -59,7 +60,12 @@ export function verifyUnsubscribeToken(token: string): UnsubscribePayload | null
 export async function applyUnsubscribe(payload: UnsubscribePayload): Promise<void> {
   const kind = payload.kind ?? "stay";
   if (payload.scope === "all") {
-    const optOut = kind === "dining" ? { diningEmailOptOut: true } : { stayEmailOptOut: true };
+    const optOut =
+      kind === "dining"
+        ? { diningEmailOptOut: true }
+        : kind === "filing"
+          ? { filingEmailOptOut: true }
+          : { stayEmailOptOut: true };
     await db
       .insert(alertOptout)
       .values({ userId: payload.userId, ...optOut })
@@ -67,6 +73,15 @@ export async function applyUnsubscribe(payload: UnsubscribePayload): Promise<voi
         target: alertOptout.userId,
         set: { ...optOut, updatedAt: new Date() },
       });
+    return;
+  }
+  if (kind === "filing") {
+    await db
+      .update(publicRecordWatch)
+      .set({ active: false })
+      .where(
+        and(eq(publicRecordWatch.id, payload.scope), eq(publicRecordWatch.userId, payload.userId)),
+      );
     return;
   }
   if (kind === "dining") {

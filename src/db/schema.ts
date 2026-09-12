@@ -1398,6 +1398,7 @@ export const alertOptout = pgTable("alert_optout", {
     .references(() => user.id, { onDelete: "cascade" }),
   stayEmailOptOut: boolean("stay_email_opt_out").notNull().default(false),
   diningEmailOptOut: boolean("dining_email_opt_out").notNull().default(false),
+  filingEmailOptOut: boolean("filing_email_opt_out").notNull().default(false),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -2577,4 +2578,51 @@ export const publicRecordWatch = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("public_record_watch_active_idx").on(t.active, t.resortSlug, t.parkId)],
+);
+
+/**
+ * Edge-trigger ledger for filing watches: one row per (watch, record) that has
+ * ever fired. The evaluator inserts with ON CONFLICT DO NOTHING and delivers
+ * only the rows that were actually new, so a revised record, an overlapping
+ * cursor re-drain or a re-run of the cron can never re-notify.
+ */
+export const publicRecordWatchFire = pgTable(
+  "public_record_watch_fire",
+  {
+    watchId: bigint("watch_id", { mode: "number" })
+      .notNull()
+      .references(() => publicRecordWatch.id, { onDelete: "cascade" }),
+    recordId: bigint("record_id", { mode: "number" })
+      .notNull()
+      .references(() => publicRecord.id, { onDelete: "cascade" }),
+    firedAt: timestamp("fired_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.watchId, t.recordId] }),
+    index("public_record_watch_fire_recent_idx").on(t.watchId, t.firedAt.desc()),
+  ],
+);
+
+/** Durable filing-alert delivery log — the `dining_notification` twin (§6.3). */
+export const publicRecordNotification = pgTable(
+  "public_record_notification",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    watchId: bigint("watch_id", { mode: "number" })
+      .notNull()
+      .references(() => publicRecordWatch.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    channel: text("channel").notNull(),
+    // Matched records + rendered subject — enough to render + audit.
+    payload: jsonb("payload").notNull(),
+    // 'queued' | 'sent' | 'failed'
+    status: text("status").notNull(),
+    providerMsgId: text("provider_msg_id"),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+  },
+  (t) => [index("public_record_notification_user_created_idx").on(t.userId, t.createdAt.desc())],
 );

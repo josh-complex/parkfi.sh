@@ -1,9 +1,11 @@
 /**
  * parkfi.sh notification worker (Railway service, replica = 1).
  *
- * Long-running process hosting TWO BullMQ workers on one Redis connection:
+ * Long-running process hosting the BullMQ workers on one Redis connection:
  *  - `push-notifications` — fans web-push jobs out to a user's devices.
  *  - `stay-alerts` — renders + sends durable, retried stay-alert EMAIL (Resend).
+ *  - `dining-alerts` — the same for dining-availability EMAIL.
+ *  - `filing-alerts` — public-records watch hits, as EMAIL and/or push.
  *
  * Run:  bun run notifications
  */
@@ -20,8 +22,10 @@ import { sendPush } from "#/server/notifications/push.ts";
 import { sendNativePush } from "#/server/notifications/native-push.ts";
 import {
   DINING_ALERT_QUEUE,
+  FILING_ALERT_QUEUE,
   STAY_ALERT_QUEUE,
   type DiningAlertJob,
+  type FilingAlertJob,
   type StayAlertJob,
 } from "#/server/notifications/queue.ts";
 import {
@@ -32,6 +36,10 @@ import {
   markDiningNotificationFailed,
   sendDiningNotification,
 } from "#/server/notifications/diningMailer.tsx";
+import {
+  markFilingNotificationFailed,
+  sendFilingNotification,
+} from "#/server/notifications/filingMailer.tsx";
 import { getSubsForUser, removeStale } from "#/server/notifications/subscriptions.ts";
 import type { PushJob } from "#/server/notifications/queue.ts";
 
@@ -127,6 +135,32 @@ diningWorker.on("failed", (job, err) => {
   }
 });
 
+// Fourth worker: filing-watch alerts (public-records plan §6.3) — one job per
+// (watch, sweep), fanned out to email and/or push by the mailer.
+const filingWorker = new Worker<FilingAlertJob>(
+  FILING_ALERT_QUEUE,
+  async (job) => {
+    await sendFilingNotification(job.data.notificationId);
+    console.log(`[filing-alerts] job=${job.id} notification=${job.data.notificationId} sent`);
+  },
+  {
+    connection: { url: process.env.REDIS_URL },
+    concurrency: 4,
+  },
+);
+
+filingWorker.on("failed", (job, err) => {
+  console.error(`[filing-alerts] job=${job?.id} failed:`, err);
+  if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
+    void markFilingNotificationFailed(job.data.notificationId, err?.message ?? String(err));
+    reportServiceError(
+      "notifications",
+      "filing-alert",
+      err ?? new Error("filing-alert job failed"),
+    );
+  }
+});
+
 const port = Number(process.env.PORT ?? 8080);
 createServer((req, res) => {
   if (req.url === "/health" || req.url === "/") {
@@ -140,7 +174,12 @@ createServer((req, res) => {
 
 async function shutdown(sig: string) {
   console.log(`[notifications] ${sig} received, closing workers…`);
-  await Promise.all([worker.close(), stayWorker.close(), diningWorker.close()]);
+  await Promise.all([
+    worker.close(),
+    stayWorker.close(),
+    diningWorker.close(),
+    filingWorker.close(),
+  ]);
   await flushTelemetry();
   console.log("[notifications] drained, exiting");
   process.exit(0);

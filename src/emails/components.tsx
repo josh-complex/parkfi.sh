@@ -1,5 +1,5 @@
 /**
- * Shared chrome for stay-alert emails. The footer carries the CAN-SPAM basics:
+ * Shared chrome for alert emails (stays, dining, filing watches). The footer carries the CAN-SPAM basics:
  * a one-click unsubscribe link (the signed token IS the auth), a "Manage alerts"
  * link, and a physical postal address. Inline styles only — email clients ignore
  * <style>/external CSS.
@@ -29,6 +29,34 @@ export interface DiningEmailProps {
   ctaUrl: string;
   /** `mdx://` deep link into the matched offer, when one could be built. */
   deepLinkUrl?: string;
+  manageUrl: string;
+  unsubscribeUrl: string;
+  postalAddress: string;
+}
+
+/** One filing row in a filing-watch email — pre-rendered strings only. */
+export interface FilingEmailRow {
+  id: number;
+  title: string;
+  /** "Permit", "Trademark", … (see notifications/filingFormat.ts). */
+  kindLabel: string;
+  filer: string | null;
+  status: string | null;
+  /** Park-local `YYYY-MM-DD`, when the agency recorded one. */
+  filedOn: string | null;
+  park: string | null;
+  /** Our /filings/<id> page for the record (never the agency URL — see plan §9). */
+  pageUrl: string;
+}
+
+export interface FilingEmailProps {
+  /** What the user watched, e.g. "Universal Orlando". */
+  watchLabel: string;
+  records: FilingEmailRow[];
+  count: number;
+  moreCount: number;
+  /** Where the primary CTA points (the /filings feed). */
+  ctaUrl: string;
   manageUrl: string;
   unsubscribeUrl: string;
   postalAddress: string;

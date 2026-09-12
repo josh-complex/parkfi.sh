@@ -38,6 +38,7 @@ import { db } from "#/db/index.ts";
 import { blogPost, reportEvent } from "#/db/schema.ts";
 import {
   detectDowntimeEpisodes,
+  detectFilingClusters,
   detectMenuChangeRollups,
   detectPriceChanges,
   persistReportEvents,
@@ -58,6 +59,21 @@ const MENU_MIN_CHANGES = Number(process.env.REPORT_MENU_MIN_CHANGES ?? 3);
 const PRICE_LOOKBACK_DAYS = Number(process.env.REPORT_PRICE_LOOKBACK_DAYS ?? 4);
 /** Ignore sub-percent price jitter. */
 const PRICE_MIN_PCT = Number(process.env.REPORT_PRICE_MIN_PCT ?? 1);
+const FILING_LOOKBACK_DAYS = Number(process.env.REPORT_FILING_LOOKBACK_DAYS ?? 4);
+/**
+ * Newsworthiness floor for a government filing to enter a cluster
+ * (public-records plan §4.4/§6.4). Calibrated from the live ledger 2026-09-11:
+ * orlando_soda p50 61 / max 105, uspto_tm p50 35 / max 95, faa p50 43 — so 70
+ * keeps the named project permits and operator trademarks and drops the
+ * re-roof/registration chaff. Every run logs what it detected; tune from that.
+ */
+const FILING_MIN_SCORE = Number(process.env.RECORDS_EVENT_FLOOR ?? 70);
+/** Filings carried in one cluster's payload (highest score first). */
+const FILING_TOP_N = Number(process.env.REPORT_FILING_TOP_N ?? 8);
+/** A filing older than this isn't news, however recently we ingested it. */
+const FILING_MAX_FILED_AGE_DAYS = Number(process.env.REPORT_FILING_MAX_AGE_DAYS ?? 120);
+/** Ceiling on one cluster's score so a busy permit day can't swamp the gate. */
+const FILING_MAX_CLUSTER_SCORE = Number(process.env.REPORT_FILING_MAX_SCORE ?? 1000);
 
 // --- Composer gates ----------------------------------------------------------
 /**
@@ -103,7 +119,13 @@ TRUTH GATE — the hard rule of this format:
 - Prices in the brief are integer CENTS — convert to dollars (e.g. 3500 -> $35).
 - Times in the brief are UTC instants; describe them loosely ("Tuesday afternoon", "midday") rather than quoting exact clock times you'd have to convert.
 - Never speculate about WHY something happened (weather, staffing, crowds) — report what we measured. "Went down for 3 hours" is the story; the cause is not yours to guess.
-- NO external links, NO images, NO social embeds — this post cites our own measurements only. You may link a related prior ParkFi post inline via its EXACT /blog/<slug> path from the covered list when genuinely relevant.
+- NO external links, NO images, NO social embeds — this post cites our own measurements only. You may link a related prior ParkFi post inline via its EXACT /blog/<slug> path from the covered list when genuinely relevant, and a filing via its EXACT /filings/<id> path from the brief.
+
+GOVERNMENT FILINGS — extra rules when the brief has a FILINGS section:
+- A filing is NOT an announcement. Use the filing's own verbs: a permit "was filed" or "seeks to", a trademark "was filed for", a patent "describes", an FAA study "proposes a structure of X feet". Never write that a project is "coming", "confirmed", "announced" or "will open".
+- Name the agency that holds the record (City of Orlando, USPTO, FAA) and attribute the words to the filing: "the application describes…", not "Disney is building…".
+- Do NOT guess what a filing is for beyond its own text. If a permit says "SHOW BUILDING - PROJECT 801" then that is all we know — say so plainly; that restraint IS the value.
+- Never describe a trademark specimen or patent drawing as artwork we've seen, and never reproduce the mark's imagery.
 
 FORMAT: original wording, Markdown body, ## subheads to group by theme (rides / dining / prices — only the themes the brief actually has), NO H1, no tables. 500–900 words: dense and scannable, not padded. A short bulleted list is fine where several small items cluster.`;
 
@@ -193,22 +215,32 @@ const BODY_IMG_RE = /!\[[^\]]*\]\((https?:\/\/[^)\s]+)[^)]*\)([^\S\n]*\n[^\S\n]*
 const BODY_LINK_RE = /(?<!!)\[([^\]]+)\]\(([^)\s]+)\)/g;
 const BARE_URL_LINE_RE = /^https?:\/\/\S+$/;
 const INTERNAL_BLOG_RE = /^\/blog\/([a-z0-9-]+)\/?$/;
+const INTERNAL_FILING_RE = /^\/filings\/(\d+)\/?$/;
 
 /**
  * Enforce the data post's truth gate mechanically: strip any image the model
  * smuggled in, drop bare-URL embed lines, and unwrap every link that isn't a
- * verified internal /blog/<slug> — a data post cites our measurements, not the
- * web. Keeps the anchor text so sentences still read.
+ * verified internal /blog/<slug> or /filings/<id> — a data post cites our own
+ * pages, not the web. Keeps the anchor text so sentences still read.
  */
-function sanitizeBody(md: string, validBlogSlugs: Set<string>): string {
+function sanitizeBody(
+  md: string,
+  validBlogSlugs: Set<string>,
+  validFilingIds: Set<string>,
+): string {
   let out = md.replace(BODY_IMG_RE, "");
   out = out
     .split("\n")
     .filter((line) => !BARE_URL_LINE_RE.test(line.trim()))
     .join("\n");
   out = out.replace(BODY_LINK_RE, (full, text: string, href: string) => {
-    const m = INTERNAL_BLOG_RE.exec(href);
-    return m && validBlogSlugs.has(m[1]) ? full : text;
+    const blog = INTERNAL_BLOG_RE.exec(href);
+    if (blog && validBlogSlugs.has(blog[1])) return full;
+    // A filing link is only allowed to a record the brief actually carried —
+    // an id the model invented would 404 (or, worse, point at someone else's).
+    const filing = INTERNAL_FILING_RE.exec(href);
+    if (filing && validFilingIds.has(filing[1])) return full;
+    return text;
   });
   return out.replace(/\n{3,}/g, "\n\n").trim();
 }
@@ -302,7 +334,7 @@ function buildPrompt(
   return `ParkFi's trackers measured the following changes at ${resortName} between ${from} and ${to}. Write the report post.
 
 DATA BRIEF (every fact you may cite; prices are integer cents; timestamps are UTC):
-${section("downtime_episode", "RIDE DOWNTIME EPISODES — unplanned outages our status tracker recorded (minutes = full outage length; endStatus CLOSED means it never reopened that day; avgWait14d = the ride's typical standby wait, for context on how big a deal the ride is)")}${section("menu_change_rollup", "RESTAURANT MENU CHANGES — items added/removed and price moves our daily menu diff caught, per venue per day")}${section("price_change", "PRICE MOVES — Lightning Lane / Express / ticket price changes our price ledger recorded (datesMoved = how many visit dates the price changed for; samples show oldCents -> newCents per date)")}
+${section("downtime_episode", "RIDE DOWNTIME EPISODES — unplanned outages our status tracker recorded (minutes = full outage length; endStatus CLOSED means it never reopened that day; avgWait14d = the ride's typical standby wait, for context on how big a deal the ride is)")}${section("menu_change_rollup", "RESTAURANT MENU CHANGES — items added/removed and price moves our daily menu diff caught, per venue per day")}${section("price_change", "PRICE MOVES — Lightning Lane / Express / ticket price changes our price ledger recorded (datesMoved = how many visit dates the price changed for; samples show oldCents -> newCents per date)")}${section("filing_cluster", "GOVERNMENT FILINGS — public records our filings tracker ingested (permits, trademarks, patents, FAA airspace studies). `title`/`description`/`status` are the filing's OWN words as filed; `filer` is the legal entity that filed; `kind` is the record type; `isRevision` true means an existing record changed status; `park`/`attractions` are OUR entity links; link one inline as /filings/<id> using its `id`. `count` is how many filings the sweep caught and `records` are the most notable of them; `ingestedOn` is when WE read the records, NOT when they were filed — the filings themselves span `firstFiledOn`..`lastFiledOn`, so never write that they were all filed on one day. These are filings, not announcements — apply the FILINGS rules above)")}
 We've ALREADY published/drafted these recent posts (don't repeat their angle; link one inline via its exact /blog/<slug> path if genuinely related):
 ${coveredList}
 
@@ -393,7 +425,14 @@ async function composeDigest(
     return null; // events stay unconsumed; the next run retries
   }
 
-  draft.bodyMd = sanitizeBody(draft.bodyMd, blogSlugs);
+  // Filing ids the brief carried — the only /filings/<id> links the post may keep.
+  const filingIds = new Set(
+    chosen
+      .filter((e) => e.kind === "filing_cluster")
+      .flatMap((e) => (e.payload.records as Array<{ id?: number }> | undefined) ?? [])
+      .map((r) => String(r.id)),
+  );
+  draft.bodyMd = sanitizeBody(draft.bodyMd, blogSlugs, filingIds);
   const parkSlugs = draft.parkSlugs.filter((s) => validParkSlugs.has(s));
   // 'park-report' identifies the format everywhere (browse filter, ops queries).
   const tags = [...new Set(["park-report", ...draft.tags.map((t) => t.toLowerCase())])].slice(0, 5);
@@ -454,6 +493,17 @@ async function main() {
     [
       "prices",
       () => detectPriceChanges({ lookbackDays: PRICE_LOOKBACK_DAYS, minPctMove: PRICE_MIN_PCT }),
+    ],
+    [
+      "filings",
+      () =>
+        detectFilingClusters({
+          lookbackDays: FILING_LOOKBACK_DAYS,
+          minScore: FILING_MIN_SCORE,
+          topN: FILING_TOP_N,
+          maxFiledAgeDays: FILING_MAX_FILED_AGE_DAYS,
+          maxClusterScore: FILING_MAX_CLUSTER_SCORE,
+        }),
     ],
   ];
   for (const [step, run] of detectors) {

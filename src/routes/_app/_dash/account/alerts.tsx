@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 import { AlertsManager } from "#/components/notifications/alerts-manager.tsx";
 import { DiningAlertsManager } from "#/components/dining/dining-alerts-manager.tsx";
+import { FilingWatchesManager } from "#/components/records/filing-watches-manager.tsx";
 import { NotificationBell } from "#/components/notifications/notification-bell.tsx";
 import { StayAlertsManager } from "#/components/stays/stay-alerts-manager.tsx";
 import {
@@ -50,6 +51,7 @@ function PreferencesCard() {
   // The toggles read positively ("email me"), so they invert the opt-out flags.
   const stayEmail = !(prefsQ.data?.stayEmailOptOut ?? false);
   const diningEmail = !(prefsQ.data?.diningEmailOptOut ?? false);
+  const filingEmail = !(prefsQ.data?.filingEmailOptOut ?? false);
 
   return (
     <Card>
@@ -96,6 +98,19 @@ function PreferencesCard() {
                 onCheckedChange={(v) => setPrefs.mutate({ diningEmailOptOut: !v })}
               />
             </label>
+            <label className="flex items-center justify-between gap-3 rounded-2xl bg-muted/50 px-3 py-2.5">
+              <div>
+                <p className="text-sm font-medium">Filing-watch email</p>
+                <p className="text-muted-foreground text-xs">
+                  New permits, trademarks and airspace studies you watch.
+                </p>
+              </div>
+              <Switch
+                checked={filingEmail}
+                disabled={setPrefs.isPending}
+                onCheckedChange={(v) => setPrefs.mutate({ filingEmailOptOut: !v })}
+              />
+            </label>
           </>
         )}
       </CardContent>
@@ -134,6 +149,18 @@ function AlertsPage() {
         </CardHeader>
         <CardContent>
           <DiningAlertsManager />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Filing watches</CardTitle>
+          <CardDescription>
+            Permits, trademarks and FAA studies as they're filed — up to 3
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <FilingWatchesManager />
         </CardContent>
       </Card>
 

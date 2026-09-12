@@ -85,6 +85,34 @@ export function getDiningAlertQueue(): Queue<DiningAlertJob> {
 }
 
 /**
+ * A fired filing watch (public-records plan §6.3) — carries only the
+ * `public_record_notification` row id; the worker loads payload + recipient and
+ * fans out to email and/or push. Same durable posture as stay/dining alerts.
+ */
+export interface FilingAlertJob {
+  notificationId: number;
+}
+
+export const FILING_ALERT_QUEUE = "filing-alerts";
+
+let _filingQueue: Queue<FilingAlertJob> | null = null;
+
+export function getFilingAlertQueue(): Queue<FilingAlertJob> {
+  if (!_filingQueue) {
+    _filingQueue = new Queue<FilingAlertJob>(FILING_ALERT_QUEUE, {
+      connection: { url: process.env.REDIS_URL },
+      defaultJobOptions: {
+        attempts: 5,
+        backoff: { type: "exponential", delay: 15_000 },
+        removeOnComplete: 1000,
+        removeOnFail: 1000,
+      },
+    });
+  }
+  return _filingQueue;
+}
+
+/**
  * A pin-identification scan. Carries only the `pin_scan` row id — the identify
  * worker loads the photo key + runs the cascade, writing candidates back to the
  * row (the client polls `pinIdentify.result`). Few attempts: a failed scan is

@@ -15,7 +15,11 @@
  * is unset; weekly adapters skip when they ran within the last six days. `--dry-run` fetches
  * and normalizes without touching the ledger (prints what would be kept).
  *
- * Run:  bun run cron:public-records [--dry-run] [--source=orlando_soda]
+ * After the adapters, every record the sweep created or revised is matched
+ * against the active filing watches (plan §6.3) and delivered as one grouped
+ * email/push per watch. `--dry-run` and `--no-alerts` both skip that step.
+ *
+ * Run:  bun run cron:public-records [--dry-run] [--no-alerts] [--source=orlando_soda]
  */
 import { config as loadEnv } from "dotenv";
 loadEnv({ path: [".env.local", ".env"] });
@@ -32,6 +36,7 @@ import {
 } from "#/server/records/ingest.ts";
 import { loadEntityCatalog } from "#/server/records/link.ts";
 import { ADAPTERS } from "#/server/records/registry.ts";
+import { evaluateFilingWatches } from "#/server/notifications/filingAlerts.ts";
 
 import type { Adapter } from "#/server/records/types.ts";
 
@@ -51,6 +56,15 @@ const WEEKLY_MIN_GAP_MS = 6 * 24 * 60 * 60 * 1000;
 
 const args = new Set(process.argv.slice(2));
 const DRY_RUN = args.has("--dry-run");
+const NO_ALERTS = args.has("--no-alerts");
+/**
+ * How far back the watch evaluator looks for records the sweep touched. A
+ * generous margin over the daily cadence costs nothing — the (watch, record)
+ * fire ledger, not this window, is what makes delivery exactly-once.
+ */
+const ALERT_WINDOW_MS = Number(process.env.RECORDS_ALERT_WINDOW_HOURS ?? 36) * 3_600_000;
+/** Newsworthiness floor for a record to reach a watch at all (0 = everything). */
+const ALERT_MIN_SCORE = Number(process.env.RECORDS_ALERT_MIN_SCORE ?? 0);
 const ONLY = [...args].find((a) => a.startsWith("--source="))?.slice("--source=".length);
 
 const log = (message: string) => console.log(`[${SERVICE}] ${message}`);
@@ -123,6 +137,7 @@ async function dryRun(adapter: Adapter): Promise<IngestStats> {
 }
 
 async function main() {
+  const runStartedAt = Date.now();
   const catalog = DRY_RUN ? undefined : await loadEntityCatalog();
   const aliases = DRY_RUN ? undefined : await loadAliases();
   for (const adapter of ADAPTERS) {
@@ -149,6 +164,20 @@ async function main() {
         aliases,
       });
     });
+  }
+
+  if (DRY_RUN || NO_ALERTS) return;
+  try {
+    const alerts = await evaluateFilingWatches({
+      since: new Date(runStartedAt - ALERT_WINDOW_MS),
+      minScore: ALERT_MIN_SCORE,
+    });
+    log(
+      `filing-watches: ${alerts.watches} active, ${alerts.candidates} candidate record(s), ` +
+        `${alerts.newPairs} new match(es) → ${alerts.notifications} notification(s)`,
+    );
+  } catch (err) {
+    reportServiceError(SERVICE, "filing-watches", err);
   }
 }
 

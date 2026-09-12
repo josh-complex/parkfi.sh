@@ -17,13 +17,17 @@ import { db } from "../../db/index.ts";
 import { reportEvent } from "../../db/schema.ts";
 import { AttractionStatus, Product } from "../parks/codes.ts";
 
-export type ReportEventKind = "downtime_episode" | "menu_change_rollup" | "price_change";
+export type ReportEventKind =
+  | "downtime_episode"
+  | "menu_change_rollup"
+  | "price_change"
+  | "filing_cluster";
 
 export interface ReportEventInput {
   kind: ReportEventKind;
   resortSlug: string;
   parkId: number | null;
-  entityKind: "attraction" | "facility" | "product" | "sku";
+  entityKind: "attraction" | "facility" | "product" | "sku" | "record";
   entityId: string;
   windowStart: Date;
   windowEnd: Date;
@@ -446,6 +450,142 @@ export async function detectPriceChanges(opts: {
   }
 
   return events;
+}
+
+/**
+ * Government filings the public-records cron ingested, rolled up per resort per
+ * park-local day (plan: docs/plans/public-records-intelligence.md §6.4).
+ *
+ * Unlike the other detectors this one reads a ledger someone else wrote, so
+ * "when it happened" is when WE first saw it (`first_seen_at`) or when the
+ * agency revised it (`changed_at`) — not `filed_at`, which can be months old on
+ * a backfill. `minScore` is the §4.4 newsworthiness floor (`RECORDS_EVENT_FLOOR`):
+ * a garage re-roof permit is public record but not a story.
+ *
+ * Only fully-elapsed local days roll up, same identity-stability reasoning as
+ * the menu detector — the event key is (resort, day), so a day detected while
+ * still accruing would freeze a partial cluster.
+ *
+ * `maxFiledAgeDays` is the guard against a backfill becoming a news post: the
+ * day we imported Orlando's 2019→ permits, 1,153 long-finaled records shared a
+ * `first_seen_at` and summed to a score of 102,957. A filing is only news if the
+ * AGENCY acted recently, so records whose `filed_at`/`status_at` are older than
+ * this window are dropped even when we just saw them (nulls are kept — some
+ * sources carry no date). The event score is capped for the same reason: a busy
+ * permit day must not swamp every other kind in the composer's backlog gate.
+ *
+ * Payload carries the as-filed facts only (title, filer, status, agency URL,
+ * our entity links). The composer's prompt is what enforces the §9 editorial
+ * rule that a permit is not an announcement; nothing here infers intent.
+ */
+export async function detectFilingClusters(opts: {
+  lookbackDays: number;
+  minScore: number;
+  topN: number;
+  maxFiledAgeDays: number;
+  maxClusterScore: number;
+}): Promise<ReportEventInput[]> {
+  const result = await db.execute<{
+    resort_slug: string;
+    day: string;
+    record_count: string;
+    revision_count: string;
+    first_filed_on: string | null;
+    last_filed_on: string | null;
+    total_score: number;
+    park_id: string | null;
+    records: Array<Record<string, unknown>>;
+  }>(sql`
+    WITH activity AS (
+      SELECT r.id, r.source, r.kind, r.resort_slug, r.park_id, r.filer, r.title,
+             left(r.description, 240) AS description, r.status, r.url, r.score,
+             to_char(r.filed_at AT TIME ZONE ${PARK_TZ}, 'YYYY-MM-DD') AS filed_on,
+             (r.changed_at IS NOT NULL) AS is_revision,
+             coalesce(r.changed_at, r.first_seen_at) AS activity_at
+      FROM public_record r
+      WHERE r.suppressed = false
+        AND r.resort_slug IS NOT NULL
+        AND r.score >= ${opts.minScore}
+        AND coalesce(r.changed_at, r.first_seen_at)
+              >= now() - make_interval(days => ${opts.lookbackDays})
+        -- Recently FILED (or re-statused), not merely recently ingested.
+        AND coalesce(r.status_at, r.filed_at, now())
+              >= now() - make_interval(days => ${opts.maxFiledAgeDays})
+        AND (coalesce(r.changed_at, r.first_seen_at) AT TIME ZONE ${PARK_TZ})::date
+              < (now() AT TIME ZONE ${PARK_TZ})::date
+    ),
+    ranked AS (
+      SELECT a.*,
+             (a.activity_at AT TIME ZONE ${PARK_TZ})::date::text AS day,
+             row_number() OVER (
+               PARTITION BY a.resort_slug, (a.activity_at AT TIME ZONE ${PARK_TZ})::date
+               ORDER BY a.score DESC, a.id
+             ) AS rn
+      FROM activity a
+    )
+    SELECT k.resort_slug, k.day,
+           count(*) AS record_count,
+           count(*) FILTER (WHERE k.is_revision) AS revision_count,
+           min(k.filed_on) AS first_filed_on,
+           max(k.filed_on) AS last_filed_on,
+           sum(k.score) AS total_score,
+           -- The park most of the day's filings sit in (NULL when none carry one).
+           mode() WITHIN GROUP (ORDER BY k.park_id) AS park_id,
+           coalesce(jsonb_agg(jsonb_build_object(
+             'id', k.id,
+             'source', k.source,
+             'kind', k.kind,
+             'filer', k.filer,
+             'title', k.title,
+             'description', k.description,
+             'status', k.status,
+             'filedOn', k.filed_on,
+             'url', k.url,
+             'isRevision', k.is_revision,
+             'park', p.name,
+             'attractions', coalesce(links.names, ARRAY[]::text[])
+           ) ORDER BY k.score DESC) FILTER (WHERE k.rn <= ${opts.topN}), '[]'::jsonb) AS records
+    FROM ranked k
+    LEFT JOIN parks p ON p.id = k.park_id
+    LEFT JOIN LATERAL (
+      SELECT array_agg(DISTINCT a.name) AS names
+      FROM public_record_link l
+      JOIN attractions a ON a.id::text = l.entity_id
+      WHERE l.record_id = k.id AND l.entity_kind = 'attraction'
+    ) links ON true
+    GROUP BY k.resort_slug, k.day
+    ORDER BY k.day, k.resort_slug
+  `);
+
+  return result.rows.map((row) => {
+    const windowStart = localDayStart(row.day);
+    return {
+      kind: "filing_cluster" as const,
+      resortSlug: row.resort_slug,
+      parkId: row.park_id == null ? null : Number(row.park_id),
+      entityKind: "record" as const,
+      // One cluster per resort-day; the resort is in the id so the identity key
+      // (kind, entity_kind, entity_id, window_start) stays unique per resort.
+      entityId: `${row.resort_slug}:${row.day}`,
+      windowStart,
+      windowEnd: new Date(windowStart.getTime() + 86_400_000),
+      // Record scores are already the §4.4 newsworthiness scale; summing keeps
+      // "five notable permits" ahead of "one notable permit", capped so an
+      // unusual day can't outweigh every ride outage in the backlog gate.
+      score: Math.min(Math.round(Number(row.total_score)), opts.maxClusterScore),
+      payload: {
+        // The day WE ingested these, which is not when they were filed — a
+        // cluster can carry months of agency activity caught in one sweep, so
+        // the filed range travels with it and the prompt makes the model use it.
+        ingestedOn: row.day,
+        count: Number(row.record_count),
+        revisions: Number(row.revision_count),
+        firstFiledOn: row.first_filed_on,
+        lastFiledOn: row.last_filed_on,
+        records: row.records,
+      },
+    };
+  });
 }
 
 /**

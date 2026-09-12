@@ -1,7 +1,7 @@
 import * as React from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { FileTextIcon } from "lucide-react";
+import { BellIcon, FileTextIcon } from "lucide-react";
 
 import {
   KIND_LABELS,
@@ -123,12 +123,24 @@ function FilingsPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-6 max-md:text-sidebar-foreground">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Filings</h1>
-        <p className="mt-1 text-sm text-muted-foreground max-md:text-sidebar-foreground/80">
-          Permits and public records for the parks, straight from government databases and linked to
-          the rides and places they concern. A permit is a request, not an announcement.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Filings</h1>
+          <p className="mt-1 text-sm text-muted-foreground max-md:text-sidebar-foreground/80">
+            Permits and public records for the parks, straight from government databases and linked
+            to the rides and places they concern. A permit is a request, not an announcement.
+          </p>
+        </div>
+        {/* Watches live with the other alerts; this is just the way in. */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0 max-md:hidden"
+          render={<Link to="/account/alerts" />}
+        >
+          <BellIcon className="size-4" />
+          Watch filings
+        </Button>
       </div>
 
       <div className="space-y-2">
