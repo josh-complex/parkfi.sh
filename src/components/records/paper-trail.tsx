@@ -106,6 +106,52 @@ function TrailRow({
 }
 
 /**
+ * FDACS incidents, as a count only (plan §9): the state's report names the
+ * ride, the day and the guest's age and sex; we surface none of that per
+ * incident — a total, the span, and the Department's own caveat.
+ */
+function IncidentSummary({
+  incidents,
+}: {
+  incidents: {
+    count: number;
+    firstOn: string | null;
+    lastOn: string | null;
+    reportUpdatedOn: string | null;
+    years: number;
+  };
+}) {
+  const year = (d: string | null) => (d ? d.slice(0, 4) : null);
+  const span =
+    year(incidents.firstOn) &&
+    year(incidents.lastOn) &&
+    year(incidents.firstOn) !== year(incidents.lastOn)
+      ? `${year(incidents.firstOn)}–${year(incidents.lastOn)}`
+      : (year(incidents.lastOn) ?? "");
+  return (
+    <div className="rounded-2xl border bg-card p-4 text-card-foreground">
+      <p className="text-sm">
+        <span className="font-semibold">
+          {incidents.count} reported incident{incidents.count === 1 ? "" : "s"}
+        </span>{" "}
+        <span className="text-muted-foreground">
+          in the last {incidents.years} years{span ? ` (${span})` : ""}, per the operator's
+          quarterly reports to the Florida Department of Agriculture and Consumer Services
+        </span>
+      </p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Covers guests taken to a hospital for at least 24 hours. The state records only what was
+        reported at the time and receives no follow-up on a guest's condition; a report says nothing
+        about cause.
+        {incidents.reportUpdatedOn
+          ? ` Report last updated ${fmtDay(incidents.reportUpdatedOn)}.`
+          : ""}
+      </p>
+    </div>
+  );
+}
+
+/**
  * The section itself. `watch` adds the "Watch filings" toggle for entities a
  * watch can scope to (rides, restaurants, shops — not parks, which the alerts
  * page already offers).
@@ -129,7 +175,7 @@ export function PaperTrail({
   const q = usePaperTrail(entityKind, entityId);
   if (q.isPending) return <Skeleton className={cn("h-24 w-full rounded-2xl", className)} />;
   const data = q.data;
-  if (!data || data.total === 0) return null;
+  if (!data || (data.total === 0 && !data.incidents)) return null;
 
   const canWatch = watch && entityKind !== "park";
   return (
@@ -155,14 +201,17 @@ export function PaperTrail({
         )}
       </div>
       <KindMix byKind={data.byKind} days={365} />
-      <ul className="divide-y rounded-2xl border bg-card px-4 py-3 text-card-foreground">
-        {data.items.map((r) => (
-          <TrailRow key={r.id} record={r} />
-        ))}
-      </ul>
+      {data.items.length > 0 && (
+        <ul className="divide-y rounded-2xl border bg-card px-4 py-3 text-card-foreground">
+          {data.items.map((r) => (
+            <TrailRow key={r.id} record={r} />
+          ))}
+        </ul>
+      )}
+      {data.incidents && <IncidentSummary incidents={data.incidents} />}
       <p className="text-xs text-muted-foreground">
-        Records as filed with the agency named on each row; a permit is a request, not an
-        announcement.{" "}
+        {data.total > 0 &&
+          "Records as filed with the agency named on each row; a permit is a request, not an announcement. "}
         {data.total > data.items.length && (
           <Link
             to="/filings"

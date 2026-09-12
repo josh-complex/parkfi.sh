@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "#/db/index.ts";
@@ -27,6 +27,14 @@ import type { TRPCRouterRecord } from "@trpc/server";
  */
 
 const ENTITY_KINDS = ["park", "resort", "attraction", "facility", "shop", "poi"] as const;
+
+/**
+ * Records that are public but never LISTED (plan §9): FDACS incident rows are
+ * health data about identifiable-ish guests, so the feed, detail, job and
+ * entity lists all exclude them and only `paperTrail` reports them, as a
+ * count per attraction with the state's own caveat.
+ */
+const listable = ne(publicRecord.kind, "incident");
 
 /**
  * The feed's timeline axis: the record's latest as-filed activity (status
@@ -291,6 +299,7 @@ export const recordsRouter = {
         .where(
           and(
             eq(publicRecord.suppressed, false),
+            listable,
             input.resortSlug ? eq(publicRecord.resortSlug, input.resortSlug) : undefined,
             input.parkId ? eq(publicRecord.parkId, input.parkId) : undefined,
             input.kinds?.length ? inArray(publicRecord.kind, input.kinds) : undefined,
@@ -331,7 +340,7 @@ export const recordsRouter = {
         })
         .from(publicRecord)
         .leftJoin(parks, eq(parks.id, publicRecord.parkId))
-        .where(and(eq(publicRecord.id, input.id), eq(publicRecord.suppressed, false)))
+        .where(and(eq(publicRecord.id, input.id), eq(publicRecord.suppressed, false), listable))
         .limit(1);
       if (!row) throw new TRPCError({ code: "NOT_FOUND" });
       const [links, revisions] = await Promise.all([
@@ -378,6 +387,7 @@ export const recordsRouter = {
             eq(publicRecordLink.entityKind, input.entityKind),
             eq(publicRecordLink.entityId, input.entityId),
             eq(publicRecord.suppressed, false),
+            listable,
           ),
         )
         .orderBy(desc(activityAt), desc(publicRecord.id))
@@ -412,10 +422,13 @@ export const recordsRouter = {
         input.entityKind === "park" && Number.isInteger(Number(input.entityId))
           ? or(eq(publicRecord.parkId, Number(input.entityId)), linked)
           : linked;
-      const where = and(eq(publicRecord.suppressed, false), scope);
+      const where = and(eq(publicRecord.suppressed, false), listable, scope);
       const since = new Date(Date.now() - input.days * 86_400_000);
+      // Incidents: counted, never listed (§9). Window is the last 5 years —
+      // the report goes back to 2001, and a 2003 row says nothing about today.
+      const incidentSince = new Date(Date.now() - 5 * 365 * 86_400_000);
 
-      const [rows, byKind, [signals]] = await Promise.all([
+      const [rows, byKind, [signals], [incidents]] = await Promise.all([
         db
           .select(recordColumns)
           .from(publicRecord)
@@ -440,9 +453,35 @@ export const recordsRouter = {
           })
           .from(publicRecord)
           .where(where),
+        db
+          .select({
+            count: sql<number>`count(*)::int`,
+            firstOn: sql<string | null>`min(${publicRecord.filedAt})::date::text`,
+            lastOn: sql<string | null>`max(${publicRecord.filedAt})::date::text`,
+            reportUpdatedOn: sql<string | null>`max(${publicRecord.payload}->>'reportUpdatedOn')`,
+          })
+          .from(publicRecord)
+          .where(
+            and(
+              eq(publicRecord.suppressed, false),
+              eq(publicRecord.kind, "incident"),
+              scope,
+              sql`${publicRecord.filedAt} >= ${incidentSince}`,
+            ),
+          ),
       ]);
       const links = await linksFor(rows.map((r) => r.id));
       return {
+        incidents:
+          incidents && incidents.count > 0
+            ? {
+                count: incidents.count,
+                firstOn: incidents.firstOn,
+                lastOn: incidents.lastOn,
+                reportUpdatedOn: incidents.reportUpdatedOn,
+                years: 5,
+              }
+            : null,
         total: signals?.total ?? 0,
         activePermits: signals?.activePermits ?? 0,
         cranes: signals?.cranes ?? 0,
@@ -486,6 +525,7 @@ export const recordsRouter = {
       const q = input.q ? likeContains(input.q) : null;
       const ticketWhere = and(
         eq(publicRecord.suppressed, false),
+        listable,
         input.resortSlug ? eq(publicRecord.resortSlug, input.resortSlug) : undefined,
         input.parkId ? eq(publicRecord.parkId, input.parkId) : undefined,
         input.kinds?.length ? inArray(publicRecord.kind, input.kinds) : undefined,
@@ -638,7 +678,9 @@ export const recordsRouter = {
         .select(recordColumns)
         .from(publicRecord)
         .leftJoin(parks, eq(parks.id, publicRecord.parkId))
-        .where(and(eq(publicRecord.suppressed, false), sql`${jobIdentity} = ${input.jobKey}`))
+        .where(
+          and(eq(publicRecord.suppressed, false), listable, sql`${jobIdentity} = ${input.jobKey}`),
+        )
         .orderBy(desc(activityAt), desc(publicRecord.id));
       if (rows.length === 0) throw new TRPCError({ code: "NOT_FOUND" });
       const ids = rows.map((r) => r.id);
@@ -707,6 +749,7 @@ export const recordsRouter = {
         .where(
           and(
             eq(publicRecord.suppressed, false),
+            listable,
             sql`${activityAt} >= ${since}`,
             input.resortSlug ? eq(publicRecord.resortSlug, input.resortSlug) : undefined,
             input.operator ? eq(publicRecord.operator, input.operator) : undefined,
@@ -720,6 +763,7 @@ export const recordsRouter = {
         .where(
           and(
             eq(publicRecord.suppressed, false),
+            listable,
             sql`${activityAt} >= ${since}`,
             input.resortSlug ? eq(publicRecord.resortSlug, input.resortSlug) : undefined,
             input.operator ? eq(publicRecord.operator, input.operator) : undefined,
@@ -733,6 +777,7 @@ export const recordsRouter = {
         .where(
           and(
             eq(publicRecord.suppressed, false),
+            listable,
             input.resortSlug ? eq(publicRecord.resortSlug, input.resortSlug) : undefined,
             input.operator ? eq(publicRecord.operator, input.operator) : undefined,
           ),

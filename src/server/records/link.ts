@@ -73,6 +73,8 @@ export interface LinkInput {
   title: string;
   description?: string | null;
   linkText?: string[];
+  /** As-filed entity names; our attraction name may CONTAIN one of these. */
+  entityNames?: string[];
   latitude?: number | null;
   longitude?: number | null;
   /** Assessor parcel id(s) as filed; "A * B" lists several. */
@@ -315,6 +317,25 @@ export function computeLinks(input: LinkInput, catalog: EntityCatalog): LinkResu
           });
           break;
         }
+      }
+    }
+    // 3a. Reverse containment for as-filed entity names: an incident report
+    // says "Hogwarts Express", our row is "Hogwarts Express – Hogsmeade
+    // Station". Whole-word, ≥10 folded chars, same scope as above.
+    for (const raw of input.entityNames ?? []) {
+      const needle = foldText(raw);
+      if (needle.length < 10) continue;
+      const re = wordBoundaryRe(needle);
+      for (const a of catalog.attractions) {
+        if (!scopeParkIds.has(a.parkId) || seen.has(a.id)) continue;
+        if (!re.test(foldText(a.name))) continue;
+        seen.add(a.id);
+        links.push({
+          entityKind: "attraction",
+          entityId: String(a.id),
+          method: "name",
+          confidence: scopedByPark ? 0.8 : 0.6,
+        });
       }
     }
     // A name hit inside a resort-wide search pins the park when nothing else did.

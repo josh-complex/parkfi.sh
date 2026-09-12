@@ -497,6 +497,7 @@ export async function relinkRecords(
         address: row.address,
         payload: row.payload,
         linkText: adapter.linkTextOf?.(row.payload) ?? [],
+        entityNames: adapter.entityNamesOf?.(row.payload) ?? [],
         alwaysKeep: true,
       };
       // Re-derive attribution from the alias list / polygon first (so the

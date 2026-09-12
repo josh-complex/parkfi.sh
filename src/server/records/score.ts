@@ -189,6 +189,18 @@ export function scoreErp(input: PublicRecordInput, ctx: ScoreContext): number {
   return Math.round(Math.max(score, 1) * 10) / 10;
 }
 
+/**
+ * FDACS incident rows (§5.14). Never a blog event (excluded in the detector)
+ * and never listed publicly — the score only orders the admin view and the
+ * per-attraction aggregate, so it is flat plus a link bonus.
+ */
+export function scoreIncident(_input: PublicRecordInput, ctx: ScoreContext): number {
+  let score = 20;
+  if (ctx.links.links.some((l) => l.entityKind === "attraction")) score += 20;
+  else if (ctx.links.parkId != null) score += 5;
+  return score;
+}
+
 /** Dispatch by kind. Kinds without a formula yet get a flat baseline. */
 export function scoreRecord(input: PublicRecordInput, ctx: ScoreContext): number {
   switch (input.kind) {
@@ -203,6 +215,8 @@ export function scoreRecord(input: PublicRecordInput, ctx: ScoreContext): number
       return scoreAirspace(input, ctx);
     case "erp":
       return scoreErp(input, ctx);
+    case "incident":
+      return scoreIncident(input, ctx);
     default:
       return ctx.operatorFiler ? 40 : 10;
   }

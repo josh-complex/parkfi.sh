@@ -223,6 +223,8 @@ async function loadCandidates(since: Date, minScore: number): Promise<FilingCand
       FROM public_record_link pl WHERE pl.record_id = r.id
     ) l ON true
     WHERE r.suppressed = false
+      -- Incident rows are never delivered per record (plan §9).
+      AND r.kind <> 'incident'
       AND r.score >= ${minScore}
       AND coalesce(r.changed_at, r.first_seen_at) >= ${since}
     ORDER BY r.score DESC, r.id DESC

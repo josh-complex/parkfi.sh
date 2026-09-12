@@ -514,6 +514,8 @@ export async function detectFilingClusters(opts: {
       FROM public_record r
       WHERE r.suppressed = false
         AND r.resort_slug IS NOT NULL
+        -- FDACS incident rows never become blog events (plan §9).
+        AND r.kind <> 'incident'
         AND r.score >= coalesce((${floors}::jsonb ->> r.source)::real, ${opts.minScore}::real)
         AND coalesce(r.changed_at, r.first_seen_at)
               >= now() - make_interval(days => ${opts.lookbackDays})

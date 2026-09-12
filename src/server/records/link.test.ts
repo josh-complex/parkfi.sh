@@ -123,6 +123,48 @@ describe("computeLinks", () => {
     expect(r.parkId).toBe(5);
   });
 
+  it("matches an as-filed entity name our longer attraction name contains", () => {
+    const withStation: EntityCatalog = {
+      ...catalog,
+      attractions: [
+        ...catalog.attractions,
+        {
+          id: 103,
+          parkId: 5,
+          name: "Hogwarts Express – King's Cross Station",
+          slug: "hogwarts-express",
+        },
+      ],
+    };
+    const r = computeLinks(
+      {
+        title: "Hogwarts Express — reported incident",
+        entityNames: ["Hogwarts Express"],
+        operator: "universal",
+        resortSlug: "universal-orlando",
+      },
+      withStation,
+    );
+    expect(r.links).toContainEqual({
+      entityKind: "attraction",
+      entityId: "103",
+      method: "name",
+      confidence: 0.6,
+    });
+    // Too short to be safe as a reverse needle.
+    expect(
+      computeLinks(
+        {
+          title: "x",
+          entityNames: ["Express"],
+          operator: "universal",
+          resortSlug: "universal-orlando",
+        },
+        withStation,
+      ).links.some((l) => l.entityKind === "attraction"),
+    ).toBe(false);
+  });
+
   it("never matches short generic names", () => {
     const r = computeLinks(
       { title: "EXPRESS LANE CANOPY", operator: "universal", resortSlug: "universal-orlando" },

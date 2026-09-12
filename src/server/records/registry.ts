@@ -4,6 +4,7 @@
  * adapter that produced the record.
  */
 import { faaOeaaaAdapter } from "./adapters/faa-oeaaa.ts";
+import { fdacsIncidentAdapter } from "./adapters/fdacs-incident.ts";
 import { orlandoSodaAdapter } from "./adapters/orlando-soda.ts";
 import { sfwmdErpAdapter } from "./adapters/sfwmd-erp.ts";
 import { usptoPatentAdapter } from "./adapters/uspto-patent.ts";
@@ -17,6 +18,7 @@ export const ADAPTERS: ReadonlyArray<Adapter> = [
   usptoPatentAdapter,
   faaOeaaaAdapter,
   sfwmdErpAdapter,
+  fdacsIncidentAdapter,
 ];
 
 const BY_SOURCE = new Map(ADAPTERS.map((a) => [a.source, a]));

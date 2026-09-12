@@ -53,6 +53,12 @@ export interface PublicRecordInput {
   payload: Record<string, unknown>;
   /** Extra as-filed text the linker may match entity names against. */
   linkText?: string[];
+  /**
+   * As-filed ENTITY names (a ride named in an incident report) — matched the
+   * other way round from `linkText`: our attraction name may contain them
+   * ("Hogwarts Express" → "Hogwarts Express – Hogsmeade Station").
+   */
+  entityNames?: string[];
   /** Attribution the adapter already knows from jurisdiction (CFTOD = WDW). */
   operator?: Operator | null;
   resortSlug?: string | null;
@@ -120,6 +126,8 @@ export interface Adapter {
    * linking over the ledger without the raw source rows.
    */
   linkTextOf?(payload: Record<string, unknown>): string[];
+  /** Same for `entityNames`, for the re-link pass. */
+  entityNamesOf?(payload: Record<string, unknown>): string[];
   /** Jurisdiction default: which resort an operator's filing in this source belongs to. */
   resortFor?(operator: Operator): string | null;
 }

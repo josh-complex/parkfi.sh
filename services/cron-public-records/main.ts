@@ -53,7 +53,10 @@ import type { Adapter } from "#/server/records/types.ts";
 const SERVICE = "cron-public-records";
 
 const ENABLED = new Set(
-  (process.env.RECORDS_SOURCES ?? "orlando_soda,uspto_tm,uspto_patent,faa_oeaaa,sfwmd_erp")
+  (
+    process.env.RECORDS_SOURCES ??
+    "orlando_soda,uspto_tm,uspto_patent,faa_oeaaa,sfwmd_erp,fdacs_incident"
+  )
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean),
