@@ -22,6 +22,8 @@ const LOW_VALUE_WORKTYPES =
   /fence|sign|temp|asbuilt|as-built|repair|reroof|re-roof|demo|pool|irrigation/i;
 /** Annual blanket permits ("ANNUAL FACILITY PERMIT …") re-file every year. */
 const ANNUAL_RE = /\bannual\b/i;
+/** Link kinds produced by the venue name pass (link.ts §3b). */
+const VENUE_KINDS = new Set<string>(["facility", "shop", "poi"]);
 
 function str(v: unknown): string {
   return typeof v === "string" ? v : "";
@@ -40,6 +42,9 @@ export function scorePermit(input: PublicRecordInput, ctx: ScoreContext): number
   if (ctx.links.polygonParkId != null) score += 20;
   else if (ctx.links.parkId != null) score += 8;
   if (ctx.links.links.some((l) => l.entityKind === "attraction")) score += 25;
+  // A named restaurant / shop / POI is a place readers know, but venue work is
+  // mostly refreshes and hood replacements — worth less than a ride hit.
+  else if (ctx.links.links.some((l) => VENUE_KINDS.has(l.entityKind))) score += 12;
 
   const applicationType = str(p.applicationType);
   if (/building/i.test(applicationType)) score += 15;
@@ -150,6 +155,40 @@ export function scoreAirspace(input: PublicRecordInput, ctx: ScoreContext): numb
   return Math.round(Math.max(score, 1) * 10) / 10;
 }
 
+/**
+ * SFWMD environmental resource permit applications (§5.6). A new individual
+ * or conceptual-approval application on operator land with acreage is the
+ * earliest paper a project leaves; exemptions, extensions and transfers of an
+ * existing permit are housekeeping. Project names are code names ("Project
+ * K"), so type + acreage carry the score, not text.
+ */
+export function scoreErp(input: PublicRecordInput, ctx: ScoreContext): number {
+  const p = input.payload;
+  let score = 15;
+  if (ctx.operatorFiler) score += 25;
+  if (ctx.links.polygonParkId != null) score += 20;
+  else if (ctx.links.parkId != null) score += 8;
+  const permitType = str(p.permitType);
+  if (permitType === "CA") score += 30;
+  else if (permitType === "IND") score += 20;
+  else if (permitType === "GP") score += 5;
+  else if (permitType === "EXEM") score -= 10;
+  const appType = str(p.applicationType);
+  if (appType === "NEW") score += 15;
+  else if (appType === "MAJMOD") score += 8;
+  else if (/^(EXT|EXTLEG|TRANS|PROPADMINMOD|ADMINMOD)$/.test(appType)) score -= 10;
+  const acres = typeof p.projectAcres === "number" ? p.projectAcres : 0;
+  if (acres > 0) score += Math.min(25, Math.log10(acres + 1) * 10);
+  if (ctx.links.links.some((l) => l.entityKind === "attraction")) score += 15;
+  else if (ctx.links.links.some((l) => VENUE_KINDS.has(l.entityKind))) score += 8;
+  if (ctx.statusTransition && ctx.statusTransition.to !== ctx.statusTransition.from) {
+    const to = str(ctx.statusTransition.to);
+    if (/approved|issued/i.test(to)) score += 10;
+    if (/withdrawn|denied/i.test(to)) score += 5;
+  }
+  return Math.round(Math.max(score, 1) * 10) / 10;
+}
+
 /** Dispatch by kind. Kinds without a formula yet get a flat baseline. */
 export function scoreRecord(input: PublicRecordInput, ctx: ScoreContext): number {
   switch (input.kind) {
@@ -162,6 +201,8 @@ export function scoreRecord(input: PublicRecordInput, ctx: ScoreContext): number
       return scorePatent(input, ctx);
     case "airspace":
       return scoreAirspace(input, ctx);
+    case "erp":
+      return scoreErp(input, ctx);
     default:
       return ctx.operatorFiler ? 40 : 10;
   }

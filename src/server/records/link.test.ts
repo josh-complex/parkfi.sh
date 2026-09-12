@@ -160,4 +160,140 @@ describe("computeLinks", () => {
     );
     expect(r.links.some((l) => l.entityId === "301")).toBe(false);
   });
+
+  it("maps a known parcel to its park when nothing else names one", () => {
+    const r = computeLinks(
+      {
+        title: "SPC: B53 INTERIOR ENHANCEMENTS",
+        parcelId: "282313883300120",
+        operator: "universal",
+      },
+      catalog,
+    );
+    expect(r.parkId).toBe(5);
+    expect(r.polygonParkId).toBeNull();
+    expect(r.links).toContainEqual({
+      entityKind: "park",
+      entityId: "5",
+      method: "parcel",
+      confidence: 0.6,
+    });
+  });
+
+  it("reads every id of a multi-parcel string and ignores unknown ones", () => {
+    const r = computeLinks(
+      { title: "FENCE", parcelId: "000000000000000 * 282324898100060", operator: "universal" },
+      catalog,
+    );
+    expect(r.parkId).toBe(6);
+    expect(
+      computeLinks({ title: "FENCE", parcelId: "999999999999999", operator: "universal" }, catalog)
+        .parkId,
+    ).toBeNull();
+  });
+
+  it("explicit text beats the parcel when they disagree", () => {
+    const r = computeLinks(
+      { title: "SPC: IOA RESTROOM RENO", parcelId: "282313883300120", operator: "universal" },
+      catalog,
+    );
+    expect(r.parkId).toBe(6);
+    expect(r.links.some((l) => l.method === "parcel")).toBe(false);
+  });
+});
+
+describe("computeLinks — venues", () => {
+  const withVenues: EntityCatalog = {
+    ...catalog,
+    venues: [
+      {
+        kind: "facility",
+        id: "uor.hrc",
+        parkId: null,
+        resortSlug: "universal-orlando",
+        name: "Hard Rock Cafe",
+        slug: "uor.hrc",
+      },
+      {
+        kind: "facility",
+        id: "uor.mummy-cafe",
+        parkId: 5,
+        resortSlug: "universal-orlando",
+        name: "Mummy Snack Stand",
+        slug: "uor.mummy-cafe",
+      },
+      {
+        kind: "shop",
+        id: "uor.kwik",
+        parkId: 5,
+        resortSlug: "universal-orlando",
+        name: "Sand Bar",
+        slug: "sand-bar",
+      },
+      {
+        kind: "poi",
+        id: "poi-1",
+        parkId: 6,
+        resortSlug: "universal-orlando",
+        name: "Toon Lagoon Amphitheater",
+        slug: null,
+      },
+    ],
+  };
+
+  it("links a resort-level venue named in a permit with no park", () => {
+    const r = computeLinks(
+      { title: "SPC: HARD ROCK CAFE UNIVERSAL CITYWALK", operator: "universal" },
+      withVenues,
+    );
+    expect(r.links).toContainEqual({
+      entityKind: "facility",
+      entityId: "uor.hrc",
+      method: "name",
+      confidence: 0.5,
+    });
+  });
+
+  it("restricts in-park venues to the linked park and scores them higher", () => {
+    const usf = computeLinks(
+      {
+        title: "MUMMY SNACK STAND HOOD REPLACEMENT",
+        parcelId: "282313883300120",
+        operator: "universal",
+      },
+      withVenues,
+    );
+    expect(usf.links).toContainEqual({
+      entityKind: "facility",
+      entityId: "uor.mummy-cafe",
+      method: "name",
+      confidence: 0.7,
+    });
+    const ioa = computeLinks(
+      {
+        title: "MUMMY SNACK STAND HOOD REPLACEMENT",
+        parcelId: "282324898100060",
+        operator: "universal",
+      },
+      withVenues,
+    );
+    expect(ioa.links.some((l) => l.entityId === "uor.mummy-cafe")).toBe(false);
+    expect(ioa.links.some((l) => l.entityId === "uor.hrc")).toBe(false);
+  });
+
+  it("never matches short or one-word venue names", () => {
+    const r = computeLinks(
+      { title: "SAND BAR RESURFACING", parcelId: "282313883300120", operator: "universal" },
+      withVenues,
+    );
+    expect(r.links.some((l) => l.entityKind === "shop")).toBe(false);
+  });
+
+  it("stays inside the resort", () => {
+    const r = computeLinks(
+      { title: "HARD ROCK CAFE", operator: "disney", resortSlug: "walt-disney-world" },
+      withVenues,
+    );
+    expect(r.links.some((l) => l.entityKind === "facility")).toBe(false);
+  });
 });

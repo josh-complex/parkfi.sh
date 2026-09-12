@@ -35,6 +35,7 @@ const WATCHABLE_KINDS: PublicRecordKind[] = [
   "patent_app",
   "patent_grant",
   "airspace",
+  "erp",
 ];
 
 const RESORT_OPTIONS = [
@@ -48,9 +49,12 @@ function scopeLabel(w: {
   parkName: string | null;
   entityKind: string | null;
   entityId: string | null;
+  entityName?: string | null;
 }): string {
+  // Most specific scope first: an entity watch (a ride, a restaurant) pins its
+  // park too, but the entity is what the user asked for.
+  if (w.entityKind && w.entityId) return w.entityName ?? `${w.entityKind} ${w.entityId}`;
   if (w.parkName) return w.parkName;
-  if (w.entityKind && w.entityId) return `${w.entityKind} ${w.entityId}`;
   if (w.resortSlug) return (RESORT_LABELS[w.resortSlug] ?? w.resortSlug) as string;
   return "All filings";
 }

@@ -9,8 +9,14 @@
  *   3. name     (0.70–0.90) — attraction names / known abbreviations found in
  *                        the as-filed text, candidates restricted to the linked
  *                        park (or resort) so "Dragon" can't hit both coasts.
+ *                        Venue names (restaurants, shops, map POIs) follow the
+ *                        same rule at 0.50–0.70 and emit facility/shop/poi links.
  *   4. lexicon  (0.40) — land/area keywords → park, for records that name a
  *                        place but no entity.
+ *   4b. parcel  (0.60) — the permit's parcel id is one we've placed inside a
+ *                        park (A9: `PARCEL_PARKS`). Applied after the lexicon so
+ *                        explicit text beats an address, and only when no other
+ *                        pass named a park.
  *   5. admin    (1.00) — `/admin/filings` override; auto links are never
  *                        rewritten on a record that carries one (ingest.ts).
  *
@@ -20,7 +26,16 @@
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
-import { attractions, operators, parks, resorts } from "#/db/schema.ts";
+import {
+  attractions,
+  externalIds,
+  operators,
+  parkPoi,
+  parks,
+  resorts,
+  restaurantDim,
+  shopDim,
+} from "#/db/schema.ts";
 import { pointInPolygon } from "#/server/achievements/geo.ts";
 
 import type { Operator, ParkGeo } from "./types.ts";
@@ -32,9 +47,26 @@ export interface CatalogAttraction {
   slug: string;
 }
 
+/** Link kinds a venue row can produce: restaurant_dim → facility, shop_dim → shop, park_poi → poi. */
+export type VenueKind = "facility" | "shop" | "poi";
+
+export interface CatalogVenue {
+  kind: VenueKind;
+  /** restaurant_dim.facility_id / shop_dim.facility_id / park_poi.poi_id */
+  id: string;
+  /** Null for resort-level venues (CityWalk, Disney Springs, hotels). */
+  parkId: number | null;
+  resortSlug: string | null;
+  name: string;
+  /** Route slug where the venue has a page (dining facilityId / shop url_friendly_id). */
+  slug: string | null;
+}
+
 export interface EntityCatalog {
   parks: ParkGeo[];
   attractions: CatalogAttraction[];
+  /** Restaurants, shops and map POIs; optional so older callers/tests still work. */
+  venues?: CatalogVenue[];
 }
 
 export interface LinkInput {
@@ -43,14 +75,18 @@ export interface LinkInput {
   linkText?: string[];
   latitude?: number | null;
   longitude?: number | null;
+  /** Assessor parcel id(s) as filed; "A * B" lists several. */
+  parcelId?: string | null;
   operator?: Operator | null;
   resortSlug?: string | null;
 }
 
-export type LinkMethod = "polygon" | "filer" | "name" | "lexicon" | "admin";
+export type LinkMethod = "polygon" | "filer" | "name" | "lexicon" | "parcel" | "admin";
+
+export type LinkEntityKind = "park" | "resort" | "attraction" | VenueKind;
 
 export interface EntityLink {
-  entityKind: "park" | "resort" | "attraction";
+  entityKind: LinkEntityKind;
   entityId: string;
   method: LinkMethod;
   confidence: number;
@@ -117,6 +153,41 @@ export const LEXICON: ReadonlyArray<{ re: RegExp; parkSlug?: string; resortSlug?
   { re: /\bVOLCANO BAY\b/, parkSlug: "volcano-bay" },
   { re: /\bCITYWALK\b|\bCITY WALK\b/, resortSlug: "universal-orlando" },
 ];
+
+/**
+ * A9 — Orange County parcel ids we have placed inside a park. Universal's
+ * permits carry a parcel and an address but rarely a park keyword, and only
+ * ~3 % are geocoded, so without this map four of five Universal permits have
+ * no park. Derived 2026-09-12 from the ledger itself: for each parcel, the
+ * park the lexicon pass named on that parcel's own permits (USF parcel: 427
+ * USF vs 10 IOA hits; IOA parcel: 180 vs 11; Volcano Bay: 127 vs 2). Parcels
+ * that are hotels, CityWalk, garages or offices are deliberately absent — they
+ * are resort-level, and a park link there would be wrong, not merely weak.
+ *
+ * Epic Universe is NOT here: its site is permitted by Orange County, not the
+ * City of Orlando, so no City permit carries its parcels (verified against the
+ * Socrata feed 2026-09-12 — zero rows name Epic, Stardust Racers, Super
+ * Nintendo World or Helios). That is an adapter gap (A4), not a linking gap.
+ */
+export const PARCEL_PARKS: Readonly<Record<string, string>> = {
+  // 1000 Universal Studios Plz / 5900 Universal Blvd / 6552 Vineland Rd — the park.
+  "282313883300120": "universal-studios-florida",
+  // 5900 Universal Blvd — sound stages SS22–SS25 / "USO north campus", inside the USF fence.
+  "282313883300060": "universal-studios-florida",
+  // 5900–6100 Universal Blvd — the B2xx buildings.
+  "282324898100060": "islands-of-adventure",
+  // 6801–6965 Turkey Lake Rd — the water park (and its team-member lot).
+  "282324750000010": "volcano-bay",
+};
+
+/** Split an as-filed parcel string ("A * B", "A, B") into candidate ids. */
+export function parcelIds(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(/[\s*,;]+/)
+    .map((s) => s.trim())
+    .filter((s) => /^\d{12,16}$/.test(s));
+}
 
 /** Uppercase, punctuation → space, collapsed — the text both sides are matched in. */
 function foldText(...parts: Array<string | null | undefined>): string {
@@ -186,6 +257,25 @@ export function computeLinks(input: LinkInput, catalog: EntityCatalog): LinkResu
     });
   }
 
+  // 4b. Parcel → park, only when nothing textual or geometric named one.
+  if (parkId == null) {
+    for (const id of parcelIds(input.parcelId)) {
+      const slug = PARCEL_PARKS[id];
+      const park = slug ? bySlug.get(slug) : undefined;
+      if (!park) continue;
+      parkId = park.id;
+      resortSlug ??= park.resortSlug;
+      operator ??= park.operator;
+      links.push({
+        entityKind: "park",
+        entityId: String(park.id),
+        method: "parcel",
+        confidence: 0.6,
+      });
+      break;
+    }
+  }
+
   // 3. Names — candidates restricted to the linked park, else the resort's parks.
   const scopeParkIds = new Set<number>(
     parkId != null
@@ -240,6 +330,32 @@ export function computeLinks(input: LinkInput, catalog: EntityCatalog): LinkResu
     }
   }
 
+  // 3b. Venues — restaurants, shops, map POIs. In-park venues only when the
+  // park is known; otherwise every venue of the resort, including the
+  // resort-level ones (CityWalk, Disney Springs, hotels) that never have a park.
+  if (catalog.venues && resortSlug && text.length > 0) {
+    const seenVenue = new Set<string>();
+    for (const v of catalog.venues) {
+      if (v.resortSlug !== resortSlug) continue;
+      if (parkId != null ? v.parkId != null && v.parkId !== parkId : false) continue;
+      const key = `${v.kind}:${v.id}`;
+      if (seenVenue.has(key)) continue;
+      const folded = foldText(v.name);
+      // Stricter than attractions: venue catalogs are full of "Sand Bar",
+      // "Atlantic", "The Kitchen"-style names that would false-match street
+      // and trade text, so require two words and ten characters.
+      if (folded.length < 10 || !folded.includes(" ")) continue;
+      if (!wordBoundaryRe(folded).test(text)) continue;
+      seenVenue.add(key);
+      links.push({
+        entityKind: v.kind,
+        entityId: v.id,
+        method: "name",
+        confidence: parkId != null && v.parkId === parkId ? 0.7 : 0.5,
+      });
+    }
+  }
+
   // 2. Resort-level link from attribution (alias / jurisdiction / polygon).
   if (resortSlug) {
     links.push({ entityKind: "resort", entityId: resortSlug, method: "filer", confidence: 0.8 });
@@ -288,12 +404,99 @@ export async function loadEntityCatalog(): Promise<EntityCatalog> {
         sql`${attractions.name} not ilike '%single rider%'`,
       ),
     );
+  const parksOut: ParkGeo[] = parkRows.map((p) => ({
+    ...p,
+    operator: (p.operator as Operator | null) ?? null,
+    boundary: p.boundary ?? null,
+  }));
   return {
-    parks: parkRows.map((p) => ({
-      ...p,
-      operator: (p.operator as Operator | null) ?? null,
-      boundary: p.boundary ?? null,
-    })),
+    parks: parksOut,
     attractions: attractionRows,
+    venues: await loadVenues(parksOut),
   };
+}
+
+/** Universal's own park/area ids as the dining + shop catalogs carry them. */
+const UOR_PARK_SLUGS: Readonly<Record<string, string>> = {
+  "uor.usf": "universal-studios-florida",
+  "uor.ioa": "islands-of-adventure",
+  "uor.eu": "epic-universe",
+  "uor.vb": "volcano-bay",
+};
+
+/**
+ * Restaurants (`restaurant_dim`), shops (`shop_dim`) and map POIs (`park_poi`)
+ * as link candidates. A venue's park comes from its `park_resort_id`: the
+ * Disney finder's park id (joined through `external_ids`, source
+ * `disney_direct`) or Universal's `uor.<park>` code; anything else with a
+ * known operator prefix (Disney Springs, CityWalk, hotels) is resort-level.
+ */
+async function loadVenues(parkList: ParkGeo[]): Promise<CatalogVenue[]> {
+  const bySlug = new Map(parkList.map((p) => [p.slug, p]));
+  const finderIds = await db
+    .select({ parkId: externalIds.entityId, externalId: externalIds.externalId })
+    .from(externalIds)
+    .where(and(eq(externalIds.entityKind, "park"), eq(externalIds.source, 3)));
+  const parkByFinderId = new Map(finderIds.map((r) => [r.externalId, r.parkId]));
+  const parkById = new Map(parkList.map((p) => [p.id, p]));
+
+  const resolve = (
+    parkResortId: string | null,
+  ): { parkId: number | null; resortSlug: string | null } => {
+    if (!parkResortId) return { parkId: null, resortSlug: null };
+    if (parkResortId.startsWith("uor.")) {
+      const slug = UOR_PARK_SLUGS[parkResortId];
+      const park = slug ? bySlug.get(slug) : undefined;
+      return { parkId: park?.id ?? null, resortSlug: "universal-orlando" };
+    }
+    const parkId = parkByFinderId.get(parkResortId) ?? null;
+    const park = parkId != null ? parkById.get(parkId) : undefined;
+    return { parkId: park?.id ?? null, resortSlug: park?.resortSlug ?? "walt-disney-world" };
+  };
+
+  const [restaurants, shops, pois] = await Promise.all([
+    db
+      .select({
+        id: restaurantDim.facilityId,
+        name: restaurantDim.name,
+        parkResortId: restaurantDim.parkResortId,
+      })
+      .from(restaurantDim)
+      .where(eq(restaurantDim.active, true)),
+    db
+      .select({
+        id: shopDim.facilityId,
+        name: shopDim.name,
+        slug: shopDim.urlFriendlyId,
+        parkResortId: shopDim.parkResortId,
+      })
+      .from(shopDim)
+      .where(eq(shopDim.active, true)),
+    db.select({ id: parkPoi.poiId, name: parkPoi.name, parkId: parkPoi.parkId }).from(parkPoi),
+  ]);
+
+  const out: CatalogVenue[] = [];
+  for (const r of restaurants) {
+    const { parkId, resortSlug } = resolve(r.parkResortId);
+    if (!resortSlug) continue;
+    out.push({ kind: "facility", id: r.id, parkId, resortSlug, name: r.name, slug: r.id });
+  }
+  for (const s of shops) {
+    const { parkId, resortSlug } = resolve(s.parkResortId);
+    if (!resortSlug) continue;
+    out.push({ kind: "shop", id: s.id, parkId, resortSlug, name: s.name, slug: s.slug });
+  }
+  for (const p of pois) {
+    const park = parkById.get(p.parkId);
+    if (!park?.resortSlug) continue;
+    out.push({
+      kind: "poi",
+      id: p.id,
+      parkId: p.parkId,
+      resortSlug: park.resortSlug,
+      name: p.name,
+      slug: null,
+    });
+  }
+  return out;
 }

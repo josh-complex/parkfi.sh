@@ -350,6 +350,12 @@ export const orlandoSodaAdapter: Adapter = {
     };
   },
 
+  linkTextOf(payload) {
+    return [payload.projectName, payload.contractor, payload.address, payload.parcelOwner].filter(
+      (s): s is string => typeof s === "string" && s.length > 0,
+    );
+  },
+
   resortFor(operator: Operator): string | null {
     return operator === "universal" ? "universal-orlando" : null;
   },

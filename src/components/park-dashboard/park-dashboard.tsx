@@ -16,6 +16,7 @@ import {
   useHeroFlight,
 } from "#/components/park-map/card-flight.ts";
 import { NotificationPrompt } from "#/components/notifications/notification-prompt.tsx";
+import { PaperTrail } from "#/components/records/paper-trail.tsx";
 import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
 import { ChartErrorBoundary } from "#/components/chart-error-boundary.tsx";
 import { lazyWithReload } from "#/lib/lazy-with-reload.tsx";
@@ -378,6 +379,21 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
           timezone={timezone}
         />
       </div>
+
+      {/* Government filings that name this park (public-records plan §6.2):
+          kind mix over the last year, the latest few, open permits and FAA
+          determinations. Self-hides for parks with no linked records. */}
+      {park && (
+        <div className="order-4 px-4 lg:px-6">
+          <PaperTrail
+            entityKind="park"
+            entityId={park.id}
+            entityName={parkName ?? park.name}
+            parkId={park.id}
+            watch={false}
+          />
+        </div>
+      )}
 
       <div className="order-4 px-4 lg:px-6">
         {/* Same hazard as the chart above: a server-rendered `React.lazy`

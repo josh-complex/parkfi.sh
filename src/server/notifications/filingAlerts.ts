@@ -41,6 +41,8 @@ export interface FilingWatchRow {
   parkId: number | null;
   entityKind: string | null;
   entityId: string | null;
+  /** Display name of the scoped entity (attraction / venue), resolved at load. */
+  entityName?: string | null;
   kinds: string[];
   keywords: string[];
   /** 'push' | 'email' | 'both' */
@@ -110,6 +112,7 @@ export function matchesWatch(w: FilingWatchRow, r: FilingCandidate): boolean {
 export function watchLabel(w: FilingWatchRow, sample: FilingCandidate | undefined): string {
   if (w.keywords.length > 0) return `“${w.keywords[0]}” filings`;
   if (w.entityKind && w.entityId) {
+    if (w.entityName) return w.entityName;
     if (w.entityKind === "park" && sample?.parkName) return sample.parkName;
     return `${w.entityKind} ${w.entityId}`;
   }
@@ -155,6 +158,7 @@ async function loadWatches(): Promise<FilingWatchRow[]> {
     park_id: string | null;
     entity_kind: string | null;
     entity_id: string | null;
+    entity_name: string | null;
     kinds: string[] | null;
     keywords: string[] | null;
     channel: string;
@@ -162,7 +166,15 @@ async function loadWatches(): Promise<FilingWatchRow[]> {
   }>(sql`
     SELECT w.id, w.user_id, w.resort_slug, w.park_id, w.entity_kind, w.entity_id,
            w.kinds, w.keywords, w.channel,
-           coalesce(ao.filing_email_opt_out, false) AS email_opt_out
+           coalesce(ao.filing_email_opt_out, false) AS email_opt_out,
+           -- The scoped entity's name for the subject line, per kind.
+           CASE w.entity_kind
+             WHEN 'attraction' THEN (SELECT a.name FROM attractions a WHERE a.id::text = w.entity_id)
+             WHEN 'park' THEN (SELECT p.name FROM parks p WHERE p.id::text = w.entity_id)
+             WHEN 'facility' THEN (SELECT r.name FROM restaurant_dim r WHERE r.facility_id = w.entity_id)
+             WHEN 'shop' THEN (SELECT s.name FROM shop_dim s WHERE s.facility_id = w.entity_id)
+             ELSE NULL
+           END AS entity_name
     FROM public_record_watch w
     LEFT JOIN alert_optout ao ON ao.user_id = w.user_id
     WHERE w.active = true
@@ -174,6 +186,7 @@ async function loadWatches(): Promise<FilingWatchRow[]> {
     parkId: r.park_id == null ? null : Number(r.park_id),
     entityKind: r.entity_kind,
     entityId: r.entity_id,
+    entityName: r.entity_name,
     kinds: r.kinds ?? [],
     keywords: r.keywords ?? [],
     channel: r.channel,

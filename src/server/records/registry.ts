@@ -5,6 +5,7 @@
  */
 import { faaOeaaaAdapter } from "./adapters/faa-oeaaa.ts";
 import { orlandoSodaAdapter } from "./adapters/orlando-soda.ts";
+import { sfwmdErpAdapter } from "./adapters/sfwmd-erp.ts";
 import { usptoPatentAdapter } from "./adapters/uspto-patent.ts";
 import { usptoTmAdapter } from "./adapters/uspto-tm.ts";
 
@@ -15,6 +16,7 @@ export const ADAPTERS: ReadonlyArray<Adapter> = [
   usptoTmAdapter,
   usptoPatentAdapter,
   faaOeaaaAdapter,
+  sfwmdErpAdapter,
 ];
 
 const BY_SOURCE = new Map(ADAPTERS.map((a) => [a.source, a]));

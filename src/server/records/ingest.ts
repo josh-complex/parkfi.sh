@@ -375,6 +375,222 @@ export async function runAdapter(adapter: Adapter, opts: IngestOptions): Promise
   return stats;
 }
 
+export interface RelinkStats {
+  scanned: number;
+  /** Rows whose auto links, park or score changed. */
+  relinked: number;
+  /** Rows skipped because an admin link pins them. */
+  adminPinned: number;
+  parkGained: number;
+  parkLost: number;
+  linksAdded: number;
+  linksRemoved: number;
+}
+
+/**
+ * Re-run attribution → links → score over the ledger for one adapter (or all)
+ * without touching the source — the nightly "back-link" pass of plan §4.3
+ * (a trademark that later matches a new attraction name) and the way a new
+ * linking rule (parcel map, venue catalog) reaches rows ingested before it.
+ *
+ * Content is untouched: no revision is written, `changed_at`/`last_seen_at`
+ * stay as they were, and admin-linked rows are skipped entirely. Only the
+ * auto links, `park_id`, `operator`/`resort_slug` (if newly resolvable) and
+ * `score` move. Pages of 500 by id, so a 5k-row source is ~10 round trips.
+ *
+ * `since` limits the pass to rows first seen after a date — the 24-month
+ * window §4.3 asks for on IP records, or "everything" when null.
+ */
+export async function relinkRecords(
+  adapter: Adapter,
+  opts: {
+    since?: Date | null;
+    log: (message: string) => void;
+    catalog?: EntityCatalog;
+    aliases?: FilerAlias[];
+    dryRun?: boolean;
+  },
+): Promise<RelinkStats> {
+  const stats: RelinkStats = {
+    scanned: 0,
+    relinked: 0,
+    adminPinned: 0,
+    parkGained: 0,
+    parkLost: 0,
+    linksAdded: 0,
+    linksRemoved: 0,
+  };
+  const catalog = opts.catalog ?? (await loadEntityCatalog());
+  const aliases = opts.aliases ?? (await loadAliases());
+  const log = (m: string) => opts.log(`[${adapter.source}] ${m}`);
+  let afterId = 0;
+
+  for (;;) {
+    const rows = await db
+      .select({
+        id: publicRecord.id,
+        kind: publicRecord.kind,
+        externalId: publicRecord.externalId,
+        url: publicRecord.url,
+        title: publicRecord.title,
+        description: publicRecord.description,
+        filer: publicRecord.filer,
+        filedAt: publicRecord.filedAt,
+        status: publicRecord.status,
+        statusAt: publicRecord.statusAt,
+        latitude: publicRecord.latitude,
+        longitude: publicRecord.longitude,
+        parcelId: publicRecord.parcelId,
+        address: publicRecord.address,
+        payload: publicRecord.payload,
+        operator: publicRecord.operator,
+        resortSlug: publicRecord.resortSlug,
+        parkId: publicRecord.parkId,
+        score: publicRecord.score,
+      })
+      .from(publicRecord)
+      .where(
+        and(
+          eq(publicRecord.source, adapter.source),
+          sql`${publicRecord.id} > ${afterId}`,
+          opts.since ? sql`${publicRecord.firstSeenAt} >= ${opts.since}` : undefined,
+        ),
+      )
+      .orderBy(publicRecord.id)
+      .limit(500);
+    if (rows.length === 0) break;
+    afterId = rows.at(-1)!.id;
+    stats.scanned += rows.length;
+
+    const ids = rows.map((r) => r.id);
+    const linkRows = await db
+      .select()
+      .from(publicRecordLink)
+      .where(inArray(publicRecordLink.recordId, ids));
+    const existingLinks = new Map<number, typeof linkRows>();
+    const adminLinked = new Set<number>();
+    for (const l of linkRows) {
+      if (l.createdBy === "admin") adminLinked.add(l.recordId);
+      const list = existingLinks.get(l.recordId) ?? [];
+      list.push(l);
+      existingLinks.set(l.recordId, list);
+    }
+
+    for (const row of rows) {
+      if (adminLinked.has(row.id)) {
+        stats.adminPinned++;
+        continue;
+      }
+      const input: PublicRecordInput = {
+        kind: row.kind as PublicRecordInput["kind"],
+        externalId: row.externalId,
+        url: row.url,
+        title: row.title,
+        description: row.description,
+        filer: row.filer,
+        filedAt: row.filedAt,
+        status: row.status,
+        statusAt: row.statusAt,
+        latitude: row.latitude,
+        longitude: row.longitude,
+        parcelId: row.parcelId,
+        address: row.address,
+        payload: row.payload,
+        linkText: adapter.linkTextOf?.(row.payload) ?? [],
+        alwaysKeep: true,
+      };
+      // Re-derive attribution from the alias list / polygon first (so the
+      // operator-filer score bonus stays honest); a row that no longer
+      // attributes that way keeps what it had — it was attributable when
+      // ingested (jurisdiction default, older alias), and a re-link must
+      // never demote a record out of its resort feed.
+      let p = prepareRecord(
+        adapter,
+        { ...input, operator: null, resortSlug: null },
+        catalog,
+        aliases,
+      );
+      if (!p?.operator) {
+        p = prepareRecord(
+          adapter,
+          {
+            ...input,
+            operator: (row.operator as Operator | null) ?? null,
+            resortSlug: row.resortSlug,
+          },
+          catalog,
+          aliases,
+        );
+      }
+      if (!p) continue;
+
+      const before = (existingLinks.get(row.id) ?? []).filter((l) => l.createdBy === "auto");
+      const key = (l: { entityKind: string; entityId: string }) => `${l.entityKind}:${l.entityId}`;
+      const beforeKeys = new Set(before.map(key));
+      const afterKeys = new Set(p.links.map(key));
+      const added = p.links.filter((l) => !beforeKeys.has(key(l)));
+      const removed = before.filter((l) => !afterKeys.has(key(l)));
+      const parkChanged = (row.parkId ?? null) !== (p.parkId ?? null);
+      // A stored score may carry a status-transition bump the fresh formula
+      // can't see (revisions aren't replayed here), so a re-link only ever
+      // raises a score — unless it took a link away, when the fresh value is
+      // the honest one.
+      const score = removed.length > 0 ? p.score : Math.max(row.score, p.score);
+      const scoreChanged = Math.abs(row.score - score) > 0.05;
+      if (added.length === 0 && removed.length === 0 && !parkChanged && !scoreChanged) continue;
+
+      stats.relinked++;
+      stats.linksAdded += added.length;
+      stats.linksRemoved += removed.length;
+      if (parkChanged && p.parkId != null && row.parkId == null) stats.parkGained++;
+      if (parkChanged && p.parkId == null && row.parkId != null) stats.parkLost++;
+      if (opts.dryRun) continue;
+
+      await db.transaction(async (tx) => {
+        await tx
+          .update(publicRecord)
+          .set({
+            parkId: p.parkId,
+            operator: p.operator,
+            resortSlug: p.resortSlug,
+            score: p.score,
+          })
+          .where(eq(publicRecord.id, row.id));
+        if (removed.length > 0) {
+          await tx
+            .delete(publicRecordLink)
+            .where(
+              and(
+                eq(publicRecordLink.recordId, row.id),
+                eq(publicRecordLink.createdBy, "auto"),
+                inArray(
+                  sql`${publicRecordLink.entityKind} || ':' || ${publicRecordLink.entityId}`,
+                  removed.map(key),
+                ),
+              ),
+            );
+        }
+        if (added.length > 0) {
+          await tx
+            .insert(publicRecordLink)
+            .values(
+              added.map((l) => ({
+                recordId: row.id,
+                entityKind: l.entityKind,
+                entityId: l.entityId,
+                method: l.method,
+                confidence: l.confidence,
+              })),
+            )
+            .onConflictDoNothing();
+        }
+      });
+    }
+    log(`relink: scanned ${stats.scanned}, relinked ${stats.relinked} so far`);
+  }
+  return stats;
+}
+
 function statsForDb(stats: IngestStats): Record<string, number> {
   const out: Record<string, number> = {};
   for (const [k, v] of Object.entries(stats)) if (typeof v === "number") out[k] = v;

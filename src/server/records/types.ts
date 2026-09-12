@@ -114,6 +114,12 @@ export interface Adapter {
   fetchSince(cursor: Record<string, unknown> | null, ctx: AdapterContext): Promise<FetchResult>;
   /** Pure: source body → ledger input. Throw on schema drift; null = not ours. */
   normalize(raw: RawRecord): PublicRecordInput | null;
+  /**
+   * The `linkText` this adapter's `normalize` would have produced, rebuilt
+   * from a stored payload — so a re-link pass (`--relink`) can re-run entity
+   * linking over the ledger without the raw source rows.
+   */
+  linkTextOf?(payload: Record<string, unknown>): string[];
   /** Jurisdiction default: which resort an operator's filing in this source belongs to. */
   resortFor?(operator: Operator): string | null;
 }

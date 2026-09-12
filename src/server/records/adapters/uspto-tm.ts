@@ -168,6 +168,15 @@ export const usptoTmAdapter: Adapter = {
     };
   },
 
+  linkTextOf(payload) {
+    const owners = Array.isArray(payload.owners)
+      ? payload.owners
+          .map((o) => (o && typeof o === "object" ? (o as { name?: unknown }).name : null))
+          .filter((n): n is string => typeof n === "string")
+      : [];
+    return [...(typeof payload.markText === "string" ? [payload.markText] : []), ...owners];
+  },
+
   resortFor() {
     // Marks name IP, not property — resort-level attribution only via alias.
     return null;

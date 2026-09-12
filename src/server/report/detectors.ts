@@ -480,11 +480,20 @@ export async function detectPriceChanges(opts: {
  */
 export async function detectFilingClusters(opts: {
   lookbackDays: number;
+  /** Floor for sources without an entry in `minScoreBySource`. */
   minScore: number;
+  /**
+   * Per-source floors (plan §7 open item 4). Scores are comparable WITHIN a
+   * kind, not across: the Orlando permit formula tops out around 130 while an
+   * FAA crane study rarely clears 80, so one global floor turns every cluster
+   * into a Universal permit log. Keyed by ledger `source`.
+   */
+  minScoreBySource?: Record<string, number>;
   topN: number;
   maxFiledAgeDays: number;
   maxClusterScore: number;
 }): Promise<ReportEventInput[]> {
+  const floors = JSON.stringify(opts.minScoreBySource ?? {});
   const result = await db.execute<{
     resort_slug: string;
     day: string;
@@ -505,7 +514,7 @@ export async function detectFilingClusters(opts: {
       FROM public_record r
       WHERE r.suppressed = false
         AND r.resort_slug IS NOT NULL
-        AND r.score >= ${opts.minScore}
+        AND r.score >= coalesce((${floors}::jsonb ->> r.source)::real, ${opts.minScore}::real)
         AND coalesce(r.changed_at, r.first_seen_at)
               >= now() - make_interval(days => ${opts.lookbackDays})
         -- Recently FILED (or re-statused), not merely recently ingested.

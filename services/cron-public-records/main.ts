@@ -19,7 +19,16 @@
  * against the active filing watches (plan §6.3) and delivered as one grouped
  * email/push per watch. `--dry-run` and `--no-alerts` both skip that step.
  *
+ * `--relink` re-runs entity linking + scoring over the ledger instead of
+ * fetching (plan §4.3's back-link pass): new linking rules reach old rows,
+ * and a trademark filed months ago links to an attraction named since.
+ * Pair with `--source=` to limit it, `--since=YYYY-MM-DD` to bound it by
+ * first-seen date, `--dry-run` to only count. Nothing about the records'
+ * content, revisions or timestamps changes, and admin-linked rows are left
+ * alone.
+ *
  * Run:  bun run cron:public-records [--dry-run] [--no-alerts] [--source=orlando_soda]
+ *       bun run cron:public-records --relink [--source=uspto_tm] [--since=2024-09-01] [--dry-run]
  */
 import { config as loadEnv } from "dotenv";
 loadEnv({ path: [".env.local", ".env"] });
@@ -31,6 +40,7 @@ import {
   lastRanAt,
   loadAliases,
   prepareRecord,
+  relinkRecords,
   runAdapter,
   type IngestStats,
 } from "#/server/records/ingest.ts";
@@ -43,7 +53,7 @@ import type { Adapter } from "#/server/records/types.ts";
 const SERVICE = "cron-public-records";
 
 const ENABLED = new Set(
-  (process.env.RECORDS_SOURCES ?? "orlando_soda,uspto_tm,uspto_patent,faa_oeaaa")
+  (process.env.RECORDS_SOURCES ?? "orlando_soda,uspto_tm,uspto_patent,faa_oeaaa,sfwmd_erp")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean),
@@ -66,6 +76,8 @@ const ALERT_WINDOW_MS = Number(process.env.RECORDS_ALERT_WINDOW_HOURS ?? 36) * 3
 /** Newsworthiness floor for a record to reach a watch at all (0 = everything). */
 const ALERT_MIN_SCORE = Number(process.env.RECORDS_ALERT_MIN_SCORE ?? 0);
 const ONLY = [...args].find((a) => a.startsWith("--source="))?.slice("--source=".length);
+const RELINK = args.has("--relink");
+const SINCE = [...args].find((a) => a.startsWith("--since="))?.slice("--since=".length);
 
 const log = (message: string) => console.log(`[${SERVICE}] ${message}`);
 
@@ -136,7 +148,31 @@ async function dryRun(adapter: Adapter): Promise<IngestStats> {
   return stats;
 }
 
+/** `--relink`: re-link + re-score the ledger, source by source; no fetching. */
+async function relink(): Promise<void> {
+  const since = SINCE ? new Date(`${SINCE}T00:00:00Z`) : null;
+  if (since && Number.isNaN(since.getTime())) throw new Error(`bad --since: ${SINCE}`);
+  const catalog = await loadEntityCatalog();
+  const aliases = await loadAliases();
+  log(
+    `relink${DRY_RUN ? " (dry run)" : ""}: catalog = ${catalog.parks.length} parks, ${catalog.attractions.length} attractions, ${catalog.venues?.length ?? 0} venues${since ? `; rows first seen since ${SINCE}` : ""}`,
+  );
+  for (const adapter of ADAPTERS) {
+    if (ONLY ? adapter.source !== ONLY : !ENABLED.has(adapter.source)) continue;
+    const started = Date.now();
+    try {
+      const s = await relinkRecords(adapter, { since, log, catalog, aliases, dryRun: DRY_RUN });
+      log(
+        `${adapter.source}: relink scanned=${s.scanned} relinked=${s.relinked} adminPinned=${s.adminPinned} parkGained=${s.parkGained} parkLost=${s.parkLost} linksAdded=${s.linksAdded} linksRemoved=${s.linksRemoved} in ${Math.round((Date.now() - started) / 1000)}s`,
+      );
+    } catch (err) {
+      reportServiceError(SERVICE, `relink:${adapter.source}`, err);
+    }
+  }
+}
+
 async function main() {
+  if (RELINK) return relink();
   const runStartedAt = Date.now();
   const catalog = DRY_RUN ? undefined : await loadEntityCatalog();
   const aliases = DRY_RUN ? undefined : await loadAliases();

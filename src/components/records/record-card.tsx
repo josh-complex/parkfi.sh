@@ -79,7 +79,7 @@ export function StatusBadge({ status }: { status: string | null }) {
   const s = status.toLowerCase();
   const variant = /issued|approved|registered|granted|active/.test(s)
     ? "default"
-    : /final|closed|complete|expired|abandoned|void|denied/.test(s)
+    : /final|closed|complete|expired|abandoned|void|denied|withdrawn/.test(s)
       ? "outline"
       : "secondary";
   return <Badge variant={variant}>{status}</Badge>;
@@ -126,6 +126,25 @@ export function EntityChips({ links, className }: { links: CardLink[]; className
         if (l.entityKind === "resort" && l.slug) {
           return (
             <Link key={key} to="/resort/$slug" params={{ slug: l.slug }} className={chip}>
+              {l.label}
+            </Link>
+          );
+        }
+        if (l.entityKind === "facility" && l.slug) {
+          return (
+            <Link
+              key={key}
+              to="/dining/$facilityId"
+              params={{ facilityId: l.slug }}
+              className={chip}
+            >
+              {l.label}
+            </Link>
+          );
+        }
+        if (l.entityKind === "shop" && l.slug) {
+          return (
+            <Link key={key} to="/shop/$slug" params={{ slug: l.slug }} className={chip}>
               {l.label}
             </Link>
           );

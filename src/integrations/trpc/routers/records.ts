@@ -10,6 +10,8 @@ import {
   publicRecordCursor,
   publicRecordLink,
   publicRecordRevision,
+  restaurantDim,
+  shopDim,
 } from "#/db/schema.ts";
 import { OPERATORS, RECORD_KINDS } from "#/lib/records.ts";
 import { agencyFor } from "#/server/records/registry.ts";
@@ -24,7 +26,7 @@ import type { TRPCRouterRecord } from "@trpc/server";
  * Suppressed records never leave the server.
  */
 
-const ENTITY_KINDS = ["park", "resort", "attraction"] as const;
+const ENTITY_KINDS = ["park", "resort", "attraction", "facility", "shop", "poi"] as const;
 
 /**
  * The feed's timeline axis: the record's latest as-filed activity (status
@@ -73,7 +75,7 @@ const recordColumns = {
  */
 const statusClass = sql<string>`case
   when ${publicRecord.status} ~* '(issued|approved|registered|granted|active)' then 'issued'
-  when ${publicRecord.status} ~* '(final|closed|complete|expired|abandoned|void|denied|cancel)' then 'closed'
+  when ${publicRecord.status} ~* '(final|closed|complete|expired|abandoned|void|denied|cancel|withdrawn)' then 'closed'
   when ${publicRecord.status} is null then 'unknown'
   else 'open' end`;
 
@@ -148,6 +150,8 @@ async function linksFor(recordIds: number[]): Promise<Map<number, ResolvedLink[]
     .filter((r) => r.entityKind === "park")
     .map((r) => Number(r.entityId))
     .filter(Number.isFinite);
+  const facilityIds = rows.filter((r) => r.entityKind === "facility").map((r) => r.entityId);
+  const shopIds = rows.filter((r) => r.entityKind === "shop").map((r) => r.entityId);
 
   const attractionRows = attractionIds.length
     ? await db
@@ -167,8 +171,22 @@ async function linksFor(recordIds: number[]): Promise<Map<number, ResolvedLink[]
         .from(parks)
         .where(inArray(parks.id, parkIds))
     : [];
+  const facilityRows = facilityIds.length
+    ? await db
+        .select({ id: restaurantDim.facilityId, name: restaurantDim.name })
+        .from(restaurantDim)
+        .where(inArray(restaurantDim.facilityId, facilityIds))
+    : [];
+  const shopRows = shopIds.length
+    ? await db
+        .select({ id: shopDim.facilityId, name: shopDim.name, slug: shopDim.urlFriendlyId })
+        .from(shopDim)
+        .where(inArray(shopDim.facilityId, shopIds))
+    : [];
   const attractionById = new Map(attractionRows.map((a) => [String(a.id), a]));
   const parkById = new Map(parkRows.map((p) => [String(p.id), p]));
+  const facilityById = new Map(facilityRows.map((f) => [f.id, f]));
+  const shopById = new Map(shopRows.map((s) => [s.id, s]));
 
   for (const r of rows) {
     let label = r.entityId;
@@ -193,6 +211,18 @@ async function linksFor(recordIds: number[]): Promise<Map<number, ResolvedLink[]
             ? "Universal Orlando"
             : r.entityId;
       slug = r.entityId;
+    } else if (r.entityKind === "facility") {
+      const f = facilityById.get(r.entityId);
+      if (!f) continue;
+      label = f.name;
+      slug = f.id; // `/dining/$facilityId`
+    } else if (r.entityKind === "shop") {
+      const sh = shopById.get(r.entityId);
+      if (!sh) continue;
+      label = sh.name;
+      slug = sh.slug; // `/shop/$slug`; null when the shop has no page
+    } else if (r.entityKind === "poi") {
+      continue; // no page and no cheap name lookup — chips would be dead text
     }
     const list = out.get(r.recordId) ?? [];
     list.push({
@@ -354,6 +384,72 @@ export const recordsRouter = {
         .limit(input.limit);
       const links = await linksFor(rows.map((r) => r.id));
       return rows.map((r) => present(r, links.get(r.id) ?? []));
+    }),
+
+  /**
+   * "Paper trail" for one entity page (plan §6.2): the latest linked records,
+   * the kind mix over a window, and the two header signals — open, non-routine
+   * permits (a real predictor of refurbishment closures) and, for a park, FAA
+   * studies with a determination ("cranes on property"). A park's trail also
+   * takes records whose `park_id` was set by a name hit without a park link
+   * row, so the count agrees with the feed's park filter.
+   */
+  paperTrail: publicProcedure
+    .input(
+      z.object({
+        entityKind: z.enum(ENTITY_KINDS),
+        entityId: z.string().min(1),
+        limit: z.number().int().min(1).max(20).default(6),
+        /** Window for the kind mix; the list and the signals are all-time. */
+        days: z.number().int().min(7).max(3650).default(365),
+      }),
+    )
+    .query(async ({ input }) => {
+      const linked = sql`exists (select 1 from ${publicRecordLink} l
+        where l.record_id = ${publicRecord.id}
+          and l.entity_kind = ${input.entityKind} and l.entity_id = ${input.entityId})`;
+      const scope =
+        input.entityKind === "park" && Number.isInteger(Number(input.entityId))
+          ? or(eq(publicRecord.parkId, Number(input.entityId)), linked)
+          : linked;
+      const where = and(eq(publicRecord.suppressed, false), scope);
+      const since = new Date(Date.now() - input.days * 86_400_000);
+
+      const [rows, byKind, [signals]] = await Promise.all([
+        db
+          .select(recordColumns)
+          .from(publicRecord)
+          .leftJoin(parks, eq(parks.id, publicRecord.parkId))
+          .where(where)
+          .orderBy(desc(activityAt), desc(publicRecord.id))
+          .limit(input.limit),
+        db
+          .select({ kind: publicRecord.kind, n: sql<number>`count(*)::int` })
+          .from(publicRecord)
+          .where(and(where, sql`${activityAt} >= ${since}`))
+          .groupBy(publicRecord.kind)
+          .orderBy(desc(sql`count(*)`)),
+        db
+          .select({
+            total: sql<number>`count(*)::int`,
+            activePermits: sql<number>`count(*) filter (where ${publicRecord.kind} = 'permit'
+              and ${statusClass} in ('open', 'issued') and not ${routine})::int`,
+            cranes: sql<number>`count(*) filter (where ${publicRecord.kind} = 'airspace'
+              and ${publicRecord.status} ~* 'determin')::int`,
+            latestAt: sql<Date | null>`max(${activityAt})`,
+          })
+          .from(publicRecord)
+          .where(where),
+      ]);
+      const links = await linksFor(rows.map((r) => r.id));
+      return {
+        total: signals?.total ?? 0,
+        activePermits: signals?.activePermits ?? 0,
+        cranes: signals?.cranes ?? 0,
+        latestAt: signals?.latestAt ? new Date(signals.latestAt) : null,
+        byKind: byKind.map((r) => ({ kind: r.kind, n: r.n })),
+        items: rows.map((r) => present(r, links.get(r.id) ?? [])),
+      };
     }),
 
   /**

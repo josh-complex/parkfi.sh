@@ -227,6 +227,12 @@ export const usptoPatentAdapter: Adapter = {
     };
   },
 
+  linkTextOf(payload) {
+    return Array.isArray(payload.applicants)
+      ? payload.applicants.filter((s): s is string => typeof s === "string")
+      : [];
+  },
+
   resortFor() {
     return null;
   },

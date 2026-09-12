@@ -68,6 +68,27 @@ const FILING_LOOKBACK_DAYS = Number(process.env.REPORT_FILING_LOOKBACK_DAYS ?? 4
  * re-roof/registration chaff. Every run logs what it detected; tune from that.
  */
 const FILING_MIN_SCORE = Number(process.env.RECORDS_EVENT_FLOOR ?? 70);
+/**
+ * Per-source floors, `source=score,…` (public-records plan §7 open item 4).
+ * Scores compare within a kind only: at the global 70, Orlando kept 1,424 of
+ * 5,043 permits but FAA 5 of 28 and trademarks 21 of 160 (measured
+ * 2026-09-11), so the clusters read as a Universal permit log. Defaults sit
+ * near each source's recent p75 (measured 2026-09-12 over 120 days of
+ * as-filed activity: FAA p50 49, TM p75 65, patents p75 70).
+ */
+const FILING_MIN_SCORE_BY_SOURCE = parseFloors(
+  process.env.RECORDS_EVENT_FLOORS ?? "faa_oeaaa=45,uspto_tm=60,uspto_patent=60,sfwmd_erp=60",
+);
+
+function parseFloors(spec: string): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const part of spec.split(",")) {
+    const [source, value] = part.split("=").map((s) => s.trim());
+    const n = Number(value);
+    if (source && Number.isFinite(n)) out[source] = n;
+  }
+  return out;
+}
 /** Filings carried in one cluster's payload (highest score first). */
 const FILING_TOP_N = Number(process.env.REPORT_FILING_TOP_N ?? 8);
 /** A filing older than this isn't news, however recently we ingested it. */
@@ -500,6 +521,7 @@ async function main() {
         detectFilingClusters({
           lookbackDays: FILING_LOOKBACK_DAYS,
           minScore: FILING_MIN_SCORE,
+          minScoreBySource: FILING_MIN_SCORE_BY_SOURCE,
           topN: FILING_TOP_N,
           maxFiledAgeDays: FILING_MAX_FILED_AGE_DAYS,
           maxClusterScore: FILING_MAX_CLUSTER_SCORE,

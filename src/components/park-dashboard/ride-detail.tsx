@@ -18,6 +18,7 @@ import {
   useHeroFlight,
 } from "#/components/park-map/card-flight.ts";
 import { WalkThereButton } from "#/components/park-map/walk-there-button.tsx";
+import { PaperTrail, usePaperTrail } from "#/components/records/paper-trail.tsx";
 import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
@@ -327,6 +328,9 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
   const native = useIsNative();
   const rideQ = useQuery(trpc.parks.attraction.queryOptions({ parkSlug, rideSlug }));
   const ride = rideQ.data;
+  // Linked government records (public-records plan §6.2). Fetched here, above
+  // the early returns, because the header chip below reads it too.
+  const trailQ = usePaperTrail("attraction", ride?.id);
   // Set when this page was opened by tapping a map card: the card's own name,
   // photo and wait, plus whether its three flown clones are still in the air.
   const heroKey = rideFlightKey(parkSlug, rideSlug);
@@ -460,6 +464,9 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
     ride.meta?.childSwap === true ? "Child swap" : null,
     ride.meta?.virtualLine === true ? "Virtual line" : null,
     ...perks,
+    // An open, non-routine building permit on the ride — a real predictor of a
+    // refurbishment closure (plan §6.2). Says "permit", not "construction".
+    (trailQ.data?.activePermits ?? 0) > 0 ? "Open construction permit" : null,
   ].filter((v): v is string => !!v);
   const essentialChips = [...new Set(essentials)];
 
@@ -642,6 +649,16 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
       {ride.showtimes.length > 0 && (
         <ShowtimesCard showtimes={ride.showtimes} timeZone={ride.park.timezone} />
       )}
+
+      {/* Government records linked to this ride (permits, marks, patents, FAA
+          studies). Self-hides when there are none — most Disney rides, whose
+          permits sit behind CFTOD's login wall. */}
+      <PaperTrail
+        entityKind="attraction"
+        entityId={ride.id}
+        entityName={ride.name}
+        parkId={ride.park.id}
+      />
 
       {ll.has && (
         <Card>

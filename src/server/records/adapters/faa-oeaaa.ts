@@ -291,6 +291,13 @@ export const faaOeaaaAdapter: Adapter = {
     };
   },
 
+  linkTextOf(payload) {
+    // Proposal / location text isn't stored on the payload, but it is folded
+    // into the description the linker already reads; the structure name is
+    // the one link-bearing field only the payload carries.
+    return typeof payload.structureName === "string" ? [payload.structureName] : [];
+  },
+
   resortFor() {
     return null;
   },

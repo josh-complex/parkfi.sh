@@ -127,6 +127,18 @@ describe("watchLabel", () => {
     );
     expect(watchLabel(watch(), record())).toBe("your filing watch");
   });
+
+  it("names the scoped entity when the loader resolved it", () => {
+    const w = watch({
+      entityKind: "attraction",
+      entityId: "1234",
+      entityName: "Revenge of the Mummy",
+    });
+    expect(watchLabel(w, record())).toBe("Revenge of the Mummy");
+    expect(watchLabel(watch({ entityKind: "attraction", entityId: "1234" }), record())).toBe(
+      "attraction 1234",
+    );
+  });
 });
 
 describe("filing copy", () => {
