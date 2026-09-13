@@ -128,17 +128,25 @@ export function embedHtml(e: SocialEmbed): string {
   // domain via the referrer and throws "Error 153 / Video player configuration
   // error" when it's stripped. The browser default sends the origin, which the
   // providers all accept.
+  // `wrapStyle` nests the iframe one level deeper and pins it to that box.
+  // Only needed when the height is a percentage of the width: percentage
+  // padding resolves against the CONTAINING BLOCK's width, so the ratio has to
+  // sit inside the element that carries max-width, not on it.
   const frame = (
     src: string,
     style: string,
     title: string,
     iframeStyle = "height:100%",
     attrs = "",
-  ) =>
-    `<div class="social-embed" style="margin:1.5rem auto;${style}">` +
-    `<iframe src="${src}" title="${title}" loading="lazy" frameborder="0"${attrs ? ` ${attrs}` : ""} ` +
-    `style="width:100%;${iframeStyle};border:0;border-radius:12px" ` +
-    `allow="encrypted-media;fullscreen" allowfullscreen></iframe></div>`;
+    wrapStyle = "",
+  ) => {
+    const iframe =
+      `<iframe src="${src}" title="${title}" loading="lazy" frameborder="0"${attrs ? ` ${attrs}` : ""} ` +
+      `style="${wrapStyle ? "position:absolute;inset:0;" : ""}width:100%;${iframeStyle};border:0;border-radius:12px" ` +
+      `allow="encrypted-media;fullscreen" allowfullscreen></iframe>`;
+    const inner = wrapStyle ? `<div style="${wrapStyle}">${iframe}</div>` : iframe;
+    return `<div class="social-embed" style="margin:1.5rem auto;${style}">${inner}</div>`;
+  };
   switch (e.platform) {
     case "youtube":
       return frame(
@@ -153,19 +161,29 @@ export function embedHtml(e: SocialEmbed): string {
         "TikTok video",
       );
     case "instagram":
-      // Fixed height, like Reddit: the /embed page carries no height-reporting
-      // postMessage (the old instgrm.Embeds MEASURE protocol is gone from the
-      // current bundle), and it's cross-origin so we can't measure it. The card
-      // is roughly 200px of chrome — header, "View more on Instagram", the
-      // action row, likes and the comment box — on top of the media, which
-      // renders at the embed width times its aspect ratio. 680px fitted a
-      // square post exactly and clipped every portrait one; 4:5 is the tallest
-      // Instagram allows, so 480 × 1.25 + 200 ≈ 800 covers the worst case with
-      // a little slack. Squarer posts pay for it in trailing white space.
+      // The /embed page reports no height (the old instgrm.Embeds MEASURE
+      // postMessage is gone from the current bundle) and it's cross-origin, so
+      // we can't measure it live. But its shape is predictable: the card is
+      // media — rendered at the embed's own width times the post's aspect
+      // ratio — plus a constant ~210px of chrome (header, "View more on
+      // Instagram", the action row, likes, the comment box). Measured at two
+      // widths against the real embed: 300px wide → ~602px tall, 400px wide →
+      // ~745px tall.
+      //
+      // That makes any single pixel height wrong at every width but one, which
+      // is what a fixed 680/820px did: dead space on a phone, clipping on a
+      // desktop. Scale it with the width instead. 4:3 is the tallest media
+      // Instagram serves here, so the ratio errs toward slack, and +220 leaves
+      // a few px over the measured chrome. Posts squarer than 4:3 still leave
+      // trailing white space — closing that needs the per-post aspect, which
+      // this function doesn't have.
       return frame(
         `https://www.instagram.com/p/${id}/embed`,
-        "max-width:480px;height:820px",
+        "max-width:480px",
         "Instagram post",
+        "height:100%",
+        "",
+        "position:relative;padding-top:calc(133.333% + 220px)",
       );
     case "twitter":
       // No fixed wrapper height: the iframe carries an initial height plus a

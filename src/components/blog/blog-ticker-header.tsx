@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, useScroll } from "motion/react";
 import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 
@@ -26,21 +26,25 @@ function useMeasuredHeight<T extends HTMLElement>(
   return height;
 }
 
-/** Measures an element's pixel width, kept current across resizes/reflows. */
-function useMeasuredWidth<T extends HTMLElement>(
-  ref: React.RefObject<T | null>,
-): number | undefined {
+/**
+ * Measures an element's pixel width, kept current across resizes/reflows.
+ * Returns a callback ref rather than taking a `RefObject` because the measured
+ * node mounts late (only once the ticker has rides to show), which a mount-time
+ * effect would miss entirely.
+ */
+function useMeasuredWidth<T extends HTMLElement>(): [number | undefined, React.RefCallback<T>] {
   const [width, setWidth] = useState<number>();
-  useEffect(() => {
-    const el = ref.current;
+  const observer = useRef<ResizeObserver | null>(null);
+  const setNode = useCallback((el: T | null) => {
+    observer.current?.disconnect();
+    observer.current = null;
     if (!el) return;
-    const measure = () => setWidth(el.offsetWidth);
-    measure();
-    const ro = new ResizeObserver(measure);
+    setWidth(el.offsetWidth);
+    const ro = new ResizeObserver(() => setWidth(el.offsetWidth));
     ro.observe(el);
-    return () => ro.disconnect();
-  }, [ref]);
-  return width;
+    observer.current = ro;
+  }, []);
+  return [width, setNode];
 }
 
 /** Hide the live-waits marquee entirely unless at least this many rides are
@@ -90,32 +94,43 @@ function TickerChip({
   delta: number;
   trend: "up" | "down" | "flat";
 }) {
-  const tone =
-    trend === "up"
+  const flat = trend === "flat" || delta === 0;
+  const tone = flat
+    ? "text-muted-foreground"
+    : trend === "up"
       ? "text-red-600 dark:text-red-400"
-      : trend === "down"
-        ? "text-emerald-500 dark:text-emerald-400"
-        : "text-muted-foreground";
-  const Arrow = trend === "up" ? ArrowUpRight : trend === "down" ? ArrowDownRight : Minus;
+      : "text-emerald-600 dark:text-emerald-400";
+  const Arrow = flat ? Minus : trend === "up" ? ArrowUpRight : ArrowDownRight;
+  const change = flat
+    ? "no change"
+    : `${trend === "up" ? "up" : "down"} ${Math.abs(delta)} min${Math.abs(delta) === 1 ? "" : "s"}`;
 
   return (
-    <span className="flex items-center gap-3 border-r border-border px-4 py-2.5">
-      {/* Ride name over its location, stacked. */}
-      <span className="flex flex-col leading-tight">
+    // Rows, not columns: the ride line and the park line each size themselves,
+    // so a short park name lets the change text tuck under the ride name instead
+    // of every chip paying for the widest column on both lines.
+    <span className="flex flex-col justify-center gap-0.5 border-r border-border px-4 py-2.5">
+      <span className="flex items-baseline justify-between gap-4">
         <span className="text-sm font-medium whitespace-nowrap text-foreground">{rideName}</span>
-        <span className="text-xs whitespace-nowrap text-muted-foreground">{parkName}</span>
+        {/* `key` on the value remounts this node when the wait changes, replaying
+            the flash animation: red when it ticked up, green when it dropped. */}
+        <span
+          key={waitMin}
+          className={`rounded-md px-1.5 py-0.5 font-mono text-sm font-semibold tabular-nums text-foreground ${
+            trend === "up" ? "parkfi-flash-up" : trend === "down" ? "parkfi-flash-down" : ""
+          }`}
+        >
+          {waitMin}m
+        </span>
       </span>
-      {/* `key` on the value remounts this node when the wait changes, replaying
-          the flash animation: red when it ticked up, green when it dropped. */}
-      <span
-        key={waitMin}
-        className={`flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-xs font-medium tabular-nums ${tone} ${
-          trend === "up" ? "parkfi-flash-up" : trend === "down" ? "parkfi-flash-down" : ""
-        }`}
-      >
-        {waitMin}m
-        <Arrow className="size-3.5" aria-hidden />
-        {delta !== 0 && <span className="text-xs">{Math.abs(delta)}</span>}
+      <span className="flex items-baseline justify-between gap-4">
+        <span className="text-xs whitespace-nowrap text-muted-foreground">{parkName}</span>
+        <span
+          className={`flex items-center gap-0.5 px-1.5 text-[11px] font-medium whitespace-nowrap ${tone}`}
+        >
+          <Arrow className="size-3" aria-hidden />
+          {change}
+        </span>
       </span>
     </span>
   );
@@ -151,16 +166,20 @@ export function BlogTickerHeader() {
   // a couple of seconds to identify the strip and then folds away, handing its
   // width to the chips. Desktop has room to spare and keeps the label.
   const isMobile = useIsMobile();
-  const labelRef = useRef<HTMLDivElement>(null);
-  const labelWidth = useMeasuredWidth(labelRef);
+  const [labelWidth, labelRef] = useMeasuredWidth<HTMLDivElement>();
   const [labelExpired, setLabelExpired] = useState(false);
-  useEffect(() => {
-    const t = setTimeout(() => setLabelExpired(true), LABEL_FADE_DELAY_MS);
-    return () => clearTimeout(t);
-  }, []);
-  const hideLabel = isMobile && labelExpired;
 
   const chips = ticker ?? [];
+  const tickerVisible = chips.length >= MIN_OPEN_RIDES;
+  // The countdown starts when the strip actually appears, not when the header
+  // mounts — the ticker waits on its query, and a timer that had already fired
+  // would collapse the label before anyone saw it.
+  useEffect(() => {
+    if (!tickerVisible) return;
+    const t = setTimeout(() => setLabelExpired(true), LABEL_FADE_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [tickerVisible]);
+  const hideLabel = isMobile && labelExpired;
   // The track is two identical halves and slides by exactly -50%, so the loop is
   // seamless only if one half already overflows the viewport. With a short ride
   // list that wouldn't hold, so repeat the list within each half until it's wide
@@ -171,6 +190,9 @@ export function BlogTickerHeader() {
   const durationSec = Math.max(80, itemsPerHalf * 7);
 
   const collapse = { duration: 0.3, ease: "easeInOut" } as const;
+  // The label's fade is slower than the nav collapse: it plays against the
+  // marquee's own constant drift, where a quick change reads as a jerk.
+  const handoff = { duration: 0.55, ease: "easeInOut" } as const;
 
   return (
     <>
@@ -237,58 +259,66 @@ export function BlogTickerHeader() {
         {/* Ticker strip, bracketed by thin primary rules (Disney's TRENDING bar).
             Hidden when too few rides are open (or while still loading) so it
             never shows a near-empty marquee or a "Loading…" flash. */}
-        {chips.length >= MIN_OPEN_RIDES && (
-          <div className="border-t border-primary/40">
-            <div className="flex items-stretch">
-              <motion.div
-                initial={false}
-                animate={{
-                  width: hideLabel && labelWidth ? 0 : (labelWidth ?? "auto"),
-                  opacity: hideLabel ? 0 : 1,
-                }}
-                transition={collapse}
-                className="shrink-0 overflow-hidden"
+        {tickerVisible && (
+          <div className="relative border-t border-primary/40">
+            {/* The marquee always spans the full strip, at a fixed width the
+                label never touches — the label sits *over* it, not beside it.
+                The only concession is a static lead-in of exactly the label's
+                width: the first chips start where the label ends and then scroll
+                out through that gap on their own, so the hand-off costs no
+                animation at all and nothing here ever re-lays-out.
+                (Clipping happens at the padding edge, so chips stay visible as
+                they travel across it.) */}
+            <div
+              className="parkfi-marquee relative overflow-hidden"
+              style={{ paddingLeft: labelWidth }}
+            >
+              <div
+                className="parkfi-marquee-track"
+                style={{ "--marquee-duration": `${durationSec}s` } as React.CSSProperties}
               >
-                {/* `w-max` keeps the measured width content-driven, so it stays
-                    correct while the wrapper above animates down to zero. */}
-                <div
-                  ref={labelRef}
-                  className="flex h-full w-max items-center gap-2 border-r border-primary/40 bg-primary/5 px-4 py-2"
-                >
-                  <span className="relative flex size-2">
-                    <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75" />
-                    <span className="relative inline-flex size-2 rounded-full bg-primary" />
-                  </span>
-                  <span className="font-heading text-xs font-bold tracking-widest text-primary uppercase">
-                    Live Waits
-                  </span>
-                </div>
-              </motion.div>
-
-              <div className="parkfi-marquee relative flex-1 overflow-hidden">
-                <div
-                  className="parkfi-marquee-track"
-                  style={{ "--marquee-duration": `${durationSec}s` } as React.CSSProperties}
-                >
-                  {[0, 1].map((copy) => (
-                    <div key={copy} className="flex items-center" aria-hidden={copy === 1}>
-                      {Array.from({ length: repeatsPerHalf }).flatMap((_, rep) =>
-                        chips.map((c) => (
-                          <TickerChip
-                            key={`${copy}-${rep}-${c.parkSlug}-${c.rideSlug}`}
-                            rideName={c.rideName}
-                            parkName={c.parkName}
-                            waitMin={c.waitMin}
-                            delta={c.delta}
-                            trend={c.trend}
-                          />
-                        )),
-                      )}
-                    </div>
-                  ))}
-                </div>
+                {[0, 1].map((copy) => (
+                  <div key={copy} className="flex items-center" aria-hidden={copy === 1}>
+                    {Array.from({ length: repeatsPerHalf }).flatMap((_, rep) =>
+                      chips.map((c) => (
+                        <TickerChip
+                          key={`${copy}-${rep}-${c.parkSlug}-${c.rideSlug}`}
+                          rideName={c.rideName}
+                          parkName={c.parkName}
+                          waitMin={c.waitMin}
+                          delta={c.delta}
+                          trend={c.trend}
+                        />
+                      )),
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
+
+            {/* Fades while sliding off its own width to the left, so it reads as
+                clearing out rather than dissolving in place. Opaque so the chips
+                pass behind it, and click-through so hovering here still pauses
+                the marquee underneath. */}
+            <motion.div
+              initial={false}
+              animate={{ opacity: hideLabel ? 0 : 1, x: hideLabel ? -(labelWidth ?? 0) : 0 }}
+              transition={handoff}
+              className="pointer-events-none absolute inset-y-0 left-0 flex bg-background"
+            >
+              <div
+                ref={labelRef}
+                className="flex w-max items-center gap-2 border-r border-primary/40 bg-primary/5 px-4"
+              >
+                <span className="relative flex size-2">
+                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75" />
+                  <span className="relative inline-flex size-2 rounded-full bg-primary" />
+                </span>
+                <span className="font-heading text-xs font-bold tracking-widest text-primary uppercase">
+                  Live Waits
+                </span>
+              </div>
+            </motion.div>
           </div>
         )}
       </header>
