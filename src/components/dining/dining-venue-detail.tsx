@@ -4,7 +4,7 @@ import * as React from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { ExternalLinkIcon, PhoneIcon } from "lucide-react";
+import { BookOpenTextIcon, ChevronRightIcon, ExternalLinkIcon, PhoneIcon } from "lucide-react";
 
 import {
   DetailHero,
@@ -48,6 +48,13 @@ import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Card } from "#/components/ui/card.tsx";
 import { DatePicker } from "#/components/ui/date-picker.tsx";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerTrigger,
+} from "#/components/ui/drawer.tsx";
 import {
   Select,
   SelectContent,
@@ -140,6 +147,77 @@ function VenueBadges({
         </Badge>
       )}
     </div>
+  );
+}
+
+/**
+ * The phone-sized menu entry point: a card that opens the menu drawer. It stands
+ * where the inline menu panel sits on desktop, so it carries enough of the menu
+ * to be worth the tap — how many dishes are listed, and which menus they're
+ * split across as chips rather than a truncated run-on line.
+ *
+ * A plain `<button>` wearing the `Card` chrome rather than a `Button`, since the
+ * button variants are a single-line inline-flex row; it keeps the buttons' press
+ * behaviour (the 3D shelf collapsing under the press) by hand.
+ *
+ * Spreads `...props` so `DrawerTrigger asChild` can hand it the trigger's
+ * handlers and ARIA state.
+ */
+function MenuCardTrigger({
+  loading,
+  periods,
+  itemCount,
+  className,
+  ...props
+}: React.ComponentProps<"button"> & {
+  loading: boolean;
+  periods: Array<string>;
+  itemCount: number;
+}) {
+  // Three chips is what fits a narrow phone without the row clipping mid-word.
+  const shown = periods.slice(0, 3);
+  const overflow = periods.length - shown.length;
+  return (
+    <button
+      type="button"
+      className={cn(
+        "group/menu-card relative top-0 w-full rounded-4xl bg-card p-4 text-left text-card-foreground border-3d btn-3d-outline shadow-3d transition-[box-shadow,top,background-color] duration-150 ease-out hover:-top-px hover:bg-muted hover:shadow-3d-hover focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 focus-visible:outline-none active:top-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)]",
+        className,
+      )}
+      {...props}
+    >
+      <div className="flex items-center gap-3">
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-secondary text-secondary-foreground">
+          <BookOpenTextIcon className="size-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="font-heading text-base font-medium">View full menu</p>
+          <p className="text-xs text-muted-foreground">
+            {loading
+              ? "Loading…"
+              : `${itemCount.toLocaleString()} ${itemCount === 1 ? "dish" : "dishes"}`}
+          </p>
+        </div>
+        <ChevronRightIcon className="size-5 shrink-0 text-muted-foreground transition-transform duration-150 ease-out group-hover/menu-card:translate-x-0.5" />
+      </div>
+      {shown.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {shown.map((p) => (
+            <span
+              key={p}
+              className="max-w-[12rem] truncate rounded-full border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground"
+            >
+              {p}
+            </span>
+          ))}
+          {overflow > 0 && (
+            <span className="rounded-full border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground">
+              +{overflow}
+            </span>
+          )}
+        </div>
+      )}
+    </button>
   );
 }
 
@@ -736,10 +814,29 @@ export function DiningVenueDetail({
   // before the async content exists and land at the wrong offset.
   const menuSectionRef = React.useRef<HTMLElement>(null);
   const menuReady = !!venue && !state.menuQ.isLoading;
+
+  // On a phone the menu lives in a bottom drawer rather than an inline panel, so
+  // it gets the whole screen instead of a viewport slice nested in the page's own
+  // scroll. A `#menu` / `#menu-<slug>` deep link therefore has to open it — there
+  // is no inline menu for the scroll above to land on.
+  const [menuOpen, setMenuOpen] = React.useState(false);
+
   React.useEffect(() => {
-    if (!scrollToMenu || !menuReady) return;
+    if (!menuReady) return;
+    const wantsMenu = scrollToMenu || (isMobile && !!targetItemSlug);
+    if (!wantsMenu) return;
+    if (isMobile) {
+      // Land on the menu section *before* the drawer pins the body — a smooth
+      // scroll still in flight when vaul locks gets stranded, and closing the
+      // drawer then restores to wherever it happened to be, which is what made
+      // the page lurch. Jumping instantly costs nothing here: the drawer covers
+      // the screen a frame later, so there's no travel for the reader to see.
+      menuSectionRef.current?.scrollIntoView({ behavior: "auto", block: "start" });
+      setMenuOpen(true);
+      return;
+    }
     menuSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [scrollToMenu, menuReady]);
+  }, [scrollToMenu, menuReady, isMobile, targetItemSlug]);
 
   // A resort-hosted venue (no park ticket required) cross-links back to its
   // resort's detail page; theme-park venues just show the plain text.
@@ -792,6 +889,19 @@ export function DiningVenueDetail({
 
   const hasMenu = state.periods.length > 0;
 
+  // Dish count for the phone's menu card. Deduped per meal period, since a venue
+  // often lists the same dish under several groups (a cider under both "Draft
+  // Beer" and "Bottle & Can") and counting it twice overstates the menu.
+  const menuItemCount = React.useMemo(() => {
+    const seen = new Set<string>();
+    for (const p of state.periods) {
+      for (const g of p.groups) {
+        for (const item of g.items) seen.add(`${p.mealPeriod}|${item.title}`);
+      }
+    }
+    return seen.size;
+  }, [state.periods]);
+
   // Some venues price dishes per guest (family-style, prix-fixe). When any are
   // present, offer a party-size control so the menu can show party totals.
   const [guestCount, setGuestCount] = React.useState(2);
@@ -818,8 +928,54 @@ export function DiningVenueDetail({
   function jumpToFreshItem() {
     if (!freshChange) return;
     state.focusItem(slugifyMenuItem(freshChange.title));
+    if (isMobile) setMenuOpen(true);
     menuSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
+
+  // The per-guest control and the tax disclaimer ride above the menu on desktop
+  // and inside the drawer header on a phone, so build them once.
+  const menuControls = (
+    <div className="flex items-center gap-3">
+      {hasPerPersonItems && (
+        <Select value={String(guestCount)} onValueChange={(v) => v && setGuestCount(Number(v))}>
+          <SelectTrigger size="sm" className="w-28 shrink-0" aria-label="Guests">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PARTY_SIZES.map((n) => (
+              <SelectItem key={n} value={String(n)}>
+                {n} {n === 1 ? "guest" : "guests"}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+      <p className="text-xs text-muted-foreground">Prices excl. tax &amp; gratuity</p>
+    </div>
+  );
+
+  const menuBody = (
+    <MenuBody
+      periods={state.periods}
+      activePeriodIdx={state.activePeriodIdx}
+      onSwitchPeriod={state.switchPeriod}
+      typeSections={state.typeSections}
+      onJumpToType={state.jumpToType}
+      sectionRefs={state.sectionRefs}
+      scrollRef={state.scrollRef}
+      pillsRef={state.pillsRef}
+      twoColumn={!isMobile}
+      menuIsLoading={state.menuQ.isLoading}
+      highlightSlug={state.highlightSlug}
+      changesBySlug={state.changesBySlug}
+      newSlugs={state.newSlugs}
+      facilityId={facilityId}
+      recentChanges={state.recentChanges}
+      viewingChanges={state.viewingChanges}
+      onShowChanges={state.showChanges}
+      guestCount={guestCount}
+    />
+  );
 
   return (
     <div className={cn("mx-auto flex w-full max-w-5xl flex-col gap-6", HERO_PAGE_PADDING)}>
@@ -995,55 +1151,45 @@ export function DiningVenueDetail({
         </section>
       )}
 
-      {/* Menu */}
+      {/* Menu. It's the last thing on the page, and on a phone it's now a single
+          button rather than a tall panel — without the extra bottom padding it
+          lands right on the nav island, whose floating pills overhang the space
+          the inset reserves for them. */}
       {venue && (
-        <section id="menu" ref={menuSectionRef} className="flex scroll-mt-16 flex-col gap-3">
+        <section
+          id="menu"
+          ref={menuSectionRef}
+          className="flex scroll-mt-16 flex-col gap-3 pb-6 md:pb-0"
+        >
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
             <h2 className="text-lg font-semibold tracking-tight">Menu</h2>
-            <div className="flex items-center gap-3">
-              {hasPerPersonItems && (
-                <Select
-                  value={String(guestCount)}
-                  onValueChange={(v) => v && setGuestCount(Number(v))}
-                >
-                  <SelectTrigger size="sm" className="w-28 shrink-0" aria-label="Guests">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PARTY_SIZES.map((n) => (
-                      <SelectItem key={n} value={String(n)}>
-                        {n} {n === 1 ? "guest" : "guests"}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-              <p className="text-xs text-muted-foreground">Prices excl. tax &amp; gratuity</p>
-            </div>
+            {!isMobile && menuControls}
           </div>
           {state.menuQ.isLoading || hasMenu ? (
-            <div className="flex h-[60vh] min-h-0 flex-col overflow-hidden rounded-2xl border bg-card sm:h-[70vh] sm:min-h-[420px]">
-              <MenuBody
-                periods={state.periods}
-                activePeriodIdx={state.activePeriodIdx}
-                onSwitchPeriod={state.switchPeriod}
-                typeSections={state.typeSections}
-                onJumpToType={state.jumpToType}
-                sectionRefs={state.sectionRefs}
-                scrollRef={state.scrollRef}
-                pillsRef={state.pillsRef}
-                twoColumn={!isMobile}
-                menuIsLoading={state.menuQ.isLoading}
-                highlightSlug={state.highlightSlug}
-                changesBySlug={state.changesBySlug}
-                newSlugs={state.newSlugs}
-                facilityId={facilityId}
-                recentChanges={state.recentChanges}
-                viewingChanges={state.viewingChanges}
-                onShowChanges={state.showChanges}
-                guestCount={guestCount}
-              />
-            </div>
+            isMobile ? (
+              <Drawer open={menuOpen} onOpenChange={setMenuOpen}>
+                <DrawerTrigger asChild>
+                  <MenuCardTrigger
+                    loading={state.menuQ.isLoading}
+                    periods={state.periods.map((p) => p.mealPeriod)}
+                    itemCount={menuItemCount}
+                  />
+                </DrawerTrigger>
+                {/* Taller than the 80vh default and with the side padding pulled
+                    in, so the menu's own rails and rows own the width. */}
+                <DrawerContent className="h-[92vh] px-2 data-[vaul-drawer-direction=bottom]:max-h-[92vh]">
+                  <DrawerHeader className="shrink-0 px-4 py-2 group-data-[vaul-drawer-direction=bottom]/drawer-content:text-left">
+                    <DrawerTitle>{venue.name}</DrawerTitle>
+                    {menuControls}
+                  </DrawerHeader>
+                  {menuBody}
+                </DrawerContent>
+              </Drawer>
+            ) : (
+              <div className="flex h-[60vh] min-h-0 flex-col overflow-hidden rounded-2xl border bg-card sm:h-[70vh] sm:min-h-[420px]">
+                {menuBody}
+              </div>
+            )
           ) : (
             <div className="rounded-2xl border bg-muted/30 py-16 text-center">
               <p className="font-medium">Menu not yet captured</p>

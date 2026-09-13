@@ -150,8 +150,12 @@ function MobileMenuDrawer({ facilityId, name }: { facilityId: string; name: stri
           Menu
         </Button>
       </DrawerTrigger>
-      <DrawerContent className="flex max-h-[90vh] flex-col">
-        <DrawerHeader className="shrink-0 pb-3 text-left">
+      {/* Taller than the 80vh default — the menu wants the screen — and with the
+          side padding pulled in so its rails and rows own the width. The height
+          cap has to be written as the same `data-[vaul-drawer-direction]`
+          variant the base sets it in, or the base's 80vh wins on specificity. */}
+      <DrawerContent className="flex h-[92vh] flex-col px-2 data-[vaul-drawer-direction=bottom]:max-h-[92vh]">
+        <DrawerHeader className="shrink-0 px-4 pb-3 group-data-[vaul-drawer-direction=bottom]/drawer-content:text-left">
           <DrawerTitle>{name}</DrawerTitle>
         </DrawerHeader>
         <MenuBody

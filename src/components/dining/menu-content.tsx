@@ -619,16 +619,18 @@ export function MenuBody({
 
   return (
     <>
-      {/* Period tabs, plus an "Updates" pseudo-tab for recent menu activity */}
+      {/* Period tabs, plus an "Updates" pseudo-tab for recent menu activity.
+          Side-scrolls rather than wrapping — a venue with several periods plus
+          "Updates" used to spill onto a second row on a phone. */}
       {(hasMultiplePeriods || hasChanges) && (
-        <div className="flex shrink-0 gap-2 border-b px-4 py-3">
+        <ChipRail className="shrink-0 gap-2 border-b py-3">
           {periods.map((p, i) => (
             <button
               key={p.mealPeriod}
               type="button"
               onClick={() => onSwitchPeriod(i)}
               className={cn(
-                "rounded-full px-4 py-1.5 text-sm font-semibold transition-colors",
+                "shrink-0 snap-start rounded-full px-4 py-1.5 text-sm font-semibold whitespace-nowrap transition-colors",
                 !viewingChanges && i === activePeriodIdx
                   ? "bg-foreground text-background"
                   : "text-muted-foreground hover:text-foreground",
@@ -642,7 +644,7 @@ export function MenuBody({
               type="button"
               onClick={onShowChanges}
               className={cn(
-                "rounded-full px-4 py-1.5 text-sm font-semibold transition-colors",
+                "shrink-0 snap-start rounded-full px-4 py-1.5 text-sm font-semibold whitespace-nowrap transition-colors",
                 viewingChanges
                   ? "bg-foreground text-background"
                   : "text-muted-foreground hover:text-foreground",
@@ -651,7 +653,7 @@ export function MenuBody({
               Updates
             </button>
           )}
-        </div>
+        </ChipRail>
       )}
 
       {/* Quick-jump pills — category chips normally, or the change-kind filter
