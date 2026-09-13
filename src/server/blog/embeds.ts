@@ -153,9 +153,18 @@ export function embedHtml(e: SocialEmbed): string {
         "TikTok video",
       );
     case "instagram":
+      // Fixed height, like Reddit: the /embed page carries no height-reporting
+      // postMessage (the old instgrm.Embeds MEASURE protocol is gone from the
+      // current bundle), and it's cross-origin so we can't measure it. The card
+      // is roughly 200px of chrome — header, "View more on Instagram", the
+      // action row, likes and the comment box — on top of the media, which
+      // renders at the embed width times its aspect ratio. 680px fitted a
+      // square post exactly and clipped every portrait one; 4:5 is the tallest
+      // Instagram allows, so 480 × 1.25 + 200 ≈ 800 covers the worst case with
+      // a little slack. Squarer posts pay for it in trailing white space.
       return frame(
         `https://www.instagram.com/p/${id}/embed`,
-        "max-width:480px;height:680px",
+        "max-width:480px;height:820px",
         "Instagram post",
       );
     case "twitter":

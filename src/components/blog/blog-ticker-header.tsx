@@ -6,6 +6,7 @@ import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 
 import { OmniSearch } from "#/components/omni-search.tsx";
 import { useHideOnScrollDown } from "#/hooks/use-hide-on-scroll-down.ts";
+import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
 /** Measures an element's pixel height, kept current across resizes/reflows. */
@@ -25,9 +26,30 @@ function useMeasuredHeight<T extends HTMLElement>(
   return height;
 }
 
+/** Measures an element's pixel width, kept current across resizes/reflows. */
+function useMeasuredWidth<T extends HTMLElement>(
+  ref: React.RefObject<T | null>,
+): number | undefined {
+  const [width, setWidth] = useState<number>();
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setWidth(el.offsetWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return width;
+}
+
 /** Hide the live-waits marquee entirely unless at least this many rides are
  *  open — a near-empty ticker (or the loading flash) reads as broken. */
 const MIN_OPEN_RIDES = 5;
+
+/** How long the "Live Waits" label stays put on phones before folding away to
+ *  hand its width back to the marquee. Desktop keeps the label for good. */
+const LABEL_FADE_DELAY_MS = 2000;
 
 const NAV_LEFT = [
   { label: "Park News", to: "/blog" },
@@ -125,6 +147,19 @@ export function BlogTickerHeader() {
   const navRef = useRef<HTMLDivElement>(null);
   const navHeight = useMeasuredHeight(navRef);
 
+  // On phones the marquee is starved for width, so the "Live Waits" label gets
+  // a couple of seconds to identify the strip and then folds away, handing its
+  // width to the chips. Desktop has room to spare and keeps the label.
+  const isMobile = useIsMobile();
+  const labelRef = useRef<HTMLDivElement>(null);
+  const labelWidth = useMeasuredWidth(labelRef);
+  const [labelExpired, setLabelExpired] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setLabelExpired(true), LABEL_FADE_DELAY_MS);
+    return () => clearTimeout(t);
+  }, []);
+  const hideLabel = isMobile && labelExpired;
+
   const chips = ticker ?? [];
   // The track is two identical halves and slides by exactly -50%, so the loop is
   // seamless only if one half already overflows the viewport. With a short ride
@@ -205,15 +240,30 @@ export function BlogTickerHeader() {
         {chips.length >= MIN_OPEN_RIDES && (
           <div className="border-t border-primary/40">
             <div className="flex items-stretch">
-              <div className="flex shrink-0 items-center gap-2 border-r border-primary/40 bg-primary/5 px-4 py-2">
-                <span className="relative flex size-2">
-                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75" />
-                  <span className="relative inline-flex size-2 rounded-full bg-primary" />
-                </span>
-                <span className="font-heading text-xs font-bold tracking-widest text-primary uppercase">
-                  Live Waits
-                </span>
-              </div>
+              <motion.div
+                initial={false}
+                animate={{
+                  width: hideLabel && labelWidth ? 0 : (labelWidth ?? "auto"),
+                  opacity: hideLabel ? 0 : 1,
+                }}
+                transition={collapse}
+                className="shrink-0 overflow-hidden"
+              >
+                {/* `w-max` keeps the measured width content-driven, so it stays
+                    correct while the wrapper above animates down to zero. */}
+                <div
+                  ref={labelRef}
+                  className="flex h-full w-max items-center gap-2 border-r border-primary/40 bg-primary/5 px-4 py-2"
+                >
+                  <span className="relative flex size-2">
+                    <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75" />
+                    <span className="relative inline-flex size-2 rounded-full bg-primary" />
+                  </span>
+                  <span className="font-heading text-xs font-bold tracking-widest text-primary uppercase">
+                    Live Waits
+                  </span>
+                </div>
+              </motion.div>
 
               <div className="parkfi-marquee relative flex-1 overflow-hidden">
                 <div
