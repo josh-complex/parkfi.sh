@@ -80,19 +80,27 @@ function NavLinks({ items }: { items: ReadonlyArray<{ label: string; to: string 
   );
 }
 
-/** A single live-wait chip in the marquee. */
+/** A single live-wait chip in the marquee; links to that ride's page. */
 function TickerChip({
   rideName,
+  rideSlug,
   parkName,
+  parkSlug,
   waitMin,
   delta,
   trend,
+  duplicate,
 }: {
   rideName: string;
+  rideSlug: string;
   parkName: string;
+  parkSlug: string;
   waitMin: number;
   delta: number;
   trend: "up" | "down" | "flat";
+  /** True for the loop's second, `aria-hidden` half — kept out of the tab order
+   *  so the same ride isn't a duplicate stop for keyboard and screen readers. */
+  duplicate: boolean;
 }) {
   const flat = trend === "flat" || delta === 0;
   const tone = flat
@@ -109,7 +117,12 @@ function TickerChip({
     // Rows, not columns: the ride line and the park line each size themselves,
     // so a short park name lets the change text tuck under the ride name instead
     // of every chip paying for the widest column on both lines.
-    <span className="flex flex-col justify-center gap-0.5 border-r border-border px-4 py-2.5">
+    <Link
+      to="/park/$slug/ride/$rideSlug"
+      params={{ slug: parkSlug, rideSlug }}
+      tabIndex={duplicate ? -1 : undefined}
+      className="flex flex-col justify-center gap-0.5 border-r border-border px-4 py-2.5 transition-colors hover:bg-muted/60"
+    >
       <span className="flex items-baseline justify-between gap-4">
         <span className="text-sm font-medium whitespace-nowrap text-foreground">{rideName}</span>
         {/* `key` on the value remounts this node when the wait changes, replaying
@@ -132,7 +145,7 @@ function TickerChip({
           {change}
         </span>
       </span>
-    </span>
+    </Link>
   );
 }
 
@@ -284,10 +297,13 @@ export function BlogTickerHeader() {
                         <TickerChip
                           key={`${copy}-${rep}-${c.parkSlug}-${c.rideSlug}`}
                           rideName={c.rideName}
+                          rideSlug={c.rideSlug}
                           parkName={c.parkName}
+                          parkSlug={c.parkSlug}
                           waitMin={c.waitMin}
                           delta={c.delta}
                           trend={c.trend}
+                          duplicate={copy === 1}
                         />
                       )),
                     )}
