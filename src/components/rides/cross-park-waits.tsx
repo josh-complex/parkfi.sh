@@ -13,6 +13,7 @@ import {
   ArrowUpDownIcon,
   LayoutGridIcon,
   ListIcon,
+  MapIcon,
   SlidersHorizontalIcon,
   XIcon,
 } from "lucide-react";
@@ -23,6 +24,7 @@ import { ConnectionLost } from "#/components/connection-lost.tsx";
 import { RideTiles, RideTilesSkeleton } from "#/components/rides/ride-tiles.tsx";
 import { WaitBadge } from "#/components/rides/wait-badge.tsx";
 import { WaitsBlurbs } from "#/components/rides/waits-blurbs.tsx";
+import { WaitsFilterModal } from "#/components/rides/waits-filter-modal.tsx";
 import { WaitsFilterRail } from "#/components/rides/waits-filter-rail.tsx";
 import { BoardTableSkeleton } from "#/components/skeletons.tsx";
 import {
@@ -52,6 +54,7 @@ import {
   DrawerTitle,
   DrawerTrigger,
 } from "#/components/ui/drawer.tsx";
+import { Popover, PopoverContent, PopoverTrigger } from "#/components/ui/popover.tsx";
 import {
   SortRows,
   TableSortHeader,
@@ -66,8 +69,10 @@ import {
   TableHeader,
   TableRow,
 } from "#/components/ui/table.tsx";
+import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { queryUnavailable } from "#/hooks/use-online-status.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
+import { lazyWithReload } from "#/lib/lazy-with-reload.tsx";
 import { Image } from "#/components/ui/image.tsx";
 import { PAGE_WIDTH } from "#/components/page-container.tsx";
 import { cn } from "#/lib/utils.ts";
@@ -83,6 +88,8 @@ import {
   type LaterWindow,
   type Ride,
 } from "./waits-data.ts";
+import { TOOLBAR_STICKY, UNDER_TOOLBAR_HEIGHT, UNDER_TOOLBAR_TOP } from "./waits-chrome.ts";
+import { filterToFrame, framesEqual, type MapFrame } from "./waits-frame.ts";
 import {
   applySearchToFilter,
   filterToSearch,
@@ -90,6 +97,16 @@ import {
   type WaitsSort,
   type WaitsView,
 } from "./waits-search.ts";
+
+/**
+ * The map pane, loaded only when someone asks for it. MapLibre plus a basemap
+ * style is the heaviest thing this page can pull, and the board's whole job —
+ * every ride, every wait, every filter — is done without it.
+ */
+const WaitsMap = lazyWithReload(
+  () => import("./waits-map.tsx").then((m) => ({ default: m.WaitsMap })),
+  "waits-map",
+);
 
 const SORTS: ReadonlyArray<SortOption<WaitsSort>> = [
   {
@@ -120,11 +137,29 @@ const SORTS: ReadonlyArray<SortOption<WaitsSort>> = [
 
 const DEFAULT_DIR: Record<WaitsSort, SortDir> = { wait: "desc", name: "asc", park: "asc" };
 
+/** Where the list/tiles preference lives — see the view state below. */
 const VIEW_STORAGE_KEY = "waits-view";
 
-/** Tailwind's `lg` — at or above this the filter rail is on screen, below it the
- *  same controls live in the phone drawer. */
-const RAIL_BREAKPOINT = 1024;
+/** `useLayoutEffect` on the client, a no-op-safe `useEffect` while rendering
+ *  on the server (React warns about the layout variant there). */
+const useIsoLayoutEffect =
+  typeof document !== "undefined" ? React.useLayoutEffect : React.useEffect;
+
+/** Chips for one multi-select filter collapse into a count at this many. */
+const COLLAPSE_CHIPS_AT = 3;
+
+/**
+ * Tailwind's `md`, and `useIsMobile`'s own breakpoint — at or above it the
+ * controls sit in the cluster over the results, the filters open as a modal,
+ * and the map pane runs beside the list. Below it the controls are floating
+ * pills, the filters are a bottom drawer, and there is no map at all (the
+ * bottom nav's Map tab is the phone's map).
+ */
+const SPLIT_BREAKPOINT = 768;
+
+/** Tailwind's `lg` — the width at which a list row grows its wide layout
+ *  (bigger photo, the park/land/type columns). */
+const WIDE_ROW_BREAKPOINT = 1024;
 
 /** The board's own route, for typed search reads and writes (§4). */
 const waitsRoute = getRouteApi("/_app/_dash/");
@@ -214,7 +249,19 @@ type RideColumnMeta = {
   align?: "right";
 };
 
-function useRideColumns(eagerCount: number, laterById: ReadonlyMap<number, LaterWindow>) {
+function useRideColumns(
+  eagerCount: number,
+  laterById: ReadonlyMap<number, LaterWindow>,
+  /**
+   * The list is sharing its width with the map pane. The wide columns are
+   * pinned to px widths (see `col` above) chosen for a list that owned the
+   * page — side by side with a map they add up to more than the column they
+   * live in, and the attraction name loses whatever they overrun. So the
+   * compact table is the *phone* row at every width: photo, name, the park and
+   * land under it, the wait on the right. Nothing is lost, only re-stacked.
+   */
+  compact: boolean,
+) {
   const hasLater = laterById.size > 0;
   return React.useMemo<Array<ColumnDef<Ride>>>(() => {
     const cols: Array<ColumnDef<Ride>> = [
@@ -222,7 +269,9 @@ function useRideColumns(eagerCount: number, laterById: ReadonlyMap<number, Later
         id: "name",
         header: "Attraction",
         accessorFn: (r) => r.name,
-        cell: ({ row }) => <AttractionCell ride={row.original} eager={row.index < eagerCount} />,
+        cell: ({ row }) => (
+          <AttractionCell ride={row.original} eager={row.index < eagerCount} compact={compact} />
+        ),
       },
       {
         id: "park",
@@ -302,6 +351,7 @@ function useRideColumns(eagerCount: number, laterById: ReadonlyMap<number, Later
         meta: { col: "w-[88px]", align: "right" } satisfies RideColumnMeta,
       },
     ];
+    if (compact) return cols.filter((c) => c.id === "name" || c.id === "wait");
     // "Shortest later" is entirely the profiles rollup's output (§6). Until that
     // exists the column is *absent* rather than a column of dashes — an empty
     // column is a promise the data can't keep.
@@ -330,12 +380,22 @@ function useRideColumns(eagerCount: number, laterById: ReadonlyMap<number, Later
       });
     }
     return cols;
-  }, [eagerCount, laterById, hasLater]);
+  }, [eagerCount, laterById, hasLater, compact]);
 }
 
 /** The name cell: the photo, the ride name as a real link, and — on a phone,
  *  where the park has no column — the park it's in under it. */
-function AttractionCell({ ride, eager }: { ride: Ride; eager?: boolean }) {
+function AttractionCell({
+  ride,
+  eager,
+  compact,
+}: {
+  ride: Ride;
+  eager?: boolean;
+  /** No park/land columns to defer to — keep the phone's stacked line at every
+   *  width, and the photo at its phone size. */
+  compact?: boolean;
+}) {
   const closed = ride.status !== "OPERATING";
   return (
     <div className="flex min-w-0 items-center gap-3 lg:gap-4">
@@ -348,12 +408,13 @@ function AttractionCell({ ride, eager }: { ride: Ride; eager?: boolean }) {
           aspect={1}
           placeholder={ride.imageThumbhash}
           className={cn(
-            "size-12 shrink-0 rounded-xl object-cover lg:size-16",
+            "size-12 shrink-0 rounded-xl object-cover",
+            !compact && "lg:size-16",
             closed && "opacity-60",
           )}
         />
       ) : (
-        <div className="size-12 shrink-0 rounded-xl bg-muted lg:size-16" />
+        <div className={cn("size-12 shrink-0 rounded-xl bg-muted", !compact && "lg:size-16")} />
       )}
       <div className="min-w-0">
         <Link
@@ -363,13 +424,14 @@ function AttractionCell({ ride, eager }: { ride: Ride; eager?: boolean }) {
           // keyboard, middle-click and crawlers without firing twice.
           onClick={(e) => e.stopPropagation()}
           className={cn(
-            "block truncate font-medium hover:underline lg:text-base",
+            "block truncate font-medium hover:underline",
+            !compact && "lg:text-base",
             closed && "text-muted-foreground",
           )}
         >
           {ride.name}
         </Link>
-        <div className="flex min-w-0 items-center gap-1.5 lg:hidden">
+        <div className={cn("flex min-w-0 items-center gap-1.5", !compact && "lg:hidden")}>
           <span className="truncate text-[11px] font-bold tracking-[0.04em] text-wash-muted uppercase">
             {formatParkName(ride.parkName)}
           </span>
@@ -415,16 +477,19 @@ function RideListTable({
   onSortingChange,
   laterById,
   eagerCount = 0,
+  compact = false,
 }: {
   rides: Array<Ride>;
   sorting: SortingState;
   onSortingChange: OnChangeFn<SortingState>;
   laterById: ReadonlyMap<number, LaterWindow>;
   eagerCount?: number;
+  /** The map pane is open beside the list — see `useRideColumns`. */
+  compact?: boolean;
 }) {
   const navigate = useNavigate();
   const reduced = useReducedMotion();
-  const columns = useRideColumns(eagerCount, laterById);
+  const columns = useRideColumns(eagerCount, laterById, compact);
   const table = useReactTable({
     data: rides,
     columns,
@@ -450,7 +515,7 @@ function RideListTable({
     </colgroup>
   );
   const head = (
-    <TableHeader className="hidden lg:table-header-group">
+    <TableHeader className={cn("hidden", !compact && "lg:table-header-group")}>
       {table.getHeaderGroups().map((hg) => (
         <TableRow key={hg.id} className="hover:bg-transparent">
           {hg.headers.map((header) => {
@@ -483,7 +548,7 @@ function RideListTable({
 
   const viewport = useViewportWidth();
   const [rowHeight, measureRow] = useRowHeight(
-    viewport >= RAIL_BREAKPOINT ? ROW_HEIGHT.lg : ROW_HEIGHT.base,
+    !compact && viewport >= WIDE_ROW_BREAKPOINT ? ROW_HEIGHT.lg : ROW_HEIGHT.base,
   );
   const { ref, start, end, totalSize, offsetTop, ready } = useWindowList({
     count: rows.length,
@@ -584,37 +649,37 @@ function Spacer({ height, columns }: { height: number; columns: number }) {
 
 /* ── Chrome ───────────────────────────────────────────────────────────────── */
 
-/** Sort chooser — shared bottom drawer, styled to its surface via `variant`. */
+/**
+ * A latched control wears its state the way a held one does: down on its shelf,
+ * flat, with the top glare gone. Same three classes as `ui/toggle` and the park
+ * strip, spelled out here because the toolbar's toggles are plain `Button`s.
+ */
+const PRESSED_FLAT =
+  "aria-pressed:top-[3px] aria-pressed:shadow-3d-active aria-pressed:[--btn-glare:var(--btn-3d)]";
+
+/**
+ * Sort chooser, phone — the bottom drawer behind the left-hand pill stack.
+ *
+ * Desktop gets {@link SortMenu} instead: same rows, hung off the button that
+ * opened them. A sheet swinging up from the bottom of a 1400px window to change
+ * one dropdown's worth of state was the phone's gesture wearing a mouse's
+ * clothes.
+ */
 function SortDrawer({
   sortKey,
   sortDir,
   onSort,
-  variant,
 }: {
   sortKey: WaitsSort;
   sortDir: SortDir;
   onSort: (key: WaitsSort, dir: SortDir) => void;
-  variant: "ghost" | "outline" | "pill";
 }) {
   return (
     <Drawer>
-      {variant === "pill" ? (
-        <DrawerTrigger className={MAP_FILTER_PILL}>
-          <ArrowUpDownIcon />
-          Sort
-        </DrawerTrigger>
-      ) : (
-        <DrawerTrigger asChild>
-          <Button
-            variant={variant}
-            size="sm"
-            className={cn("min-h-10", variant === "ghost" && "rounded-full")}
-          >
-            <ArrowUpDownIcon data-icon="inline-start" />
-            Sort
-          </Button>
-        </DrawerTrigger>
-      )}
+      <DrawerTrigger className={MAP_FILTER_PILL}>
+        <ArrowUpDownIcon />
+        Sort
+      </DrawerTrigger>
       <DrawerContent>
         <DrawerHeader>
           <DrawerTitle>Sort attractions</DrawerTitle>
@@ -629,50 +694,69 @@ function SortDrawer({
 }
 
 /**
+ * Sort chooser, desktop — a popover under the toolbar button.
+ *
+ * The rows inside are the *same* `SortRows` the drawer renders, so the two
+ * faces of one control can't drift apart (§3); only the container differs.
+ */
+function SortMenu({
+  sortKey,
+  sortDir,
+  onSort,
+}: {
+  sortKey: WaitsSort;
+  sortDir: SortDir;
+  onSort: (key: WaitsSort, dir: SortDir) => void;
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger render={<Button variant="outline" size="sm" className="min-h-10" />}>
+        <ArrowUpDownIcon data-icon="inline-start" />
+        Sort
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[17.5rem] gap-0 p-2">
+        <SortRows
+          options={SORTS}
+          activeKey={sortKey}
+          activeDir={sortDir}
+          onChange={onSort}
+          className="px-0 pb-0"
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/**
  * Filter chooser — the phone's face on the rail. It renders the *same*
  * `RideFilterControls` the desktop rail does, with the same parks and types, so
  * a filter can't exist on one and not the other (§3).
  */
 function FilterDrawer({
-  variant,
   parks,
   categories,
   activeCount,
 }: {
-  variant: "ghost" | "outline" | "pill";
   parks: RideFilterControlsProps["parks"];
   categories: RideFilterControlsProps["categories"];
   activeCount: number;
 }) {
   return (
     <Drawer>
-      {variant === "pill" ? (
-        <DrawerTrigger
-          className={cn(
-            MAP_FILTER_PILL,
-            activeCount > 0 && "btn-3d-primary bg-primary text-primary-foreground",
-          )}
-        >
-          <SlidersHorizontalIcon />
-          Filters
-          {activeCount > 0 && (
-            <span className="rounded-full bg-white/25 px-1.5 text-[11px] font-bold tabular-nums">
-              {activeCount}
-            </span>
-          )}
-        </DrawerTrigger>
-      ) : (
-        <DrawerTrigger asChild>
-          <Button
-            variant={variant}
-            size="sm"
-            className={cn("min-h-10", variant === "ghost" && "rounded-full")}
-          >
-            <SlidersHorizontalIcon data-icon="inline-start" />
-            Filter
-          </Button>
-        </DrawerTrigger>
-      )}
+      <DrawerTrigger
+        className={cn(
+          MAP_FILTER_PILL,
+          activeCount > 0 && "btn-3d-primary bg-primary text-primary-foreground",
+        )}
+      >
+        <SlidersHorizontalIcon />
+        Filters
+        {activeCount > 0 && (
+          <span className="rounded-full bg-white/25 px-1.5 text-[11px] font-bold tabular-nums">
+            {activeCount}
+          </span>
+        )}
+      </DrawerTrigger>
       <DrawerContent>
         <DrawerHeader className="border-b pb-4">
           <DrawerTitle>Filter attractions</DrawerTitle>
@@ -708,11 +792,29 @@ function ViewToggle({
       </button>
     );
   }
-  // Desktop: the two states side by side, so the alternative is visible rather
-  // than hidden behind one ambiguous icon.
+  // Desktop: both states side by side, so the alternative is visible rather
+  // than hidden behind one ambiguous icon — but as icons, and in neutral ink.
+  //
+  // Two rewrites, each undoing the same mistake from a different direction.
+  // First it was word-labelled segments with the active one filled in the brand
+  // blue, which made the smallest decision on the page the loudest thing in the
+  // toolbar and put it in direct competition with the Map switch beside it
+  // (also blue, and a control that actually changes the results). Then it was
+  // the same shape in ink: a raised white capsule with a hard black pill
+  // floating inside it, which read as a third *button* parked next to Map and
+  // Sort rather than a switch, and the only part you could hit was the 32px
+  // circle over the icon you weren't currently looking at.
+  //
+  // So: a recessed track, not a raised button — the one control in the cluster
+  // that goes *into* the bar instead of standing on it, which is what says
+  // "switch" before you have read either icon. The thumb is the raised, plain
+  // surface the rest of the chrome is made of; the ink is neutral throughout
+  // (list and tiles are a display choice: same rows either way). And each
+  // segment is a wide lozenge rather than a circle, so the target is the half
+  // of the control you were already pointing at.
   return (
     <div
-      className="btn-3d-outline border-3d shadow-3d flex min-h-10 shrink-0 items-center gap-1 rounded-4xl bg-background p-1 dark:border-[color-mix(in_oklch,var(--border),white_25%)]"
+      className="flex shrink-0 items-center gap-1 rounded-full border border-t-3 bg-muted p-1 shadow-[inset_0_1px_2px_oklch(0_0_0/0.07)] dark:bg-input/40"
       role="group"
       aria-label="View"
     >
@@ -723,19 +825,102 @@ function ViewToggle({
             key={v}
             type="button"
             aria-pressed={on}
+            aria-label={v === "list" ? "List view" : "Tile view"}
+            title={v === "list" ? "List view" : "Tile view"}
             onClick={() => onView(v)}
             className={cn(
-              "rounded-4xl px-3.5 py-1.5 text-[13px] font-semibold transition",
+              "flex h-8 w-12 items-center justify-center rounded-full transition-[background-color,color,box-shadow] duration-150 [&>svg]:size-4",
               on
-                ? "bg-primary text-primary-foreground"
+                ? "bg-background text-foreground shadow-[0_1px_2px_oklch(0_0_0/0.14)] ring-1 ring-border/70"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
-            {v === "list" ? "List" : "Tiles"}
+            {v === "list" ? <ListIcon /> : <LayoutGridIcon />}
           </button>
         );
       })}
     </div>
+  );
+}
+
+/**
+ * The map switch.
+ *
+ * A toggle that wears its state rather than naming the action: pressed and
+ * filled while the map is showing, plain while it isn't — so the button says
+ * what the board is doing. It is the one control in the cluster that changes
+ * *which* attractions are listed, which is why it is also the only one wearing
+ * the brand colour.
+ *
+ * Turning the map off doesn't leave its frame behind. A board still narrowed to
+ * a box nobody can see would be a filter with no control, and this page's whole
+ * contract is that every narrowing has a chip or a switch you can find.
+ *
+ * It also *sits down* while it's on. Every other 3D control on the page stands
+ * on a shelf and drops onto it while you hold it, so a latched toggle that kept
+ * its shelf was a button claiming to be un-pressed in the same breath its fill
+ * said otherwise — colour alone carrying a state the whole rest of the chrome
+ * spells out in relief. `PRESSED_FLAT` is that relief, and it is the same three
+ * classes `ui/toggle` and the park strip's cards already use.
+ *
+ * Desktop only — see the pane's own gate in the board below.
+ */
+function MapToggle({ on, onToggle }: { on: boolean; onToggle: (on: boolean) => void }) {
+  const label = on ? "Map on — hide it" : "Map — show the board on a map";
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant={on ? "default" : "outline"}
+      aria-pressed={on}
+      aria-label={label}
+      className={cn("min-h-10", PRESSED_FLAT)}
+      onClick={() => onToggle(!on)}
+    >
+      <MapIcon data-icon="inline-start" />
+      Map
+    </Button>
+  );
+}
+
+/**
+ * The board's toolbar publishes its own height, the way the masthead publishes
+ * `--site-header-height`, so the two things that stick *under* it — the filter
+ * rail and the map pane — clear it without anyone hard-coding a number that
+ * drifts the first time the bar wraps or a control changes size.
+ *
+ * Only published once measured; until then the sticky elements fall back to
+ * their own default, which is why they spell one out.
+ */
+function useToolbarHeight(): [
+  ref: React.RefObject<HTMLDivElement | null>,
+  style: React.CSSProperties | undefined,
+] {
+  const ref = React.useRef<HTMLDivElement | null>(null);
+  const [height, setHeight] = React.useState(0);
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const read = () => setHeight(el.getBoundingClientRect().height);
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const style =
+    height > 0
+      ? ({ "--waits-bar-height": `${Math.round(height)}px` } as React.CSSProperties)
+      : undefined;
+  return [ref, style];
+}
+
+/** The map pane's own space, held while its chunk loads (and on the server). */
+function MapPanePlaceholder() {
+  return (
+    <div
+      className="size-full animate-pulse rounded-[22px] border border-card-edge bg-muted"
+      aria-hidden
+    />
   );
 }
 
@@ -801,7 +986,47 @@ export function CrossParkWaits() {
   const [sortDir, setSortDir] = React.useState<SortDir>(
     search.dir ?? DEFAULT_DIR[search.sort ?? "wait"],
   );
-  const [view, setView] = React.useState<WaitsView>(search.view ?? "list");
+  /**
+   * List or tiles. Not URL state — it is a display preference, not part of what
+   * a shared link resolves to (see the note atop `waits-search.ts`) — so it is
+   * `localStorage` only, read in the layout effect below. First render is always
+   * the default, because the server has no way to know what this reader picked
+   * and a hydration that disagreed with its own HTML is worse than one frame.
+   */
+  const [view, setView] = React.useState<WaitsView>("list");
+  const [mapOn, setMapOn] = React.useState(search.map === true);
+  /**
+   * The map's current viewport, and the board's newest filter: with the pane
+   * open, the results are the attractions inside this box. Null whenever the
+   * map is off or hasn't reported yet, which narrows nothing.
+   *
+   * Not in the URL — see `WaitsSearch.map`. It is also the one piece of board
+   * state that isn't a *control* anyone set: it is where the map happens to be
+   * looking, which is why turning the map off drops it.
+   */
+  const [frame, setFrame] = React.useState<MapFrame | null>(null);
+  /**
+   * The map pane is client-only. `?map=1` is a real, shareable URL, so the
+   * server renders this page with the pane switched on — and MapLibre wants a
+   * document. The placeholder holds the pane's space until mount, and the
+   * board's HTML keeps every attraction in it (the frame narrows nothing while
+   * it is null), so a crawler on a map link still reads the full list.
+   */
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
+  /**
+   * The map is a desktop feature. A phone already has the whole map one tap
+   * away in the bottom nav — a second, smaller copy of it inside the Waits page
+   * competes with the tab for the same job and costs the results their screen.
+   * So on a phone this page is the results, full stop: no pane, no Map pill,
+   * and `?map=1` on a shared link simply doesn't narrow anything (the frame
+   * never gets set, because nothing is ever looking at one).
+   *
+   * A real unmount rather than a CSS hide, so the renderer isn't running behind
+   * a `display:none` and the frame it last reported is dropped on the way out.
+   */
+  const isMobile = useIsMobile();
+  const showMap = mapOn && !isMobile;
 
   /* — URL ⇄ state (§4) ------------------------------------------------------
      One value, two homes. `lastSyncedRef` records the key we last reconciled,
@@ -810,8 +1035,8 @@ export function CrossParkWaits() {
      and stops. A Back button arrives with a key nobody wrote, and flows the
      other way. */
   const desired = React.useMemo(
-    () => filterToSearch(filter, view, sortKey, sortDir),
-    [filter, view, sortKey, sortDir],
+    () => filterToSearch(filter, sortKey, sortDir, mapOn),
+    [filter, sortKey, sortDir, mapOn],
   );
   const desiredKey = searchKey(desired);
   const urlKey = searchKey(search);
@@ -820,6 +1045,9 @@ export function CrossParkWaits() {
   // The split's top edge, and the flag the park strip raises to say "this change
   // came from above the fold — leave the page where it is" (see `holdScroll`).
   const splitRef = React.useRef<HTMLDivElement>(null);
+  // The toolbar measures itself onto the split, where the rail and the map read
+  // it to stick clear of it.
+  const [toolbarRef, toolbarStyle] = useToolbarHeight();
   const holdScrollRef = React.useRef(false);
 
   /**
@@ -832,13 +1060,13 @@ export function CrossParkWaits() {
    * somewhere deliberate instead: at the divider, where the rail has its full
    * height and the control you just used is still under your cursor.
    *
-   * Only from `lg`, where that layout exists at all (below it the rail is a
+   * Only from `md`, where that layout exists at all (below it the filters are a
    * drawer and the controls float over the list), and only when the page isn't
    * already parked there — so typing in the rail's search box scrolls once, on
    * the first keystroke, and then holds still.
    */
   const parkAtResults = React.useCallback(() => {
-    if (typeof window === "undefined" || window.innerWidth < RAIL_BREAKPOINT) return;
+    if (typeof window === "undefined" || window.innerWidth < SPLIT_BREAKPOINT) return;
     const el = splitRef.current;
     if (!el) return;
     // A custom property comes back as authored, not resolved — the masthead
@@ -848,7 +1076,10 @@ export function CrossParkWaits() {
       .trim();
     const n = parseFloat(raw) || 0;
     const masthead = raw.endsWith("rem") ? n * 16 : n;
-    const top = Math.max(0, window.scrollY + el.getBoundingClientRect().top - masthead - 16);
+    // The toolbar is sticky and sits in that same gap, so parking the split
+    // under the masthead alone would park it under the toolbar instead.
+    const bar = toolbarRef.current?.getBoundingClientRect().height ?? 0;
+    const top = Math.max(0, window.scrollY + el.getBoundingClientRect().top - masthead - bar - 16);
     if (Math.abs(window.scrollY - top) < 8) return;
     window.scrollTo({ top, behavior: "smooth" });
   }, []);
@@ -863,7 +1094,11 @@ export function CrossParkWaits() {
     const key = search.sort ?? "wait";
     setSortKey(key);
     setSortDir(search.dir ?? DEFAULT_DIR[key]);
-    setView(search.view ?? "list");
+    const map = search.map === true;
+    setMapOn(map);
+    // A Back out of the map view must not leave its last frame filtering the
+    // board it returns to.
+    if (!map) setFrame(null);
     // `search` is the value behind `urlKey`; re-running on the object identity
     // would fight the router's structural sharing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -881,7 +1116,7 @@ export function CrossParkWaits() {
     void navigate({ to: "/", search: desired, replace: true, resetScroll: false });
     // A park card sits above the results and is a filter you click repeatedly —
     // scrolling it off screen after the first click would be a trap. Everything
-    // else that moves the board (view, sort, rail, chips) lives at the divider
+    // else that moves the board (sort, rail, chips) lives at the divider
     // or below it, so that's where the page goes.
     if (holdScrollRef.current) holdScrollRef.current = false;
     else parkAtResults();
@@ -913,11 +1148,11 @@ export function CrossParkWaits() {
     [sorting, setSort],
   );
 
-  // Read the remembered view after mount, but only when the URL didn't say —
-  // the param wins when present (§4). SSR renders the URL's view (or the
-  // default), so server and first client render agree.
-  React.useEffect(() => {
-    if (search.view) return;
+  // The remembered view, applied on the first client commit. A *layout* effect,
+  // so a tiles reader never sees a frame of the list: the swap lands before the
+  // browser paints the hydrated document. Nothing in the URL competes with it
+  // any more — the view is this reader's preference and lives only here.
+  useIsoLayoutEffect(() => {
     try {
       const v = localStorage.getItem(VIEW_STORAGE_KEY);
       // "grid" is the pre-rebuild name for what is now "tiles".
@@ -926,8 +1161,19 @@ export function CrossParkWaits() {
     } catch {
       /* private mode / disabled storage — keep the default */
     }
-    // Only ever on mount; a later URL change is the reader effect's business.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const setMapShown = React.useCallback((on: boolean) => {
+    setMapOn(on);
+    if (!on) setFrame(null);
+    posthog.capture("waits_map_toggled", { on });
+  }, []);
+
+  // `framesEqual` rather than a raw set: MapLibre reports a `moveend` for every
+  // camera settle, including the ones that land where they started, and each
+  // distinct frame object here re-derives the whole results list.
+  const onFrameChange = React.useCallback((next: MapFrame | null) => {
+    setFrame((prev) => (framesEqual(prev, next) ? prev : next));
   }, []);
 
   const setViewPersist = React.useCallback((v: WaitsView) => {
@@ -967,6 +1213,19 @@ export function CrossParkWaits() {
     [all, filter],
   );
 
+  /**
+   * The map's narrowing, applied on top of the filter and beneath the sort.
+   *
+   * The map draws its own markers from the renderer's feeds, filtered by the
+   * same shared `RideFilter`, so it never sees this list — and in particular is
+   * never handed the framed set, which would be a pane that can only ever show
+   * what is already inside it.
+   */
+  const framed = React.useMemo(
+    () => (showMap ? filterToFrame(filtered, frame) : filtered),
+    [showMap, filtered, frame],
+  );
+
   // Sorted fresh on every refetch, not frozen at first paint. The order used to
   // be ranked once and held across polls so rows couldn't jump under a reading
   // finger — but a board sorted by "Now" that never re-sorts is lying about
@@ -974,8 +1233,8 @@ export function CrossParkWaits() {
   // inside it. The list re-ranks; `RideListTable` animates each row to its new
   // seat instead, which answers the jumping without freezing the truth.
   const results = React.useMemo(
-    () => [...filtered].sort(rideComparator(sortKey, sortDir)),
-    [filtered, sortKey, sortDir],
+    () => [...framed].sort(rideComparator(sortKey, sortDir)),
+    [framed, sortKey, sortDir],
   );
 
   /* — The band ------------------------------------------------------------- */
@@ -1052,20 +1311,49 @@ export function CrossParkWaits() {
 
   // The removable chips over the results — one per live narrowing, each one
   // clearing exactly the control that set it.
+  //
+  // A *multi-select* narrowing stops spelling its members out once naming them
+  // costs more room than counting them: three or more parks collapse to one
+  // "3 parks" chip that clears the lot. Two stay named — the common case is a
+  // resort's two parks, "Magic Kingdom · EPCOT" says more than "2 parks" in
+  // about the same width, and collapsing at two would mean the row never shows
+  // a park's name at all. The chip row is a summary of what's applied, not the
+  // control: dropping one of three is what the Filters panel is for, and it
+  // still lists every box.
+  const categoryKeys = [...filter.categories];
+  const parkChips =
+    selectedPulses.length >= COLLAPSE_CHIPS_AT
+      ? [
+          {
+            label: `${selectedPulses.length} parks`,
+            remove: () => setFilter((f) => ({ ...f, parks: new Set<string>() })),
+          },
+        ]
+      : selectedPulses.map((p) => ({
+          label: p.name,
+          remove: () => onToggleParkFrom("chip")(p.slug),
+        }));
+  const categoryChips =
+    categoryKeys.length >= COLLAPSE_CHIPS_AT
+      ? [
+          {
+            label: `${categoryKeys.length} types`,
+            remove: () => setFilter((f) => ({ ...f, categories: new Set<string>() })),
+          },
+        ]
+      : categoryKeys.map((key) => ({
+          label: RIDE_CATEGORIES.find((c) => c.key === key)?.label ?? key,
+          remove: () =>
+            setFilter((f) => {
+              const next = new Set(f.categories);
+              next.delete(key);
+              return { ...f, categories: next };
+            }),
+        }));
+
   const chips: Array<{ label: string; remove: () => void }> = [
-    ...selectedPulses.map((p) => ({
-      label: p.name,
-      remove: () => onToggleParkFrom("chip")(p.slug),
-    })),
-    ...[...filter.categories].map((key) => ({
-      label: RIDE_CATEGORIES.find((c) => c.key === key)?.label ?? key,
-      remove: () =>
-        setFilter((f) => {
-          const next = new Set(f.categories);
-          next.delete(key);
-          return { ...f, categories: next };
-        }),
-    })),
+    ...parkChips,
+    ...categoryChips,
     ...(filter.query.trim()
       ? [
           {
@@ -1107,19 +1395,32 @@ export function CrossParkWaits() {
       : []),
   ];
 
+  // What the Filters badge counts: every live narrowing, collapsed chip or not.
+  // Counting the chips instead would have three parks read as "1" — the badge
+  // is a tally of boxes ticked, and the panel it opens shows all of them.
+  const activeCount =
+    chips.length -
+    parkChips.length -
+    categoryChips.length +
+    selectedPulses.length +
+    categoryKeys.length;
+
   // Reported once per settled filter, not once per keystroke — the interesting
   // fact is what someone ended up asking for and how much it found. `source` is
   // read off the viewport rather than threaded through the filter state,
-  // because the rail and the drawer are the same component writing the same
-  // value: which one the user touched *is* which one is on screen.
+  // because the modal and the drawer are the same component writing the same
+  // value: which one the user touched *is* which one is on screen. (The event's
+  // vocabulary is stable — "modal" is the old "rail" surface renamed, not a new
+  // kind of thing.)
   React.useEffect(() => {
     if (!active || isLoading) return;
     const t = setTimeout(
       () =>
         posthog.capture("waits_filter_applied", {
-          keys: Object.keys(desired).filter((k) => !["view", "sort", "dir"].includes(k)),
+          keys: Object.keys(desired).filter((k) => !["sort", "dir", "map"].includes(k)),
           resultCount: results.length,
-          source: window.innerWidth >= RAIL_BREAKPOINT ? "rail" : "drawer",
+          mapArea: showMap,
+          source: window.innerWidth >= SPLIT_BREAKPOINT ? "modal" : "drawer",
         }),
       600,
     );
@@ -1159,44 +1460,104 @@ export function CrossParkWaits() {
         loading={isLoading || moversQ.isLoading}
       />
 
-      <div className={cn(PAGE_WIDTH, "flex flex-col gap-5 pt-6 pb-28")}>
-        {/* ── The split ── */}
-        <div ref={splitRef} className="grid items-start gap-7 lg:grid-cols-[300px_minmax(0,1fr)]">
-          <WaitsFilterRail
-            parks={pulses}
-            categories={categoryOptions}
-            count={results.length}
-            total={all.length}
-          />
+      <div className={cn(PAGE_WIDTH, "flex flex-col pt-6 pb-4 max-w-480!")}>
+        {/* ── The toolbar ──
+            The count and every control that acts on the board, in one bar that
+            sticks under the masthead. It used to head the results column and
+            scroll away with them, which meant that changing your mind about the
+            sort — or turning the map off — was a trip back to the top of a
+            two-hundred-row list. It is also the one row that belongs to *both*
+            columns: it counts what the list is showing and it opens the map
+            beside it, so it sits above the split rather than inside either half.
+
+            A floating glass capsule rather than a full-width band with a rule
+            under it: the band read as a seam across the page, with card titles
+            sliding up under a hard edge. This lifts off the results instead —
+            the same move the map's own control chips make — and is deliberately
+            *quiet* (no emboss of its own) so the 3D controls inside it stay the
+            things the eye lands on. */}
+        <div
+          ref={toolbarRef}
+          className={cn(
+            TOOLBAR_STICKY,
+            "-mx-3 flex items-center justify-between gap-3 rounded-4xl shadow-lg border border-t-3 bg-background/95 py-2 pr-2 backdrop-blur-xl supports-backdrop-filter:bg-background/80 md:pr-3",
+            // The bar's own left padding depends on whether anything is sitting
+            // in the corner: a button brings its own inset, a bare heading needs
+            // the gutter. Both conditions are media queries (the cluster is
+            // `md:`, the Filters slot folds away at `lg` when the rail takes
+            // over), so the padding follows them rather than a JS flag.
+            "pl-4 md:pl-2",
+            !showMap && "lg:pl-5",
+          )}
+        >
+          {/* Filters first, ahead of the count it explains — it is the control
+              people come back to, and hunting for it at the far end of a row of
+              five was the one bit of this bar that needed a second look. It is
+              here only when the rail isn't on screen to hold it: with the map
+              off from `lg` the rail *is* the filters, and a button too would be
+              a second face on one state. */}
+          <div className="flex min-w-0 items-center gap-3">
+            <div className={cn("hidden shrink-0 md:block", !showMap && "lg:hidden")}>
+              <WaitsFilterModal
+                parks={pulses}
+                categories={categoryOptions}
+                count={results.length}
+                total={all.length}
+                activeCount={activeCount}
+              />
+            </div>
+            <h2 className="min-w-0 truncate text-lg font-extrabold tracking-[-0.015em] md:text-xl">
+              {/* `aria-live`, because for a screen-reader user this number *is*
+                  the feedback that a filter or a pan did something (§9). */}
+              <span aria-live="polite">
+                {active || showMap ? `${results.length} attractions` : "Every attraction"}
+              </span>
+              {showMap && (
+                <span className="ml-2 text-sm font-semibold text-muted-foreground">
+                  in this map area
+                </span>
+              )}
+            </h2>
+          </div>
+          {/* The right cluster is now only **how the board is shown** — list or
+              tiles, with or without the map — plus the sort behind a hairline.
+              Inside it only Map is filled, because it is the one display control
+              that changes which attractions are listed. */}
+          <div className="hidden shrink-0 items-center gap-2 md:flex">
+            <ViewToggle view={view} onView={setViewPersist} variant="segmented" />
+            <MapToggle on={mapOn} onToggle={setMapShown} />
+            <div className="mx-0.5 h-6 w-px bg-border" aria-hidden />
+            <SortMenu sortKey={sortKey} sortDir={sortDir} onSort={setSort} />
+          </div>
+        </div>
+
+        {/* ── The split ──
+            Two columns on a desktop, and the left one is the same column twice:
+            the filter rail while the map is off, the results themselves once
+            the map takes the right half (the filters move into the modal —
+            a list squeezed between a filter column and a map reads as neither).
+            One column on a phone, always the results: the map lives in the
+            bottom nav there (see `showMap`). */}
+        <div
+          ref={splitRef}
+          style={toolbarStyle}
+          className={cn(
+            "grid items-start gap-7",
+            showMap
+              ? "md:grid-cols-[minmax(0,1fr)_minmax(17rem,42%)]"
+              : "lg:grid-cols-[300px_minmax(0,1fr)]",
+          )}
+        >
+          {!showMap && (
+            <WaitsFilterRail
+              parks={pulses}
+              categories={categoryOptions}
+              count={results.length}
+              total={all.length}
+            />
+          )}
 
           <div className="flex min-w-0 flex-col gap-4">
-            <div className="flex items-end justify-between gap-3">
-              <h2 className="text-xl font-extrabold tracking-[-0.015em]">
-                {active ? `${results.length} attractions` : "Every attraction"}
-              </h2>
-              {/* One cluster, one chrome: view, sort and (below `lg`, where the
-                  rail is in a drawer) filter are the three controls that act on
-                  the list underneath, so they sit together over it and wear the
-                  same outline key at the same height. */}
-              <div className="hidden items-center gap-2 md:flex">
-                <ViewToggle view={view} onView={setViewPersist} variant="segmented" />
-                <SortDrawer
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={setSort}
-                  variant="outline"
-                />
-                <div className="lg:hidden">
-                  <FilterDrawer
-                    variant="outline"
-                    parks={pulses}
-                    categories={categoryOptions}
-                    activeCount={chips.length}
-                  />
-                </div>
-              </div>
-            </div>
-
             {chips.length > 0 && (
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[13px] text-muted-foreground">Filtered by</span>
@@ -1221,14 +1582,33 @@ export function CrossParkWaits() {
                   aria-hidden
                   className="-mt-10 -mb-7 w-full max-w-[320px] select-none"
                 />
-                <EmptyTitle>No attraction fits that</EmptyTitle>
+                {/* Two different dead ends, and only one of them is the filter's
+                    fault: with the map on, the usual cause is a frame over a car
+                    park, and "Clear all" would leave the reader looking at the
+                    same empty box. */}
+                <EmptyTitle>
+                  {showMap && filtered.length > 0
+                    ? "Nothing in this part of the map"
+                    : "No attraction fits that"}
+                </EmptyTitle>
                 <EmptyDescription className="max-w-md">
-                  All {all.length} attractions are still here — this combination of filters just
-                  doesn&rsquo;t match any of them. Loosen one, or start over.
+                  {showMap && filtered.length > 0 ? (
+                    <>
+                      {filtered.length} attractions match your filters — none of them are inside the
+                      area the map is showing. Zoom out or drag the map to find them.
+                    </>
+                  ) : (
+                    <>
+                      All {all.length} attractions are still here — this combination of filters just
+                      doesn&rsquo;t match any of them. Loosen one, or start over.
+                    </>
+                  )}
                 </EmptyDescription>
-                <Button size="sm" className="mt-2" onClick={() => setFilter(EMPTY_RIDE_FILTER)}>
-                  Clear all
-                </Button>
+                {!(showMap && filtered.length > 0) && (
+                  <Button size="sm" className="mt-2" onClick={() => setFilter(EMPTY_RIDE_FILTER)}>
+                    Clear all
+                  </Button>
+                )}
               </Empty>
             )}
 
@@ -1243,29 +1623,52 @@ export function CrossParkWaits() {
                 onSortingChange={onSortingChange}
                 laterById={laterById}
                 eagerCount={8}
+                compact={showMap}
               />
             )}
           </div>
+
+          {/* The pane. Sticky under the toolbar, whose height it reads off the
+              split — the same contract the filter rail sticks by, written out
+              in `waits-chrome.ts` precisely so the two can't drift from each
+              other or from the bar as the page scrolls. */}
+          {showMap && (
+            <div
+              className={cn("sticky w-full min-h-[22rem]", UNDER_TOOLBAR_TOP, UNDER_TOOLBAR_HEIGHT)}
+            >
+              {mounted ? (
+                <React.Suspense fallback={<MapPanePlaceholder />}>
+                  <WaitsMap
+                    onFrameChange={onFrameChange}
+                    parks={selectedParks}
+                    className="size-full"
+                  />
+                </React.Suspense>
+              ) : (
+                <MapPanePlaceholder />
+              )}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Mobile controls — left-anchored stacked pills, matching the map's
-          bottom-left Filter button exactly. The rail has nowhere to go on a
-          phone, so it stays these (§2.3). The list/tiles toggle mirrors them
-          on the right. */}
-      {!isLoading && results.length > 0 && (
+          bottom-left Filter button exactly. The filters have nowhere to go on a
+          phone, so they stay these (§2.3). The list/tiles toggle mirrors them
+          on the right. No Map pill: the map is the bottom nav's own tab here
+          (see `showMap`).
+
+          Gated on the board having *data* rather than on the current results,
+          so a filter that finds nothing still leaves you the controls that
+          would undo it. */}
+      {!isLoading && !unavailable && all.length > 0 && (
         <>
           <div
             className={MAP_FILTER_STACK}
             style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1.4rem)" }}
           >
-            <SortDrawer sortKey={sortKey} sortDir={sortDir} onSort={setSort} variant="pill" />
-            <FilterDrawer
-              variant="pill"
-              parks={pulses}
-              categories={categoryOptions}
-              activeCount={chips.length}
-            />
+            <SortDrawer sortKey={sortKey} sortDir={sortDir} onSort={setSort} />
+            <FilterDrawer parks={pulses} categories={categoryOptions} activeCount={activeCount} />
           </div>
           <div
             className={MAP_FILTER_STACK_RIGHT}

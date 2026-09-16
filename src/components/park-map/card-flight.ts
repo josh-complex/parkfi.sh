@@ -1,7 +1,7 @@
 import * as React from "react";
 
 import { cfImagesStore } from "#/integrations/posthog/feature-flags.ts";
-import { cfImageUrl, disneyResizeUrl } from "#/lib/image.ts";
+import { cfImageUrl, disneyResizeUrl, imageFocus } from "#/lib/image.ts";
 import { formatParkName, PARK_TAGLINE } from "#/lib/parks.ts";
 
 /**
@@ -570,6 +570,8 @@ function clonePhoto(fill: HTMLElement | null, preview: string | null, round = fa
     transition: "none",
   });
 
+  const showing = fill instanceof HTMLImageElement ? fill.currentSrc || fill.src : null;
+
   const from = fill.cloneNode(true) as HTMLElement;
   from.removeAttribute("data-face-fill");
   // Pin the exact bytes the card is already showing. Cloning the `srcset`/`sizes`
@@ -589,6 +591,10 @@ function clonePhoto(fill: HTMLElement | null, preview: string | null, round = fa
     width: "100%",
     height: "100%",
     objectFit: "cover",
+    // Wiping `className` took the source's own `object-position` with it (see
+    // `imageFocus`), and a clone that re-centres its crop is a visible jump at
+    // the very start of the flight.
+    objectPosition: imageFocus(showing) ?? "center",
     display: "block",
     // The disc's resting dressing (round clip, colour ring, the un-decoded blur
     // from `wireFaceFadeIn`) has no business on a full-bleed hero photo.
@@ -606,7 +612,6 @@ function clonePhoto(fill: HTMLElement | null, preview: string | null, round = fa
   // re-frame happens while the box is still travelling rather than on a hero
   // that has already come to rest.
   let swap: HTMLImageElement | null = null;
-  const showing = fill instanceof HTMLImageElement ? fill.currentSrc || fill.src : null;
   if (preview && preview !== showing) {
     swap = document.createElement("img");
     swap.src = preview;
@@ -618,6 +623,7 @@ function clonePhoto(fill: HTMLElement | null, preview: string | null, round = fa
       width: "100%",
       height: "100%",
       objectFit: "cover",
+      objectPosition: imageFocus(preview) ?? "center",
       display: "block",
       opacity: "0",
       transition: "none",
@@ -1092,6 +1098,9 @@ export function launchHeroReturn(key: string): void {
       width: "100%",
       height: "100%",
       objectFit: "cover",
+      // Copied, not re-derived: the hero is right there, so whatever crop it
+      // settled on is what the returning clone should carry.
+      objectPosition: getComputedStyle(shown).objectPosition,
       display: "block",
     });
     photoBox.append(img);

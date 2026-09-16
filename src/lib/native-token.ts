@@ -48,7 +48,20 @@ function writeLocal(token: string | null): void {
 // Seeded synchronously from localStorage so `currentToken()` is populated before
 // the first `/get-session` fetch. `undefined` = not loaded yet (fall back to
 // Preferences in loadToken); `null` = loaded, no token; string = the token.
-let cached: string | null | undefined = readLocal() ?? undefined;
+//
+// NATIVE ONLY. On web the session rides on the cookie, and a bearer token here
+// would authenticate better-auth's own fetches (auth-client replays it on every
+// /api/auth/* request) while tRPC — which sends no Authorization header on web —
+// stayed on the cookie. Two auth channels that can point at different sessions:
+// the account menu reads the bearer and still shows you signed in, every
+// auth-scoped tRPC query reads the cookie and comes back anonymous (no admin
+// links, no level badge). Worse, better-auth's bearer hook *replaces* the
+// request's session cookie with the token, so a stale-but-signed token makes
+// `getSession` miss and emit a session-cookie deletion — killing a cookie that
+// was perfectly valid. Seed only on native, and purge whatever an earlier build
+// left in a web browser's localStorage.
+let cached: string | null | undefined = isNative() ? (readLocal() ?? undefined) : null;
+if (!isNative()) writeLocal(null);
 
 export async function loadToken(): Promise<string | null> {
   if (cached !== undefined) return cached;

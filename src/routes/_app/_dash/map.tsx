@@ -56,14 +56,15 @@ function MapPage() {
   return (
     // The map IS the page on mobile: a full-viewport fixed layer behind the
     // floating top bar (z-30) and bottom nav (z-40), so both bars show the map
-    // through their transparent areas. On desktop it runs edge to edge under the
-    // masthead, sized off `--site-header-height` — the sticky stripe + ticker
-    // only, since the nav row above it hides itself on scroll and would
-    // otherwise resize the map every time it moved.
+    // through their transparent areas. On desktop it runs edge to edge under
+    // the masthead: the viewport less the pinned stripe (`--site-header-height`)
+    // and the floating nav capsule (`--floating-nav-height`), which scrolls with
+    // the page and so has to be counted — otherwise the one page on the site
+    // that must not scroll ends up a capsule's-worth taller than the window.
     <>
       <MapSlot
         pinnedFullBleed
-        className="roam-map fixed inset-0 z-0 md:static md:z-auto md:h-[calc(100svh-var(--site-header-height))]"
+        className="roam-map fixed inset-0 z-0 md:static md:z-auto md:h-[calc(100svh-var(--site-header-height)-var(--floating-nav-height))]"
       />
     </>
   );

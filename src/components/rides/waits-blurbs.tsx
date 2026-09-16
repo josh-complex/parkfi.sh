@@ -55,7 +55,12 @@ function PickPoster({ pick, rank, lead }: { pick: Pick; rank: number; lead?: boo
       }
       style={{ "--poster-w": `${lead ? LEAD_W : POSTER_W}px` } as React.CSSProperties}
       className={cn(
-        "btn-3d-band border-3d shadow-3d hover:shadow-3d-hover active:shadow-3d-active",
+        // The chrome's ghost key, same as the park strip's cards: a faint light
+        // rim and the shallow shelf under it, both out of `btn-3d-ghost`'s one
+        // variable. A *dark* shelf below a dark poster on a dark field was
+        // three darks arguing; this one lifts the photograph off the band
+        // instead of burying it.
+        "btn-3d-ghost border-3d shadow-3d hover:shadow-3d-hover active:shadow-3d-active",
         "relative block h-full w-[var(--poster-w)] shrink-0 overflow-hidden bg-neutral-800 text-white transition",
         // The rail is a scroller on a phone and a grid from `lg`, so the poster
         // is sized by that width in one and by its track in the other. The width
@@ -391,8 +396,29 @@ export function WaitsBlurbs({
       : parks.some((p) => selected.has(p.slug) && !p.closed));
 
   return (
-    <section className="band-masthead band-tints py-5 text-white md:py-7">
-      <div className={cn(PAGE_WIDTH, "flex flex-col gap-4")}>
+    <section
+      className={cn(
+        "band-masthead band-tints py-5 text-white md:py-7",
+        // Desktop only: run the field up behind the floating nav so the glass
+        // capsule sits *on* the navy rather than on the page background above
+        // it — the board opens on one continuous dark field. The top padding
+        // gives the pull straight back, so nothing inside the band moves.
+        //
+        // The pull clears the capsule's slab *and* the pinned stripe, taking
+        // the field all the way to y=0 rather than stopping under the stripe.
+        // Visually it's the same picture — the stripe is opaque and covers what
+        // it covers — but stopping at its lower edge meant trusting two
+        // independently rounded measurements to meet on a subpixel, and when
+        // they missed, the page background showed through the miss as a white
+        // hairline across the top of the board. An overlap cannot miss.
+        //
+        // Both vars are `0px` wherever this chrome isn't (mobile, any non-app
+        // route), which makes the whole thing a no-op rather than a special case.
+        "md:mt-[calc((var(--floating-nav-height)+var(--site-header-height))*-1)]",
+        "md:pt-[calc(var(--floating-nav-height)+var(--site-header-height)+1.75rem)]",
+      )}
+    >
+      <div className={cn(PAGE_WIDTH, "flex flex-col gap-4 max-w-480!")}>
         <ParkStrip
           parks={parks}
           selected={selected}
@@ -422,13 +448,13 @@ export function WaitsBlurbs({
                 <PicksRail picks={picks} />
               )}
 
-              <span className="text-[13px] text-white/72">
+              <span className="text-[13px] text-white/72 max-w-400 mx-auto w-full">
                 Picked from live waits, the last half hour&rsquo;s movement, and what each queue is
                 normally doing at this time of day.
               </span>
             </div>
 
-            <div className="grid rounded-[26px] border border-white/12 bg-white/6 md:grid-cols-2">
+            <div className="grid rounded-[26px] max-w-400 w-full mx-auto border border-white/12 bg-white/6 md:grid-cols-2">
               <MoverHalf
                 tone="mint"
                 title="Dropping"

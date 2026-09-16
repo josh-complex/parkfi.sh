@@ -113,10 +113,16 @@ function ParkCard({
         // the opposite of what a raised key does.
         "not-aria-pressed:hover:-top-px not-aria-pressed:hover:shadow-3d-hover",
         "aria-pressed:top-[3px] aria-pressed:shadow-3d-active aria-pressed:[--btn-glare:var(--btn-3d)]",
-        // `btn-3d-band`, not `btn-3d-outline`: the strip lives on the dark band
-        // now, and the outline preset mixes its ledge from `--border` — a pale
-        // plank under every card on navy. Same reason the pick posters wear it.
-        on ? "btn-3d-primary" : "btn-3d-band",
+        // Selected keeps its blue ledge — that one is the state, and it should
+        // read as a key pressed into the page.
+        //
+        // Unselected is the chrome's ghost key — the faint light rim and the
+        // shallow shelf under it, both out of `btn-3d-ghost`'s one variable.
+        // (`btn-3d-outline` would mix that from `--border`, a pale plank under
+        // every card on navy; a dark ledge instead only made a second dark edge
+        // against a dark field. Neither is what this wanted.) Same for the pick
+        // posters.
+        on ? "btn-3d-primary" : "btn-3d-ghost",
         // A shut park still gets a card — a strip whose width changes with the
         // day's hours is worse than a quiet one (open question 4).
         park.closed && !on && "opacity-75",
@@ -195,7 +201,7 @@ function ParkCard({
  * as one object. (They used to sit above the band on the page background, which
  * made the parks look like page furniture and the band like an unrelated
  * advert.) Everything here is therefore drawn for a dark field at both themes —
- * see the `btn-3d-band` note on the card.
+ * see the ledge note on the card.
  *
  * The layout is one grid at three sizes, never a fixed track against a flexible
  * container: a phone scrolls a two-row band of 164px cards (bleeding to the

@@ -2,6 +2,7 @@ import { Resvg } from "@resvg/resvg-js";
 import satori from "satori";
 import sharp from "sharp";
 
+import { imageFocus } from "#/lib/image.ts";
 import { GEIST_REGULAR_BASE64 } from "#/server/og/geist-font.ts";
 import { SITE_NAME } from "#/lib/seo.ts";
 
@@ -68,6 +69,7 @@ function Card({
   subtitle,
   chips,
   badge,
+  imageUrl,
   imageDataUri,
 }: OgCardConfig & {
   imageDataUri?: string | null;
@@ -99,6 +101,9 @@ function Card({
             width: OG_WIDTH,
             height: OG_HEIGHT,
             objectFit: "cover",
+            // Same crop rule the app's own tiles use — the source URL, not the
+            // data URI we fetched it into, is what `imageFocus` can read.
+            objectPosition: imageFocus(imageUrl) ?? "center",
           }}
         />
       ) : null}

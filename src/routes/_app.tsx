@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Outlet, createFileRoute, useParams } from "@tanstack/react-router";
+import { Outlet, createFileRoute, useParams, useRouterState } from "@tanstack/react-router";
 
 import { AchievementTracker } from "#/components/achievements/achievement-tracker.tsx";
 import { SiteFooter } from "#/components/marketing/site-footer.tsx";
@@ -18,8 +18,10 @@ import { SiteHeaderDesktop } from "#/components/site-chrome/site-header-desktop.
  * no more tearing the whole shell down and rebuilding it on every dining →
  * stays → pins hop.
  *
- * Desktop wears the site's own top chrome (stripe → wordmark nav → live-waits
- * ticker) over a plain page, closed by the short footer; the sidebar rail, the
+ * Desktop wears the site's own top chrome — a pinned gradient stripe with the
+ * wordmark nav floating under it in a glass capsule that scrolls away with the
+ * page (`variant="floating"`; the auto-hiding masthead is now the marketing
+ * pages' alone) — over a plain page, closed by the short footer; the sidebar rail, the
  * blue toolbar and the floating content card it used to sit in are gone
  * (docs/plans/dining-redesign §5). Mobile is untouched by that change: the
  * floating search header and the nav island still own navigation there, so the
@@ -52,6 +54,13 @@ function AppShell() {
   const params = useParams({ strict: false }) as { slug?: string };
   const activeSlug = params.slug ?? null;
 
+  // The Waits board has no room for a footer: it closes on a map pane that is
+  // sticky for the full height of the viewport, so the link columns would
+  // either butt up under a live map or drag the pane's bottom edge off screen
+  // to reach them. The board's own filter rail carries the page's links.
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const footer = pathname !== "/";
+
   return (
     <div
       // `data-slot="app-shell"` is the hook the native/standalone `min-height`
@@ -64,7 +73,7 @@ function AppShell() {
       style={{ "--bottom-nav-height": "4.5rem" } as React.CSSProperties}
       className="flex min-h-svh w-full flex-col bg-background"
     >
-      <SiteHeaderDesktop className="hidden md:block" desktopOnly />
+      <SiteHeaderDesktop className="hidden md:block" desktopOnly variant="floating" />
       <SiteHeader />
       <SelectionProvider>
         <RideFilterProvider>
@@ -78,10 +87,13 @@ function AppShell() {
       </SelectionProvider>
       {/* Desktop closes on the short footer — the same link columns as the
           landing page's, one line of the disclaimer. Mobile ends at the nav
-          island instead. */}
-      <div className="hidden md:block">
-        <SiteFooter variant="short" />
-      </div>
+          island instead, and the Waits board ends at its own chrome (see
+          `footer` above). */}
+      {footer && (
+        <div className="hidden md:block">
+          <SiteFooter variant="short" />
+        </div>
+      )}
       {/* Mobile primary nav — fixed island floating over the content. */}
       <MobileBottomNav />
       {/* Persistent offline indicator — floats above the nav island whenever the

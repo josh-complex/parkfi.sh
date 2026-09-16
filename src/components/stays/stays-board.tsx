@@ -453,10 +453,16 @@ export function StaysBoard() {
     <div className="relative isolate flex flex-col">
       {/* Slight radial wash in the sidebar's Disney blue, behind the hero copy
           and the at-rest search pill; scrolls away with the page. Desktop only —
-          mobile goes straight into the content. */}
+          mobile goes straight into the content.
+
+          It starts above its own container, at `--floating-nav-height`, so the
+          wash runs up behind the floating nav capsule and the page opens on one
+          field rather than on a band of flat background above the tint. The
+          variable is `0px` wherever that nav isn't, so this is a plain `top-0`
+          box there. */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 -z-10 hidden h-60 bg-[radial-gradient(120%_140%_at_50%_-25%,color-mix(in_oklab,var(--color-sidebar)_26%,transparent),transparent_70%)] md:block"
+        className="pointer-events-none absolute inset-x-0 top-[calc(var(--floating-nav-height)*-1)] -z-10 hidden h-[calc(15rem+var(--floating-nav-height))] bg-[radial-gradient(120%_140%_at_50%_-25%,color-mix(in_oklab,var(--color-sidebar)_26%,transparent),transparent_70%)] md:block"
       />
 
       {/* Hero — desktop only, collapses away once the user commits a search. */}

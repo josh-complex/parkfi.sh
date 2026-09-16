@@ -2,7 +2,7 @@
 
 import * as React from "react";
 
-import { disneyResizeUrl } from "#/lib/image.ts";
+import { disneyResizeUrl, imageFocusClass } from "#/lib/image.ts";
 import { cn } from "#/lib/utils.ts";
 
 /**
@@ -244,7 +244,7 @@ export function HeroCrossfade({
           alt={s.alt ?? ""}
           loading="lazy"
           aria-hidden={active !== i + 1}
-          className="absolute inset-0 size-full object-cover"
+          className={cn("absolute inset-0 size-full object-cover", imageFocusClass(s.url))}
           style={{
             opacity: opacityFor(i + 1),
             // No transition under the finger: the preview *is* the drag.

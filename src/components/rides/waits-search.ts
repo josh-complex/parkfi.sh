@@ -2,9 +2,16 @@
  * The Waits board's URL state (docs/plans/waits-redesign §4).
  *
  * The board is the app's most-shared surface and, until now, a filtered one
- * couldn't be linked or even survive a reload. Every control on the page —
- * the park strip, the rail, the phone drawer, the sort chips, the view toggle —
- * writes here.
+ * couldn't be linked or even survive a reload. Every control that changes *what
+ * the link shows* writes here — the park strip, the rail, the phone drawer, the
+ * sort, the map switch.
+ *
+ * The list/tiles toggle deliberately does **not**. It changes nothing about
+ * which attractions a link resolves to, only how this reader likes them drawn,
+ * and a display preference in a shared URL is a preference imposed on whoever
+ * opens it. It lives in `localStorage` instead, which is also the only place it
+ * can follow you from one visit to the next. (Old `?view=` links still load —
+ * the key is simply ignored now.)
  *
  * **Every key is optional and absent when it holds its default**, so the
  * unfiltered board is exactly `/` and stays the canonical URL for SEO; a
@@ -45,12 +52,18 @@ export interface WaitsSearch {
    * links keep working — it folds into `cat` and is never written back.
    */
   hhn?: true;
-  view?: WaitsView;
   sort?: WaitsSort;
   dir?: WaitsSortDir;
+  /**
+   * The map pane is open, and the board is showing what's inside its frame.
+   * The frame itself is deliberately *not* in the URL: a shared `?map=1` link
+   * opens the map fitted to the link's own filters, which is the state the
+   * sender was looking at, without pinning the receiver to a box of six
+   * decimal places that means nothing on a different-shaped screen.
+   */
+  map?: true;
 }
 
-const VIEWS: ReadonlyArray<WaitsView> = ["list", "tiles"];
 const SORT_KEYS: ReadonlyArray<WaitsSort> = ["wait", "name", "park"];
 const DIRS: ReadonlyArray<WaitsSortDir> = ["asc", "desc"];
 
@@ -98,7 +111,7 @@ export function validateWaitsSearch(raw: Record<string, unknown>): WaitsSearch {
     xp: flag(raw.xp),
     cs: flag(raw.cs),
     hhn: flag(raw.hhn),
-    view: oneOf(raw.view, VIEWS),
+    map: flag(raw.map),
     sort: oneOf(raw.sort, SORT_KEYS),
     dir: oneOf(raw.dir, DIRS),
   };
@@ -149,13 +162,14 @@ const joinSet = (v: ReadonlySet<string>): string | undefined =>
 
 /**
  * The inverse: the smallest search object that reproduces this board. Defaults
- * are omitted, not spelled out — `wait`/`desc`/`list` never appear in the URL.
+ * are omitted, not spelled out — `wait` and `desc` never appear in the URL, and
+ * neither does the view (see the note at the top of this file).
  */
 export function filterToSearch(
   f: RideFilter,
-  view: WaitsView,
   sort: WaitsSort,
   dir: WaitsSortDir,
+  map = false,
 ): WaitsSearch {
   const out: WaitsSearch = {
     parks: joinSet(f.parks),
@@ -168,7 +182,7 @@ export function filterToSearch(
     sr: f.singleRider || undefined,
     xp: f.expressPass || undefined,
     cs: f.childSwap || undefined,
-    view: view === "list" ? undefined : view,
+    map: map || undefined,
     sort: sort === "wait" ? undefined : sort,
     dir: dir === "desc" ? undefined : dir,
   };

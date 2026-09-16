@@ -50,21 +50,25 @@ function DirArrow({ dir, active }: { dir: SortDir; active: boolean }) {
  * interaction reads identically across Waits, the Ride Board, Eats, and Stays.
  *
  * Rows don't auto-dismiss the drawer — re-tapping to flip needs it to stay open,
- * so the user closes the sheet themselves (swipe / tap-away).
+ * so the user closes the sheet themselves (swipe / tap-away). The same is true
+ * of the desktop popover that reuses these rows.
  */
 export function SortRows<K extends string>({
   options,
   activeKey,
   activeDir,
   onChange,
+  className,
 }: {
   options: ReadonlyArray<SortOption<K>>;
   activeKey: K;
   activeDir: SortDir;
   onChange: (key: K, dir: SortDir) => void;
+  /** Overrides the drawer's own padding — a popover brings its own. */
+  className?: string;
 }) {
   return (
-    <div className="flex flex-col gap-1 px-4 pb-4">
+    <div className={cn("flex flex-col gap-1 px-4 pb-4", className)}>
       {options.map((opt) => {
         const active = opt.key === activeKey;
         const dir = optionDir(opt, active, activeDir);

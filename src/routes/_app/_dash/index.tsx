@@ -12,9 +12,11 @@ const MOBILE_BREAKPOINT = 768;
 
 export const Route = createFileRoute("/_app/_dash/")({
   component: Waits,
-  // The board's filter, sort and view live in the URL (docs/plans/waits-redesign
-  // §4) so a filtered board can be shared and survives a reload — this is the
-  // app's most-linked surface. Every key is optional and absent at its default,
+  // The board's filter, sort and map switch live in the URL (docs/plans/
+  // waits-redesign §4) so a filtered board can be shared and survives a reload —
+  // this is the app's most-linked surface. The list/tiles view deliberately does
+  // not: it's a per-reader display preference and lives in `localStorage`.
+  // Every key is optional and absent at its default,
   // so the plain board is exactly `/`; the `head` below keeps pointing every
   // filtered variant's canonical back at it.
   validateSearch: validateWaitsSearch,

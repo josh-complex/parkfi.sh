@@ -16,12 +16,18 @@ describe("validateWaitsSearch", () => {
     expect(validateWaitsSearch({ max: "37" })).toEqual({});
     expect(validateWaitsSearch({ h: 42 })).toEqual({ h: 42 });
     expect(validateWaitsSearch({ h: 41 })).toEqual({});
-    expect(validateWaitsSearch({ view: "tiles", sort: "park", dir: "asc" })).toEqual({
-      view: "tiles",
+    expect(validateWaitsSearch({ sort: "park", dir: "asc" })).toEqual({
       sort: "park",
       dir: "asc",
     });
-    expect(validateWaitsSearch({ view: "carousel", sort: "chaos" })).toEqual({});
+    expect(validateWaitsSearch({ sort: "chaos" })).toEqual({});
+  });
+
+  it("ignores `view` — the list/tiles choice is localStorage, not a link", () => {
+    // Old shared links still carry it; it just doesn't reach the board any
+    // more, and nothing writes it back.
+    expect(validateWaitsSearch({ view: "tiles" })).toEqual({});
+    expect(validateWaitsSearch({ parks: "epcot", view: "tiles" })).toEqual({ parks: "epcot" });
   });
 
   it("reads flags in every shape a hand-written URL might carry", () => {
@@ -49,7 +55,6 @@ describe("applySearchToFilter / filterToSearch", () => {
       open: "1",
       max: "45",
       h: 42,
-      view: "tiles",
       sort: "park",
       dir: "asc",
     });
@@ -59,19 +64,17 @@ describe("applySearchToFilter / filterToSearch", () => {
     expect(filter.maxWait).toBe(45);
     expect(filter.heightBand).toBe(42);
     expect(filter.openOnly).toBe(true);
-    expect(filterToSearch(filter, "tiles", "park", "asc")).toEqual(search);
+    expect(filterToSearch(filter, "park", "asc")).toEqual(search);
   });
 
   it("omits defaults so an unfiltered board never grows a query string", () => {
-    expect(filterToSearch(EMPTY_RIDE_FILTER, "list", "wait", "desc")).toEqual({});
+    expect(filterToSearch(EMPTY_RIDE_FILTER, "wait", "desc")).toEqual({});
   });
 
   it("serialises a park selection in a stable order", () => {
     const a = applySearchToFilter(EMPTY_RIDE_FILTER, { parks: "epcot,magic-kingdom" });
     const b = applySearchToFilter(EMPTY_RIDE_FILTER, { parks: "magic-kingdom,epcot" });
-    expect(filterToSearch(a, "list", "wait", "desc")).toEqual(
-      filterToSearch(b, "list", "wait", "desc"),
-    );
+    expect(filterToSearch(a, "wait", "desc")).toEqual(filterToSearch(b, "wait", "desc"));
   });
 
   it("leaves the map's overlay layers alone", () => {

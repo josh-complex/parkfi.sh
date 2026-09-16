@@ -184,6 +184,15 @@ function livingMarkerEl(kind: "darkness" | "discovery"): HTMLElement {
 // back to park badges). Park-bounds fits land around 15–16, comfortably above.
 const ROAM_RIDE_ZOOM = 14;
 
+/**
+ * How far free-roam lets you pull back. Without a floor the map happily zooms
+ * out to the whole of Florida (and further), where eleven park badges collapse
+ * into one clump over Orlando and there is nothing else on screen worth
+ * looking at — the roam map has no content outside the resorts. This still
+ * frames both resorts with room to spare (the all-parks fit lands around 10.5).
+ */
+const ROAM_MIN_ZOOM = 9;
+
 // Walking-nav camera framing (§3.3): while heading-up, pitch the map and drop the
 // puck to the lower third so most of the screen shows what's *ahead* — standard
 // turn-by-turn framing that makes "navigating" feel like a mode. Restored flat +
@@ -348,6 +357,7 @@ export function ParkMap({
   roam = false,
   filter,
   onRoamFocusChange,
+  onViewportChange,
   play = false,
   playParkSlug,
   onEngageDarkness,
@@ -405,6 +415,18 @@ export function ParkMap({
   /** Roam only: reports which park's rides are currently revealed (or null), so
    *  the stage can offer a "view park details" shortcut. */
   onRoamFocusChange?: (slug: string | null) => void;
+  /**
+   * Reports the visible box (degrees) once the map is up and after every camera
+   * settle. Added for the Waits board's map pane, where the frame *is* a filter:
+   * the list beside the map shows the attractions inside it. Nothing else on the
+   * map changes when this is passed — it is a read of the camera, not a mode.
+   */
+  onViewportChange?: (viewport: {
+    west: number;
+    south: number;
+    east: number;
+    north: number;
+  }) => void;
   /** Kingdom Hearts play mode: overlay the Darkness/discovery game layer for
    *  `playParkSlug` on top of the roam map. GL renderer only. */
   play?: boolean;
@@ -1724,6 +1746,31 @@ export function ParkMap({
     };
   }, [ready, roam]);
 
+  // Viewport reporter. Only installed when someone is listening, and read
+  // through a ref so a caller passing an inline function doesn't re-subscribe on
+  // every render of theirs.
+  const onViewportChangeRef = React.useRef(onViewportChange);
+  onViewportChangeRef.current = onViewportChange;
+  const reportsViewport = onViewportChange != null;
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !reportsViewport) return;
+    const report = () => {
+      const b = map.getBounds();
+      onViewportChangeRef.current?.({
+        west: b.getWest(),
+        south: b.getSouth(),
+        east: b.getEast(),
+        north: b.getNorth(),
+      });
+    };
+    report();
+    map.on("moveend", report);
+    return () => {
+      map.off("moveend", report);
+    };
+  }, [ready, reportsViewport]);
+
   // Roam auto-focus: the first location fix that lands inside a park flies in and
   // reveals its rides (the in-map equivalent of "open the park you're standing in").
   const autoFocusedRef = React.useRef(false);
@@ -1942,10 +1989,12 @@ export function ParkMap({
 
     if (roam) {
       // Free-roam: frame all parks but let the user zoom all the way in. Rides
-      // reveal themselves by zoom (the focus watcher above), so no zoom cap and
-      // no max-bounds — the whole region stays explorable. Match the park view's
-      // close-in ceiling (21) so guests can zoom right down to a single marker.
+      // reveal themselves by zoom (the focus watcher above), so no max-bounds —
+      // the whole region stays pannable. Match the park view's close-in ceiling
+      // (21) so guests can zoom right down to a single marker, and floor the
+      // zoom-out at the region (`ROAM_MIN_ZOOM`).
       map.setMaxZoom(21);
+      map.setMinZoom(ROAM_MIN_ZOOM);
       map.setMaxBounds(null);
       // Returning to the map: restore the exact camera the user left (so a round
       // trip through a ride page doesn't snap back to the all-parks overview).
@@ -1975,7 +2024,10 @@ export function ParkMap({
     if (!activeSlug) {
       // Overview/home: fit both resorts, then cap pan/zoom-out to that area.
       // Cap zoom-in too — the overview is a regional picture, not a park view.
+      // `maxBounds` is this view's zoom-out cap, so it carries no min zoom (and
+      // must not keep roam's, which a route hop could otherwise leave behind).
       map.setMaxZoom(13);
+      map.setMinZoom(0);
       map.setMaxBounds(null);
       const coords = (overview?.parks ?? []).filter(
         (p): p is typeof p & { latitude: number; longitude: number } =>
@@ -1998,8 +2050,10 @@ export function ParkMap({
 
     const park = parks?.find((p) => p.slug === activeSlug);
     if (!park) return;
-    // Park views need close zoom; lift the overview's cap.
+    // Park views need close zoom; lift the overview's cap. The park's own
+    // `zoomOutBounds` is what stops you leaving it, so no min zoom here either.
     map.setMaxZoom(21);
+    map.setMinZoom(0);
     if (park.bounds) {
       const bounds = park.bounds;
       // Clear first so the fit isn't constrained mid-flight, then cap the

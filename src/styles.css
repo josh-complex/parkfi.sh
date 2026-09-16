@@ -66,11 +66,18 @@
      every device (notched or not) with no sliver gap. */
   --app-header-h: 4.75rem;
   /* The persistent height of the desktop masthead (the stripe + live-waits
-     ticker; the nav row above them auto-hides on scroll and is deliberately not
-     counted). `SiteHeaderDesktop` overwrites this from a live measurement on
-     mount — this is the pre-paint fallback so `calc(100svh - …)` routes like the
+     ticker; the nav row is deliberately not counted — it auto-hides on scroll in
+     the marketing layout and scrolls away with the page in the app's floating
+     one). `SiteHeaderDesktop` overwrites this from a live measurement on mount —
+     this is the pre-paint fallback so `calc(100svh - …)` routes like the
      overview map are never sized off an undefined variable. */
   --site-header-height: 4.75rem;
+  /* The height of the desktop floating nav's slab — the glass capsule plus the
+     gap above it — published by `SiteHeaderDesktop` in its `floating` layout and
+     cleared everywhere else. A page whose own artwork should run up *behind* the
+     capsule (the Waits band) pulls itself up by exactly this; at the `0px`
+     default, and on mobile, that pull is a no-op. */
+  --floating-nav-height: 0px;
   --safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
   --safe-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
   /* Horizontal inset for the *floating* mobile chrome — the bottom-nav island,
@@ -575,6 +582,23 @@ html.native [data-slot="app-shell"] {
   --btn-glare-hover: oklch(1 0 0 / 0.4);
 }
 
+/**
+ * The ghost key, as the chrome wears it on a dark field: a faint light rim and
+ * the shallow shelf that belongs under it. Both come from `--btn-3d`, which
+ * `border-3d` reads for its colour and `shadow-3d` for its ledge — so this is
+ * one value, not two, and a card can't have the rim without the shelf.
+ *
+ * Pinned to a white alpha rather than mixed from `--border`, for the same
+ * reason `band-tints` pins its pair: the surfaces that wear this sit on the
+ * Waits band, which is dark in *both* themes, and the light theme's `--border`
+ * would lay a pale plank under every card there.
+ */
+@utility btn-3d-ghost {
+  --btn-3d: oklch(1 0 0 / 0.2);
+  --btn-glare: oklch(1 0 0 / 0.1);
+  --btn-glare-hover: oklch(1 0 0 / 0.18);
+}
+
 /* Light surfaces: outline buttons, toggles, selects, search segments.
    In dark mode --btn-3d becomes a dark shelf (below the surface) so the
    3D emboss survives; pair with dark:border-[color-mix(in_oklch,var(--border),white_25%)] on the element so the
@@ -671,20 +695,6 @@ html.native [data-slot="app-shell"] {
       linear-gradient(to bottom, rgb(0 0 0 / 0.04), rgb(0 0 0 / 0.26)),
       linear-gradient(90deg, #0d2550 0%, #1b4488 22%, #4a82dd 50%, #1b4488 78%, #0d2550 100%);
   }
-}
-
-/**
- * The 3D key preset for a card sitting on the band. `btn-3d-outline` mixes its
- * ledge from `--border`, which is a light grey in the light theme — on navy
- * that lands a pale plank under every poster and a pale rim around it, which is
- * the one thing a full-bleed dark band cannot afford. Here the shelf is a
- * shadow instead: the poster still sits on something, but the something is
- * darker than the field rather than brighter.
- */
-@utility btn-3d-band {
-  --btn-3d: oklch(0 0 0 / 0.45);
-  --btn-glare: oklch(1 0 0 / 0.14);
-  --btn-glare-hover: oklch(1 0 0 / 0.24);
 }
 
 /**

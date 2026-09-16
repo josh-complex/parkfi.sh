@@ -44,7 +44,7 @@ import {
   type CardFlightNodes,
 } from "#/components/park-map/card-flight.ts";
 import { cfImagesStore } from "#/integrations/posthog/feature-flags.ts";
-import { cfImageUrl } from "#/lib/image.ts";
+import { cfImageUrl, imageFocusClass } from "#/lib/image.ts";
 import { formatParkName } from "#/lib/parks.ts";
 import { capacityLabel, type CapacityLevel } from "#/lib/ticket-scarcity.ts";
 import { pointInPolygon } from "#/server/living/geofence.ts";
@@ -1509,10 +1509,16 @@ function discMarkup(opts: {
     opts.hiResUrl && opts.hiResUrl !== opts.url ? ` data-hires="${escapeHtml(opts.hiResUrl)}"` : "";
   // `data-face-fill` tags the photo/icon face so the card animator can morph it
   // (border-radius + ring) as the disc flies up into the expanded card header.
+  // The disc's render is width-only (see `cfMarkerUrl`), so `object-cover` does
+  // the framing here — which means an off-centre source needs its own
+  // `object-position`, exactly as `<Image>` applies one.
+  const focus = imageFocusClass(opts.url);
   const face = opts.url
     ? `<img data-face-fill${hires} src="${escapeHtml(opts.url)}" alt="${escapeHtml(
         opts.alt,
-      )}" loading="lazy" class="size-full rounded-full object-cover shadow-md ring-[3px]" style="${ring};${FACE_FADE_STYLE}" />`
+      )}" loading="lazy" class="size-full rounded-full object-cover${
+        focus ? ` ${focus}` : ""
+      } shadow-md ring-[3px]" style="${ring};${FACE_FADE_STYLE}" />`
     : `<span data-face-fill class="flex size-full items-center justify-center rounded-full text-white shadow-md ring-[3px]" style="background:${opts.bg};${ring}">${opts.fallbackSvg}</span>`;
   return `<span class="relative block shrink-0" style="width:${opts.px}px;height:${opts.px}px">${face}${
     opts.badge ?? ""

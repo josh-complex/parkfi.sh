@@ -130,13 +130,57 @@ function isTransformable(url: string): boolean {
   return /^https?:\/\//.test(url) && !url.includes("/cdn-cgi/image/");
 }
 
-function optionString(opts: CfImageOpts): string {
+/**
+ * Epic Universe's attraction art isn't a photograph — it's a comp. Every one of
+ * these is a 2268×972 master whose left third is a logo backplate (the ride's
+ * wordmark over wood, a starfield, a flat colour) with the actual photo pushed
+ * into the right two-thirds. Cropped from the centre, as every box in the app
+ * does, a tile is half billboard and the ride is a sliver — which is what a
+ * grid of EU tiles read as.
+ *
+ * Matched on the asset URL rather than the park because it *is* a property of
+ * the asset: EU's other images — the walkaround characters, the Toothless meet
+ * — are ordinary full-bleed photos where cropping right would drop the subject
+ * out of frame, and they're precisely the `ueu-` files with no `-logo-` in the
+ * name. Checked against all 29 EU attraction images; `ueu-` (Universal Epic
+ * Universe) appears in no other park's image URLs. A source that stops matching
+ * — Universal renames a file — just falls back to the centred crop.
+ *
+ * Substring match on purpose, so it still fires on a URL that's already been
+ * wrapped in a `/cdn-cgi/image/…/` transform.
+ */
+const RIGHT_OF_FRAME_RE = /\/ueu-[^/]*-logo-/;
+
+/**
+ * Where the subject of `url` actually sits, for sources whose composition we
+ * know is off-centre (see {@link RIGHT_OF_FRAME_RE}). Drives both halves of the
+ * crop — the edge's `gravity` when Cloudflare crops server-side, and the CSS
+ * `object-position` when the display box does the rest — so the two can't
+ * disagree and frame the photo twice.
+ */
+export function imageFocus(url: string | null | undefined): "right" | undefined {
+  return url && RIGHT_OF_FRAME_RE.test(url) ? "right" : undefined;
+}
+
+/** {@link imageFocus} as the Tailwind `object-position` utility. `<Image>`
+ *  applies this itself; hand-rolled `<img>` markup (map markers, flight clones)
+ *  has to add it. */
+export function imageFocusClass(url: string | null | undefined): string | undefined {
+  return imageFocus(url) === "right" ? "object-right" : undefined;
+}
+
+function optionString(url: string, opts: CfImageOpts): string {
+  // Only meaningful when the transform actually crops (`height` is set), and
+  // left off otherwise so the vast majority of URLs keep their existing shape
+  // — and their existing edge-cache entries.
+  const gravity = opts.height ? imageFocus(url) : undefined;
   return [
     opts.width ? `width=${opts.width}` : null,
     opts.height ? `height=${opts.height}` : null,
     `quality=${opts.quality ?? DEFAULT_IMAGE_QUALITY}`,
     `format=${opts.format ?? "auto"}`,
     opts.width || opts.height ? `fit=${opts.fit ?? (opts.height ? "crop" : "scale-down")}` : null,
+    gravity ? `gravity=${gravity}` : null,
     "onerror=redirect",
   ]
     .filter(Boolean)
@@ -154,10 +198,12 @@ function optionString(opts: CfImageOpts): string {
 const CF_ORIGIN = import.meta.env.VITE_API_BASE ?? "";
 
 /** Rewrite a remote image URL to its Cloudflare-transformed form. Returns the
- *  input unchanged when it isn't a transformable remote source. */
+ *  input unchanged when it isn't a transformable remote source. A cropping
+ *  transform of a known off-centre source also carries a `gravity` (see
+ *  {@link imageFocus}). */
 export function cfImageUrl(url: string, opts: CfImageOpts = {}): string {
   if (!isTransformable(url)) return url;
-  return `${CF_ORIGIN}/cdn-cgi/image/${optionString(opts)}/${url}`;
+  return `${CF_ORIGIN}/cdn-cgi/image/${optionString(url, opts)}/${url}`;
 }
 
 /** Build a width-descriptor `srcSet` for `url`. Returns undefined when the URL

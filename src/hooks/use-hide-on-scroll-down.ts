@@ -30,6 +30,12 @@ export interface HideOnScrollOptions {
    * `Infinity` for reveal-on-scroll-up everywhere.
    */
   reopenAbove?: number;
+  /**
+   * Turn the behaviour off: the hook stays mounted (it can't be called
+   * conditionally) but never hides, and never re-renders its caller on scroll.
+   * For a bar that scrolls away with the page instead of auto-hiding.
+   */
+  enabled?: boolean;
 }
 
 /**
@@ -44,7 +50,7 @@ export interface HideOnScrollOptions {
  * on mobile — the app shell is `min-h-svh` with no inner scroll container.
  */
 export function useHideOnScrollDown(options: HideOnScrollOptions = {}): boolean {
-  const { revealAt = REVEAL_AT, reopenAbove = revealAt } = options;
+  const { revealAt = REVEAL_AT, reopenAbove = revealAt, enabled = true } = options;
   const { scrollY } = useScroll();
   const reduce = useReducedMotion();
   const [hidden, setHidden] = useState(false);
@@ -56,7 +62,7 @@ export function useHideOnScrollDown(options: HideOnScrollOptions = {}): boolean 
   const anchor = useRef(0);
 
   useMotionValueEvent(scrollY, "change", (current) => {
-    if (reduce) {
+    if (!enabled || reduce) {
       setHidden(false);
       return;
     }

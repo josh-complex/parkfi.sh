@@ -188,7 +188,7 @@ export function OmniSearch({
   className,
 }: {
   variant?: "bar" | "icon" | "inline";
-  /** Extra classes for the trigger (inline variant). */
+  /** Extra classes for the trigger (the `inline` and `icon` variants). */
   className?: string;
 } = {}) {
   const [open, setOpen] = React.useState(false);
@@ -484,6 +484,7 @@ export function OmniSearch({
           className={cn(
             buttonVariants({ variant: "outline", size: "icon" }),
             "size-11 text-muted-foreground",
+            className,
           )}
         >
           <SearchIcon className="size-5 shrink-0" />

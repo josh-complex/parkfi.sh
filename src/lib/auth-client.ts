@@ -21,15 +21,26 @@ export const authClient = createAuthClient({
     // the WebView would require that header and fail every cross-origin
     // request with a CORS error before it even reached the bearer token.
     credentials: isNative() ? "omit" : "include",
-    // Replay the stored bearer token on every request (empty string on web /
-    // before sign-in, which better-auth treats as no token).
-    auth: { type: "Bearer", token: () => currentToken() },
-    // Capture the rotated session token better-auth returns on sign-in.
+    // Replay the stored bearer token on every request — native only. On web this
+    // must stay empty: better-auth's bearer hook swaps the request's session
+    // cookie for the token, so a token that has drifted from the cookie (a
+    // redirect-based OAuth sign-in never returns through this fetch, so it never
+    // updates the token) would authenticate the account menu against one session
+    // while tRPC authenticates against the cookie — or against nothing, once the
+    // stale token makes the server clear that cookie. Cookies are the only web
+    // auth channel; see native-token.ts.
+    auth: { type: "Bearer", token: () => (isNative() ? currentToken() : "") },
+    // Capture the rotated session token better-auth returns on sign-in — native
+    // only. The `bearer()` plugin emits `set-auth-token` on every response that
+    // sets a session cookie, web included, so an ungated store would hand every
+    // browser a second, cookie-independent credential (see the token seed in
+    // native-token.ts for what that costs).
     // Await the persistence (better-fetch awaits onSuccess): native sign-in
     // reloads the app immediately afterward, and a fire-and-forget write would
     // lose the race — the reload would boot before the token hit disk, so
     // loadToken() would read an empty store and the app would start signed-out.
     onSuccess: async (ctx) => {
+      if (!isNative()) return;
       const token = ctx.response.headers.get("set-auth-token");
       if (token) await setToken(token);
     },

@@ -250,7 +250,7 @@ const LABEL_FADE_DELAY_MS = 2000;
  * (docs/plans/dining-redesign §5), so anything reachable from the old rail has
  * to be reachable from here, the account menu, or the footer.
  *
- * Four labels and a menu, deliberately: Queue Times · Eats · Stays — wordmark —
+ * Four labels and a menu, deliberately: Queues · Eats · Stays — wordmark —
  * Parks · Blog. A longer row read as clutter (Josh, 2026-09-15), so the rest of
  * the old rail lives one level down instead: Tickets and Forecast along the
  * bottom of the Parks menu (and, with Pins, in the footer's Explore/Pins
@@ -262,7 +262,7 @@ const LABEL_FADE_DELAY_MS = 2000;
 type NavItem = { label: string; to: string };
 
 const NAV_LEFT: ReadonlyArray<NavItem> = [
-  { label: "Queue Times", to: "/" },
+  { label: "Queues", to: "/" },
   { label: "Eats", to: "/dining" },
   { label: "Stays", to: "/stays" },
 ];
@@ -276,9 +276,9 @@ const PARKS_KEY = "parks";
  * a single sliding element, so two claims on one route would leave it stranded
  * between them.
  *
- * A park page belongs to **Parks**, not to Queue Times (Josh, 2026-09-15) —
+ * A park page belongs to **Parks**, not to Queues (Josh, 2026-09-15) —
  * you got there through that menu and the menu shows you where you are, so the
- * marker should be sitting over it when the page lands. Queue Times keeps the
+ * marker should be sitting over it when the page lands. Queues keeps the
  * cross-park board at `/` alone.
  */
 function activeNavKey(pathname: string): string | undefined {
@@ -594,7 +594,11 @@ function ParksMegaMenu({
             type="button"
             className={cn(
               navLinkClass,
-              "flex items-center gap-1",
+              // `cursor-pointer` explicitly: this is the one item in the row
+              // that's a `button` rather than a `Link`, and Tailwind v4's
+              // preflight leaves buttons on the UA's arrow. Sitting between
+              // four links that all show a hand, it read as inert.
+              "flex cursor-pointer items-center gap-1",
               active || open ? "text-primary" : "text-foreground/80 hover:text-primary",
             )}
           >
@@ -689,7 +693,7 @@ function NavMenuCompact({
           <button
             type="button"
             aria-label="Open navigation"
-            className="inline-flex size-9 items-center justify-center rounded-full text-foreground/80 transition-colors outline-none hover:bg-muted hover:text-primary focus-visible:ring-[3px] focus-visible:ring-ring/45"
+            className="inline-flex size-9 cursor-pointer items-center justify-center rounded-full text-foreground/80 transition-colors outline-none hover:bg-muted hover:text-primary focus-visible:ring-[3px] focus-visible:ring-ring/45"
           />
         }
       >
@@ -781,6 +785,55 @@ function TickerChip({
 }
 
 /**
+ * How long the floating capsule takes to cross between its resting ground (all
+ * but invisible) and its engaged one (opaque). Short: this is a hover state on
+ * a bar you are on your way past, and anything longer is still animating when
+ * you arrive at the link you were reaching for.
+ */
+const CAPSULE_FADE_MS = 220;
+/**
+ * How long the capsule holds its engaged state after the pointer leaves. Long
+ * enough that crossing the nav on the way somewhere else, or ducking out to a
+ * menu and back, doesn't set the whole thing fading out behind you.
+ */
+const CAPSULE_SETTLE_MS = 1000;
+
+/** The masthead's metallic bar — Disney's dark-red gradient, in brand blue. */
+const STRIPE_GRADIENT =
+  "linear-gradient(90deg,#08152e 0%,#14346b 22%,#3f74cf 50%,#14346b 78%,#08152e 100%)";
+
+/**
+ * The thin gradient bar that opens the masthead, optionally carrying the
+ * reading-progress sheen. Both layouts wear it — pinned under the sticky
+ * header, or fixed to the viewport above the floating nav — so it lives out
+ * here rather than being written twice.
+ */
+function MastheadStripe({
+  innerRef,
+  progress,
+}: {
+  innerRef?: React.RefCallback<HTMLDivElement>;
+  /** Scroll progress (0..1) for the sheen; omit to leave the bar plain. */
+  progress?: ReturnType<typeof useScroll>["scrollYProgress"];
+}) {
+  return (
+    <div ref={innerRef} className="relative h-2.5 w-full overflow-hidden" aria-hidden>
+      <div className="absolute inset-0" style={{ background: STRIPE_GRADIENT }} />
+      {progress && (
+        <motion.div
+          className="absolute inset-0 origin-left"
+          style={{
+            scaleX: progress,
+            background:
+              "linear-gradient(to right, transparent, color-mix(in oklch, white, transparent 55%))",
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
  * The site masthead — one header for every page: a thick metallic gradient bar
  * pinned at the very top, a centered wordmark flanked by the primary nav, and —
  * where the `ticker` prop asks for it — a screen-width "LIVE WAITS" marquee
@@ -795,25 +848,45 @@ function TickerChip({
  * bar + nav island — except on the marketing/blog pages, which have always worn
  * it at every width (there the nav folds away below `md`, as before).
  *
- * The bar and the marquee stay sticky; the nav menu auto-hides on scroll-down
- * and reveals on scroll-up. To keep the page from jumping as the menu collapses,
- * a sibling spacer grows by exactly the menu's height as the menu shrinks, so
- * the total reserved space never changes. The bar also carries a reading-progress
- * sheen.
+ * Two layouts, by `variant`:
+ *
+ * - `"sticky"` (the marketing pages) — the whole masthead pins to the top. The
+ *   bar and the marquee stay put; the nav menu auto-hides on scroll-down and
+ *   reveals on scroll-up. To keep the page from jumping as the menu collapses,
+ *   a sibling spacer grows by exactly the menu's height as the menu shrinks, so
+ *   the total reserved space never changes.
+ * - `"floating"` (the app) — only the gradient bar is pinned, and the nav rides
+ *   in a rounded glass capsule that sits *in the page* and scrolls away with the
+ *   content, like any other block. No collapse animation, no scroll listener, no
+ *   compensating spacer: the nav is simply where you left it when you scroll back
+ *   up. A page that wants to run its own artwork up behind the capsule can pull
+ *   itself up by `--floating-nav-height` (the Waits band does).
+ *
+ * The bar carries a reading-progress sheen in either layout.
  *
  * `--site-header-height` is published on `:root` for fixed-height routes (the
- * overview map). It is the height of the parts that *stay* — stripe + ticker —
- * and deliberately excludes the auto-hiding nav row, which overlays the top of
- * such a page while visible; counting it would make the map resize on every
- * scroll.
+ * overview map) and for anything that sticks under the masthead. It is the
+ * height of the parts that *stay* — the stripe, plus the ticker where there is
+ * one — and deliberately excludes the nav row, which either auto-hides
+ * (`sticky`) or scrolls off (`floating`); counting it would make the map resize
+ * on every scroll.
  */
 export function SiteHeaderDesktop({
   className,
   desktopOnly = false,
   progress,
   ticker: tickerEnabled = false,
+  variant = "sticky",
 }: {
   className?: string;
+  /**
+   * `"sticky"` pins the whole masthead and auto-hides the nav on scroll-down;
+   * `"floating"` pins only the gradient bar and lets the nav scroll away with
+   * the page inside a glass capsule. The app runs `"floating"`; the marketing
+   * pages (`/welcome`, `/blog`) keep the pinned masthead, where the auto-hide
+   * buys back the fold on a long read and the ticker has to stay on screen.
+   */
+  variant?: "sticky" | "floating";
   /**
    * Draw the reading-progress sheen across the masthead stripe. Defaults to
    * "on the blog, nowhere else": a progress bar answers "how much of this is
@@ -838,6 +911,7 @@ export function SiteHeaderDesktop({
    */
   ticker?: boolean;
 }) {
+  const floating = variant === "floating";
   const trpc = useTRPC();
   const isMobile = useIsMobile();
   const tickerQ = useQuery({
@@ -851,14 +925,68 @@ export function SiteHeaderDesktop({
   // this directly — rather than React state — means it updates on the compositor
   // without a re-render per scroll frame, so the sweep stays smooth.
   const { scrollYProgress } = useScroll();
-  const hidden = useHideOnScrollDown();
+  // The floating layout has nothing to hide — the nav is part of the page and
+  // scrolls off on its own — so the listener stays idle there.
+  const hidden = useHideOnScrollDown({ enabled: !floating });
+  // The capsule comes forward on hover *and* on keyboard focus: a bar you can
+  // only read by pointing at it isn't one. Tracked as two flags rather than one,
+  // so tabbing through the links doesn't drop the state every time the pointer
+  // happens to be elsewhere (and vice versa).
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const engaged = hovered || focused;
+  // Coming forward is immediate; settling back waits out `CAPSULE_SETTLE_MS`,
+  // and any re-entry inside that window cancels it. Keyboard focus is not
+  // debounced — tabbing away is a decision, not a drift.
+  const settleTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const enter = useCallback(() => {
+    clearTimeout(settleTimer.current);
+    setHovered(true);
+  }, []);
+  const leave = useCallback(() => {
+    clearTimeout(settleTimer.current);
+    settleTimer.current = setTimeout(() => setHovered(false), CAPSULE_SETTLE_MS);
+  }, []);
+  useEffect(() => () => clearTimeout(settleTimer.current), []);
   const navRef = useRef<HTMLDivElement>(null);
   const navHeight = useMeasuredHeight(navRef);
   const [stripeHeight, stripeRef] = useMeasuredHeightOf<HTMLDivElement>();
   const [tickerHeight, tickerRef] = useMeasuredHeightOf<HTMLDivElement>();
+  // `floating` only: the whole pinned block (out of flow), and the capsule's
+  // own slab including the gap above it.
+  const [pinnedHeight, pinnedRef] = useMeasuredHeightOf<HTMLDivElement>();
+  const [capsuleHeight, capsuleRef] = useMeasuredHeightOf<HTMLDivElement>();
 
   const pathname = useRouterState({ select: (st) => st.location.pathname });
   const showProgress = progress ?? pathname.startsWith("/blog");
+  // The Waits board runs its navy field up behind the capsule, so there the nav
+  // is sitting on dark in *both* themes and its contents have to be read that
+  // way — see `WaitsBlurbs`. Only while the capsule is transparent: engaged, it
+  // goes opaque in the page's own theme and hands the tokens straight back.
+  const darkField = floating && pathname === "/";
+  // The ink turns over in the same render as the ground, and rides the links'
+  // own `transition-colors` across. It used to trail the ground by half the
+  // fade, to land on the crossover where both inks are legible — but that meant
+  // re-rendering the whole masthead a second time, mid-animation, and the
+  // dropped frames read as a stutter far louder than the contrast it bought.
+  // One render, one crossfade, short enough that nothing sits in the middle.
+  //
+  // Applied to the nav's words — the links, the compact menu, the wordmark and
+  // the brand mark — and to the actions keys, which go ghost at rest (below).
+  const navInk = darkField && !engaged ? "dark" : undefined;
+  // The actions keys go ghost while the capsule is at rest over a dark field:
+  // no fill, no rim, no shelf — just the glyph, the way a `ghost` button reads.
+  // One lever covers the rim and the shelf, since `border-3d` and `shadow-3d`
+  // both draw their colour from `--btn-3d`; the button declares it on itself,
+  // so the override has to reach the button rather than sit on the group.
+  //
+  // They take the dark tokens along with the words, which is a reversal of how
+  // this started: the cluster was meant to hold the page's own theme so it
+  // looked the same everywhere. A ghost key has no fill to put dark ink on
+  // though, and a transparent chip with near-black glyphs on navy is just an
+  // invisible one. Engaged, the capsule's white ground comes back and so does
+  // the cluster the rest of the site knows.
+  const navKeys = navInk && "[&_button]:bg-transparent [&_button]:[--btn-3d:transparent]";
   // strict:false so this resolves everywhere; the slug only exists under
   // `/park/$slug` (and its ride child), where it lights the parks menu.
   const { slug: activeSlug } = useParams({ strict: false }) as { slug?: string };
@@ -879,11 +1007,31 @@ export function SiteHeaderDesktop({
   // animation, so there's nothing left to guard against.
   // (The header's own 1px bottom border is left out of the sum; every consumer
   // already pads away from this value by whole rems.)
+  //
+  // In the floating layout those same two elements are the fixed block, so it
+  // is measured as one piece instead.
   useEffect(() => {
-    if (stripeHeight == null) return;
-    const sticky = stripeHeight + (tickerHeight ?? 0);
-    document.documentElement.style.setProperty("--site-header-height", `${sticky}px`);
-  }, [stripeHeight, tickerHeight]);
+    const persistent = floating
+      ? pinnedHeight
+      : stripeHeight == null
+        ? null
+        : stripeHeight + (tickerHeight ?? 0);
+    if (persistent == null) return;
+    document.documentElement.style.setProperty("--site-header-height", `${persistent}px`);
+  }, [floating, pinnedHeight, stripeHeight, tickerHeight]);
+
+  // Publish the capsule's slab so a page can run its own field up behind the
+  // nav — pull up by exactly this and the capsule floats on the artwork instead
+  // of on the page background. Cleared on unmount so a route without a floating
+  // nav falls back to the `0px` default in styles.css.
+  useEffect(() => {
+    if (!floating || capsuleHeight == null) return;
+    const root = document.documentElement;
+    root.style.setProperty("--floating-nav-height", `${capsuleHeight}px`);
+    return () => {
+      root.style.removeProperty("--floating-nav-height");
+    };
+  }, [floating, capsuleHeight]);
 
   // On phones the marquee is starved for width, so the "Live Waits" label gets
   // a couple of seconds to identify the strip and then folds away, handing its
@@ -916,6 +1064,277 @@ export function SiteHeaderDesktop({
   // marquee's own constant drift, where a quick change reads as a jerk.
   const handoff = { duration: 0.55, ease: "easeInOut" } as const;
 
+  // The nav row itself, identical in both layouts — only what carries it
+  // differs (a collapsing band, or a glass capsule in the page).
+  const navRow = (
+    <div
+      ref={navRef}
+      // A three-track grid, not a flex row: the side tracks are both
+      // `1fr`, so the wordmark in the middle track is dead centre on the
+      // page at every width no matter how lopsided the brand mark and the
+      // actions cluster are. Each side track then pushes its own links
+      // inward (`justify-between`), so the links hug the wordmark
+      // symmetrically while the mark and the keys hold the outer edges.
+      className={cn(
+        "mx-auto grid w-full max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-4",
+        // The capsule brings its own gutter and rides tighter: a floating bar
+        // that's as deep as a full-width masthead reads as a slab, not a key.
+        floating ? "px-5 py-3" : "px-4 py-6 sm:px-6",
+      )}
+    >
+      {/* One group across both sides of the wordmark: the yellow marker is
+          a single `layoutId` element, so motion can only slide it between
+          the left and right nav if they share a group. */}
+      <LayoutGroup id="site-nav">
+        <div className="flex min-w-0 items-center justify-between gap-4">
+          <div className={cn("flex shrink-0 items-center gap-2", navInk)}>
+            <Link
+              to="/"
+              aria-label="ParkFi — Home"
+              className="relative flex shrink-0 items-center rounded-xl outline-none focus-visible:ring-[3px] focus-visible:ring-ring/45"
+            >
+              {/* Two marks, one CSS switch: the blue mark has nothing to give
+                  on a dark ground, and the capsule is dark-on-dark whenever
+                  it's over the Waits field or the app is in dark mode. Both
+                  cases are exactly "is this a descendant of `.dark`", which the
+                  variant already answers — no flag to thread through.
+
+                  They cross-fade in place rather than swapping `display`, and
+                  both stay in the layout the whole time. Toggling `hidden` blanks
+                  the mark for however long the incoming file takes to decode —
+                  which on the first swap is long enough to read as a flicker,
+                  and never happens again once both are in cache, so it looks
+                  like a fault rather than a load. The `alt`s are empty because
+                  the link already names itself. */}
+              <img
+                src="/img/brand/blue.webp"
+                alt=""
+                className="h-11 w-auto transition-opacity duration-200 ease-out dark:opacity-0"
+              />
+              <img
+                src="/img/brand/white.webp"
+                alt=""
+                aria-hidden
+                className="absolute top-0 left-0 h-11 w-auto opacity-0 transition-opacity duration-200 ease-out dark:opacity-100"
+              />
+            </Link>
+            {/* md → lg: one menu instead of two link groups, so the row never
+                wraps. Below md the links are gone entirely — on the app that
+                breakpoint has the bottom-nav island, and on the marketing
+                pages this header has always shed its links there. */}
+            <div className="hidden md:block lg:hidden">
+              <NavMenuCompact items={allLinks} activeKey={activeKey} activeSlug={activeSlug} />
+            </div>
+          </div>
+          <nav className={cn("hidden items-center gap-5 lg:flex", navInk)}>
+            <NavLinks items={NAV_LEFT} activeKey={activeKey} />
+          </nav>
+        </div>
+
+        <Link
+          to="/"
+          className={cn(
+            "flex flex-col items-center rounded-xl px-4 leading-none outline-none focus-visible:ring-[3px] focus-visible:ring-ring/45",
+            navInk,
+          )}
+        >
+          {/* `text-foreground` explicitly, not inherited: `navInk` swaps the
+              *tokens* on this link, and an element that never asks for
+              `--foreground` goes on inheriting the document's colour straight
+              through the swap — which is why the wordmark stayed dark on the
+              navy while the links beside it turned over. */}
+          <span className="font-heading text-3xl font-bold tracking-tight text-foreground transition-colors">
+            ParkFi
+          </span>
+        </Link>
+
+        <div className="flex min-w-0 items-center justify-between gap-4">
+          <nav className={cn("hidden items-center gap-5 lg:flex", navInk)}>
+            <ParksMegaMenu
+              activeSlug={activeSlug}
+              active={activeKey === PARKS_KEY}
+              anchor={navRef}
+            />
+            <NavLinks items={NAV_RIGHT} activeKey={activeKey} />
+          </nav>
+          {/* Everything the blue toolbar used to carry, right-aligned and
+              on one chrome: the search button's 44px outline key is the
+              reference, so the bell and the theme toggle wear it too and
+              the avatar and sign-in keys match its height. The bell only
+              exists for a signed-in reader — nothing to say otherwise. */}
+          {/* `text-foreground` on the group: `navInk` swaps the *tokens* here,
+              and a key that never asks for `--foreground` — the Sign in label
+              does not, it just inherits — reads the document's colour straight
+              through the swap and lands as near-black type on the navy. */}
+          <div
+            className={cn(
+              "ml-auto flex shrink-0 items-center gap-2 text-foreground",
+              navInk,
+              navKeys,
+            )}
+          >
+            <CastMemberHeadline className="hidden bg-primary/10 text-primary ring-primary/20 xl:inline-flex" />
+            <div className="hidden md:block">
+              <NotificationCenter />
+            </div>
+            {/* Full-strength ink, not the keys' default muted grey: these two
+                sit beside the Sign in key, and on a page where the cluster is a
+                row of white chips on a dark field a mid-grey glyph reads as a
+                disabled control next to a live one. */}
+            <OmniSearch variant="icon" className="text-foreground" />
+            <div className="hidden md:block">
+              <ThemeToggle className="text-foreground" />
+            </div>
+            <div className="hidden md:block">
+              <HeaderAccountMenu />
+            </div>
+            {/* The support key (`BuyMeACoffee`) is parked for now — Josh,
+                2026-09-15. The component is still there; drop it back in
+                here when the header should ask again. */}
+          </div>
+        </div>
+      </LayoutGroup>
+    </div>
+  );
+
+  // The ticker strip, bracketed by thin primary rules (Disney's TRENDING bar).
+  // Null when too few rides are open (or while still loading) so it never shows
+  // a near-empty marquee or a "Loading…" flash.
+  const tickerStrip = tickerVisible ? (
+    <div ref={tickerRef} className="relative border-t border-primary/40">
+      {/* The marquee always spans the full strip, at a fixed width the
+          label never touches — the label sits *over* it, not beside it.
+          The only concession is a static lead-in of exactly the label's
+          width: the first chips start where the label ends and then scroll
+          out through that gap on their own, so the hand-off costs no
+          animation at all and nothing here ever re-lays-out.
+          (Clipping happens at the padding edge, so chips stay visible as
+          they travel across it.) */}
+      <div className="parkfi-marquee relative overflow-hidden" style={{ paddingLeft: labelWidth }}>
+        <div
+          className="parkfi-marquee-track"
+          style={{ "--marquee-duration": `${durationSec}s` } as React.CSSProperties}
+        >
+          {[0, 1].map((copy) => (
+            <div key={copy} className="flex items-center" aria-hidden={copy === 1}>
+              {Array.from({ length: repeatsPerHalf }).flatMap((_, rep) =>
+                chips.map((c) => (
+                  <TickerChip
+                    key={`${copy}-${rep}-${c.parkSlug}-${c.rideSlug}`}
+                    rideName={c.rideName}
+                    rideSlug={c.rideSlug}
+                    parkName={c.parkName}
+                    parkSlug={c.parkSlug}
+                    waitMin={c.waitMin}
+                    delta={c.delta}
+                    trend={c.trend}
+                    duplicate={copy === 1}
+                  />
+                )),
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Fades while sliding off its own width to the left, so it reads as
+          clearing out rather than dissolving in place. Opaque so the chips
+          pass behind it, and click-through so hovering here still pauses
+          the marquee underneath. */}
+      <motion.div
+        initial={false}
+        animate={{ opacity: hideLabel ? 0 : 1, x: hideLabel ? -(labelWidth ?? 0) : 0 }}
+        transition={handoff}
+        className="pointer-events-none absolute inset-y-0 left-0 flex bg-background"
+      >
+        <LiveWaitsMeter
+          innerRef={labelRef}
+          updatedAt={tickerQ.dataUpdatedAt}
+          fetching={tickerQ.isFetching}
+        />
+      </motion.div>
+    </div>
+  ) : null;
+
+  // ── The floating layout ──
+  // Only the gradient bar is pinned — fixed rather than sticky, because the
+  // wrapper it sits in is a couple of rems tall and a sticky child can't
+  // outlast its own parent's box. An in-flow spacer of the same height stands
+  // in for it, so nothing underneath has to know the bar left the flow.
+  //
+  // The capsule below it is an ordinary block in the page: it scrolls off with
+  // the content and comes back when you scroll back up, which is the whole
+  // point — no listener, no collapse, no guessing at intent from scroll
+  // direction. It keeps a stacking context (`relative z-40`) so a page that
+  // pulls itself up by `--floating-nav-height` runs *under* the glass rather
+  // than over it.
+  if (floating) {
+    return (
+      <div className={className}>
+        <div ref={pinnedRef} className="fixed inset-x-0 top-0 z-50">
+          <MastheadStripe
+            innerRef={stripeRef}
+            progress={showProgress ? scrollYProgress : undefined}
+          />
+          {tickerStrip}
+          {/* The brand's yellow, as the rule that closes the pinned bar — the
+              same accent the nav marker and the ticket keys wear. One pixel,
+              full strength: it reads as a deliberate edge on the chrome rather
+              than the seam a hairline of page background used to fake. */}
+          <div aria-hidden className="h-px w-full bg-brand-yellow" />
+        </div>
+        <div aria-hidden style={{ height: pinnedHeight }} className="h-2.5 w-full shrink-0" />
+
+        <div ref={capsuleRef} className="relative z-40 px-4 pt-3 sm:px-6">
+          <div
+            onMouseEnter={enter}
+            onMouseLeave={leave}
+            onFocusCapture={() => setFocused(true)}
+            onBlurCapture={(e) => {
+              // Focus moving between two links inside the capsule fires a blur
+              // before the next focus; only a blur that actually leaves counts.
+              if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false);
+            }}
+            // The resting ground. At rest the capsule is barely there: a faint
+            // tint over a strong blur, a hairline, and no shadow at all — the
+            // page's own artwork reads through it and the nav is a suggestion
+            // of chrome rather than a white slab parked on the hero.
+            //
+            // The near-nothing alpha is behind `supports-backdrop-filter`: with
+            // no blur to thicken it, an 8%-opaque bar over park photography is
+            // just unreadable.
+            className="relative mx-auto flex max-w-7xl rounded-4xl border border-border/18 bg-background/40 backdrop-blur-xl supports-backdrop-filter:bg-background/8"
+          >
+            {/* The engaged ground, as a layer that fades in over the resting
+                one rather than as a colour the resting one animates *to*.
+                Animating the capsule's own background meant repainting a
+                24px-blurred backdrop on every frame of the transition, which is
+                where the chop came from; opacity on a layer above it composites
+                instead, and never touches the blur underneath.
+
+                `-inset-px` so this layer's own rim lands *on* the resting
+                hairline rather than 1px inside it — inset-0 draws the two as
+                concentric rings, which is visible the moment it fades in.
+
+                State, not `hover:` / `focus-within:` — CSS can't be asked to
+                hold a state after the pointer has gone, and the settle delay
+                is the whole point. */}
+            <div
+              aria-hidden
+              style={{ transitionDuration: `${CAPSULE_FADE_MS}ms` }}
+              className={cn(
+                "pointer-events-none absolute -inset-px rounded-4xl border border-border/70 bg-background shadow-xl transition-opacity ease-out",
+                engaged ? "opacity-[0.92]" : "opacity-0",
+              )}
+            />
+            <div className="relative w-full">{navRow}</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── The pinned layout ──
   return (
     <>
       <header
@@ -926,25 +1345,10 @@ export function SiteHeaderDesktop({
       >
         {/* Metallic masthead bar (Disney's dark-red gradient, in brand blue),
             with the reading-progress sheen sweeping across it. */}
-        <div ref={stripeRef} className="relative h-2.5 w-full overflow-hidden" aria-hidden>
-          <div
-            className="absolute inset-0"
-            style={{
-              background:
-                "linear-gradient(90deg,#08152e 0%,#14346b 22%,#3f74cf 50%,#14346b 78%,#08152e 100%)",
-            }}
-          />
-          {showProgress && (
-            <motion.div
-              className="absolute inset-0 origin-left"
-              style={{
-                scaleX: scrollYProgress,
-                background:
-                  "linear-gradient(to right, transparent, color-mix(in oklch, white, transparent 55%))",
-              }}
-            />
-          )}
-        </div>
+        <MastheadStripe
+          innerRef={stripeRef}
+          progress={showProgress ? scrollYProgress : undefined}
+        />
 
         {/* Nav menu: collapses to nothing on scroll-down, springs back on
             scroll-up — only the bar above and the marquee below stay pinned. */}
@@ -957,149 +1361,10 @@ export function SiteHeaderDesktop({
           transition={collapse}
           className="overflow-hidden"
         >
-          <div
-            ref={navRef}
-            // A three-track grid, not a flex row: the side tracks are both
-            // `1fr`, so the wordmark in the middle track is dead centre on the
-            // page at every width no matter how lopsided the brand mark and the
-            // actions cluster are. Each side track then pushes its own links
-            // inward (`justify-between`), so the links hug the wordmark
-            // symmetrically while the mark and the keys hold the outer edges.
-            className="mx-auto grid max-w-6xl grid-cols-[1fr_auto_1fr] items-center gap-4 px-4 py-6 sm:px-6"
-          >
-            {/* One group across both sides of the wordmark: the yellow marker is
-                a single `layoutId` element, so motion can only slide it between
-                the left and right nav if they share a group. */}
-            <LayoutGroup id="site-nav">
-              <div className="flex min-w-0 items-center justify-between gap-4">
-                <div className="flex shrink-0 items-center gap-2">
-                  <Link
-                    to="/"
-                    aria-label="ParkFi — Home"
-                    className="flex shrink-0 items-center rounded-xl outline-none focus-visible:ring-[3px] focus-visible:ring-ring/45"
-                  >
-                    <img src="/img/brand/blue.webp" alt="ParkFi" className="h-11 w-auto" />
-                  </Link>
-                  {/* md → lg: one menu instead of two link groups, so the row never
-                      wraps. Below md the links are gone entirely — on the app that
-                      breakpoint has the bottom-nav island, and on the marketing
-                      pages this header has always shed its links there. */}
-                  <div className="hidden md:block lg:hidden">
-                    <NavMenuCompact
-                      items={allLinks}
-                      activeKey={activeKey}
-                      activeSlug={activeSlug}
-                    />
-                  </div>
-                </div>
-                <nav className="hidden items-center gap-5 lg:flex">
-                  <NavLinks items={NAV_LEFT} activeKey={activeKey} />
-                </nav>
-              </div>
-
-              <Link
-                to="/"
-                className="flex flex-col items-center rounded-xl px-4 leading-none outline-none focus-visible:ring-[3px] focus-visible:ring-ring/45"
-              >
-                <span className="font-heading text-3xl font-bold tracking-tight">ParkFi</span>
-              </Link>
-
-              <div className="flex min-w-0 items-center justify-between gap-4">
-                <nav className="hidden items-center gap-5 lg:flex">
-                  <ParksMegaMenu
-                    activeSlug={activeSlug}
-                    active={activeKey === PARKS_KEY}
-                    anchor={navRef}
-                  />
-                  <NavLinks items={NAV_RIGHT} activeKey={activeKey} />
-                </nav>
-                {/* Everything the blue toolbar used to carry, right-aligned and
-                    on one chrome: the search button's 44px outline key is the
-                    reference, so the bell and the theme toggle wear it too and
-                    the avatar and sign-in keys match its height. The bell only
-                    exists for a signed-in reader — nothing to say otherwise. */}
-                <div className="ml-auto flex shrink-0 items-center gap-2">
-                  <CastMemberHeadline className="hidden bg-primary/10 text-primary ring-primary/20 xl:inline-flex" />
-                  <div className="hidden md:block">
-                    <NotificationCenter />
-                  </div>
-                  <OmniSearch variant="icon" />
-                  <div className="hidden md:block">
-                    <ThemeToggle />
-                  </div>
-                  <div className="hidden md:block">
-                    <HeaderAccountMenu />
-                  </div>
-                  {/* The support key (`BuyMeACoffee`) is parked for now — Josh,
-                      2026-09-15. The component is still there; drop it back in
-                      here when the header should ask again. */}
-                </div>
-              </div>
-            </LayoutGroup>
-          </div>
+          {navRow}
         </motion.div>
 
-        {/* Ticker strip, bracketed by thin primary rules (Disney's TRENDING bar).
-            Hidden when too few rides are open (or while still loading) so it
-            never shows a near-empty marquee or a "Loading…" flash. */}
-        {tickerVisible && (
-          <div ref={tickerRef} className="relative border-t border-primary/40">
-            {/* The marquee always spans the full strip, at a fixed width the
-                label never touches — the label sits *over* it, not beside it.
-                The only concession is a static lead-in of exactly the label's
-                width: the first chips start where the label ends and then scroll
-                out through that gap on their own, so the hand-off costs no
-                animation at all and nothing here ever re-lays-out.
-                (Clipping happens at the padding edge, so chips stay visible as
-                they travel across it.) */}
-            <div
-              className="parkfi-marquee relative overflow-hidden"
-              style={{ paddingLeft: labelWidth }}
-            >
-              <div
-                className="parkfi-marquee-track"
-                style={{ "--marquee-duration": `${durationSec}s` } as React.CSSProperties}
-              >
-                {[0, 1].map((copy) => (
-                  <div key={copy} className="flex items-center" aria-hidden={copy === 1}>
-                    {Array.from({ length: repeatsPerHalf }).flatMap((_, rep) =>
-                      chips.map((c) => (
-                        <TickerChip
-                          key={`${copy}-${rep}-${c.parkSlug}-${c.rideSlug}`}
-                          rideName={c.rideName}
-                          rideSlug={c.rideSlug}
-                          parkName={c.parkName}
-                          parkSlug={c.parkSlug}
-                          waitMin={c.waitMin}
-                          delta={c.delta}
-                          trend={c.trend}
-                          duplicate={copy === 1}
-                        />
-                      )),
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Fades while sliding off its own width to the left, so it reads as
-                clearing out rather than dissolving in place. Opaque so the chips
-                pass behind it, and click-through so hovering here still pauses
-                the marquee underneath. */}
-            <motion.div
-              initial={false}
-              animate={{ opacity: hideLabel ? 0 : 1, x: hideLabel ? -(labelWidth ?? 0) : 0 }}
-              transition={handoff}
-              className="pointer-events-none absolute inset-y-0 left-0 flex bg-background"
-            >
-              <LiveWaitsMeter
-                innerRef={labelRef}
-                updatedAt={tickerQ.dataUpdatedAt}
-                fetching={tickerQ.isFetching}
-              />
-            </motion.div>
-          </div>
-        )}
+        {tickerStrip}
       </header>
 
       {/* Compensating spacer: grows exactly as the nav menu collapses so the

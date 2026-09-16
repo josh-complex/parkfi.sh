@@ -11,7 +11,7 @@ import {
   useHeroSwipe,
 } from "#/components/hero-media.tsx";
 import { Image } from "#/components/ui/image.tsx";
-import { disneyResizeUrl, HERO_IMAGE } from "#/lib/image.ts";
+import { disneyResizeUrl, HERO_IMAGE, imageFocusClass } from "#/lib/image.ts";
 import { cn } from "#/lib/utils.ts";
 
 /**
@@ -246,7 +246,7 @@ export function DetailHero({
             src={underlay}
             alt=""
             aria-hidden
-            className="absolute inset-0 size-full object-cover"
+            className={cn("absolute inset-0 size-full object-cover", imageFocusClass(underlay))}
           />
         )}
         {image && (

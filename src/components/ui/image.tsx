@@ -7,7 +7,7 @@ import { thumbHashToDataURL } from "thumbhash";
 import { useCfImagesEnabled } from "#/integrations/posthog/feature-flags.ts";
 import { readDataSaver, subscribeConnection } from "#/lib/connection.ts";
 import { observeForPreload, preloadImage } from "#/lib/image-preload.ts";
-import { resolveImageUrls } from "#/lib/image.ts";
+import { imageFocus, imageFocusClass, resolveImageUrls } from "#/lib/image.ts";
 import { cn } from "#/lib/utils.ts";
 
 /**
@@ -269,9 +269,13 @@ export function Image({
   // transparent sources honest. Instant images never fade, so theirs drops on
   // the first client paint.
   const showUnderlay = !loaded || (!instant && !settled);
-  const { box, fit } = underlay
-    ? splitObjectClasses(className)
-    : { box: className, fit: undefined };
+  // A source we know is composed off-centre (Universal's logo-backplate comps —
+  // see `imageFocus`) carries its own `object-position`, so every box in the app
+  // crops it toward the photo instead of the backplate without each call site
+  // having to know. Prepended, so a caller's explicit `object-*` still wins:
+  // `cn`'s merge keeps the last utility in a group.
+  const boxClass = cn(imageFocusClass(src), className);
+  const { box, fit } = underlay ? splitObjectClasses(boxClass) : { box: boxClass, fit: undefined };
 
   const image = (
     <img
@@ -286,7 +290,9 @@ export function Image({
           ? {
               backgroundImage: `url(${placeholderUrl})`,
               backgroundSize: "cover",
-              backgroundPosition: "center",
+              // The hash is a blur of the *whole* source, so it has to be framed
+              // the way the photo will be — otherwise the fade slides sideways.
+              backgroundPosition: imageFocus(src) ?? "center",
               ...style,
             }
           : underlay
@@ -333,7 +339,7 @@ export function Image({
           ? {
               backgroundImage: `url(${placeholderUrl})`,
               backgroundSize: "cover",
-              backgroundPosition: "center",
+              backgroundPosition: imageFocus(src) ?? "center",
               ...style,
             }
           : style
