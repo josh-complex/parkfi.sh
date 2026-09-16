@@ -2,7 +2,7 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
 import { BlogSidebar } from "#/components/blog/blog-sidebar.tsx";
-import { BlogTickerHeader } from "#/components/blog/blog-ticker-header.tsx";
+import { SiteHeaderDesktop } from "#/components/site-chrome/site-header-desktop.tsx";
 import { ExternalCard, type ExternalItem } from "#/components/blog/external-shelves.tsx";
 import { HeroCarousel, type HeroSlideData } from "#/components/blog/hero-carousel.tsx";
 import { PostCard, type PostCardData } from "#/components/blog/post-card.tsx";
@@ -146,7 +146,7 @@ function BlogIndex() {
     <div>
       <JsonLd data={blogJsonLd()} />
 
-      <BlogTickerHeader />
+      <SiteHeaderDesktop ticker />
 
       <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
         <div className="grid grid-cols-1 gap-10 lg:grid-cols-[1fr_18rem]">

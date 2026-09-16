@@ -69,6 +69,7 @@ import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { queryUnavailable } from "#/hooks/use-online-status.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
+import { PAGE_WIDTH } from "#/components/page-container.tsx";
 import { cn } from "#/lib/utils.ts";
 import {
   RAIL_CARD,
@@ -569,7 +570,7 @@ export function StaysBoard() {
             <Popover open={adultsOpen} onOpenChange={setAdultsOpen}>
               <PopoverTrigger
                 render={
-                  <button type="button" className={cn(coreSegClass("middle", adultsOpen), "w-32")}>
+                  <button type="button" className={coreSegClass("middle", adultsOpen)}>
                     <SegContent
                       label="Adults"
                       value={guestLabel}
@@ -595,7 +596,7 @@ export function StaysBoard() {
             <Popover open={kidsOpen} onOpenChange={setKidsOpen}>
               <PopoverTrigger
                 render={
-                  <button type="button" className={cn(coreSegClass("last", kidsOpen), "w-32")}>
+                  <button type="button" className={coreSegClass("last", kidsOpen)}>
                     <SegContent
                       label="Kids"
                       value={kidsLabel}
@@ -808,7 +809,7 @@ export function StaysBoard() {
       {/* Mobile quick area filters, tucked under the header's omnisearch. */}
       <StaysAreaChips areas={AREAS} value={areaFilter} onChange={setAreaFilter} />
 
-      <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-8 p-4 pb-24 lg:px-6">
+      <div className={cn(PAGE_WIDTH, "flex flex-col gap-8 py-4 pb-24")}>
         {search ? (
           <ResultsView
             isLoading={availabilityQ.isLoading}

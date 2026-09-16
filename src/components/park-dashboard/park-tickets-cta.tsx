@@ -1,7 +1,9 @@
 "use client";
 
-import { CalendarCheckIcon, ExternalLinkIcon, TicketIcon } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { CalendarCheckIcon, ExternalLinkIcon, TagIcon, TicketIcon } from "lucide-react";
 
+import { TintPanel } from "#/components/detail/panels.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { useIsNative } from "#/hooks/use-is-native.ts";
 import {
@@ -13,23 +15,27 @@ import {
 import { isUniversal } from "./lightning-lane.ts";
 
 /**
- * A "Buy tickets" deep link from a park page out to the operator's own ticket
- * purchase flow. On the native MDE shell (Disney) this resolves to the app's
+ * The park page's exit block (plan §4.3): a peach panel with the one yellow key
+ * that leaves the app — out to the operator's own ticket purchase flow — and a
+ * second, outline key for the guest who already holds a ticket.
+ *
+ * On the native MDE shell (Disney) the primary link resolves to the app's
  * `mdx://tickets/buy` purchase screen; on the web (and Universal everywhere) it
  * falls back to the https ticket store, which itself hands off to the installed
- * app via OS App Links.
+ * app via OS App Links. See `src/lib/disney-links.ts` and the memory note
+ * `mde-deeplink-platform-gating`.
  *
- * Mirrors the platform gating on the ride-detail page — the `mdx://` scheme only
- * resolves inside the app, so the target is chosen off `useIsNative()`. See
- * `src/lib/disney-links.ts`.
- *
- * Disney also gets a secondary "make a park reservation" link, for guests who
- * already hold a ticket or annual pass and just need to book a park + date.
- * Unlike ticket purchase there's no `mdx://` route for this — MDE itself opens a
- * plain web URL — so it's a single https link that OS App Links hands off to the
- * app on native. Universal has no reservation system, so it's Disney-only.
+ * The second key differs by operator because the underlying product does:
+ * Disney's park reservation calendar has no Universal equivalent, so Universal
+ * gets our own price comparison instead of a link to a page that doesn't exist.
  */
-export function ParkTicketsCta({ operatorSlug }: { operatorSlug: string | null | undefined }) {
+export function ParkTicketsCta({
+  operatorSlug,
+  className,
+}: {
+  operatorSlug: string | null | undefined;
+  className?: string;
+}) {
   const native = useIsNative();
   const resort = isUniversal(operatorSlug) ? "UOR" : "WDW";
   const href = buyTicketsHref(resort, native);
@@ -38,55 +44,49 @@ export function ParkTicketsCta({ operatorSlug }: { operatorSlug: string | null |
   const reservationHref = parkReservationUrl(resort);
 
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border bg-card p-4 shadow-md">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <TicketIcon className="size-5" strokeWidth={1.75} />
-          </div>
-          <div className="flex flex-col gap-0.5">
-            <span className="text-sm font-semibold leading-tight">Ready to go?</span>
-            <span className="text-xs text-muted-foreground">
-              {opensApp
-                ? "Buy tickets in My Disney Experience"
-                : `Buy tickets on ${ticketStoreLabel(resort)}`}
-            </span>
-          </div>
-        </div>
+    <TintPanel tone="peach" title="Ready to go?" className={className}>
+      <div className="flex items-center gap-3">
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-card text-peach-fg">
+          <TicketIcon className="size-5" strokeWidth={1.75} />
+        </span>
+        <p className="text-sm leading-snug text-peach-sub">
+          {opensApp
+            ? "Buy tickets in My Disney Experience, or check today's date-based prices first."
+            : `Compare today's prices before you buy on ${ticketStoreLabel(resort)}.`}
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
         <Button
-          size="sm"
-          className="gap-1.5 sm:shrink-0"
+          variant="yellow"
+          size="lg"
+          className="min-w-0 font-bold"
           render={<a href={href} target="_blank" rel="noreferrer" />}
         >
-          Buy tickets
-          <ExternalLinkIcon className="size-3.5" />
+          <span className="truncate">Buy tickets</span>
+          <ExternalLinkIcon />
         </Button>
-      </div>
-
-      {reservationHref && (
-        <div className="flex flex-col gap-3 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <CalendarCheckIcon className="size-5" strokeWidth={1.75} />
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-sm font-semibold leading-tight">Already have tickets?</span>
-              <span className="text-xs text-muted-foreground">
-                Make a park reservation for your date
-              </span>
-            </div>
-          </div>
+        {reservationHref ? (
           <Button
-            size="sm"
             variant="outline"
-            className="gap-1.5 sm:shrink-0"
+            size="lg"
+            className="min-w-0 font-bold"
             render={<a href={reservationHref} target="_blank" rel="noreferrer" />}
           >
-            Make a reservation
-            <ExternalLinkIcon className="size-3.5" />
+            <CalendarCheckIcon />
+            <span className="truncate">Reserve a day</span>
           </Button>
-        </div>
-      )}
-    </div>
+        ) : (
+          <Button
+            variant="outline"
+            size="lg"
+            className="min-w-0 font-bold"
+            render={<Link to="/tickets" />}
+          >
+            <TagIcon />
+            <span className="truncate">Ticket prices</span>
+          </Button>
+        )}
+      </div>
+    </TintPanel>
   );
 }

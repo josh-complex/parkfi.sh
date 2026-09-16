@@ -642,6 +642,20 @@ function clonePhoto(fill: HTMLElement | null, preview: string | null, round = fa
   return { box, from, swap, scrim };
 }
 
+/**
+ * The hero's title pad. Ticket-stub detail pages (docs/plans/dining-redesign)
+ * render no title *inside* the hero — the ticket overlapping its torn bottom
+ * edge carries the name — so the pad can live outside the hero box, tagged with
+ * the flight key it belongs to. Falls back to that tag when the hero itself
+ * carries no title, so both hero shapes fly and land on a real box.
+ */
+function heroTitlePad(hero: HTMLElement, key: string): HTMLElement | null {
+  return (
+    hero.querySelector<HTMLElement>("[data-hero-title]") ??
+    document.querySelector<HTMLElement>(`[data-hero-title][data-hero-for="${CSS.escape(key)}"]`)
+  );
+}
+
 /** Strip the hero's landing hooks off a clone so it can't be found by a query. */
 function scrubTarget(el: HTMLElement): void {
   for (const a of ["data-hero", "data-hero-image", "data-hero-wait", "data-hero-title"])
@@ -945,7 +959,7 @@ export function launchHeroFlight(
     // `rounded-2xl` from md up), so that's the shape the clone has to land on.
     flyPhoto(photo, photoTarget, getComputedStyle(hero).borderRadius);
     flyWait(wait, hero.querySelector<HTMLElement>("[data-hero-wait]"));
-    flyTitle(title, hero.querySelector<HTMLElement>("[data-hero-title]"));
+    flyTitle(title, heroTitlePad(hero, key));
 
     // Don't dissolve onto an empty box: hold the photo clone past the travel
     // until there's a decoded photo underneath it. Arriving from a card that's
@@ -1131,7 +1145,7 @@ export function launchHeroReturn(key: string): void {
   }
 
   // Title: one text element, headline type ready to morph down into the pill's.
-  const titleSrc = hero.querySelector<HTMLElement>("[data-hero-title]");
+  const titleSrc = heroTitlePad(hero, key);
   let title: { box: HTMLElement; from: HTMLElement } | null = null;
   if (titleSrc) {
     const r = titleSrc.getBoundingClientRect();

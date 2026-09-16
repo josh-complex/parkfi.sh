@@ -13,11 +13,8 @@ import {
   type Table as ReactTable,
 } from "@tanstack/react-table";
 import {
-  ArrowDownIcon,
-  ArrowUpIcon,
   ArrowUpDownIcon,
   ChevronRightIcon,
-  ChevronsUpDownIcon,
   GemIcon,
   GhostIcon,
   InfoIcon,
@@ -52,7 +49,12 @@ import {
   SelectValue,
 } from "#/components/ui/select.tsx";
 import { MAP_FILTER_PILL, MAP_FILTER_STACK } from "#/components/rides/ride-filter-button.tsx";
-import { SortRows, type SortDir, type SortOption } from "#/components/ui/sort-menu.tsx";
+import {
+  SortRows,
+  TableSortHeader,
+  type SortDir,
+  type SortOption,
+} from "#/components/ui/sort-menu.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import {
   Table,
@@ -324,33 +326,6 @@ function sortingToOption(sorting: SortingState): { key: BoardSortKey; dir: SortD
   return { key, dir: s.desc ? "desc" : "asc" };
 }
 
-function SortHeader({
-  label,
-  sorted,
-  onClick,
-}: {
-  label: React.ReactNode;
-  sorted: false | "asc" | "desc";
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="-mx-1 -my-2 inline-flex items-center gap-1 rounded px-1 py-2 font-medium text-foreground transition-colors hover:text-foreground active:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-    >
-      {label}
-      {sorted === "asc" ? (
-        <ArrowUpIcon className="size-3.5" />
-      ) : sorted === "desc" ? (
-        <ArrowDownIcon className="size-3.5" />
-      ) : (
-        <ChevronsUpDownIcon className="size-3.5 opacity-40" />
-      )}
-    </button>
-  );
-}
-
 export function ParkBoardTable({
   board,
   loading,
@@ -359,6 +334,7 @@ export function ParkBoardTable({
   onSelect,
   operatorSlug,
   timezone,
+  controls = "floating",
   className,
 }: {
   board: Array<BoardItem> | undefined;
@@ -368,6 +344,14 @@ export function ParkBoardTable({
   onSelect: (item: BoardItem) => void;
   operatorSlug: string | null | undefined;
   timezone: string | null | undefined;
+  /**
+   * Where the phone's sort/filter controls live. `floating` is the dash's
+   * bottom-left FAB stack, matching the map's own filter pill. `inline` puts
+   * them in the board's heading row instead — which is what a page that already
+   * floats something of its own over the nav island has to use, or the two
+   * stacks collide (the park page's action bar, plan §3.1).
+   */
+  controls?: "floating" | "inline";
   className?: string;
 }) {
   const [filter, setFilter] = React.useState<StatusFilter>("ALL");
@@ -663,6 +647,16 @@ export function ParkBoardTable({
               : `${boardRows.length} attractions · select a ride to chart its history`}
           </p>
         </div>
+        {/* Phone controls, when the page can't spare the floating stack. */}
+        {controls === "inline" && !loading && (
+          <BoardControls
+            sort={sortingToOption(sorting)}
+            onSort={handleSort}
+            filter={filter}
+            onFilter={handleFilter}
+            className="flex gap-2 md:hidden"
+          />
+        )}
         {/* Desktop controls live beside the heading; mobile gets a FAB (below). */}
         <div className="hidden md:block">
           <Select
@@ -754,12 +748,14 @@ export function ParkBoardTable({
       )}
 
       {/* Mobile-only sort/filter FAB, center-bottom, above the safe area. */}
-      {isMobile && !loading && (
-        <MobileControls
+      {isMobile && !loading && controls === "floating" && (
+        <BoardControls
           sort={sortingToOption(sorting)}
           onSort={handleSort}
           filter={filter}
           onFilter={handleFilter}
+          className={MAP_FILTER_STACK}
+          style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1.4rem)" }}
         />
       )}
     </div>
@@ -846,7 +842,7 @@ function BoardRows({
                     )}
                   >
                     {header.isPlaceholder ? null : canSort ? (
-                      <SortHeader
+                      <TableSortHeader
                         label={flexRender(header.column.columnDef.header, header.getContext())}
                         sorted={header.column.getIsSorted()}
                         onClick={() => header.column.toggleSorting()}
@@ -1102,24 +1098,30 @@ function PaidLineFooter({
   );
 }
 
-function MobileControls({
+/**
+ * The board's sort and filter drawers, as a pair of pills. The caller decides
+ * where they sit — the floating stack over the nav island, or inline in the
+ * board's heading row (see `ParkBoardTable`'s `controls`).
+ */
+function BoardControls({
   sort,
   onSort,
   filter,
   onFilter,
+  className,
+  style,
 }: {
   sort: { key: BoardSortKey; dir: SortDir };
   onSort: (key: BoardSortKey, dir: SortDir) => void;
   filter: StatusFilter;
   onFilter: (f: StatusFilter) => void;
+  className?: string;
+  style?: React.CSSProperties;
 }) {
   const filterActive = filter !== "ALL";
   return (
-    <div
-      className={MAP_FILTER_STACK}
-      style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1.4rem)" }}
-    >
-      {/* Left-anchored stacked pills matching the map's Filter button exactly. */}
+    <div className={className} style={style}>
+      {/* Pills matching the map's Filter button exactly. */}
       {/* Sort */}
       <Drawer>
         <DrawerTrigger className={MAP_FILTER_PILL}>

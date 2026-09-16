@@ -16,3 +16,5 @@ export type HistoryPoint = Outputs["parks"]["history"][number];
 export type ParkHistory = Outputs["parks"]["parkHistory"];
 /** One ride summary (id/name/peak) from `parks.parkHistory`. */
 export type ParkHistoryRide = ParkHistory["rides"][number];
+/** Today's park-wide hourly curve from `parks.crowd`. */
+export type ParkCrowd = Outputs["parks"]["crowd"];

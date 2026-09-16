@@ -2,19 +2,29 @@ import * as React from "react";
 import { Outlet, createFileRoute, useParams } from "@tanstack/react-router";
 
 import { AchievementTracker } from "#/components/achievements/achievement-tracker.tsx";
-import { AppInset } from "#/components/app-inset.tsx";
-import { AppSidebar } from "#/components/app-sidebar.tsx";
+import { SiteFooter } from "#/components/marketing/site-footer.tsx";
+import { MobileBottomNav } from "#/components/mobile-bottom-nav.tsx";
+import { OfflineBanner } from "#/components/offline-banner.tsx";
 import { SelectionProvider } from "#/components/park-dashboard/selection-context.tsx";
 import { MapStageProvider } from "#/components/park-map/map-stage.tsx";
 import { RideFilterProvider } from "#/components/rides/ride-filter.tsx";
 import { SiteHeader } from "#/components/site-header.tsx";
-import { SidebarProvider } from "#/components/ui/sidebar.tsx";
+import { SiteHeaderDesktop } from "#/components/site-chrome/site-header-desktop.tsx";
 
 /**
  * The one persistent app shell. Every in-app route nests under this pathless
- * layout so the sidebar, blue toolbar, and mobile bottom-nav mount once and
- * survive cross-section navigation — no more tearing the whole shell down and
- * rebuilding it on every dining → stays → pins hop.
+ * layout so the chrome — the desktop masthead, the mobile floating header, and
+ * the bottom-nav island — mounts once and survives cross-section navigation:
+ * no more tearing the whole shell down and rebuilding it on every dining →
+ * stays → pins hop.
+ *
+ * Desktop wears the site's own top chrome (stripe → wordmark nav → live-waits
+ * ticker) over a plain page, closed by the short footer; the sidebar rail, the
+ * blue toolbar and the floating content card it used to sit in are gone
+ * (docs/plans/dining-redesign §5). Mobile is untouched by that change: the
+ * floating search header and the nav island still own navigation there, so the
+ * two headers are swapped with `md:` display gates rather than a JS breakpoint
+ * — same markup on the server, no hydration flip.
  *
  * The map stage lives here too (not on `_dash`), so the singleton `ParkMap` —
  * its WebGL context, markers, and camera — survives hops to non-dashboard
@@ -43,27 +53,41 @@ function AppShell() {
   const activeSlug = params.slug ?? null;
 
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
-      }
+    <div
+      // `data-slot="app-shell"` is the hook the native/standalone `min-height`
+      // rules in styles.css pin the shell to (they used to target the sidebar
+      // wrapper) — the iOS PWA bottom-gap fix depends on it.
+      data-slot="app-shell"
+      // `--bottom-nav-height` reserves room for the mobile nav island so
+      // scrolling content and the Eats/Stays filter FABs clear it. The desktop
+      // masthead publishes its own `--site-header-height` from a measurement.
+      style={{ "--bottom-nav-height": "4.5rem" } as React.CSSProperties}
+      className="flex min-h-svh w-full flex-col bg-background"
     >
-      <AppSidebar variant="inset" />
-      <AppInset>
-        <SiteHeader />
-        <SelectionProvider>
-          <RideFilterProvider>
-            <MapStageProvider activeSlug={activeSlug}>
-              <AchievementTracker />
+      <SiteHeaderDesktop className="hidden md:block" desktopOnly />
+      <SiteHeader />
+      <SelectionProvider>
+        <RideFilterProvider>
+          <MapStageProvider activeSlug={activeSlug}>
+            <AchievementTracker />
+            <main className="relative flex min-h-0 w-full flex-1 flex-col pb-[calc(var(--bottom-nav-height)+var(--safe-bottom))] md:pb-0">
               <Outlet />
-            </MapStageProvider>
-          </RideFilterProvider>
-        </SelectionProvider>
-      </AppInset>
-    </SidebarProvider>
+            </main>
+          </MapStageProvider>
+        </RideFilterProvider>
+      </SelectionProvider>
+      {/* Desktop closes on the short footer — the same link columns as the
+          landing page's, one line of the disclaimer. Mobile ends at the nav
+          island instead. */}
+      <div className="hidden md:block">
+        <SiteFooter variant="short" />
+      </div>
+      {/* Mobile primary nav — fixed island floating over the content. */}
+      <MobileBottomNav />
+      {/* Persistent offline indicator — floats above the nav island whenever the
+          device is offline, clearing itself on reconnect. */}
+      <OfflineBanner />
+    </div>
   );
 }
 

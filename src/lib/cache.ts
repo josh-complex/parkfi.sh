@@ -64,6 +64,12 @@ export const CACHEABLE_TRPC_PATHS: ReadonlyMap<string, string> = new Map([
   ["parks.overview", CACHE.TRPC_LIVE],
   ["parks.ticker", CACHE.TRPC_LIVE],
   ["parks.allRides", CACHE.TRPC_LIVE],
+  ["parks.movers", CACHE.TRPC_LIVE],
+  // Rebuilt once a day by cron-profiles — slow-moving, so the longer edge TTL.
+  ["parks.hourlyProfiles", CACHE.TRPC_DATA],
+  // Today's park-wide hourly curve: its last bar moves with the live board, so
+  // it keeps the board's freshness class rather than the slow-data one.
+  ["parks.crowd", CACHE.TRPC_LIVE],
   // Pedestrian routing — long TTL, quantized endpoints (see CACHE.ROUTE).
   ["routing.route", CACHE.ROUTE],
   // Catalog / menu / hours / availability — slow-moving, longer edge TTL.

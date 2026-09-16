@@ -29,6 +29,7 @@ export const KIND_LABELS: Record<string, string> = {
   incident: "Incident report",
   license: "License",
   tls_cert: "TLS certificate",
+  web_page: "Published page",
 };
 
 export const RESORT_LABELS: Record<string, string> = {

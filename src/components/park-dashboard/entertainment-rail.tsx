@@ -15,9 +15,9 @@ import {
   RailCardTitle,
   RailItem,
   RailShelf,
-  RailShelfHeader,
   RailTrack,
 } from "#/components/ui/rail.tsx";
+import { TintMeta, TintPanel } from "#/components/detail/panels.tsx";
 import {
   nextShowtime,
   parseShowtimes,
@@ -96,7 +96,8 @@ function ShowCard({
 }
 
 /**
- * "Entertainment today" shelf (plan item 1.1): the park's SHOW entities that have
+ * "Entertainment today" — a mint panel (plan §4.3) whose body is the shared
+ * shelf carousel (plan item 1.1): the park's SHOW entities that have
  * posted showtimes, ordered by their next upcoming performance (shows already
  * done for the day sink to the end). Uses the shared carousel/card design from
  * the Eats/Waits/Stays shelves. Renders nothing when the park has no timed
@@ -107,10 +108,12 @@ export function EntertainmentRail({
   board,
   parkSlug,
   timezone,
+  className,
 }: {
   board: Array<BoardItem> | undefined;
   parkSlug: string | null;
   timezone: string | undefined;
+  className?: string;
 }) {
   const [nowMs, setNowMs] = React.useState(() => Date.now());
   React.useEffect(() => {
@@ -141,18 +144,28 @@ export function EntertainmentRail({
   if (!parkSlug || shows.length === 0) return null;
 
   return (
-    <RailShelf>
-      <RailShelfHeader
-        title="Entertainment today"
-        subtitle="Shows, parades, and fireworks by next start time."
-      />
-      <RailTrack>
-        {shows.map((row) => (
-          <RailItem key={row.item.id}>
-            <ShowCard row={row} parkSlug={parkSlug} tz={tz} nowMs={nowMs} />
-          </RailItem>
-        ))}
-      </RailTrack>
-    </RailShelf>
+    <TintPanel
+      tone="mint"
+      title="Entertainment today"
+      meta={
+        <TintMeta tone="mint">
+          {shows.length} {shows.length === 1 ? "show" : "shows"}
+        </TintMeta>
+      }
+      className={className}
+    >
+      {/* The shelf normally bleeds to the screen edge and re-adds the page
+          gutter; inside a panel the panel's own padding is the gutter, so both
+          are cancelled and the track clips on the panel's edges. */}
+      <RailShelf carouselClassName="mx-0 lg:mx-0">
+        <RailTrack viewportClassName="px-0">
+          {shows.map((row) => (
+            <RailItem key={row.item.id}>
+              <ShowCard row={row} parkSlug={parkSlug} tz={tz} nowMs={nowMs} />
+            </RailItem>
+          ))}
+        </RailTrack>
+      </RailShelf>
+    </TintPanel>
   );
 }

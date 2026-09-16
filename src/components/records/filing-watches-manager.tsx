@@ -36,6 +36,8 @@ const WATCHABLE_KINDS: PublicRecordKind[] = [
   "patent_grant",
   "airspace",
   "erp",
+  "web_page",
+  "license",
 ];
 
 const RESORT_OPTIONS = [

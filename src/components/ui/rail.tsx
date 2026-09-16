@@ -35,27 +35,39 @@ import { cn } from "#/lib/utils.ts";
  * next item signal that there's more. Don't reintroduce the mask per-call-site.
  */
 
-/** Padding for a full-bleed carousel shelf's viewport: page gutter on mobile,
- *  the wider dashboard gutter from `lg` up. Pass as `viewportClassName`. */
-export const SHELF_VIEWPORT = "px-4 lg:px-6";
+/**
+ * A shelf's viewport padding, which is also what decides where its cards are
+ * clipped. Below `lg` the shelf is full-bleed: it bleeds out to the screen edge
+ * (see `RailShelf`) and re-adds the page gutter here, so the card crossing the
+ * gutter stays visible and says "this scrolls". From `lg` the shelf is
+ * *contained* instead — no bleed, no padding — so the track clips exactly on
+ * the page's content edges and a desktop reader only ever sees whole cards
+ * (2026-09-15). Pass as `viewportClassName`.
+ */
+export const SHELF_VIEWPORT = "px-4 lg:px-0";
 
 /**
- * How wide one shelf card is at each breakpoint: every step is exactly 1.125× the
- * width shelves used to use (42% → 47.25% on a phone, 1/3 → 37.5% at `md`, and so
- * on). Wide enough to read a restaurant or a ride from, and still narrow enough
- * that the next card peeks past the gutter and says "this scrolls".
+ * How wide one shelf card is at each breakpoint.
  *
- * That 1.125 is why the art is `RAIL_MEDIA_RATIO` (3:2) rather than the 4:3 it
- * was: 4/3 × 1.125 = 3/2 exactly, so the card got wider without the art getting
- * one pixel taller. Change one of these two and you must change the other, or
- * every shelf in the app grows or shrinks vertically.
+ * Two regimes, on purpose. **Below `lg`** the widths are fractional (47.25% of
+ * the screen on a phone, 37.5% at `md`) so the next card peeks past the gutter
+ * and advertises the scroll — the only affordance a touch reader gets. **From
+ * `lg`** they are exact fractions of the *contained* track (4, then 5, then 6
+ * across), so a desktop shelf shows whole cards flush with the page's content
+ * edges and the arrows page by exactly one screenful. No sliver of a seventh
+ * card hanging in the gutter.
+ *
+ * The phone step is why the art is `RAIL_MEDIA_RATIO` (3:2) rather than the 4:3
+ * it was: 4/3 × 1.125 = 3/2 exactly, so the card got wider without the art
+ * getting one pixel taller. Change one of these two and you must change the
+ * other, or every shelf in the app grows or shrinks vertically.
  *
  * Exported raw for the handful of shelves whose loading state lays the same cards
  * out in a plain flex row rather than a carousel; anything in a carousel should
  * use `RailItem`, which adds the track's `pl-4` gutter.
  */
 export const RAIL_ITEM_BASIS =
-  "basis-[47.25%] md:basis-[37.5%] lg:basis-[28.125%] xl:basis-[22.5%] 2xl:basis-[18.75%]";
+  "basis-[47.25%] md:basis-[37.5%] lg:basis-1/4 xl:basis-1/5 2xl:basis-1/6";
 
 /**
  * Column counts for the placeholder grid a shelf shows while it loads — the grid
@@ -63,7 +75,7 @@ export const RAIL_ITEM_BASIS =
  * shelf will take rather than laying out a denser grid that visibly reflows.
  */
 export const RAIL_GHOST_GRID =
-  "grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5";
+  "grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6";
 
 /**
  * The horizontally scrolling quick-filter row. Owns the scroll behaviour (snap,
@@ -130,8 +142,13 @@ export function RailShelf({
 }: React.ComponentProps<"section"> & { carouselClassName?: string }) {
   return (
     <Carousel
-      opts={{ align: "start", dragFree: true }}
-      className={cn("-mx-4 lg:-mx-6", carouselClassName)}
+      // `slidesToScroll: "auto"` groups the slides into whole screenfuls, so the
+      // arrows page rather than nudging one card at a time; `containScroll`
+      // trims the end snaps so the last page lands flush with the content edge
+      // instead of scrolling into empty space. Dragging stays free.
+      opts={{ align: "start", dragFree: true, slidesToScroll: "auto", containScroll: "trimSnaps" }}
+      // Full-bleed below `lg`, contained from `lg` — see `SHELF_VIEWPORT`.
+      className={cn("-mx-4 lg:mx-0", carouselClassName)}
     >
       <section data-slot="rail-shelf" className={cn("flex flex-col gap-3", className)} {...props}>
         {children}

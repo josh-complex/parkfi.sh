@@ -26,3 +26,6 @@ GoogleService-Info.plist
 ios/App/App/GoogleService-Info.plist
 *-fcm.json
 *.p8
+
+docs
+research

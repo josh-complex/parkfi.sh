@@ -3,11 +3,21 @@
 import * as React from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { BellIcon, MapIcon } from "lucide-react";
 
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { showClock } from "#/lib/showtimes.ts";
 
-import { DetailHero, HERO_OVERLAY_TOP } from "#/components/detail-hero.tsx";
+import { ACTION_BAR_PAGE_PAD, DetailActionBar } from "#/components/detail/action-bar.tsx";
+import { SectionHeading, TintPanel } from "#/components/detail/panels.tsx";
+import { TICKET_DEFAULT_CREASE, Ticket, type TicketFact } from "#/components/detail/ticket.tsx";
+import {
+  DetailHero,
+  HERO_BLEED,
+  HERO_CREASE_ALIGNED,
+  HERO_OVERLAY_TOP,
+  HERO_PAGE_PADDING,
+} from "#/components/detail-hero.tsx";
 import { MapSlot } from "#/components/park-map/map-stage.tsx";
 import {
   heroFlightKey,
@@ -19,17 +29,21 @@ import { NotificationPrompt } from "#/components/notifications/notification-prom
 import { PaperTrail } from "#/components/records/paper-trail.tsx";
 import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
 import { ChartErrorBoundary } from "#/components/chart-error-boundary.tsx";
+import { Button } from "#/components/ui/button.tsx";
 import { lazyWithReload } from "#/lib/lazy-with-reload.tsx";
 import { useHydrated } from "#/lib/use-hydrated.ts";
 
+import { PAGE_WIDTH } from "#/components/page-container.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
-import { formatParkName, PARK_TAGLINE } from "#/lib/parks.ts";
+import { formatParkName } from "#/lib/parks.ts";
 import { cn } from "#/lib/utils.ts";
 
 import { EntertainmentRail } from "./entertainment-rail.tsx";
 import { ParkBoardTable } from "./park-board-table.tsx";
-import { ParkHours } from "./park-hours.tsx";
-import { ParkStatCards } from "./park-stat-cards.tsx";
+import { ParkCrowdCalendar } from "./park-crowd-calendar.tsx";
+import { ParkHours, useParkHoursToday } from "./park-hours.tsx";
+import { ParkRightNow } from "./park-right-now.tsx";
+import { parkStats, shortRideName } from "./park-stats.ts";
 import { ParkTicketsCta } from "./park-tickets-cta.tsx";
 import { useSelection } from "./selection-context.tsx";
 
@@ -47,6 +61,9 @@ const ParkAnalytics = lazyWithReload(
   () => import("./park-analytics.tsx").then((m) => ({ default: m.ParkAnalytics })),
   "park-analytics",
 );
+
+/** The board section's anchor — the wash panel's "All N rides" key scrolls here. */
+const BOARD_ID = "ride-board";
 
 /**
  * "Early Entry rides today" (plan item 1.4): rides whose per-entity hours carry
@@ -79,12 +96,12 @@ function EarlyEntryRides({
       ? `${showClock(window.start, timezone)}${window.end ? ` – ${showClock(window.end, timezone)}` : ""}`
       : null;
   return (
-    <div className="rounded-2xl border bg-card p-4 shadow-sm">
+    <div className="flex flex-col gap-2 rounded-[22px] border border-card-edge bg-card p-4 md:p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-sm font-semibold tracking-tight">Early Entry rides today</h3>
+        <h3 className="text-[15px] font-bold tracking-tight">Early Entry rides today</h3>
         {windowLabel && <span className="text-xs text-muted-foreground">{windowLabel}</span>}
       </div>
-      <div className="mt-2 flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-1.5">
         {rides.map((r) => (
           <Link
             key={r.slug}
@@ -112,6 +129,15 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
     enabled: !!activeSlug,
   });
   const board = boardQ.data;
+  const loading = boardQ.isLoading || !activeSlug;
+
+  // Today's hour-by-hour curve behind the wash panel, and the park-local date
+  // the ticket is stamped with. Owned here rather than inside the panel so the
+  // stub and the panel read one payload (and one round trip).
+  const crowdQ = useQuery({
+    ...trpc.parks.crowd.queryOptions({ parkSlug: activeSlug ?? "" }),
+    enabled: !!activeSlug,
+  });
 
   // Annual Pass blockout for today (plan item 2.4) — a WDW-only concept, so the
   // chip only ever lights up for a blocked Disney park. `days: 1` scopes the
@@ -137,10 +163,14 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
   const operatorSlug = park?.operatorSlug;
   const timezone = park?.timezone;
 
+  // The page's headline numbers, shared by the ticket and the wash panel.
+  const stats = React.useMemo(() => parkStats(board), [board]);
+  const hoursToday = useParkHoursToday(activeSlug ?? null);
+
   // Set when this page was opened by tapping a park badge on the overview map:
   // the badge's own name and photo, plus whether its flown clones (disc face →
-  // hero photo, name chip → hero title) are still in the air. Park badges never
-  // stage a card, so the seed carries no wait/status (see `parkFlightSeed`).
+  // hero photo, name chip → ticket title) are still in the air. Park badges
+  // never stage a card, so the seed carries no wait/status (see `parkFlightSeed`).
   const heroKey = heroFlightKey("park", parkSlug);
   const flight = useHeroFlight(heroKey);
   // Heading back to the overview map, pop the hero down into its badge — a
@@ -151,12 +181,16 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
   // isn't the map doesn't paint a stale hero from it.
   React.useEffect(() => () => releaseHeroFlight(heroKey), [heroKey]);
 
+  // The ticket's top half hangs over the hero's bottom edge on a phone, and its
+  // height depends on how many lines the park's name takes — so the hero grows
+  // by whatever the stub reports (see `Ticket` and `HERO_CREASE_ALIGNED`).
+  const [crease, setCrease] = React.useState(TICKET_DEFAULT_CREASE);
+
   // "Updated x ago" is computed from the current clock, so the server HTML and
   // the first client render would disagree and trip a hydration mismatch. Only
   // render it once we've hydrated on the client.
   const hydrated = useHydrated();
 
-  // "Updated x ago" label — shared by the plain header and the hero overlay.
   const updatedLabel = (() => {
     if (!hydrated || !board) return null;
     const latest = board.reduce<string | null>((m, b) => {
@@ -166,13 +200,10 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
     if (!latest) return null;
     const diff = Date.now() - new Date(latest).getTime();
     const min = Math.floor(diff / 60_000);
-    const label = min < 1 ? "just now" : min < 60 ? `${min}m ago` : `${Math.floor(min / 60)}h ago`;
-    return <span className="ml-2 text-xs">Updated {label}</span>;
+    return min < 1 ? "just now" : min < 60 ? `${min}m ago` : `${Math.floor(min / 60)}h ago`;
   })();
 
-  // Park hero photo (Disney finder / Universal places), if we have one. Drives a
-  // banner at the head of the page; falls back to the plain text header when a
-  // park has no image.
+  // Park hero photo (Disney finder / Universal places), if we have one.
   const heroUrl = park?.imageUrl ?? null;
 
   // Extra carousel stills beyond the base image (plan item 1.9): stored slides
@@ -196,136 +227,213 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
   // page title doesn't read as a repeat (e.g. "Animal Kingdom Theme Park").
   const parkName = park ? formatParkName(park.name) : null;
 
+  // "Universal Orlando Resort · Sun, Sep 13". The date comes off the server's
+  // park-local date rather than the viewer's clock, so it can't disagree with
+  // itself across hydration — and it simply isn't there until `crowd` lands.
+  const dateLabel = crowdQ.data?.date
+    ? new Date(`${crowdQ.data.date}T00:00:00`).toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      })
+    : null;
+  const placeLine = [park?.resortName ?? park?.operatorName ?? null, dateLabel]
+    .filter(Boolean)
+    .join(" · ");
+
+  // Exactly three facts, always (plan §4.9). "Longest" carries the ride's short
+  // name beside the number; the full name rides in the cell's tooltip.
+  const longest = stats.busiest[0] ?? null;
+  const facts: Array<TicketFact> = [
+    {
+      label: "Rides open",
+      value: loading ? "—" : `${stats.operating.length} of ${stats.rides.length}`,
+    },
+    { label: "Avg wait", value: stats.avgWait != null ? `${stats.avgWait} min` : "—" },
+    {
+      label: "Longest",
+      value:
+        longest?.standbyWait != null
+          ? `${longest.standbyWait} · ${shortRideName(longest.name)}`
+          : "—",
+      hint: longest?.name ?? undefined,
+    },
+  ];
+
   return (
     <div
-      className="flex flex-col gap-4 pb-4 pt-2 md:gap-4 lg:gap-6 md:pb-6 md:pt-4 lg:pt-6"
-      style={{ paddingBottom: "calc(var(--safe-bottom) + 1.5rem)" }}
+      style={{ "--crease": `${crease}px` } as React.CSSProperties}
+      className={cn(PAGE_WIDTH, "flex flex-col", HERO_PAGE_PADDING, ACTION_BAR_PAGE_PAD)}
     >
-      {heroUrl || flight ? (
-        /* Park hero photo at the head of the page — carries the park identity on
-           both mobile and desktop (name + subtitle overlaid), so it replaces the
-           plain text header below when an image is available. The shared
-           `DetailHero` (full-bleed on mobile, rounded card on md+) makes it the
-           landing pad for the overview badge's flight; arriving mid-flight, the
-           seed paints it before `parks.list` resolves, so the clones land on
-           the real thing. Once a flight seeded this page, keep the hero branch
-           for the page's whole life even if the park turns out photo-less —
-           `DetailHero`'s gradient fallback covers it, where dropping to the
-           plain header would yank the landing pad out from under the clones. */
-        <div className="px-4 lg:px-6">
-          <DetailHero
-            heroKey={heroKey}
-            name={parkName ?? flight?.seed.name ?? ""}
-            // One line under the title, exactly what the flight seed carries
-            // (`PARK_TAGLINE`); the "Updated x ago" span joins it once the
-            // board lands — hydration-gated anyway, so it never shifts a
-            // just-landed clone.
-            subtitle={
-              <>
-                {PARK_TAGLINE}
-                {updatedLabel}
-              </>
-            }
-            image={heroUrl ?? flight?.seed.imageUrl ?? null}
-            // Identical across the seeded and loaded renders, so the underlay
-            // <img> keeps its src (and stays decoded) across the query landing.
-            underlay={flight ? (flight.seed.previewImageUrl ?? flight.seed.cardImageUrl) : null}
-            imageAlt={park?.imageAlt ?? parkName}
-            thumbhash={park?.imageThumbhash}
-            slides={heroSlides}
-            flying={flight?.flying ?? false}
-            entrance={!!flight}
-            overlays={({ chipFx }) => (
-              /* Cast-member-only control (renders null for everyone else) —
-                 rides the top-right overlay slot the other heroes use for
-                 their state chips, joining the entrance cascade. */
-              <div
-                style={chipFx(0).style}
-                className={cn("absolute right-4", HERO_OVERLAY_TOP, chipFx(0).className)}
-              >
-                <RemovalRequestDialog
-                  entityType="park"
-                  entityId={activeSlug}
-                  entityName={park?.name}
-                />
-              </div>
-            )}
-          />
-        </div>
-      ) : (
-        <>
-          {/* The page identity already shows in the sticky bar on mobile, so this
-              in-body header would just repeat it — desktop only. */}
-          <div className="hidden flex-col gap-2 px-4 md:flex md:flex-row md:items-end md:justify-between lg:px-6">
-            <div className="flex flex-col gap-1">
-              <h2 className="text-xl font-semibold tracking-tight text-white md:text-foreground">
-                {board ? parkName : "Loading park…"}
-              </h2>
-              <p className="text-sm text-blue-100/90 md:text-muted-foreground">
-                Live wait times, ride status, and Lightning Lane availability.
-                {updatedLabel}
-              </p>
+      {/* The hero. Rendered in the same configuration whether the park's photo
+          is loaded or still seeded from a map badge, so a flight lands on a real
+          box and nothing remounts when `parks.list` resolves. */}
+      {heroUrl || flight || parksQ.isLoading ? (
+        <DetailHero
+          heroKey={heroKey}
+          name={parkName ?? flight?.seed.name ?? ""}
+          // Carried by the ticket now — the hero is `titleless`.
+          subtitle={null}
+          image={heroUrl ?? flight?.seed.imageUrl ?? null}
+          underlay={flight ? (flight.seed.previewImageUrl ?? flight.seed.cardImageUrl) : null}
+          imageAlt={park?.imageAlt ?? parkName}
+          thumbhash={park?.imageThumbhash}
+          slides={heroSlides}
+          flying={flight?.flying ?? false}
+          entrance={!!flight}
+          tear
+          creaseAligned
+          titleless
+          overlays={({ chipFx }) => (
+            <div
+              className={cn(
+                "absolute right-4 flex max-w-[65%] flex-col items-end gap-1.5 text-right md:right-5",
+                HERO_OVERLAY_TOP,
+              )}
+            >
+              {hoursToday.range && (
+                <span
+                  style={chipFx(0).style}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm",
+                    chipFx(0).className,
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "size-1.5 rounded-full",
+                      hoursToday.openNow ? "bg-emerald-400" : "bg-white/60",
+                    )}
+                  />
+                  {/* Before hydration the clock is nobody's business, so the
+                      chip states the hours and adds the verdict after. */}
+                  {hoursToday.openNow == null
+                    ? hoursToday.range
+                    : `${hoursToday.openNow ? "Open" : "Closed"} · ${hoursToday.range}`}
+                </span>
+              )}
+              {hoursToday.earlyEntry && (
+                <span
+                  style={chipFx(1).style}
+                  className={cn(
+                    "rounded-full bg-brand-yellow px-2.5 py-1 text-[11px] font-bold text-ink-on-yellow",
+                    chipFx(1).className,
+                  )}
+                >
+                  {hoursToday.earlyEntry}
+                </span>
+              )}
+              {apBlockedToday && (
+                <span
+                  style={chipFx(2).style}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full bg-red-600/90 px-2.5 py-1 text-[11px] font-bold text-white backdrop-blur-sm",
+                    chipFx(2).className,
+                  )}
+                >
+                  Annual Pass blockout
+                </span>
+              )}
             </div>
-            <RemovalRequestDialog
-              entityType="park"
-              entityId={activeSlug}
-              entityName={parks?.find((p) => p.slug === activeSlug)?.name}
-            />
-          </div>
-
-          {/* Mobile page title — the sticky search bar carries no page identity, so
-              the park name has to headline the page here. Desktop uses the header
-              above. */}
-          <div className="px-4 md:hidden">
-            {park ? (
-              <h1 className="text-2xl font-semibold tracking-tight">{parkName}</h1>
-            ) : (
-              <Skeleton className="h-8 w-48" />
-            )}
-          </div>
-        </>
+          )}
+        />
+      ) : (
+        /* No photo and no flight to seed one: hold the same crease-aligned box
+           so the ticket's notches still land on an edge. */
+        <Skeleton
+          className={cn(
+            HERO_BLEED,
+            HERO_CREASE_ALIGNED,
+            "md:h-100 md:rounded-t-3xl md:rounded-b-none",
+          )}
+        />
       )}
 
-      <div className="order-1 flex flex-col gap-4 px-4 lg:px-6">
-        {apBlockedToday && (
-          <div className="flex w-fit items-center gap-2 rounded-full bg-red-100 px-3 py-1.5 text-sm font-semibold text-red-700 dark:bg-red-900/40 dark:text-red-300">
-            <span className="inline-block size-2 rounded-full bg-red-500" />
-            Annual Pass blockout today
-          </div>
-        )}
-        <NotificationPrompt />
-        {/* The at-a-glance stat bar leads the dashboard, above the map + chart. */}
-        <ParkStatCards
-          board={board}
-          loading={boardQ.isLoading || !activeSlug}
-          operatorSlug={operatorSlug}
-          className="rounded-2xl border shadow-md"
-        />
-        {/* Operating hours for today + the days ahead, sourced from the park's
-            schedule feed (same data that gates the open/closed state). */}
-        <ParkHours parkSlug={activeSlug ?? null} />
-        {/* Which rides open during Early Entry today (plan item 1.4) — pairs
-            with the Early Entry window ParkHours already shows. Disney-only
-            data; renders nothing elsewhere. */}
-        <EarlyEntryRides board={board} parkSlug={activeSlug ?? null} timezone={timezone} />
-        {/* Deep links out to the operator's ticket store (+ the MDE app on
-            native). Only render once we know the operator, to pick the resort. */}
-        {operatorSlug && <ParkTicketsCta operatorSlug={operatorSlug} />}
+      {/* Two independent columns on desktop, one stack on a phone — the columns
+          never share grid rows, so the wash panel can't drift away from the
+          ticket. On mobile each wrapper collapses to `contents` and its children
+          become items of this one flex column, in DOM order. */}
+      {/* `minmax(0, …)` on both tracks, not a bare `3fr_2fr`: a bare fraction is
+          `minmax(auto, 3fr)`, so one wide child — the entertainment carousel's
+          track — pushes the left column past the page and squeezes the right one
+          to nothing. */}
+      <div className="flex flex-col gap-5 md:-mt-12 md:grid md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] md:items-start md:gap-6">
+        <div className="contents md:flex md:flex-col md:gap-6">
+          <Ticket
+            onCreaseHeight={setCrease}
+            // Phone: pulled up by its own top half, so the crease lands on the
+            // hero's bottom edge. Desktop: the grid's -48px overlap instead.
+            className="mt-[calc(var(--crease)*-1)] md:mt-0"
+            heroKey={heroKey}
+            titleHidden={flight?.flying ? { opacity: 0, visibility: "hidden" } : undefined}
+            title={parkName ?? flight?.seed.name ?? ""}
+            subtitle={placeLine || undefined}
+            facts={facts}
+          />
+
+          <ParkRightNow
+            parkSlug={activeSlug ?? null}
+            stats={stats}
+            crowd={crowdQ.data}
+            hours={hoursToday}
+            loading={loading}
+            boardId={BOARD_ID}
+          />
+
+          <EntertainmentRail board={board} parkSlug={activeSlug ?? null} timezone={timezone} />
+
+          {/* The week ahead sits under the curve — same subject, longer horizon
+              — and it's also what keeps the two columns near the same height on
+              a park whose left side is otherwise a ticket and one panel. */}
+          <ParkHours parkSlug={activeSlug ?? null} />
+        </div>
+
+        <div className="contents md:flex md:flex-col md:gap-6 md:pt-16">
+          {/* The exit block: out to the operator's ticket store. */}
+          {operatorSlug && <ParkTicketsCta operatorSlug={operatorSlug} />}
+
+          {/* The live map, in its mint mount. `MapSlot` is a shared-layout slot:
+              the persistent map morphs in from wherever it was last mounted. */}
+          <TintPanel
+            tone="mint"
+            title="Live map"
+            pad="tight"
+            meta={
+              <Button variant="outline" className="h-9 font-bold" render={<Link to="/map" />}>
+                <MapIcon />
+                Open
+              </Button>
+            }
+          >
+            <MapSlot className="relative isolate h-44 w-full overflow-hidden rounded-[18px] sm:h-56 md:h-[15.5rem]" />
+          </TintPanel>
+
+          {/* Which rides open during Early Entry today (plan item 1.4). Disney-
+              only data; renders nothing elsewhere. */}
+          <EarlyEntryRides board={board} parkSlug={activeSlug ?? null} timezone={timezone} />
+
+          <NotificationPrompt />
+
+          {/* Cast-member-only; renders nothing for everyone else. */}
+          <RemovalRequestDialog
+            entityType="park"
+            entityId={activeSlug}
+            entityName={park?.name}
+            className="w-fit"
+          />
+        </div>
       </div>
 
-      {/* Map and wait chart share a row at equal width, and sit above the ride
-          board at every breakpoint (order-2) — the wait chart leads the page's
-          data story, so it shouldn't sit below the board on mobile. The map cell
-          is a shared-layout slot: the live map morphs in from the overview hero. */}
-      {/* `[&>*]:min-w-0` makes the two tracks `minmax(0,1fr)` instead of
-          `minmax(auto,1fr)`: without it the chart card's intrinsic min-content
-          (chart container + the header toolbar) blows the column past 1fr
-          and overflows the content card at lg+. */}
-      <div className="order-2 grid items-stretch gap-4 px-4 lg:grid-cols-2 lg:px-6 lg:[&>*]:min-w-0">
-        {/* Card-like surface to match the chart container, but no drop shadow:
-            the 3D shelf border carries the depth, a box-shadow under it would
-            double up and read as a floating panel. */}
-        <MapSlot className="border-3d btn-3d-outline relative isolate h-[320px] overflow-hidden rounded-4xl border-t-3 bg-card lg:h-auto lg:min-h-[460px] dark:border-[color-mix(in_oklch,var(--border),white_25%)]" />
+      <section id={BOARD_ID} className="mt-8 flex flex-col gap-4 md:mt-12 md:gap-6">
+        <SectionHeading
+          title="Today at the park"
+          description={
+            updatedLabel
+              ? `Every wait we're tracking, and how the day has run. Updated ${updatedLabel}.`
+              : "Every wait we're tracking, and how the day has run."
+          }
+        />
+
         {/* The chart is a `React.lazy` boundary that DOES server-render (React
             ships the resolved subtree), but its chunk isn't loaded yet when the
             client hydrates — so the client falls back to this skeleton, the
@@ -338,16 +446,12 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
           <ChartErrorBoundary
             label="wait-chart"
             fallback={
-              <div className="flex h-[320px] w-full items-center justify-center rounded-2xl border text-sm text-muted-foreground lg:h-auto lg:min-h-[460px]">
+              <div className="flex h-[320px] w-full items-center justify-center rounded-[22px] border border-card-edge text-sm text-muted-foreground">
                 Chart unavailable
               </div>
             }
           >
-            <React.Suspense
-              fallback={
-                <Skeleton className="h-[320px] w-full rounded-2xl lg:h-auto lg:min-h-[460px]" />
-              }
-            >
+            <React.Suspense fallback={<Skeleton className="h-[320px] w-full rounded-[22px]" />}>
               <ParkWaitChart
                 parkSlug={activeSlug ?? null}
                 focusedId={selected?.id ?? null}
@@ -357,34 +461,60 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
             </React.Suspense>
           </ChartErrorBoundary>
         ) : (
-          <Skeleton className="h-[320px] w-full rounded-2xl lg:h-auto lg:min-h-[460px]" />
+          <Skeleton className="h-[320px] w-full rounded-[22px]" />
         )}
-      </div>
 
-      {/* Entertainment today — shows/parades/fireworks ordered by next start.
-          Renders nothing when the park has no timed entertainment. Sits just
-          above the ride board (both order-3; DOM order keeps it first). */}
-      <div className="order-3 px-4 lg:px-6">
-        <EntertainmentRail board={board} parkSlug={activeSlug ?? null} timezone={timezone} />
-      </div>
+        <div className="rounded-[22px] border border-card-edge bg-card p-4 md:p-5">
+          <ParkBoardTable
+            board={board}
+            loading={loading}
+            parkSlug={activeSlug ?? null}
+            selectedId={selected?.id ?? null}
+            onSelect={(item) => setSelected({ id: item.id, name: item.name })}
+            operatorSlug={operatorSlug}
+            timezone={timezone}
+            // The page already floats its own action bar over the nav island;
+            // the board's usual sort/filter FAB would land on top of it.
+            controls="inline"
+          />
+        </div>
+      </section>
 
-      <div className="order-3 px-4 lg:px-6">
-        <ParkBoardTable
-          board={board}
-          loading={boardQ.isLoading || !activeSlug}
-          parkSlug={activeSlug ?? null}
-          selectedId={selected?.id ?? null}
-          onSelect={(item) => setSelected({ id: item.id, name: item.name })}
-          operatorSlug={operatorSlug}
-          timezone={timezone}
+      <section className="mt-8 flex flex-col gap-4 md:mt-12 md:gap-6">
+        <SectionHeading
+          title="Crowd calendar"
+          description="Which days this park rewards, and which ones it punishes."
         />
-      </div>
+        <ParkCrowdCalendar crowd={crowdQ.data} />
+      </section>
+
+      {/* The deeper rollups keep their own heading, so this section adds none. */}
+      <section className="mt-8 flex flex-col gap-4 md:mt-12 md:gap-6">
+        {/* Same hazard as the chart above: a server-rendered `React.lazy`
+            boundary whose chunk isn't ready at hydration. Keep it client-only. */}
+        {hydrated ? (
+          <ChartErrorBoundary
+            label="analytics"
+            fallback={
+              <div className="flex h-[200px] w-full items-center justify-center rounded-[22px] border border-card-edge text-sm text-muted-foreground">
+                Analytics unavailable
+              </div>
+            }
+          >
+            <React.Suspense fallback={<Skeleton className="h-[640px] w-full rounded-[22px]" />}>
+              <ParkAnalytics parkSlug={activeSlug ?? null} />
+            </React.Suspense>
+          </ChartErrorBoundary>
+        ) : (
+          <Skeleton className="h-[640px] w-full rounded-[22px]" />
+        )}
+      </section>
 
       {/* Government filings that name this park (public-records plan §6.2):
           kind mix over the last year, the latest few, open permits and FAA
           determinations. Self-hides for parks with no linked records. */}
       {park && (
-        <div className="order-4 px-4 lg:px-6">
+        <div className="mt-8 md:mt-12">
           <PaperTrail
             entityKind="park"
             entityId={park.id}
@@ -395,26 +525,27 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
         </div>
       )}
 
-      <div className="order-4 px-4 lg:px-6">
-        {/* Same hazard as the chart above: a server-rendered `React.lazy`
-            boundary whose chunk isn't ready at hydration. Keep it client-only. */}
-        {hydrated ? (
-          <ChartErrorBoundary
-            label="analytics"
-            fallback={
-              <div className="flex h-[200px] w-full items-center justify-center rounded-2xl border text-sm text-muted-foreground">
-                Analytics unavailable
-              </div>
-            }
-          >
-            <React.Suspense fallback={<Skeleton className="h-[640px] w-full rounded-2xl" />}>
-              <ParkAnalytics parkSlug={activeSlug ?? null} />
-            </React.Suspense>
-          </ChartErrorBoundary>
-        ) : (
-          <Skeleton className="h-[640px] w-full rounded-2xl" />
-        )}
-      </div>
+      {/* The phone's one-line answer to "what do I do here". */}
+      <DetailActionBar>
+        <Button
+          variant="yellow"
+          size="lg"
+          className="h-12 min-w-0 flex-1 text-[15px] font-bold"
+          render={<Link to="/map" />}
+        >
+          <MapIcon />
+          Open live map
+        </Button>
+        <Button
+          variant="outline"
+          size="lg"
+          className="h-12 shrink-0 text-[15px] font-bold"
+          render={<Link to="/alerts" />}
+        >
+          <BellIcon />
+          Alerts
+        </Button>
+      </DetailActionBar>
     </div>
   );
 }

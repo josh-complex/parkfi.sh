@@ -241,10 +241,6 @@ function PrivacyPage() {
             <strong>Session cookie</strong> — keeps you signed in. Essential.
           </li>
           <li>
-            <strong>Sidebar preference cookie</strong> — remembers whether you collapsed the
-            sidebar, for 7 days.
-          </li>
-          <li>
             <strong>PostHog identifier</strong> — a first-party cookie and local-storage entry
             holding a random device ID so the analytics described above can count you once rather
             than as a new visitor on every page. It is never used for advertising and is not

@@ -8,6 +8,7 @@ import { type DateRange } from "react-day-picker";
 import { CalendarIcon, ExternalLinkIcon } from "lucide-react";
 
 import { DetailHero, HERO_PAGE_PADDING } from "#/components/detail-hero.tsx";
+import { PAGE_WIDTH } from "#/components/page-container.tsx";
 import { LocationMap } from "#/components/maps/location-map.tsx";
 import { ResortDiningShelf } from "#/components/dining/resort-dining-shelf.tsx";
 import { heroFlightKey } from "#/components/park-map/card-flight.ts";
@@ -378,7 +379,7 @@ export function ResortDetail({ slug }: { slug: string }) {
 
   if (!resort) {
     return (
-      <div className="mx-auto w-full max-w-4xl px-4 py-16 text-center lg:px-6">
+      <div className={cn(PAGE_WIDTH, "py-16 text-center")}>
         <p className="text-lg font-semibold">Resort not found</p>
         <p className="mt-1 text-sm text-muted-foreground">
           This resort may no longer be listed.{" "}
@@ -426,7 +427,7 @@ export function ResortDetail({ slug }: { slug: string }) {
     : "";
 
   return (
-    <div className={cn("mx-auto flex w-full max-w-5xl flex-col gap-6", HERO_PAGE_PADDING)}>
+    <div className={cn(PAGE_WIDTH, "flex flex-col gap-6", HERO_PAGE_PADDING)}>
       {/* Cast-member-only; renders nothing for everyone else, so it adds no gap. */}
       <RemovalRequestDialog
         entityType="resort"

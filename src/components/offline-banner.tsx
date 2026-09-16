@@ -14,8 +14,10 @@ import { cn } from "#/lib/utils.ts";
  * `networkMode: "always"` query and auto-dismissed after ~1.5s — so every other
  * tab went offline silently. It floats just above the mobile bottom-nav island
  * (clearing the same safe-area + nav-height gutter the Eats/Stays FABs use) and
- * centers over the content on desktop. Always mounted; toggles via opacity so it
- * can animate in and out.
+ * centers over the content on desktop. Always mounted; toggles via opacity +
+ * visibility so it can animate in and out while staying fully inert (and never
+ * swallowing taps meant for the filter/sort pills that sit in the same gutter)
+ * whenever the connection is up.
  */
 export function OfflineBanner() {
   const online = useIsOnline();
@@ -23,15 +25,15 @@ export function OfflineBanner() {
     <div
       aria-hidden={online}
       className={cn(
-        "pointer-events-none fixed inset-x-0 z-50 flex justify-center px-(--chrome-gutter) transition-[opacity,transform] duration-300 ease-out",
-        online ? "translate-y-2 opacity-0" : "translate-y-0 opacity-100",
+        "pointer-events-none fixed inset-x-0 z-50 flex justify-center px-(--chrome-gutter) transition-[opacity,transform,visibility] duration-300 ease-out",
+        online ? "invisible translate-y-2 opacity-0" : "visible translate-y-0 opacity-100",
       )}
       style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1rem)" }}
     >
       <div
         role="status"
         aria-live="polite"
-        className="pointer-events-auto flex items-center gap-2.5 rounded-full border border-border bg-background/95 px-4 py-2 text-sm font-medium shadow-lg backdrop-blur-sm"
+        className="flex items-center gap-2.5 rounded-full border border-border bg-background/95 px-4 py-2 text-sm font-medium shadow-lg backdrop-blur-sm"
       >
         <WifiOffIcon className="size-4 shrink-0 text-muted-foreground" />
         <span>You&rsquo;re offline</span>

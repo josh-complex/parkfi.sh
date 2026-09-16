@@ -21,7 +21,7 @@ import { cn } from "#/lib/utils.ts";
  * Mobile-only primary navigation. Reuses the core-search 3D segmented look: five
  * edge-to-edge connected segments forming one continuous bar of uniform height.
  * Bottoms align (`items-end`) so the bar reads as one piece. Hidden on desktop
- * (`md:hidden`), where the sidebar takes over. `fixed`, so it floats over the page
+ * (`md:hidden`), where the masthead's nav row takes over. `fixed`, so it floats over the page
  * (notably the fullscreen `/map`) without consuming layout.
  */
 const SEG_BASE =

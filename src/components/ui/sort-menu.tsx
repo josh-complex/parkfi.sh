@@ -1,4 +1,6 @@
-import { ArrowDownIcon, ArrowUpIcon } from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon } from "lucide-react";
+
+import type * as React from "react";
 
 import { Button } from "#/components/ui/button.tsx";
 import { cn } from "#/lib/utils.ts";
@@ -117,5 +119,37 @@ export function SortDirToggle({
     >
       {dir === "asc" ? <ArrowUpIcon /> : <ArrowDownIcon />}
     </Button>
+  );
+}
+
+/**
+ * A sortable column head: the label with the current direction's arrow, or a
+ * dimmed up/down glyph when the table is sorted by something else. Shared by
+ * every `ui/table` board so a column head behaves the same everywhere.
+ */
+export function TableSortHeader({
+  label,
+  sorted,
+  onClick,
+}: {
+  label: React.ReactNode;
+  sorted: false | "asc" | "desc";
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="-mx-1 -my-2 inline-flex items-center gap-1 rounded px-1 py-2 font-medium text-foreground transition-colors hover:text-foreground active:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+    >
+      {label}
+      {sorted === "asc" ? (
+        <ArrowUpIcon className="size-3.5" />
+      ) : sorted === "desc" ? (
+        <ArrowDownIcon className="size-3.5" />
+      ) : (
+        <ChevronsUpDownIcon className="size-3.5 opacity-40" />
+      )}
+    </button>
   );
 }

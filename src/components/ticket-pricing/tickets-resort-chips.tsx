@@ -11,7 +11,7 @@ const RESORT_CHIPS: ReadonlyArray<{ value: Resort; label: string; emoji: string 
 /**
  * Mobile-only quick resort filters — a horizontally scrolling chip row under the
  * header that narrows the ticket shelves to one resort. Mirrors
- * `DiningCuisineChips` / `StaysAreaChips` / `RideCategoryChips`: tapping a chip
+ * `DiningCuisineChips` / `StaysAreaChips`: tapping a chip
  * selects only it, tapping the active chip clears back to every resort.
  */
 export function TicketsResortChips({

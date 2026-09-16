@@ -5,7 +5,7 @@ import { Store } from "@tanstack/store";
  * separate screen. This tiny store carries the on/off toggle so the mobile
  * bottom nav's Play button (which turns it on) and the map stage (which renders
  * the game layer) can share one piece of state from anywhere in the tree —
- * including the `AppInset` pages outside `_dash` that render the bottom nav.
+ * including the `_app` shell pages outside `_dash` that render the bottom nav.
  * Client-only UI state: the server never writes it, so the module-level store
  * always serializes its `false` defaults during SSR.
  */

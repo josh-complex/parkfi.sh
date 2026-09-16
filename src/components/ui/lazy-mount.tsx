@@ -48,6 +48,7 @@ export function LazyMount({
   estimatedHeight,
   rootMargin = "800px 0px",
   className,
+  as = "div",
   fallback,
   children,
 }: {
@@ -59,11 +60,18 @@ export function LazyMount({
   estimatedHeight: number;
   rootMargin?: string;
   className?: string;
+  /**
+   * What the reserved space is made of. `"div"` (the default) suits a section
+   * of a page; `"tbody"` is for a long table whose rows mount in chunks — a
+   * `<div>` between `<tbody>`s isn't valid HTML, and the browser hoists it out
+   * of the table, taking the observer with it.
+   */
+  as?: "div" | "tbody";
   /** Skeleton shown inside the reserved space until the section mounts. */
   fallback?: React.ReactNode;
   children: React.ReactNode;
 }) {
-  const ref = React.useRef<HTMLDivElement>(null);
+  const ref = React.useRef<HTMLElement>(null);
   const [shown, setShown] = React.useState(() => isServer || !appCommitted);
 
   React.useEffect(() => {
@@ -89,8 +97,30 @@ export function LazyMount({
   }, [shown, rootMargin]);
 
   if (shown) return <>{children}</>;
+  if (as === "tbody") {
+    // One spacer row holding the reserved height. `colSpan` is deliberately
+    // larger than any table here uses — it only has to reach the last column.
+    return (
+      <tbody
+        ref={ref as React.RefObject<HTMLTableSectionElement>}
+        aria-hidden
+        className={className}
+      >
+        <tr>
+          <td colSpan={99} style={{ height: estimatedHeight, padding: 0 }}>
+            {fallback}
+          </td>
+        </tr>
+      </tbody>
+    );
+  }
   return (
-    <div ref={ref} aria-hidden style={{ minHeight: estimatedHeight }} className={className}>
+    <div
+      ref={ref as React.RefObject<HTMLDivElement>}
+      aria-hidden
+      style={{ minHeight: estimatedHeight }}
+      className={className}
+    >
       {fallback}
     </div>
   );

@@ -4,7 +4,7 @@ import { Clock } from "lucide-react";
 import { useEffect } from "react";
 
 import { BlogSidebar } from "#/components/blog/blog-sidebar.tsx";
-import { BlogTickerHeader } from "#/components/blog/blog-ticker-header.tsx";
+import { SiteHeaderDesktop } from "#/components/site-chrome/site-header-desktop.tsx";
 import { PostCard } from "#/components/blog/post-card.tsx";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
@@ -104,7 +104,7 @@ function BlogPost() {
 
   return (
     <>
-      <BlogTickerHeader />
+      <SiteHeaderDesktop ticker />
       <div className="mx-auto grid max-w-6xl grid-cols-1 gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[1fr_18rem]">
         <article className="min-w-0">
           <JsonLd
@@ -135,14 +135,16 @@ function BlogPost() {
             </h1>
             <p className="mt-3 text-lg text-muted-foreground">{post.dek}</p>
             {(() => {
-              // Byline credits the outlets that reported the story. Newer posts
-              // tag reporting outlets explicitly (often more than one); older
-              // posts have no flag, so fall back to the first/original source.
-              const reporters = post.sourceUrls.filter((s) => s.reporting);
-              const byline = (reporters.length ? reporters : post.sourceUrls.slice(0, 1)).slice(
-                0,
-                3,
-              );
+              // Byline credits the outlets that reported the story, and ONLY
+              // those tagged `reporting` explicitly (often more than one).
+              // There used to be a fallback to the first source when no flag
+              // was set, which guessed wrong on everything we broke ourselves:
+              // a menu-diff post cites the venue's own page and a background
+              // article for context, and the fallback then announced that
+              // Disney — or a rival outlet — originally reported our scoop.
+              // Attribution is the one thing not to infer, so an untagged post
+              // gets no byline; its sources still render in full below.
+              const byline = post.sourceUrls.filter((s) => s.reporting).slice(0, 3);
               if (byline.length === 0) return null;
               return (
                 <p className="mt-3 text-sm text-muted-foreground">

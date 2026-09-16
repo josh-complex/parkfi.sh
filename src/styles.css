@@ -65,6 +65,12 @@
      pull its hero up by the identical amount and provably reach the top edge on
      every device (notched or not) with no sliver gap. */
   --app-header-h: 4.75rem;
+  /* The persistent height of the desktop masthead (the stripe + live-waits
+     ticker; the nav row above them auto-hides on scroll and is deliberately not
+     counted). `SiteHeaderDesktop` overwrites this from a live measurement on
+     mount — this is the pre-paint fallback so `calc(100svh - …)` routes like the
+     overview map are never sized off an undefined variable. */
+  --site-header-height: 4.75rem;
   --safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
   --safe-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
   /* Horizontal inset for the *floating* mobile chrome — the bottom-nav island,
@@ -100,10 +106,49 @@
      Native overrides these below to the true concentric radius. */
   --drawer-corner-bl: 2.5rem;
   --drawer-corner-br: 2.5rem;
+
+  /* ── Detail-page system ("Option C · wash", docs/plans/dining-redesign) ──────
+     The palette the ticket-stub detail pages are built from: one pale blue
+     "wash" field for the page's job block, mint + peach tint panels for the
+     reference and exit blocks, and brand yellow reserved for exactly three
+     jobs — the ticket, the one primary call-to-action per page, and the "now"
+     marker in charts. Mid-tier wait pills use `--wait-warm` amber so yellow
+     keeps those three jobs to itself. Dark values live in `.dark` below. */
+  --wash: #eaf0fb;
+  --wash-edge: #c9d8f3;
+  --wash-fg: #1c468e;
+  --wash-muted: #5b78a8;
+  --wash-bar: #c9d8f3;
+  --wash-bar-strong: #6f95d9;
+  --mint: #e6f6f2;
+  --mint-edge: #bfe6db;
+  --mint-fg: #0b5c50;
+  --mint-label: #0f9f8a;
+  --peach: #fdeee0;
+  --peach-edge: #f6d3b8;
+  --peach-fg: #7a3b0c;
+  --peach-sub: #9a5a2a;
+  /* The ticket's own ink never theme-swaps — it is black on yellow in both
+     themes, because the stub itself is yellow in both. */
+  --brand-yellow: #ffb500;
+  --brand-yellow-shelf: #b87d00;
+  --ticket-shelf: #c98c00;
+  --ticket-top: #ffcf5c;
+  --ink-on-yellow: #1a1a1a;
+  --heat-1: #eef2fb;
+  --heat-2: #c9d8f3;
+  --heat-3: #8fb0e6;
+  --heat-4: #4f7fd0;
+  --heat-5: #1c468e;
+  --wait-hot: #ef4444;
+  --wait-warm: #f59e0b;
+  --wait-cool: #10b981;
+  /* Hairline edge for the flat (non-pressable) cards on detail pages. */
+  --card-edge: #e5e5e5;
 }
 
-/* Desktop (≥ `md`) has no floating island — the sidebar and the blue toolbar own
-   the chrome — so the tightened mobile inset goes back to the 1rem gutter the
+/* Desktop (≥ `md`) has no floating island — the masthead owns the chrome — so
+   the tightened mobile inset goes back to the 1rem gutter the
    map controls and overlays were designed around. Keeping this as one media
    override means call sites just write `left-(--chrome-gutter)` once. */
 @media (width >= 48rem) {
@@ -134,7 +179,7 @@
   body {
     min-height: 100vh;
   }
-  [data-slot="sidebar-wrapper"] {
+  [data-slot="app-shell"] {
     min-height: 100vh;
   }
 }
@@ -157,7 +202,7 @@ html.native {
   --drawer-corner-br: max(1rem, calc(var(--device-corner-radius-br) - 0.5rem));
 }
 html.native body,
-html.native [data-slot="sidebar-wrapper"] {
+html.native [data-slot="app-shell"] {
   min-height: 100vh;
 }
 
@@ -197,6 +242,29 @@ html.native [data-slot="sidebar-wrapper"] {
   --shadow-deboss: inset 0 2px 5px -1px oklch(0 0 0 / 0.55), inset 0 -1px 0 0 oklch(1 0 0 / 0.04);
   --scrollbar-thumb: #2c4a82;
   --scrollbar-thumb-hover: #3f6098;
+  /* Detail-page system, dark (docs/plans/dining-redesign §2.6). The ticket
+     keeps `--brand-yellow` + `--ink-on-yellow` from `:root` — it is the one
+     surface that does not theme-swap. */
+  --wash: #14284d;
+  --wash-edge: #24407a;
+  --wash-fg: #8fb3f0;
+  --wash-muted: #7a9abf;
+  --wash-bar: #24407a;
+  --wash-bar-strong: #5b8fe8;
+  --mint: #0f2f2c;
+  --mint-edge: #1e4b45;
+  --mint-fg: #7fe0cf;
+  --mint-label: #5fcdb9;
+  --peach: #2a1a12;
+  --peach-edge: #4a2e1e;
+  --peach-fg: #f5b98a;
+  --peach-sub: #d9a27a;
+  --heat-1: #152847;
+  --heat-2: #1f3f78;
+  --heat-3: #2f5cab;
+  --heat-4: #4f7fd0;
+  --heat-5: #8fb3f0;
+  --card-edge: #24407a;
 }
 
 @theme inline {
@@ -244,6 +312,32 @@ html.native [data-slot="sidebar-wrapper"] {
   /* Rubik — the app sans (also forced over font-rounded on /activity and
      /achievements via .font-rubik-all). */
   --font-rubik: "Rubik Variable", sans-serif;
+  --color-wash: var(--wash);
+  --color-wash-edge: var(--wash-edge);
+  --color-wash-fg: var(--wash-fg);
+  --color-wash-muted: var(--wash-muted);
+  --color-wash-bar: var(--wash-bar);
+  --color-wash-bar-strong: var(--wash-bar-strong);
+  --color-mint: var(--mint);
+  --color-mint-edge: var(--mint-edge);
+  --color-mint-fg: var(--mint-fg);
+  --color-mint-label: var(--mint-label);
+  --color-peach: var(--peach);
+  --color-peach-edge: var(--peach-edge);
+  --color-peach-fg: var(--peach-fg);
+  --color-peach-sub: var(--peach-sub);
+  --color-brand-yellow: var(--brand-yellow);
+  --color-ticket-top: var(--ticket-top);
+  --color-ink-on-yellow: var(--ink-on-yellow);
+  --color-heat-1: var(--heat-1);
+  --color-heat-2: var(--heat-2);
+  --color-heat-3: var(--heat-3);
+  --color-heat-4: var(--heat-4);
+  --color-heat-5: var(--heat-5);
+  --color-wait-hot: var(--wait-hot);
+  --color-wait-warm: var(--wait-warm);
+  --color-wait-cool: var(--wait-cool);
+  --color-card-edge: var(--card-edge);
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
@@ -270,7 +364,10 @@ html.native [data-slot="sidebar-wrapper"] {
     overscroll-behavior: none;
   }
   html {
-    @apply font-sans bg-sidebar;
+    /* The page ground. It used to be the sidebar's blue — the app shell floated
+       a white card on it — but the sidebar shell is gone (dining-redesign §5)
+       and pages now sit directly on the theme background. */
+    @apply font-sans bg-background;
     /* Reserve the page scrollbar's space so layout never reflows when it
        appears/disappears (the classic Win-vs-Mac jump). */
     scrollbar-gutter: stable;
@@ -329,6 +426,18 @@ html.native [data-slot="sidebar-wrapper"] {
  * utilities pulse a chip when its posted wait changes (red = went up,
  * green = went down) — applied via a React key so the node remounts on change.
  * -------------------------------------------------------------------------- */
+
+/* The hero gallery indicator's fill: the current dot's pill sweeps across the
+   slide's hold (see `HeroSlideDots`). A `scaleX` so the whole thing runs on the
+   compositor — an 8-second width animation would lay out every frame. */
+@keyframes hero-slide-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
 
 @keyframes parkfi-marquee {
   from {
@@ -495,6 +604,100 @@ html.native [data-slot="sidebar-wrapper"] {
   --btn-3d: color-mix(in oklch, var(--destructive), black 10%);
   --btn-glare: oklch(1 0 0 / 0.18);
   --btn-glare-hover: oklch(1 0 0 / 0.3);
+}
+
+/* Brand yellow — the one primary call-to-action per detail page, and the
+   ticket's own keys. Pair with `bg-brand-yellow text-ink-on-yellow`; the ink
+   never theme-swaps (see the token block). */
+@utility btn-3d-yellow {
+  --btn-3d: var(--brand-yellow-shelf);
+  --btn-glare: oklch(1 0 0 / 0.5);
+  --btn-glare-hover: oklch(1 0 0 / 0.7);
+}
+
+/* A white key sitting *on* the ticket (Call / Official site). The ticket is
+   yellow in both themes, so this keeps its light chrome in dark mode too —
+   unlike `btn-3d-outline`, which flips its shelf. */
+@utility btn-3d-ticket {
+  --btn-3d: #b3b3b3;
+  --btn-glare: oklch(1 0 0 / 0.55);
+  --btn-glare-hover: oklch(1 0 0 / 0.8);
+}
+
+/* ── Detail-page surfaces (docs/plans/dining-redesign §2.2) ────────────────── *
+ * Flat tinted fields, deliberately *without* the 3D shelf: the pressed-key
+ * chrome is reserved for things that act, so a panel that merely holds content
+ * reads as a field, not as a key. Radius is the 26px `rounded-4xl` the panels
+ * were drawn at. --------------------------------------------------------- */
+
+@utility surface-wash {
+  border-radius: calc(var(--radius) * 2.6);
+  background-color: var(--wash);
+  border: 1px solid var(--wash-edge);
+  color: var(--foreground);
+}
+
+@utility surface-mint {
+  border-radius: calc(var(--radius) * 2.6);
+  background-color: var(--mint);
+  border: 1px solid var(--mint-edge);
+  color: var(--foreground);
+}
+
+@utility surface-peach {
+  border-radius: calc(var(--radius) * 2.6);
+  background-color: var(--peach);
+  border: 1px solid var(--peach-edge);
+  color: var(--foreground);
+}
+
+/**
+ * The full-bleed dark field behind the Waits band: the masthead's own metallic
+ * gradient, run tall. The darkening pass on top is what lets a 10px stripe
+ * survive as a 500px field — at full strength the centre stop is bright enough
+ * to fight the ride photographs it's meant to be backing. Drop that first layer
+ * to get the masthead's literal brightness back.
+ *
+ * Dark theme lifts the whole ramp instead of darkening it: against a #0c1a35
+ * page the original stops are *darker* than their surroundings, and the band
+ * reads as a hole rather than a feature.
+ */
+@utility band-masthead {
+  background-image:
+    linear-gradient(to bottom, rgb(0 0 0 / 0.2), rgb(0 0 0 / 0.45)),
+    linear-gradient(90deg, #08152e 0%, #14346b 22%, #3f74cf 50%, #14346b 78%, #08152e 100%);
+  &:is(.dark *) {
+    background-image:
+      linear-gradient(to bottom, rgb(0 0 0 / 0.04), rgb(0 0 0 / 0.26)),
+      linear-gradient(90deg, #0d2550 0%, #1b4488 22%, #4a82dd 50%, #1b4488 78%, #0d2550 100%);
+  }
+}
+
+/**
+ * The 3D key preset for a card sitting on the band. `btn-3d-outline` mixes its
+ * ledge from `--border`, which is a light grey in the light theme — on navy
+ * that lands a pale plank under every poster and a pale rim around it, which is
+ * the one thing a full-bleed dark band cannot afford. Here the shelf is a
+ * shadow instead: the poster still sits on something, but the something is
+ * darker than the field rather than brighter.
+ */
+@utility btn-3d-band {
+  --btn-3d: oklch(0 0 0 / 0.45);
+  --btn-glare: oklch(1 0 0 / 0.14);
+  --btn-glare-hover: oklch(1 0 0 / 0.24);
+}
+
+/**
+ * The mint/peach pair as they read on that band. The band is dark in *both*
+ * themes, so the tint tokens are pinned to their dark-theme values here rather
+ * than left to follow the page — the light-theme mint (#0b5c50) is invisible on
+ * navy. Everything inside keeps using `text-mint-fg` and friends.
+ */
+@utility band-tints {
+  --mint-fg: #7fe0cf;
+  --mint-label: #5fcdb9;
+  --peach-fg: #f5b98a;
+  --peach-sub: #d9a27a;
 }
 
 /* For elements on dark/inverted surfaces (e.g. the sidebar). */

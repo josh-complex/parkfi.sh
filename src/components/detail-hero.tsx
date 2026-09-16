@@ -2,7 +2,14 @@
 
 import type { CSSProperties, ReactNode } from "react";
 
-import { AmbientHeroVideo, HeroCrossfade } from "#/components/hero-media.tsx";
+import { HeroTear } from "#/components/detail/hero-tear.tsx";
+import {
+  AmbientHeroVideo,
+  HeroCrossfade,
+  HeroSlideDots,
+  useHeroSlides,
+  useHeroSwipe,
+} from "#/components/hero-media.tsx";
 import { Image } from "#/components/ui/image.tsx";
 import { disneyResizeUrl, HERO_IMAGE } from "#/lib/image.ts";
 import { cn } from "#/lib/utils.ts";
@@ -40,6 +47,18 @@ export const HERO_BLEED = [
  * gap back.
  */
 export const HERO_PAGE_PADDING = "px-4 pb-4 pt-2 md:pt-4 lg:px-6 lg:pb-6 lg:pt-6";
+
+/**
+ * The phone height of a `creaseAligned` hero (see `DetailHero`): the designed
+ * photo height plus however much of the ticket's top half hangs over it.
+ * Exported so a page's loading skeleton can reserve the very same box — a
+ * skeleton at the plain `HERO_BLEED` height leaves the ticket's crease floating
+ * off the photo's edge until the query lands.
+ */
+export const HERO_CREASE_ALIGNED = [
+  "h-[calc(16rem_+_var(--safe-top)_+_var(--app-header-h)_+_0.5rem_+_var(--crease,6.5rem)_-_2.75rem)]",
+  "sm:h-[calc(20rem_+_var(--safe-top)_+_var(--app-header-h)_+_0.5rem_+_var(--crease,6.5rem)_-_2.75rem)]",
+].join(" ");
 
 /** Top-pinned hero overlays, dropped clear of the floating search pill. */
 export const HERO_OVERLAY_TOP = "top-[calc(var(--safe-top)_+_var(--app-header-h))] md:top-4";
@@ -95,6 +114,9 @@ export function DetailHero({
   flying,
   entrance,
   overlays,
+  tear,
+  creaseAligned,
+  titleless,
 }: {
   heroKey: string;
   name: string;
@@ -115,12 +137,72 @@ export function DetailHero({
   /** The page's overlay chips (wait block, status, hours…), positioned by the
    *  page itself (`HERO_OVERLAY_TOP` etc.) and choreographed via the fx arg. */
   overlays?: (fx: HeroOverlayFx) => ReactNode;
+  /**
+   * Ticket-stub pages (docs/plans/dining-redesign): bite a scalloped tear out
+   * of the hero's bottom edge for the ticket to overlap, and square off the
+   * desktop card's bottom corners so the tear runs edge to edge.
+   */
+  tear?: boolean;
+  /**
+   * Phone layout for a ticket page: no scalloped cut of its own — the hero's
+   * bottom edge *is* the ticket's crease, so the stub's own die-cut notches and
+   * perforation are the only tear line on screen. The page publishes the
+   * ticket's measured top-half height as `--crease` (see `Ticket`), and the
+   * hero grows by however much that exceeds the old 44px overlap, so the
+   * visible photo above the crease keeps the height it was designed at.
+   * Desktop is unaffected and keeps the scallop.
+   */
+  creaseAligned?: boolean;
+  /**
+   * Suppress the overlaid name + subtitle — the ticket carries them. The map
+   * flight then lands on the ticket's title instead (`card-flight.ts` looks
+   * outside the hero for a `data-hero-title` tagged with this flight's key).
+   */
+  titleless?: boolean;
 }) {
   // Transparent, not unmounted: the flight measures these boxes to land on.
   // `visibility` as well as opacity, because Chrome paints an element's
   // backdrop-filter even at opacity 0 — a wait chip that's merely transparent
   // still blits its blur rectangle at the landing spot mid-flight.
   const hidden = flying ? ({ opacity: 0, visibility: "hidden" } as CSSProperties) : undefined;
+  // The gallery's rotation, owned here so the indicator row below can read it —
+  // and so tapping a dot drives the same crossfade. A hero running its ambient
+  // loop has no stills to rotate.
+  const gallery = useHeroSlides(video ? 0 : (slides?.length ?? 0));
+  // A gallery to move through, and the layout to show it in: the ticket pages'
+  // `titleless` hero, whose bottom edge is free for the indicator row. (A hero
+  // carrying its own title has that seat taken; ride and park pages get both
+  // when they get their tickets.)
+  const gallerable = !video && gallery.total > 1;
+  // Swipe it. Off while a map-card flight is still in the air — the photo layer
+  // is hidden and mid-flight, so there is nothing to drag.
+  const swipe = useHeroSwipe({
+    total: gallery.total,
+    active: gallery.active,
+    select: gallery.select,
+    hold: gallery.hold,
+    enabled: gallerable && !flying,
+  });
+  /**
+   * The indicator row, wherever this hero has room for it: centred on the free
+   * bottom edge of a ticket hero, or stacked above the title on a hero that
+   * draws its own (where the title block is bottom-anchored, so the dots grow
+   * the block upward and leave the `data-hero-title` landing pad exactly where
+   * a flight measured it).
+   */
+  const dots = (className: string) =>
+    gallerable ? (
+      <HeroSlideDots
+        total={gallery.total}
+        active={gallery.active}
+        onSelect={gallery.select}
+        rotating={gallery.rotating}
+        paused={!!swipe.drag}
+        style={hidden}
+        className={className}
+      />
+    ) : null;
+
   const chipFx = (i: number): { className?: string; style?: CSSProperties } => {
     if (!entrance) return {};
     if (flying) return { style: { opacity: 0, visibility: "hidden" } };
@@ -132,9 +214,18 @@ export function DetailHero({
   return (
     <div
       data-hero={heroKey}
+      {...(gallerable ? swipe.handlers : null)}
       className={cn(
         "relative isolate overflow-hidden md:shadow-sm",
+        // Vertical stays the page's; horizontal is the gallery's (see
+        // `useHeroSwipe`). Without this the browser would claim the gesture
+        // as an overscroll and the preview would never see it.
+        gallerable && "touch-pan-y",
         HERO_BLEED,
+        // A torn hero is taller on desktop, keeps only its top corners, and
+        // drops the card shadow — the ticket below it carries the lift.
+        tear && "md:h-100 md:rounded-t-3xl md:rounded-b-none md:shadow-none",
+        creaseAligned && HERO_CREASE_ALIGNED,
         image || video ? "bg-muted" : "bg-gradient-to-br from-slate-600 via-slate-800 to-slate-900",
       )}
     >
@@ -182,7 +273,12 @@ export function DetailHero({
         {video ? (
           <AmbientHeroVideo src={video.url} poster={video.poster ?? null} />
         ) : (
-          <HeroCrossfade slides={slides ?? []} />
+          <HeroCrossfade
+            slides={slides ?? []}
+            active={gallery.active}
+            drag={swipe.drag}
+            fast={gallery.manual}
+          />
         )}
       </div>
       {/* Scrim: heavy at the bottom for the title, light at the top so the
@@ -194,21 +290,50 @@ export function DetailHero({
         className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/40"
       />
 
+      {/* Gallery indicators, centred on the ticket hero's free bottom edge,
+          just clear of the stub that overlaps it. A hero that draws its own
+          title puts them above it instead (see `dots`). */}
+      {titleless &&
+        dots(
+          cn(
+            "absolute left-1/2 z-10 -translate-x-1/2",
+            // Phone: above the ticket's top edge, which hangs `--crease` above
+            // the hero's own bottom. Desktop: above the ticket's -48px overlap
+            // of the scalloped tear.
+            creaseAligned
+              ? "bottom-[calc(var(--crease,6.5rem)_+_0.5rem)] md:bottom-16"
+              : "bottom-4 md:bottom-16",
+          ),
+        )}
+
       {overlays?.({ chipFx, hidden })}
 
-      <div className="absolute inset-x-0 bottom-0 flex flex-col gap-1 p-4 sm:p-6">
-        <h1
-          data-hero-title
-          style={hidden}
-          className="truncate text-2xl font-bold tracking-tight text-white drop-shadow-md sm:whitespace-normal sm:text-3xl"
-        >
-          {name}
-        </h1>
-        {/* Always one line, even before the identity query lands: the title's
-            box is a landing target, and a subtitle that appeared later would
-            shift it up out from under the clone that just landed on it. */}
-        <p className="truncate text-sm text-white/85 sm:whitespace-normal">{subtitle || " "}</p>
-      </div>
+      {!titleless && (
+        <div className="absolute inset-x-0 bottom-0 flex flex-col gap-1 p-4 sm:p-6">
+          {dots("mb-1 self-start")}
+          <h1
+            data-hero-title
+            style={hidden}
+            className="truncate text-2xl font-bold tracking-tight text-white drop-shadow-md sm:whitespace-normal sm:text-3xl"
+          >
+            {name}
+          </h1>
+          {/* Always one line, even before the identity query lands: the title's
+              box is a landing target, and a subtitle that appeared later would
+              shift it up out from under the clone that just landed on it. */}
+          <p className="truncate text-sm text-white/85 sm:whitespace-normal">{subtitle || " "}</p>
+        </div>
+      )}
+
+      {/* Last, so the scallops bite through the scrim as well as the photo. Two
+          instances rather than one responsive path: the bumps are drawn at a
+          real radius per breakpoint (13/30 phone, 14/34 desktop), not scaled. */}
+      {tear && (
+        <>
+          {!creaseAligned && <HeroTear radius={13} step={30} className="md:hidden" />}
+          <HeroTear radius={14} step={34} className="hidden md:block" />
+        </>
+      )}
     </div>
   );
 }

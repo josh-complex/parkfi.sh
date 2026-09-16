@@ -9,6 +9,7 @@ import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { ChipRail, RailChip } from "#/components/ui/rail.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { useQuery } from "@tanstack/react-query";
+import { decodeEntities } from "#/lib/text.ts";
 import { cn } from "#/lib/utils.ts";
 
 // ── Type taxonomy ──────────────────────────────────────────────────────────────
@@ -178,7 +179,7 @@ function buildTypeSections(rawGroups: RawGroup[]): TypeSection[] {
 
 // ── Formatting ─────────────────────────────────────────────────────────────────
 
-function formatPrice(price: number | null, currency: string | null): string | null {
+export function formatPrice(price: number | null, currency: string | null): string | null {
   if (price === null) return null;
   try {
     return new Intl.NumberFormat("en-US", {
@@ -292,10 +293,10 @@ function MenuItem({
               params={{ facilityId, slug }}
               className="text-sm font-medium leading-snug hover:underline"
             >
-              {item.title}
+              {decodeEntities(item.title)}
             </Link>
           ) : (
-            <p className="text-sm font-medium leading-snug">{item.title}</p>
+            <p className="text-sm font-medium leading-snug">{decodeEntities(item.title)}</p>
           )}
           {isNew && (
             <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold leading-none text-emerald-700 dark:text-emerald-400">
@@ -311,7 +312,7 @@ function MenuItem({
         </div>
         {item.description && (
           <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-            {item.description}
+            {decodeEntities(item.description)}
           </p>
         )}
       </div>

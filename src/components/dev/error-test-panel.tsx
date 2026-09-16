@@ -393,7 +393,7 @@ export function ErrorTestPanel() {
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Error test tools"
-        // `--bottom-nav-height` is set inline on AppInset's SidebarInset, but this
+        // `--bottom-nav-height` is set inline on the `_app` shell root, but this
         // panel mounts in the router Wrap outside that subtree — without a fallback
         // the calc() is invalid and the button lands off-screen on mobile.
         className="pointer-events-auto fixed left-(--chrome-gutter) bottom-[calc(var(--bottom-nav-height,4.5rem)+var(--safe-bottom)+1.4rem)] z-80 inline-flex size-9 items-center justify-center rounded-full bg-black/60 text-white shadow-lg ring-1 ring-white/20 transition active:scale-95 md:bottom-4"

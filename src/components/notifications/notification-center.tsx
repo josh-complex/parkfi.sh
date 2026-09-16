@@ -91,21 +91,26 @@ export function NotificationCenter() {
   const parks = listQ.data?.parks ?? [];
   const total = parks.reduce((n, p) => n + p.alerts.length, 0);
 
+  // Nothing to ring for a signed-out reader — alerts are per-account, and the
+  // empty bell was just one more control in the header's actions cluster.
+  if (!loggedIn) return null;
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         render={
           <Button
-            variant="ghost"
+            variant="outline"
             size="icon"
-            className="relative h-7 w-7"
+            // Matches the search key beside it (see ThemeToggle).
+            className="relative size-11 rounded-[18px] text-muted-foreground"
             aria-label={total > 0 ? `Alerts (${total} active)` : "Alerts"}
           />
         }
       >
-        <Bell className="h-4 w-4" />
-        {loggedIn && total > 0 ? (
-          <span className="bg-primary text-primary-foreground absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums">
+        <Bell className="size-5" />
+        {total > 0 ? (
+          <span className="bg-primary text-primary-foreground absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums">
             {total > 9 ? "9+" : total}
           </span>
         ) : null}

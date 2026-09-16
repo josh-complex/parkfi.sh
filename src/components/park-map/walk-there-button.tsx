@@ -14,6 +14,9 @@ import { preferredRouteLanguage, preferredUnitSystem, valhallaUnits } from "#/li
 import { coarseCoord, roundCoord } from "./nav-geometry.ts";
 import { NAV_ACCURACY_MAX_M, requestNavDirections } from "./nav-store.ts";
 
+/** Longest walk still worth printing on the key, in minutes. */
+const WALK_ESTIMATE_MAX_MIN = 90;
+
 /**
  * App-level walking-nav entry point (§4.2): a "Walk there · 6 min" CTA for any
  * page that knows a destination's coordinates (ride, shop, dining). Tapping it
@@ -31,6 +34,7 @@ export function WalkThereButton({
   name,
   latitude,
   longitude,
+  variant = "outline",
   className,
 }: {
   /** Attraction id when the destination is one (keeps the live destination-wait
@@ -39,6 +43,9 @@ export function WalkThereButton({
   name: string;
   latitude: number | null | undefined;
   longitude: number | null | undefined;
+  /** `yellow` on the ticket-stub detail pages, where this is the panel's one
+   *  call to action; the map and the older pages keep the outline key. */
+  variant?: "outline" | "yellow";
   className?: string;
 }) {
   const navigate = useNavigate();
@@ -67,14 +74,18 @@ export function WalkThereButton({
     meta: { errorToast: false },
   });
   if (coords == null) return null;
-  const mins =
+  const estimate =
     estimateQ.data && estimateQ.data.durationSeconds > 0
       ? Math.max(1, Math.round(estimateQ.data.durationSeconds / 60))
       : null;
+  // Off-property (a guest browsing from home) the router happily returns a
+  // five-hour walk; "Walk there · 336 min" is noise, not an estimate, so past
+  // the cap the key just offers the route and lets the map do the talking.
+  const mins = estimate != null && estimate <= WALK_ESTIMATE_MAX_MIN ? estimate : null;
   return (
     <Button
       size="sm"
-      variant="outline"
+      variant={variant}
       className={className}
       onClick={() => {
         // Same origin rule as the map's Directions tap: only a decent fix is

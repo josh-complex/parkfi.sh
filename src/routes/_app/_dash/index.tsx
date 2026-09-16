@@ -1,6 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
 import { CrossParkWaits } from "#/components/rides/cross-park-waits.tsx";
+import { validateWaitsSearch } from "#/components/rides/waits-search.ts";
 import { hasLaunched } from "#/lib/app-launch.ts";
 import { load } from "#/lib/loader.ts";
 import { isNative } from "#/lib/platform.ts";
@@ -11,6 +12,12 @@ const MOBILE_BREAKPOINT = 768;
 
 export const Route = createFileRoute("/_app/_dash/")({
   component: Waits,
+  // The board's filter, sort and view live in the URL (docs/plans/waits-redesign
+  // §4) so a filtered board can be shared and survives a reload — this is the
+  // app's most-linked surface. Every key is optional and absent at its default,
+  // so the plain board is exactly `/`; the `head` below keeps pointing every
+  // filtered variant's canonical back at it.
+  validateSearch: validateWaitsSearch,
   // On the app's initial launch only, mobile + native users land on the map (the
   // home surface there) instead of the Waits list. Gated to launch via
   // `hasLaunched()` so a later tap of the Waits tab — which also routes to "/" —

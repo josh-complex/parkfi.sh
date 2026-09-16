@@ -20,6 +20,7 @@ export const RECORD_KINDS = [
   "incident",
   "license",
   "tls_cert",
+  "web_page",
 ] as const;
 
 export type PublicRecordKind = (typeof RECORD_KINDS)[number];

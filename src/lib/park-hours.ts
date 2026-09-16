@@ -51,3 +51,9 @@ export function todayInTz(timeZone: string): string {
     day: "2-digit",
   }).format(new Date());
 }
+
+/** "9:00 AM" → "9 AM". On-the-hour times read better without the zeroes in a
+ *  chip or an axis tick that already carries a dash and a second time. */
+export function clockTight(iso: string, timeZone: string): string {
+  return formatHour(iso, timeZone).replace(":00", "");
+}

@@ -29,6 +29,7 @@
     "cron:weather": "bun services/cron-weather/main.ts",
     "cron:calendar": "bun services/cron-calendar/main.ts",
     "cron:eval": "bun services/cron-eval/main.ts",
+    "cron:profiles": "bun services/cron-profiles/main.ts",
     "dining:facilities": "bun services/dining-facilities/main.ts",
     "dining:availability": "bun services/dining-availability/main.ts",
     "dining:facilities:universal": "bun services/dining-facilities-universal/main.ts",

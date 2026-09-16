@@ -116,6 +116,12 @@ export interface Adapter {
   cadence: "daily" | "weekly";
   /** Env vars that must be set for this adapter to run; the cron skips it otherwise. */
   requiredEnv?: string[];
+  /**
+   * True for sources that fetch nothing on a normal day — an inventory diff
+   * finds new rows only when the operator publishes one. Suppresses the cron's
+   * "zero rows, check the portal" warning, which would otherwise fire daily.
+   */
+  quietWhenEmpty?: boolean;
   /** Pull everything new/changed since `cursor`. Must be idempotent. */
   fetchSince(cursor: Record<string, unknown> | null, ctx: AdapterContext): Promise<FetchResult>;
   /** Pure: source body → ledger input. Throw on schema drift; null = not ours. */

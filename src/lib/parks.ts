@@ -26,7 +26,7 @@ export const UOR_PARKS: Array<ParkListEntry> = [
   // but stays slug-less here so it's excluded from the ticket-pricing surfaces
   // that iterate this list — Volcano Bay pricing (TapuTapu, no Express) is a
   // separate design. Give it a slug here once that pricing is wired.
-  { code: "UVB", label: "Volcano Bay", slug: null },
+  { code: "UVB", label: "Volcano Bay", slug: null, water: true },
 ];
 
 export type Resort = "WDW" | "UOR";
@@ -44,6 +44,17 @@ export const ALL_PARKS: Array<ParkEntry> = [
   ...WDW_PARKS.map((p) => ({ ...p, resort: "WDW" as const })),
   ...UOR_PARKS.map((p) => ({ ...p, resort: "UOR" as const })),
 ];
+
+/**
+ * Park slugs whose attractions are water-park attractions, across both resorts.
+ * Keyed by slug because the live surfaces (waits, picks, map) only ever hold a
+ * park's slug; `ALL_PARKS` is keyed by code and leaves Volcano Bay slug-less for
+ * the ticket-pricing surfaces, so that one is named here.
+ */
+export const WATER_PARK_SLUGS: ReadonlySet<string> = new Set([
+  ...ALL_PARKS.flatMap((p) => (p.water && p.slug ? [p.slug] : [])),
+  "volcano-bay",
+]);
 
 /** Default park slug to use for resort-level crowd/weather when no park is selected. */
 export const RESORT_DEFAULT_SLUG: Record<string, string> = {

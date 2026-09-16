@@ -14,6 +14,13 @@ const buttonVariants = cva(
           "bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground btn-3d-outline dark:border-[color-mix(in_oklch,var(--border),white_25%)] dark:bg-transparent dark:hover:bg-input/30",
         outlineCal:
           "rounded-lg bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground btn-3d-outline dark:border-[color-mix(in_oklch,var(--border),white_25%)] dark:bg-transparent dark:hover:bg-input/30",
+        // The one primary call-to-action per detail page (and the ticket's own
+        // keys, via `ticket`). Brand yellow with ink that never theme-swaps —
+        // see the `--brand-yellow` block in styles.css.
+        yellow: "bg-brand-yellow text-ink-on-yellow hover:bg-brand-yellow/90 btn-3d-yellow",
+        // A white key sitting on the yellow ticket; keeps its light chrome in
+        // dark mode, because the ticket underneath is yellow in both themes.
+        ticket: "bg-white text-ink-on-yellow hover:bg-white/85 btn-3d-ticket",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground btn-3d-secondary",
         ghost:

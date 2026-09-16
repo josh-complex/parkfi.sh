@@ -28,6 +28,22 @@ export interface MapLayers {
 }
 
 export interface RideFilter {
+  /**
+   * Selected park slugs; empty set = every park. Written by both faces of the
+   * same control — the Waits band's park strip and the filter rail's Parks
+   * checkboxes (docs/plans/waits-redesign §2.2) — so pressing a card in the
+   * strip and ticking its box in the rail are literally the same state change.
+   *
+   * The map ignores it: that surface is already scoped to one park, so a park
+   * filter there is either a no-op or a way to blank the map.
+   */
+  parks: Set<string>;
+  /**
+   * Free-text name search, trimmed but not lower-cased (the test does that).
+   * Empty string = no search. The map never sets it, so the test is inert
+   * there — the header's omnisearch is that surface's find-a-ride.
+   */
+  query: string;
   /** Selected categories; empty set = all categories. */
   categories: Set<string>;
   /** Only rides currently OPERATING. */
@@ -54,6 +70,8 @@ export interface RideFilter {
 }
 
 export const EMPTY_RIDE_FILTER: RideFilter = {
+  parks: new Set(),
+  query: "",
   categories: new Set(),
   openOnly: false,
   maxWait: null,
@@ -72,16 +90,38 @@ export const EMPTY_RIDE_FILTER: RideFilter = {
   },
 };
 
-/** Selectable categories (matches the marker icon set in park-map/shared.tsx). */
+/** Selectable categories (matches the marker icon set in park-map/shared.tsx).
+ *  `house` is the one key that isn't a stored `category` — see `rideTypeKey`. */
 export const RIDE_CATEGORIES: ReadonlyArray<{ key: string; label: string; emoji: string }> = [
   { key: "thrill", label: "Thrill", emoji: "🎢" },
   { key: "attraction", label: "Rides", emoji: "🎡" },
   { key: "water", label: "Water", emoji: "💦" },
+  { key: "house", label: "Houses", emoji: "🏚️" },
   { key: "show", label: "Shows", emoji: "🎭" },
   { key: "character", label: "Characters", emoji: "🐭" },
   { key: "dine", label: "Dining", emoji: "🍽️" },
   { key: "shop", label: "Shops", emoji: "🛍️" },
 ];
+
+/**
+ * The type a row *reads* as, which is its stored `category` except for a
+ * Halloween Horror Nights house. Universal files its event mazes as ordinary
+ * `attraction` rows and separates them only with a tag (`HAUNTED_HOUSE_TAG`),
+ * so a board with the event standing showed ten rows all typed "Rides" — the
+ * one fact a guest holding an event ticket already knew. A house is its own
+ * type here and nowhere else: nothing is written back, the ingest keeps its
+ * vocabulary, and a row whose surface doesn't carry the tag (the map's
+ * `BoardItem`) just falls through to its category.
+ *
+ * It is also why picking "Rides" no longer returns houses — they aren't rides,
+ * they run on event nights only, and every park average already excludes them.
+ */
+export function rideTypeKey(r: {
+  category: string | null;
+  hauntedHouse?: boolean | null;
+}): string | null {
+  return r.hauntedHouse === true ? "house" : r.category;
+}
 
 /** The standby thresholds offered by the "max wait" control. */
 export const MAX_WAIT_OPTIONS: ReadonlyArray<number> = [15, 30, 45, 60];
@@ -104,6 +144,8 @@ export function anyMapLayerActive(layers: MapLayers): boolean {
 
 export function rideFilterActive(f: RideFilter): boolean {
   return (
+    f.parks.size > 0 ||
+    f.query.trim().length > 0 ||
     f.categories.size > 0 ||
     f.openOnly ||
     f.maxWait != null ||
@@ -124,21 +166,36 @@ export function rideFilterActive(f: RideFilter): boolean {
  *  every group must hide all ride markers rather than reveal them again. */
 export function rideMatchesFilter(
   r: {
+    /** Absent on rows that have no name to search — the test is skipped. */
+    name?: string;
     category: string | null;
     status: string | null;
     standbyWait: number | null;
     heightRequirement: string | null;
+    /** Absent on the map's `BoardItem` — see `RideFilter.parks`. */
+    parkSlug?: string | null;
     minHeightIn?: number | null;
     expressPass?: boolean | null;
     singleRider?: boolean | null;
     childSwap?: boolean | null;
+    /** Absent on the map's `BoardItem`, which doesn't carry the tag — such a
+     *  row simply types as its category (see `rideTypeKey`). */
+    hauntedHouse?: boolean | null;
   },
   f: RideFilter,
   opts?: { emptyCategoriesMatchNone?: boolean },
 ): boolean {
+  // A row with no park slug (the map's items) can't be park-filtered; an empty
+  // set means "every park" on both surfaces.
+  if (f.parks.size > 0 && r.parkSlug != null && !f.parks.has(r.parkSlug)) return false;
+  const q = f.query.trim().toLowerCase();
+  if (q.length > 0 && r.name != null && !r.name.toLowerCase().includes(q)) return false;
   if (f.categories.size === 0) {
     if (opts?.emptyCategoriesMatchNone) return false;
-  } else if (r.category == null || !f.categories.has(r.category)) return false;
+  } else {
+    const type = rideTypeKey(r);
+    if (type == null || !f.categories.has(type)) return false;
+  }
   if (f.openOnly && r.status !== "OPERATING") return false;
   if (f.maxWait != null && (r.standbyWait == null || r.standbyWait > f.maxWait)) return false;
   // `minHeightIn` is the answer whenever we have it — including the explicit 0

@@ -9,17 +9,42 @@ const REVEAL_AT = 150;
 // so a real swipe still crosses it almost immediately.
 const BUFFER = 24;
 
+export interface HideOnScrollOptions {
+  /**
+   * The band at the top of the page where the bar is always shown, in px. Also
+   * the default depth past which scroll-up stops bringing it back.
+   */
+  revealAt?: number;
+  /**
+   * How deep into the page scroll-up keeps reopening the bar.
+   *
+   * The Disney-style "always reopen on scroll-up" is the wrong default for a
+   * long board: once you've committed to the page you're scrolling both ways
+   * inside it, and a masthead that reappears on every upward nudge eats the
+   * rows you were reading. So past this depth the bar stays away once it has
+   * hidden, and comes back when you return to the top band — which is also
+   * where you'd be heading if you actually wanted it.
+   *
+   * Defaults to `revealAt` (reopen only inside the top band). Pass a larger
+   * number to keep the classic behaviour that much deeper into the page, or
+   * `Infinity` for reveal-on-scroll-up everywhere.
+   */
+  reopenAbove?: number;
+}
+
 /**
  * Tracks vertical scroll *direction* to drive an auto-hiding top bar: hidden
- * while scrolling down, revealed as soon as you scroll up — the pattern the Walt
- * Disney Company site uses. A directional buffer keeps tiny jitters from
- * toggling it. Disabled under reduced-motion. Returns false on the server/first
- * paint so the bar always renders open initially.
+ * while scrolling down, and revealed on scroll-up for as long as you're above
+ * `reopenAbove` (see that option — the default is a deliberate departure from
+ * reveal-everywhere). A directional buffer keeps tiny jitters from toggling it.
+ * Disabled under reduced-motion. Returns false on the server/first paint so the
+ * bar always renders open initially.
  *
  * Tracks the document scroll (motion's default), which is what actually scrolls
  * on mobile — the app shell is `min-h-svh` with no inner scroll container.
  */
-export function useHideOnScrollDown(): boolean {
+export function useHideOnScrollDown(options: HideOnScrollOptions = {}): boolean {
+  const { revealAt = REVEAL_AT, reopenAbove = revealAt } = options;
   const { scrollY } = useScroll();
   const reduce = useReducedMotion();
   const [hidden, setHidden] = useState(false);
@@ -49,14 +74,14 @@ export function useHideOnScrollDown(): boolean {
       anchor.current = previous;
     }
 
-    if (current <= REVEAL_AT) {
+    if (current <= revealAt) {
       setHidden(false);
       return;
     }
 
     const travelled = current - anchor.current; // positive down, negative up
     if (goingDown && travelled > BUFFER) setHidden(true);
-    else if (!goingDown && -travelled > BUFFER) setHidden(false);
+    else if (!goingDown && -travelled > BUFFER && current <= reopenAbove) setHidden(false);
   });
 
   return hidden;

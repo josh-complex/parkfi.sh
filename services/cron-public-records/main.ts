@@ -55,7 +55,7 @@ const SERVICE = "cron-public-records";
 const ENABLED = new Set(
   (
     process.env.RECORDS_SOURCES ??
-    "orlando_soda,uspto_tm,uspto_patent,faa_oeaaa,sfwmd_erp,fdacs_incident"
+    "orlando_soda,uspto_tm,uspto_patent,faa_oeaaa,sfwmd_erp,fdacs_incident,uor_web,dbpr_food,ocfl_fasttrack"
   )
     .split(",")
     .map((s) => s.trim())
@@ -84,7 +84,12 @@ const SINCE = [...args].find((a) => a.startsWith("--since="))?.slice("--since=".
 
 const log = (message: string) => console.log(`[${SERVICE}] ${message}`);
 
-async function runStep(label: string, fn: () => Promise<IngestStats | null>): Promise<void> {
+async function runStep(
+  label: string,
+  fn: () => Promise<IngestStats | null>,
+  /** Sources that legitimately fetch nothing most days (a diff of a stable inventory). */
+  quietWhenEmpty = false,
+): Promise<void> {
   const started = Date.now();
   try {
     const stats = await fn();
@@ -92,7 +97,7 @@ async function runStep(label: string, fn: () => Promise<IngestStats | null>): Pr
     log(
       `${label}: fetched=${stats.fetched} kept=${stats.kept} inserted=${stats.inserted} changed=${stats.changed} unchanged=${stats.unchanged} skipped=${stats.skipped} errors=${stats.errors} scoreP50=${stats.scoreP50 ?? "-"} scoreMax=${stats.scoreMax ?? "-"} in ${Math.round((Date.now() - started) / 1000)}s`,
     );
-    if (stats.fetched === 0)
+    if (stats.fetched === 0 && !quietWhenEmpty)
       log(`${label}: zero rows — check the portal if this persists for 3 runs`);
   } catch (err) {
     // A blocked/changed portal must not fail the whole run — log, report, move on.
@@ -186,23 +191,27 @@ async function main() {
       log(`${adapter.source}: skipped — ${missing.join(", ")} not set`);
       continue;
     }
-    await runStep(adapter.source, async () => {
-      if (DRY_RUN) return dryRun(adapter);
-      if (adapter.cadence === "weekly") {
-        const ran = await lastRanAt(adapter.source);
-        if (ran && Date.now() - ran.getTime() < WEEKLY_MIN_GAP_MS) {
-          log(`${adapter.source}: weekly, ran ${ran.toISOString()} — not due`);
-          return null;
+    await runStep(
+      adapter.source,
+      async () => {
+        if (DRY_RUN) return dryRun(adapter);
+        if (adapter.cadence === "weekly") {
+          const ran = await lastRanAt(adapter.source);
+          if (ran && Date.now() - ran.getTime() < WEEKLY_MIN_GAP_MS) {
+            log(`${adapter.source}: weekly, ran ${ran.toISOString()} — not due`);
+            return null;
+          }
         }
-      }
-      return runAdapter(adapter, {
-        budgetMs: STEP_BUDGET_MS,
-        backfillFrom: BACKFILL_FROM,
-        log,
-        catalog,
-        aliases,
-      });
-    });
+        return runAdapter(adapter, {
+          budgetMs: STEP_BUDGET_MS,
+          backfillFrom: BACKFILL_FROM,
+          log,
+          catalog,
+          aliases,
+        });
+      },
+      adapter.quietWhenEmpty,
+    );
   }
 
   if (DRY_RUN || NO_ALERTS) return;

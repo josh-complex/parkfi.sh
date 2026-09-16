@@ -12,6 +12,7 @@ import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { cn } from "#/lib/utils.ts";
 import {
   RAIL_ITEM_BASIS,
+  SHELF_VIEWPORT,
   RAIL_MEDIA_ASPECT,
   RAIL_MEDIA_RATIO,
   RailCard,
@@ -65,7 +66,7 @@ function RecentlyUpdatedSkeleton() {
         subtitle="Fresh prices & items in the last 30 days"
         arrows={false}
       />
-      <div className="flex gap-4 overflow-hidden px-4 lg:px-6">
+      <div className={cn("flex gap-4 overflow-hidden", SHELF_VIEWPORT)}>
         {Array.from({ length: 6 }).map((_, i) => (
           <div key={i} className={cn("flex shrink-0 flex-col gap-2", RAIL_ITEM_BASIS)}>
             <Skeleton className={cn(RAIL_MEDIA_ASPECT, "w-full rounded-2xl")} />

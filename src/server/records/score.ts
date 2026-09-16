@@ -47,7 +47,7 @@ export function scorePermit(input: PublicRecordInput, ctx: ScoreContext): number
   else if (ctx.links.links.some((l) => VENUE_KINDS.has(l.entityKind))) score += 12;
 
   const applicationType = str(p.applicationType);
-  if (/building/i.test(applicationType)) score += 15;
+  if (/building|commercial/i.test(applicationType)) score += 15;
   else if (/engineering|site|civil/i.test(applicationType)) score += 10;
   else if (/electrical|plumbing|mechanical|gas|fire/i.test(applicationType)) score -= 5;
 
@@ -201,6 +201,74 @@ export function scoreIncident(_input: PublicRecordInput, ctx: ScoreContext): num
   return score;
 }
 
+/**
+ * Newly published operator pages (§5.18). What matters is WHERE a page
+ * appeared and whether it names something we've never heard of: a venue page
+ * on the B2B group-sales site or a new `/things-to-do/events/…` page is the
+ * operator selling something before announcing it, while a new hotel-policy
+ * or FAQ page is housekeeping. A page that links to an attraction we already
+ * track is a refresh of a known thing, so it scores BELOW an unrecognised
+ * name — the inverse of every other kind here.
+ */
+export function scoreWebPage(input: PublicRecordInput, ctx: ScoreContext): number {
+  const p = input.payload;
+  const path = str(p.path);
+  let score = 20;
+
+  // The B2B site sells unannounced venues, and the `/sales` trade microsite is
+  // not even in Universal's sitemap — both are where a name lands first.
+  const inventory = str(p.publication);
+  if (inventory === "uomeetingsandevents") score += 25;
+  else if (inventory === "uor_sales") score += 20;
+
+  if (/^\/events\b/.test(path) || /^\/things-to-do\/events\b/.test(path)) score += 25;
+  else if (/^\/things-to-do\/(rides-attractions|shows|entertainment)\b/.test(path)) score += 20;
+  else if (/^\/things-to-do\/(dining|restaurants)\b/.test(path)) score += 10;
+  else if (/^\/(tickets-packages|places-to-stay|hotels)\b/.test(path)) score += 10;
+  else if (/^\/(plan-your-visit|corporate-partners|landing-page)\b/.test(path)) score -= 10;
+
+  // A removal is a real signal — a retired venue, a cancelled event — but the
+  // section carries it; the "unrecognised name" bonus below would be backwards
+  // (nothing is being introduced), and the copy is ours, not theirs.
+  if (p.removed === true) return Math.round(Math.max(score * 0.6, 1) * 10) / 10;
+
+  // An unrecognised proper noun is the whole point of watching the inventory.
+  if (ctx.links.links.some((l) => l.entityKind === "attraction")) score -= 10;
+  else if (ctx.links.links.some((l) => VENUE_KINDS.has(l.entityKind))) score -= 5;
+  else score += 10;
+
+  if (str(input.description).length > 40) score += 5;
+
+  return Math.round(Math.max(score, 1) * 10) / 10;
+}
+
+/**
+ * Food-service licences (§5.15). A PLAN REVIEW is the earliest paper a venue
+ * leaves — filed before the kitchen is built — and a big seated room on
+ * operator property is a restaurant or an event space, not a snack cart. A
+ * name we already know is a renewal or a re-file; an unknown one is the story.
+ */
+export function scoreLicense(input: PublicRecordInput, ctx: ScoreContext): number {
+  const p = input.payload;
+  let score = 20;
+  if (ctx.operatorFiler) score += 20;
+  if (p.planReview === true) score += 25;
+  // A licence that changes trade name is an internal working name becoming the
+  // real one — the single highest-signal row this source produces.
+  if (p.event === "renamed") score += 30;
+  if (p.event === "ownership") score -= 10;
+  const seats = typeof p.seats === "number" ? p.seats : 0;
+  if (seats >= 200) score += 20;
+  else if (seats >= 50) score += 10;
+  else if (seats === 0) score -= 5; // carts, kiosks, support kitchens
+  if (ctx.links.parkId != null) score += 10;
+  // Known venue = paperwork on something we already track; an unrecognised
+  // trade name at an operator address is the reason this source exists.
+  if (ctx.links.links.some((l) => VENUE_KINDS.has(l.entityKind))) score -= 10;
+  else score += 15;
+  return Math.round(Math.max(score, 1) * 10) / 10;
+}
+
 /** Dispatch by kind. Kinds without a formula yet get a flat baseline. */
 export function scoreRecord(input: PublicRecordInput, ctx: ScoreContext): number {
   switch (input.kind) {
@@ -217,6 +285,10 @@ export function scoreRecord(input: PublicRecordInput, ctx: ScoreContext): number
       return scoreErp(input, ctx);
     case "incident":
       return scoreIncident(input, ctx);
+    case "web_page":
+      return scoreWebPage(input, ctx);
+    case "license":
+      return scoreLicense(input, ctx);
     default:
       return ctx.operatorFiler ? 40 : 10;
   }

@@ -37,6 +37,7 @@ import {
 } from "#/components/dining/dining-hours.ts";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { RAIL_GHOST_GRID, RAIL_MEDIA_ASPECT } from "#/components/ui/rail.tsx";
+import { PAGE_WIDTH } from "#/components/page-container.tsx";
 import { cn } from "#/lib/utils.ts";
 import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { queryUnavailable } from "#/hooks/use-online-status.ts";
@@ -247,7 +248,7 @@ export function DiningBoard() {
       {/* Mobile quick cuisine filters, tucked under the header's omnisearch. */}
       <DiningCuisineChips options={options} />
 
-      <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-8 p-4 pb-24 lg:px-6">
+      <div className={cn(PAGE_WIDTH, "flex flex-col gap-8 py-4 pb-24")}>
         {searched ? (
           <ResultsView
             isLoading={isLoading}

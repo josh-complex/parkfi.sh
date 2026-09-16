@@ -25,11 +25,12 @@ function PopoverContent({
   side = "bottom",
   sideOffset = 4,
   collisionPadding,
+  anchor,
   ...props
 }: PopoverPrimitive.Popup.Props &
   Pick<
     PopoverPrimitive.Positioner.Props,
-    "align" | "alignOffset" | "side" | "sideOffset" | "collisionPadding"
+    "align" | "alignOffset" | "side" | "sideOffset" | "collisionPadding" | "anchor"
   >) {
   return (
     <PopoverPrimitive.Portal>
@@ -39,6 +40,11 @@ function PopoverContent({
         side={side}
         sideOffset={sideOffset}
         collisionPadding={collisionPadding}
+        // Position against something other than the trigger — a nav row, a
+        // search bar — so a wide panel can span that element instead of hanging
+        // off a narrow button. `--anchor-width` then reports *that* element's
+        // width, which is how the mega-menus size themselves to their bar.
+        anchor={anchor}
         // Above the mobile sidebar sheet (z-60): the bell/alerts popover can be
         // triggered from inside it, so it must float over the sheet, not behind.
         className="isolate z-[70]"

@@ -2,15 +2,14 @@
 
 import * as React from "react";
 import { useStore } from "@tanstack/react-store";
-import { ArrowUpDownIcon, CheckIcon, SlidersHorizontalIcon } from "lucide-react";
+import { ArrowUpDownIcon, SlidersHorizontalIcon } from "lucide-react";
 
 import {
+  CoreSearchBar,
   CoreSearchButton,
-  coreSearchPopoverClass,
-  coreSegClass,
-  SegContent,
-  useCloseOnScroll,
-  type SegPos,
+  CoreSearchOption,
+  CoreSearchPanel,
+  type CoreField,
 } from "#/components/core-search.tsx";
 import { ExtendedFilters } from "#/components/dining/dining-filters-modal.tsx";
 import {
@@ -41,7 +40,6 @@ import {
   DrawerTitle,
   DrawerTrigger,
 } from "#/components/ui/drawer.tsx";
-import { Popover, PopoverContent, PopoverTrigger } from "#/components/ui/popover.tsx";
 import { cn } from "#/lib/utils.ts";
 
 /** Party-size choices shared by the desktop pill and the mobile search drawer. */
@@ -51,72 +49,8 @@ function partySizeLabel(size: string): string {
   return `${size} ${size === "1" ? "guest" : "guests"}`;
 }
 
-/** A selectable option row inside the Where / Cuisine popovers. */
-function OptionRow({
-  label,
-  selected,
-  onSelect,
-}: {
-  label: string;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={cn(
-        "hover:bg-accent hover:text-accent-foreground flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm outline-none transition-colors",
-        selected && "font-medium",
-      )}
-    >
-      <span className="truncate">{label}</span>
-      {selected && <CheckIcon className="size-4 shrink-0" />}
-    </button>
-  );
-}
-
-/**
- * One core-search field: a toggle-styled trigger that opens children in a
- * popover. Styling is shared with the Stays search bar (see core-search).
- */
-function SearchSegment({
-  pos,
-  label,
-  value,
-  muted,
-  open,
-  onOpenChange,
-  align,
-  children,
-}: {
-  pos: SegPos;
-  label: string;
-  value: string;
-  muted: boolean;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  align: "start" | "center" | "end";
-  children: React.ReactNode;
-}) {
-  return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger
-        render={
-          <button type="button" className={coreSegClass(pos, open)}>
-            <SegContent label={label} value={value} muted={muted} active={open} />
-          </button>
-        }
-      />
-      <PopoverContent
-        align={align}
-        className={cn("max-h-80 w-64 overflow-y-auto p-1.5", coreSearchPopoverClass)}
-      >
-        {children}
-      </PopoverContent>
-    </Popover>
-  );
-}
+/** The bar's fields, in the order they sit on the row. */
+type DiningSeg = "operator" | "where" | "cuisine" | "party";
 
 /** Desktop sticky search bar — hidden on mobile, the FAB carries it there. */
 export function DiningSearchBar({ options }: { options: FilterOptions }) {
@@ -125,18 +59,10 @@ export function DiningSearchBar({ options }: { options: FilterOptions }) {
   const searched = useStore(diningStore, (s) => s.searched);
   const stuck = useStore(diningStore, (s) => s.stuck);
 
-  const [operatorOpen, setOperatorOpen] = React.useState(false);
-  const [whereOpen, setWhereOpen] = React.useState(false);
-  const [cuisineOpen, setCuisineOpen] = React.useState(false);
-  const [partyOpen, setPartyOpen] = React.useState(false);
-
-  const closeSegments = React.useCallback(() => {
-    setOperatorOpen(false);
-    setWhereOpen(false);
-    setCuisineOpen(false);
-    setPartyOpen(false);
-  }, []);
-  useCloseOnScroll(operatorOpen || whereOpen || cuisineOpen || partyOpen, closeSegments);
+  // One open field at a time — the four share a single panel, which slides
+  // between them rather than closing and reopening (see `CoreSearchBar`).
+  const [openSeg, setOpenSeg] = React.useState<DiningSeg | null>(null);
+  const close = React.useCallback(() => setOpenSeg(null), []);
 
   // Switching operator drops a now-invalid park selection back to "all".
   const selectOperator = React.useCallback(
@@ -149,7 +75,7 @@ export function DiningSearchBar({ options }: { options: FilterOptions }) {
             ? "ALL"
             : filters.parkResort,
       });
-      setOperatorOpen(false);
+      setOpenSeg(null);
     },
     [options.parksByOperator, filters.parkResort],
   );
@@ -158,6 +84,109 @@ export function DiningSearchBar({ options }: { options: FilterOptions }) {
   const operatorLabel = OPERATOR_LABELS[filters.operator];
   const whereLabel = filters.parkResort === "ALL" ? "All restaurants" : filters.parkResort;
   const cuisineLabel = filters.cuisine === "ALL" ? "All cuisines" : filters.cuisine;
+
+  const fields: Array<CoreField<DiningSeg>> = [
+    {
+      key: "operator",
+      label: "Parks",
+      value: operatorLabel,
+      muted: filters.operator === "ALL",
+      panel: (
+        <CoreSearchPanel>
+          {(Object.keys(OPERATOR_LABELS) as Array<Operator>).map((op) => (
+            <CoreSearchOption
+              key={op}
+              label={OPERATOR_LABELS[op]}
+              selected={filters.operator === op}
+              onSelect={() => selectOperator(op)}
+            />
+          ))}
+        </CoreSearchPanel>
+      ),
+    },
+    {
+      key: "where",
+      label: "Where",
+      value: whereLabel,
+      muted: filters.parkResort === "ALL",
+      panel: (
+        <CoreSearchPanel
+          hint={`${parkOptions.length} parks & resorts${
+            filters.operator === "ALL" ? "" : ` · ${operatorLabel}`
+          }`}
+        >
+          <CoreSearchOption
+            label="All restaurants"
+            selected={filters.parkResort === "ALL"}
+            onSelect={() => {
+              patchFilters({ parkResort: "ALL" });
+              close();
+            }}
+          />
+          {parkOptions.map((p) => (
+            <CoreSearchOption
+              key={p}
+              label={p}
+              selected={filters.parkResort === p}
+              onSelect={() => {
+                patchFilters({ parkResort: p });
+                close();
+              }}
+            />
+          ))}
+        </CoreSearchPanel>
+      ),
+    },
+    {
+      key: "cuisine",
+      label: "Cuisine",
+      value: cuisineLabel,
+      muted: filters.cuisine === "ALL",
+      panel: (
+        <CoreSearchPanel hint="Most common first">
+          <CoreSearchOption
+            label="All cuisines"
+            selected={filters.cuisine === "ALL"}
+            onSelect={() => {
+              patchFilters({ cuisine: "ALL" });
+              close();
+            }}
+          />
+          {options.cuisines.map((c) => (
+            <CoreSearchOption
+              key={c}
+              label={c}
+              selected={filters.cuisine === c}
+              onSelect={() => {
+                patchFilters({ cuisine: c });
+                close();
+              }}
+            />
+          ))}
+        </CoreSearchPanel>
+      ),
+    },
+    {
+      key: "party",
+      label: "Party size",
+      value: partySizeLabel(partySize),
+      panel: (
+        <CoreSearchPanel hint="Larger parties book further out">
+          {PARTY_SIZE_OPTIONS.map((n) => (
+            <CoreSearchOption
+              key={n}
+              label={partySizeLabel(n)}
+              selected={partySize === n}
+              onSelect={() => {
+                setPartySize(n);
+                close();
+              }}
+            />
+          ))}
+        </CoreSearchPanel>
+      ),
+    },
+  ];
 
   return (
     <div
@@ -168,112 +197,15 @@ export function DiningSearchBar({ options }: { options: FilterOptions }) {
           : "border-b border-transparent bg-transparent",
       )}
     >
-      <div className="relative mx-auto flex w-fit items-stretch gap-2">
-        <div className="flex">
-          <SearchSegment
-            pos="first"
-            label="Parks"
-            value={operatorLabel}
-            muted={filters.operator === "ALL"}
-            open={operatorOpen}
-            onOpenChange={setOperatorOpen}
-            align="start"
-          >
-            {(Object.keys(OPERATOR_LABELS) as Array<Operator>).map((op) => (
-              <OptionRow
-                key={op}
-                label={OPERATOR_LABELS[op]}
-                selected={filters.operator === op}
-                onSelect={() => selectOperator(op)}
-              />
-            ))}
-          </SearchSegment>
-
-          <SearchSegment
-            pos="middle"
-            label="Where"
-            value={whereLabel}
-            muted={filters.parkResort === "ALL"}
-            open={whereOpen}
-            onOpenChange={setWhereOpen}
-            align="start"
-          >
-            <OptionRow
-              label="All restaurants"
-              selected={filters.parkResort === "ALL"}
-              onSelect={() => {
-                patchFilters({ parkResort: "ALL" });
-                setWhereOpen(false);
-              }}
-            />
-            {parkOptions.map((p) => (
-              <OptionRow
-                key={p}
-                label={p}
-                selected={filters.parkResort === p}
-                onSelect={() => {
-                  patchFilters({ parkResort: p });
-                  setWhereOpen(false);
-                }}
-              />
-            ))}
-          </SearchSegment>
-
-          <SearchSegment
-            pos="middle"
-            label="Cuisine"
-            value={cuisineLabel}
-            muted={filters.cuisine === "ALL"}
-            open={cuisineOpen}
-            onOpenChange={setCuisineOpen}
-            align="center"
-          >
-            <OptionRow
-              label="All cuisines"
-              selected={filters.cuisine === "ALL"}
-              onSelect={() => {
-                patchFilters({ cuisine: "ALL" });
-                setCuisineOpen(false);
-              }}
-            />
-            {options.cuisines.map((c) => (
-              <OptionRow
-                key={c}
-                label={c}
-                selected={filters.cuisine === c}
-                onSelect={() => {
-                  patchFilters({ cuisine: c });
-                  setCuisineOpen(false);
-                }}
-              />
-            ))}
-          </SearchSegment>
-
-          <SearchSegment
-            pos="last"
-            label="Party size"
-            value={partySizeLabel(partySize)}
-            muted={false}
-            open={partyOpen}
-            onOpenChange={setPartyOpen}
-            align="end"
-          >
-            {PARTY_SIZE_OPTIONS.map((n) => (
-              <OptionRow
-                key={n}
-                label={partySizeLabel(n)}
-                selected={partySize === n}
-                onSelect={() => {
-                  setPartySize(n);
-                  setPartyOpen(false);
-                }}
-              />
-            ))}
-          </SearchSegment>
-        </div>
-
-        {!searched && <CoreSearchButton onClick={commitSearch} />}
-      </div>
+      <CoreSearchBar
+        fields={fields}
+        open={openSeg}
+        onOpenChange={setOpenSeg}
+        // Sized to "Disney's Grand Floridian Resort & Spa" — the longest label
+        // any of the four lists holds.
+        panelWidth={320}
+        action={!searched && <CoreSearchButton onClick={commitSearch} />}
+      />
     </div>
   );
 }

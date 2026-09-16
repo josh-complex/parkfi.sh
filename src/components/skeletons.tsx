@@ -100,12 +100,12 @@ export function ShelfGhost({
   items: Array<ShelfGhostItem>;
   className?: string;
 }) {
-  // The wrappers mirror the live shelves' markup exactly — the `-mx-4` bleed,
-  // `px-4` viewport inset, `-ml-4` row / `pl-4` item gap technique, and the
-  // same `basis-*` steps — so ghost and mounted cards land on identical pixel
-  // widths and the swap causes no layout shift.
+  // The wrappers mirror the live shelves' markup exactly — the phone-only
+  // `-mx-4` bleed, the `SHELF_VIEWPORT` inset, the `-ml-4` row / `pl-4` item
+  // gap technique, and the same `basis-*` steps — so ghost and mounted cards
+  // land on identical pixel widths and the swap causes no layout shift.
   return (
-    <div className={cn("-mx-4 lg:-mx-6", className)} aria-hidden>
+    <div className={cn("-mx-4 lg:mx-0", className)} aria-hidden>
       <div className="flex flex-col gap-3">
         {/* `arrows={false}`: a ghost is outside any carousel, so there's no
             prev/next state for `CarouselArrows` to read. */}

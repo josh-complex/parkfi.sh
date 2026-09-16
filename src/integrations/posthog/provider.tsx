@@ -1,13 +1,33 @@
 import posthog from "posthog-js";
 import { PostHogProvider as BasePostHogProvider, usePostHog } from "@posthog/react";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "@tanstack/react-router";
 
 import { authClient } from "#/lib/auth-client.ts";
 
 import { CfImagesFlagSync } from "./feature-flags.ts";
 
-if (typeof window !== "undefined" && import.meta.env.VITE_POSTHOG_KEY) {
+let booted = false;
+
+/**
+ * Starts PostHog, once, and never before React has hydrated.
+ *
+ * The timing is the whole point. `posthog.init` injects a `<script>` for its
+ * remote config, and posthog-js places that script immediately before the first
+ * `body > script` it can find — which, in this document, is the SSR-rendered
+ * JsonLd tag. Called at module scope this runs while the client bundle
+ * evaluates, so React then hydrates a `<body>` whose first child is a tag it
+ * never rendered, the whole-document hydration fails, and the entire tree is
+ * thrown away and re-rendered on the client. That is a full client render on
+ * every page load, and it is invisible: the page still works.
+ *
+ * `disable_surveys` below is the same bug, found earlier and fixed one script at
+ * a time. Booting after hydration fixes the category rather than the instance —
+ * once React owns the DOM, a script appearing in `<body>` is just a script.
+ */
+function boot() {
+  if (booted || typeof window === "undefined" || !import.meta.env.VITE_POSTHOG_KEY) return;
+  booted = true;
   posthog.init(import.meta.env.VITE_POSTHOG_KEY, {
     api_host: import.meta.env.VITE_POSTHOG_HOST || "https://us.i.posthog.com",
     person_profiles: "identified_only",
@@ -107,11 +127,26 @@ interface PostHogProviderProps {
 }
 
 export default function PostHogProvider({ children }: PostHogProviderProps) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    boot();
+    setReady(true);
+  }, []);
   return (
     <BasePostHogProvider client={posthog}>
-      <PostHogIdentify />
-      <PostHogPageview />
-      <CfImagesFlagSync />
+      {/* Gated rather than left to run early: React runs a child's effects
+          before its parent's, so these three would each fire against an
+          uninitialised client and lose the events they exist to send — the
+          initial `$pageview` above all. Holding them one render costs nothing
+          and guarantees `boot()` has already happened when they mount.
+          `children` is never gated; the page does not wait on analytics. */}
+      {ready && (
+        <>
+          <PostHogIdentify />
+          <PostHogPageview />
+          <CfImagesFlagSync />
+        </>
+      )}
       {children}
     </BasePostHogProvider>
   );

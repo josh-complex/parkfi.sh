@@ -1,6 +1,8 @@
-import { SlidersHorizontalIcon } from "lucide-react";
+import { SearchIcon, SlidersHorizontalIcon } from "lucide-react";
 
 import { Button } from "#/components/ui/button.tsx";
+import { Checkbox } from "#/components/ui/checkbox.tsx";
+import { Input } from "#/components/ui/input.tsx";
 import {
   Drawer,
   DrawerClose,
@@ -18,6 +20,9 @@ import {
   MAX_WAIT_OPTIONS,
   useRideFilter,
 } from "./ride-filter.tsx";
+
+import type { RIDE_CATEGORIES } from "./ride-filter.tsx";
+import type { ParkPulse } from "./waits-data.ts";
 
 /**
  * The map's filter-pill look, shared verbatim by every mobile filter/sort FAB so
@@ -62,19 +67,139 @@ function Chip({
   );
 }
 
-/**
- * The filter body (max-wait chips + toggles), writing straight to the shared
- * `useRideFilter` state. Shared by the map/Waits filter button and the Waits
- * floating FAB so both drawers offer the exact same controls.
- */
-export function RideFilterControls() {
-  const { filter, setFilter } = useRideFilter();
+/** A section of the filter body: an uppercase label over its control. */
+function Group({
+  label,
+  children,
+  className,
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <div className="flex flex-col gap-6 overflow-y-auto px-4 pb-4 pt-6">
-      <div className="flex flex-col gap-2">
-        <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
-          Max wait
-        </span>
+    <div className={cn("flex flex-col gap-2", className)}>
+      <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        {label}
+      </span>
+      {children}
+    </div>
+  );
+}
+
+/** One park in the Parks group: a checkbox, the name, and its live average. */
+function ParkRow({
+  park,
+  checked,
+  onChange,
+}: {
+  park: ParkPulse;
+  checked: boolean;
+  onChange: () => void;
+}) {
+  return (
+    <label
+      className={cn(
+        // The selected row is tinted `--wash` so the strip's pressed card and
+        // this ticked box visibly are the same filter (§2.2).
+        "-mx-1.5 flex cursor-pointer items-center gap-2.5 rounded-lg px-1.5 py-1 transition-colors",
+        checked ? "bg-wash" : "hover:bg-muted/60",
+      )}
+    >
+      <Checkbox checked={checked} onCheckedChange={onChange} />
+      <span className={cn("flex-1 truncate text-sm", checked && "font-semibold")}>{park.name}</span>
+      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+        {park.closed ? "closed" : park.avg != null ? `${park.avg} min` : "—"}
+      </span>
+    </label>
+  );
+}
+
+/**
+ * The filter body, writing straight to the shared `useRideFilter` state.
+ *
+ * **One component, two faces.** The Waits page's desktop rail and its phone
+ * drawer both render *this* — and so does the map's drawer — so a filter can
+ * never exist on one surface and not the other (docs/plans/waits-redesign §3).
+ * The groups a surface has no business showing are simply not passed: the map
+ * gets no `parks` (it is already scoped to one) and no `categories` (it draws
+ * its own chips on the map itself).
+ */
+export interface RideFilterControlsProps {
+  /** Park rows for the Parks group; omit to hide it (the map). */
+  parks?: ReadonlyArray<ParkPulse>;
+  /** Attraction types actually present in the data; omit to hide the group. */
+  categories?: typeof RIDE_CATEGORIES;
+  /** Show the name-search field. */
+  search?: boolean;
+  className?: string;
+}
+
+export function RideFilterControls({
+  parks,
+  categories,
+  search,
+  className,
+}: RideFilterControlsProps) {
+  const { filter, setFilter } = useRideFilter();
+  const toggleSet = (key: "parks" | "categories", value: string) =>
+    setFilter((f) => {
+      const next = new Set(f[key]);
+      if (!next.delete(value)) next.add(value);
+      return { ...f, [key]: next };
+    });
+
+  return (
+    <div className={cn("flex flex-col gap-6 overflow-y-auto px-4 pt-6 pb-4", className)}>
+      {search && (
+        <div className="relative">
+          <SearchIcon className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="search"
+            value={filter.query}
+            onChange={(e) => setFilter((f) => ({ ...f, query: e.target.value }))}
+            placeholder="Find an attraction"
+            aria-label="Find an attraction by name"
+            className="h-11 pl-10"
+          />
+        </div>
+      )}
+
+      {parks && parks.length > 0 && (
+        <Group label="Parks">
+          <div className="flex flex-col gap-1">
+            {parks.map((p) => (
+              <ParkRow
+                key={p.slug}
+                park={p}
+                checked={filter.parks.has(p.slug)}
+                onChange={() => toggleSet("parks", p.slug)}
+              />
+            ))}
+          </div>
+        </Group>
+      )}
+
+      {categories && categories.length > 0 && (
+        <Group label="Type" className={parks ? "border-t pt-4" : undefined}>
+          <div className="flex flex-wrap gap-2 pt-1">
+            {categories.map((c) => (
+              <Chip
+                key={c.key}
+                active={filter.categories.has(c.key)}
+                onClick={() => toggleSet("categories", c.key)}
+              >
+                {c.emoji} {c.label}
+              </Chip>
+            ))}
+          </div>
+        </Group>
+      )}
+
+      <Group
+        label="Longest I'll wait"
+        className={parks || categories ? "border-t pt-4" : undefined}
+      >
         <div className="flex flex-wrap gap-2 pt-1">
           <Chip
             active={filter.maxWait == null}
@@ -92,12 +217,9 @@ export function RideFilterControls() {
             </Chip>
           ))}
         </div>
-      </div>
+      </Group>
 
-      <div className="flex flex-col gap-2 border-t pt-4">
-        <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
-          Rider height
-        </span>
+      <Group label="Rider height" className="border-t pt-4">
         <div className="flex flex-wrap gap-2 pt-1">
           <Chip
             active={!filter.noHeightReq && filter.heightBand == null}
@@ -131,37 +253,39 @@ export function RideFilterControls() {
             </Chip>
           ))}
         </div>
-      </div>
+      </Group>
 
-      <div className="flex flex-wrap gap-2 border-t pt-4">
-        <Chip
-          active={filter.openOnly}
-          onClick={() => setFilter((f) => ({ ...f, openOnly: !f.openOnly }))}
-        >
-          Open now
-        </Chip>
-        {/* Universal publishes these three; Disney publishes none of them, so a
-            row with no data never matches and the chips simply find nothing at
-            a WDW park rather than lying about it. */}
-        <Chip
-          active={filter.expressPass}
-          onClick={() => setFilter((f) => ({ ...f, expressPass: !f.expressPass }))}
-        >
-          Express Pass
-        </Chip>
-        <Chip
-          active={filter.singleRider}
-          onClick={() => setFilter((f) => ({ ...f, singleRider: !f.singleRider }))}
-        >
-          Single rider
-        </Chip>
-        <Chip
-          active={filter.childSwap}
-          onClick={() => setFilter((f) => ({ ...f, childSwap: !f.childSwap }))}
-        >
-          Child swap
-        </Chip>
-      </div>
+      <Group label="Only show" className="border-t pt-4">
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Chip
+            active={filter.openOnly}
+            onClick={() => setFilter((f) => ({ ...f, openOnly: !f.openOnly }))}
+          >
+            Open now
+          </Chip>
+          {/* Universal publishes these three; Disney publishes none of them, so a
+              row with no data never matches and the chips simply find nothing at
+              a WDW park rather than lying about it. */}
+          <Chip
+            active={filter.expressPass}
+            onClick={() => setFilter((f) => ({ ...f, expressPass: !f.expressPass }))}
+          >
+            Express Pass
+          </Chip>
+          <Chip
+            active={filter.singleRider}
+            onClick={() => setFilter((f) => ({ ...f, singleRider: !f.singleRider }))}
+          >
+            Single rider
+          </Chip>
+          <Chip
+            active={filter.childSwap}
+            onClick={() => setFilter((f) => ({ ...f, childSwap: !f.childSwap }))}
+          >
+            Child swap
+          </Chip>
+        </div>
+      </Group>
     </div>
   );
 }

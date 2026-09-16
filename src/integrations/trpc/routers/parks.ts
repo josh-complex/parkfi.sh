@@ -42,6 +42,20 @@ const code = (map: Record<number, string>, v: number | null) =>
  */
 const OPEN_SCHEDULE_TYPES = sql`('OPERATING', 'EXTRA_HOURS', 'TICKETED_EVENT')`;
 
+/**
+ * The bar an hour-of-day bucket has to clear before we'll tell a guest what a
+ * queue "usually" does then (`attraction_hour_profile`).
+ *
+ * `days` is the one that matters: it's the number of distinct days that hour
+ * was observed on, and it's what separates an hour a ride genuinely runs from
+ * one it was caught in once or twice — a Halloween Horror Nights house posts
+ * 40-50 min at 19:00-01:00 across a dozen nights and a stray 5 min at noon
+ * across two. A week is enough to have seen a weekend and some weekdays.
+ * `samples` backs it up for the case where a whole week is polled sparsely.
+ */
+const MIN_PROFILE_DAYS = 7;
+const MIN_PROFILE_SAMPLES = 60;
+
 export const parksRouter = {
   /** All active parks with operator/resort context. */
   list: publicProcedure.query(async () => {
@@ -184,6 +198,327 @@ export const parksRouter = {
       pricingGrain: r.pricing_grain,
       displayName: r.display_name,
     }));
+  }),
+
+  /**
+   * Cross-park movers: every attraction whose live standby wait differs from
+   * its reading ~30 min ago, biggest absolute swing first — plus the same
+   * comparison rolled up per park.
+   *
+   * `ticker` can't be reused for this even though the CTEs rhyme: it is
+   * `LIMIT 30` **busiest-first** and drops walk-ons (`wait_min > 0`), so the
+   * rides that just fell off a cliff — the ones the Waits band is about — are
+   * exactly the ones it throws away. This one orders by `abs(delta)`, keeps
+   * both directions, and keeps walk-ons.
+   *
+   * "Now" comes from the worker-maintained `attraction_live` mirror, not from
+   * `queue_obs`, so a mover's wait is byte-identical to the one `allRides`
+   * renders for the same ride in the same list; "then" is the last raw
+   * observation at least 30 min old. Only a ride with **both** readings can
+   * have moved, so the pairing is an inner join.
+   *
+   * `byPark` is that same pairing grouped by park, and it supplies the strip's
+   * hour-over-hour arrow only: a park's *average* and *open count* stay derived
+   * client-side from `allRides` (§5.1) so the strip and the list can never
+   * disagree about the same number.
+   *
+   * Both halves come back from one statement as JSON columns rather than two
+   * queries, because the expensive half — the `DISTINCT ON` over three hours of
+   * `queue_obs` — would otherwise be paid twice for one band.
+   */
+  movers: publicProcedure.query(async () => {
+    type MoverRow = {
+      rideId: number;
+      rideName: string;
+      rideSlug: string;
+      parkSlug: string;
+      parkName: string;
+      waitMin: number;
+      prevWait: number;
+    };
+    type ParkRow = { parkSlug: string; avgNow: number; avgPrev: number; rides: number };
+    const result = await db.execute<{ movers: Array<MoverRow>; by_park: Array<ParkRow> }>(sql`
+      WITH live AS (
+        SELECT al.attraction_id, al.standby_wait AS wait_min
+        FROM attraction_live al
+        WHERE al.standby_wait IS NOT NULL
+          AND al.observed_at >= now() - INTERVAL '180 minutes'
+      ),
+      prev AS (
+        SELECT DISTINCT ON (q.attraction_id) q.attraction_id, q.wait_min
+        FROM queue_obs q
+        WHERE q.queue_type = 1
+          AND q.wait_min IS NOT NULL
+          AND q.observed_at <= now() - INTERVAL '30 minutes'
+          AND q.observed_at >= now() - INTERVAL '210 minutes'
+        ORDER BY q.attraction_id, q.observed_at DESC
+      ),
+      paired AS (
+        SELECT a.id, a.name AS ride_name, a.slug AS ride_slug,
+               p.slug AS park_slug, p.name AS park_name,
+               l.wait_min, pr.wait_min AS prev_wait,
+               coalesce(${HAUNTED_HOUSE_TAG}::text = ANY(m.tags), false) AS is_haunted_house
+        FROM live l
+        JOIN prev pr ON pr.attraction_id = l.attraction_id
+        -- The same row set allRides ships: real attractions only, and none of
+        -- the un-enriched duplicate rows (which carry a null category).
+        JOIN attractions a ON a.id = l.attraction_id AND a.active = true
+          AND a.entity_type = 'ATTRACTION' AND a.category IS NOT NULL
+        JOIN parks p ON p.id = a.park_id AND p.active = true
+        LEFT JOIN attraction_meta m ON m.attraction_id = a.id
+      )
+      SELECT
+        coalesce((
+          SELECT json_agg(json_build_object(
+                   'rideId', id, 'rideName', ride_name, 'rideSlug', ride_slug,
+                   'parkSlug', park_slug, 'parkName', park_name,
+                   'waitMin', wait_min, 'prevWait', prev_wait)
+                 ORDER BY abs(wait_min - prev_wait) DESC, wait_min DESC)
+          FROM (
+            SELECT * FROM paired
+            WHERE wait_min <> prev_wait
+            ORDER BY abs(wait_min - prev_wait) DESC, wait_min DESC
+            LIMIT 40
+          ) m
+        ), '[]'::json) AS movers,
+        coalesce((
+          SELECT json_agg(json_build_object(
+                   'parkSlug', park_slug, 'avgNow', avg_now,
+                   'avgPrev', avg_prev, 'rides', n))
+          FROM (
+            -- Hard-ticket HHN houses only post waits on event nights, and when
+            -- they do they yank the park's trend around; the board already
+            -- shelves them away from the park's rides for the same reason.
+            SELECT park_slug,
+                   round(avg(wait_min))::int  AS avg_now,
+                   round(avg(prev_wait))::int AS avg_prev,
+                   count(*)::int              AS n
+            FROM paired
+            WHERE NOT is_haunted_house
+            GROUP BY park_slug
+          ) b
+        ), '[]'::json) AS by_park
+    `);
+    const row = result.rows[0];
+    return {
+      movers: (row?.movers ?? []).map((m) => ({ ...m, delta: m.waitMin - m.prevWait })),
+      byPark: (row?.by_park ?? []).map((p) => ({ ...p, delta: p.avgNow - p.avgPrev })),
+    };
+  }),
+
+  /**
+   * Every active attraction's 30-day average standby, by **park-local hour of
+   * day** — what a queue is *normally* doing at 3 PM, as opposed to what it is
+   * doing right now.
+   *
+   * The Waits band reads it twice: pick rule 3 compares the live wait against
+   * this hour's row ("35 under its usual for 3 PM"), and the list's "Shortest
+   * later" column takes the minimum across the hours still to come today. The
+   * whole 24-hour profile ships in one payload so the client can do both
+   * without a second round trip — it's small (~2.4k rows) and it changes once a
+   * day, so it caches at `TRPC_DATA`.
+   *
+   * Reads the `attraction_hour_profile` materialized view, refreshed nightly by
+   * the `cron-profiles` service. A live 30-day scan takes ~1.5 s even over the
+   * `queue_hourly` aggregate, which is not a request-time query.
+   *
+   * Hours with too little history are dropped rather than averaged into a
+   * confident-looking number — see `MIN_PROFILE_DAYS`.
+   *
+   * These rows say nothing about whether the park is open at that hour *today*:
+   * an average by hour-of-day outlives the schedule that produced it, so an
+   * hour survives here for up to thirty days after a park stops running it.
+   * Bounding "later" against today's close is the reader's job, and
+   * `allRides.closeHour` is what it does that with — see `buildProfileLookups`.
+   *
+   * Returns an empty list — not an error — when the view hasn't been created or
+   * refreshed yet, so the board simply loses rule 3 and the later column until
+   * the migration and cron land (§6).
+   */
+  hourlyProfiles: publicProcedure.query(async () => {
+    try {
+      const result = await db.execute<{
+        attraction_id: string;
+        local_hour: number;
+        usual_wait: number;
+      }>(sql`
+        SELECT attraction_id, local_hour, usual_wait
+        FROM attraction_hour_profile
+        WHERE days >= ${MIN_PROFILE_DAYS} AND samples >= ${MIN_PROFILE_SAMPLES}
+        ORDER BY attraction_id, local_hour
+      `);
+      return result.rows.map((r) => ({
+        rideId: Number(r.attraction_id),
+        hour: r.local_hour,
+        usual: r.usual_wait,
+      }));
+    } catch (err) {
+      // 42P01 = undefined_table: the migration hasn't run on this database yet.
+      if ((err as { code?: string }).code !== "42P01") throw err;
+      return [];
+    }
+  }),
+
+  /**
+   * The park page's "Right now" curve (docs/plans/dining-redesign §4.3): the
+   * whole park's average standby, hour by hour, for **today's operating window
+   * only**, paired with what the same hour usually does on this weekday.
+   *
+   * Two series, two sources, on purpose:
+   *
+   *   * `actual` reads raw `queue_obs`, because the hour a guest is standing in
+   *     is the one `queue_hourly` hasn't materialized yet (its policy runs with
+   *     a one-hour end offset).
+   *   * `typical` reads the `queue_hourly` cagg over the last eight weeks of the
+   *     *same weekday* — a Saturday curve is nothing like a Tuesday's, and
+   *     averaging them together is how you tell someone a 9 AM rope drop is
+   *     normal when today it's double.
+   *
+   * The window is the schedule's, not the calendar day's: a park closing at 1 AM
+   * keeps its last two hours here, where grouping by local date would drop them.
+   * Bounding by it is also what keeps the overnight feed — which cheerfully
+   * re-posts a stale 5 min all night — out of both series, the same guard
+   * `board` and `attraction_hour_profile` apply.
+   *
+   * Zero-minute waits are counted (not filtered out): this figure sits beside
+   * the ticket's "Avg wait", which the client computes from the live board the
+   * same way, and a walk-on really is part of how the park is running.
+   *
+   * Returns an empty `hours` list when the park posts no schedule for today —
+   * the panel then falls back to its live figure alone.
+   */
+  crowd: publicProcedure.input(z.object({ parkSlug: z.string() })).query(async ({ input }) => {
+    const slug = input.parkSlug;
+    const park = sql`(SELECT id FROM parks WHERE slug = ${slug})`;
+    const tz = sql`(SELECT timezone FROM parks WHERE slug = ${slug})`;
+    // Rides the park's own board counts: real attractions only. `category IS
+    // NOT NULL` drops both the un-enriched ghost duplicates and Universal's
+    // standalone "Single Rider" rows (neither is ever enriched), which is the
+    // same filter the board table and the stat math use.
+    const realRides = sql`
+      a.active = true AND a.entity_type = 'ATTRACTION' AND a.category IS NOT NULL`;
+    // Every past operating window this park has posted, latest snapshot's view
+    // of it. Both history queries below gate on it: the overnight feeds keep
+    // re-posting a stale wait long after closing, so an ungated average learns
+    // that half of Universal is "usually 5 minutes at 4 AM".
+    const pastSched = sql`
+      SELECT DISTINCT ON (service_date, opening_time) opening_time, closing_time
+      FROM park_schedule
+      WHERE park_id = ${park}
+        AND type IN ${OPEN_SCHEDULE_TYPES}
+        AND closing_time IS NOT NULL
+      ORDER BY service_date, opening_time, snapshot_date DESC`;
+    const [meta, hours, days] = await Promise.all([
+      db.execute<{ timezone: string; local_date: string }>(sql`
+        SELECT timezone, (now() AT TIME ZONE timezone)::date::text AS local_date
+        FROM parks WHERE slug = ${slug}
+      `),
+      db.execute<{
+        local_hour: number;
+        actual: number | null;
+        typical: number | null;
+        is_now: boolean;
+        lo: string;
+        hi: string;
+      }>(sql`
+        WITH sched AS (
+          SELECT DISTINCT ON (opening_time) opening_time, closing_time
+          FROM park_schedule
+          WHERE park_id = ${park}
+            AND service_date = (now() AT TIME ZONE ${tz})::date
+            AND type IN ${OPEN_SCHEDULE_TYPES}
+            AND closing_time IS NOT NULL
+          ORDER BY opening_time, snapshot_date DESC
+        ),
+        win AS (SELECT min(opening_time) AS lo, max(closing_time) AS hi FROM sched),
+        spine AS (
+          SELECT generate_series(
+            time_bucket('1 hour'::interval, (SELECT lo FROM win)),
+            time_bucket('1 hour'::interval, (SELECT hi FROM win) - INTERVAL '1 minute'),
+            '1 hour'::interval
+          ) AS bucket
+        ),
+        obs AS (
+          SELECT time_bucket('1 hour'::interval, q.observed_at) AS bucket,
+                 avg(q.wait_min)::int AS avg_wait
+          FROM queue_obs q
+          JOIN attractions a ON a.id = q.attraction_id
+          WHERE a.park_id = ${park} AND ${realRides}
+            AND q.queue_type = ${QueueType.STANDBY}
+            AND q.wait_min IS NOT NULL
+            AND q.observed_at >= (SELECT lo FROM win)
+            AND q.observed_at <  (SELECT hi FROM win)
+          GROUP BY 1
+        ),
+        past_sched AS (${pastSched}),
+        typ AS (
+          SELECT (EXTRACT(hour FROM qh.bucket AT TIME ZONE ${tz}))::int AS local_hour,
+                 round(avg(qh.avg_wait))::int AS avg_wait
+          FROM queue_hourly qh
+          JOIN attractions a ON a.id = qh.attraction_id
+          WHERE a.park_id = ${park} AND ${realRides}
+            AND qh.queue_type = ${QueueType.STANDBY}
+            AND qh.avg_wait IS NOT NULL
+            AND qh.bucket >= now() - INTERVAL '56 days'
+            AND qh.bucket < (SELECT lo FROM win)
+            AND EXTRACT(dow FROM qh.bucket AT TIME ZONE ${tz})
+              = EXTRACT(dow FROM (now() AT TIME ZONE ${tz})::date)
+            AND EXISTS (
+              SELECT 1 FROM past_sched w
+              WHERE qh.bucket >= w.opening_time AND qh.bucket < w.closing_time
+            )
+          GROUP BY 1
+        )
+        SELECT (EXTRACT(hour FROM s.bucket AT TIME ZONE ${tz}))::int AS local_hour,
+               o.avg_wait AS actual,
+               t.avg_wait AS typical,
+               (s.bucket = time_bucket('1 hour'::interval, now())) AS is_now,
+               (SELECT lo FROM win)::text AS lo,
+               (SELECT hi FROM win)::text AS hi
+        FROM spine s
+        LEFT JOIN obs o ON o.bucket = s.bucket
+        LEFT JOIN typ t ON t.local_hour = (EXTRACT(hour FROM s.bucket AT TIME ZONE ${tz}))::int
+        ORDER BY s.bucket
+      `),
+      // The crowd calendar: one park-wide average per park-local day over the
+      // last five weeks — the heatmap's grid, and (folded by weekday on the
+      // client) the "by day of week" bars beside it.
+      db.execute<{ d: string; avg_wait: number }>(sql`
+        WITH past_sched AS (${pastSched})
+        SELECT (qh.bucket AT TIME ZONE ${tz})::date::text AS d,
+               round(avg(qh.avg_wait))::int AS avg_wait
+        FROM queue_hourly qh
+        JOIN attractions a ON a.id = qh.attraction_id
+        WHERE a.park_id = ${park} AND ${realRides}
+          AND qh.queue_type = ${QueueType.STANDBY}
+          AND qh.avg_wait IS NOT NULL
+          AND qh.bucket >= now() - INTERVAL '35 days'
+          AND EXISTS (
+            SELECT 1 FROM past_sched w
+            WHERE qh.bucket >= w.opening_time AND qh.bucket < w.closing_time
+          )
+        GROUP BY 1
+        ORDER BY 1
+      `),
+    ]);
+
+    const first = hours.rows[0];
+    return {
+      timezone: meta.rows[0]?.timezone ?? "America/New_York",
+      /** Today in the park's own timezone — the client formats the weekday off
+       *  this rather than the viewer's clock, so SSR and hydration agree. */
+      date: meta.rows[0]?.local_date ?? null,
+      open: first?.lo ?? null,
+      close: first?.hi ?? null,
+      hours: hours.rows.map((r) => ({
+        hour: Number(r.local_hour),
+        actual: r.actual == null ? null : Number(r.actual),
+        typical: r.typical == null ? null : Number(r.typical),
+        now: Boolean(r.is_now),
+      })),
+      /** Park-wide average standby per park-local day, oldest first, 35 days. */
+      days: days.rows.map((r) => ({ date: r.d, avgWait: Number(r.avg_wait) })),
+    };
   }),
 
   /**
@@ -600,6 +935,7 @@ export const parksRouter = {
       longitude: number | null;
       park_slug: string;
       park_name: string;
+      park_timezone: string;
       operator_slug: string | null;
       operator_name: string | null;
       meta_land: string | null;
@@ -613,8 +949,10 @@ export const parksRouter = {
       meta_image_alt: string | null;
       meta_image_thumbhash: string | null;
       is_haunted_house: boolean;
+      showtimes: Array<{ type: string | null; start: string | null; end: string | null }> | null;
       is_open: boolean | null;
       has_schedule: boolean;
+      close_hour: number | null;
     }>(sql`
       WITH live AS (
         -- Current state from the worker-maintained mirror (Phase 3), same shape
@@ -623,7 +961,8 @@ export const parksRouter = {
         -- window).
         SELECT al.attraction_id,
                al.status,
-               CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.standby_wait END AS wait_min
+               CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.standby_wait END AS wait_min,
+               CASE WHEN al.observed_at >= now() - INTERVAL '24 hours' THEN al.showtimes END AS showtimes
         FROM attraction_live al
       ),
       sched AS (
@@ -640,10 +979,45 @@ export const parksRouter = {
         FROM parks p
         LEFT JOIN sched s ON s.park_id = p.id
         GROUP BY p.id
+      ),
+      -- The park-local hour today's regular day ends at, which bounds the
+      -- list's "Shortest later" column: the hourly profile is a 30-day average
+      -- by hour-of-day, so it happily keeps offering 8 PM at Epic Universe for
+      -- a fortnight after the park moved its close from 9 PM to 8 PM.
+      --
+      -- OPERATING only, on purpose. EXTRA_HOURS is early entry (it does not
+      -- extend an evening), and TICKETED_EVENT is a separate ticket — pointing
+      -- a day guest at a Not-So-Scary hour is the same lie in a nicer hat.
+      -- Every open day in the feed carries an OPERATING row, so this is not a
+      -- narrowing in practice; where one is missing the column simply keeps
+      -- its old unbounded behaviour rather than going blank.
+      --
+      -- Only TICKETED_EVENT rows ever close past midnight, so an OPERATING
+      -- close is always same-day; the CASE is belt-and-braces for the night
+      -- that stops being true, and reads as "the rest of the day is open".
+      today_sched AS (
+        -- Same latest-snapshot discipline as the sched CTE above; service_date is
+        -- pinned to today, so it drops out of the DISTINCT ON key.
+        SELECT DISTINCT ON (s.park_id, s.opening_time)
+               s.park_id,
+               CASE
+                 WHEN (s.closing_time AT TIME ZONE p.timezone)::date > s.service_date THEN 24
+                 ELSE EXTRACT(hour FROM s.closing_time AT TIME ZONE p.timezone)::int
+               END AS close_hour
+        FROM park_schedule s
+        JOIN parks p ON p.id = s.park_id
+        WHERE s.type = 'OPERATING' AND s.closing_time IS NOT NULL
+          AND s.service_date = (now() AT TIME ZONE p.timezone)::date
+        ORDER BY s.park_id, s.opening_time, s.snapshot_date DESC
+      ),
+      -- A split-operation day collapses to its last close, matching how
+      -- the hours procedure folds a day into one envelope.
+      today_close AS (
+        SELECT park_id, max(close_hour) AS close_hour FROM today_sched GROUP BY park_id
       )
       SELECT a.id, a.name, a.slug, a.category, a.latitude, a.longitude,
              lv.status, lv.wait_min AS standby_wait,
-             p.slug AS park_slug, p.name AS park_name,
+             p.slug AS park_slug, p.name AS park_name, p.timezone AS park_timezone,
              o.slug AS operator_slug, o.name AS operator_name,
              m.land AS meta_land, m.height_requirement AS meta_height_requirement,
              m.min_height_in AS meta_min_height_in,
@@ -658,13 +1032,18 @@ export const parksRouter = {
              -- shelves separately from the park's rides (they only run on event
              -- nights). Universal types them itself, via attraction_meta.tags.
              coalesce(${HAUNTED_HOUSE_TAG}::text = ANY(m.tags), false) AS is_haunted_house,
-             po.is_open, coalesce(po.has_schedule, false) AS has_schedule
+             -- Today's performances for SHOW entities (null everywhere else):
+             -- the Waits band's "next show 3:40" pick rule reads these.
+             lv.showtimes,
+             po.is_open, coalesce(po.has_schedule, false) AS has_schedule,
+             tc.close_hour
       FROM attractions a
       JOIN parks p ON p.id = a.park_id AND p.active = true
       LEFT JOIN operators o ON o.id = p.operator_id
       LEFT JOIN live lv ON lv.attraction_id = a.id
       LEFT JOIN attraction_meta m ON m.attraction_id = a.id
       LEFT JOIN park_open po ON po.park_id = p.id
+      LEFT JOIN today_close tc ON tc.park_id = p.id
       WHERE a.active = true AND a.entity_type = 'ATTRACTION' AND a.category IS NOT NULL
       ORDER BY p.name, a.name
     `);
@@ -681,6 +1060,33 @@ export const parksRouter = {
         longitude: r.longitude,
         parkSlug: r.park_slug,
         parkName: r.park_name,
+        /**
+         * Whether the park is inside *any* open window right now — regular
+         * hours, early entry, extended evening, or a hard-ticket event — or
+         * null when the calendar has nothing to say about it at all.
+         *
+         * The same fact `knownClosed` above is built from, now shipped rather
+         * than spent: the Waits strip used to call a park closed when no ride
+         * was OPERATING, which gets Halloween Horror Nights exactly backwards.
+         * On an event night Universal Studios' rides are all shut and only the
+         * houses run — and in the half hour between the event opening and the
+         * first house posting a wait, *nothing* is OPERATING while the park is
+         * very much open. Same for a Magic Kingdom party evening, an After
+         * Hours night, or early entry before the first queue posts. The
+         * calendar knows; the ride count is a proxy that only usually agrees.
+         */
+        parkOpen: r.has_schedule ? Boolean(r.is_open) : null,
+        // Every "since 2 PM" / "next show 3:40" line on the Waits band is a
+        // park-local clock, so the zone travels with the row rather than being
+        // assumed (all ten parks are America/New_York today — that is a fact
+        // about Orlando, not a guarantee).
+        parkTimezone: r.park_timezone,
+        /**
+         * Park-local hour today's regular operating day ends at (24 when it
+         * runs past midnight), or null when today has no OPERATING window.
+         * The "Shortest later" column will not point past it.
+         */
+        closeHour: r.close_hour,
         operatorSlug: r.operator_slug,
         operatorName: r.operator_name,
         land: r.meta_land,
@@ -699,6 +1105,7 @@ export const parksRouter = {
         imageAlt: r.meta_image_alt,
         imageThumbhash: r.meta_image_thumbhash,
         hauntedHouse: r.is_haunted_house,
+        showtimes: knownClosed ? [] : (r.showtimes ?? []).filter((sh) => sh.start != null),
       };
     });
   }),
