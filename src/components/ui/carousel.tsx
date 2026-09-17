@@ -234,17 +234,41 @@ function CarouselNext({
  * `CarouselPrevious`/`CarouselNext`. Renders nothing when there's nothing to
  * scroll, so static rows stay clean.
  */
-function CarouselArrows({ className }: { className?: string }) {
+function CarouselArrows({
+  tone = "default",
+  className,
+}: {
+  /**
+   * `invert` for a shelf on its own dark field — the seasonal-houses band,
+   * which is dark in *both* themes. `outline`'s shelf mixes from `--border`,
+   * which in the light theme lays a pale plank under each arrow (the same trap
+   * `btn-3d-ghost` exists to solve for the Waits band's keys), so this swaps
+   * the whole key to the chrome's ghost treatment: a faint light rim, a
+   * shallow shelf, white glyphs.
+   */
+  tone?: "default" | "invert";
+  className?: string;
+}) {
   const { scrollPrev, scrollNext, canScrollPrev, canScrollNext } = useCarousel();
 
   if (!canScrollPrev && !canScrollNext) return null;
 
+  const invert = tone === "invert";
+  // `btn-3d-ghost` already paints the rim (`border-3d` reads `--btn-3d`) and the
+  // shelf, so this only adds the face colour and puts back the hover lift that
+  // the `ghost` variant cancels.
+  const key = cn(
+    "rounded-full",
+    invert &&
+      "btn-3d-ghost bg-white/10 text-white hover:-top-px hover:bg-white/20 hover:text-white focus-visible:ring-white/40 disabled:opacity-35",
+  );
+
   return (
     <div className={cn("flex items-center gap-2", className)}>
       <Button
-        variant="outline"
+        variant={invert ? "ghost" : "outline"}
         size="icon-sm"
-        className="rounded-full"
+        className={key}
         disabled={!canScrollPrev}
         onClick={scrollPrev}
       >
@@ -252,9 +276,9 @@ function CarouselArrows({ className }: { className?: string }) {
         <span className="sr-only">Previous</span>
       </Button>
       <Button
-        variant="outline"
+        variant={invert ? "ghost" : "outline"}
         size="icon-sm"
-        className="rounded-full"
+        className={key}
         disabled={!canScrollNext}
         onClick={scrollNext}
       >

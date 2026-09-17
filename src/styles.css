@@ -748,25 +748,79 @@ html.native [data-slot="app-shell"] {
  * navy. Everything inside keeps using `text-mint-fg` and friends.
  */
 /**
- * The hard-ticket event band's field — the Waits band's `band-masthead` run in
- * the event's own colour rather than the masthead's navy, so a park running
- * Halloween Horror Nights (or whatever follows it) gets a band that reads as a
- * different *night* from the rest of the page, not a different section of it.
+ * The hard-ticket event band's field — a lit, decayed wall, for a park running
+ * Halloween Horror Nights (or whatever follows it), so the band reads as a
+ * different *night* from the rest of the page rather than a different section
+ * of it.
  *
- * Same construction and the same reasons: a darkening pass over a wide stop
- * ramp, because at full strength the centre stop fights the house artwork it's
- * backing. Dark theme lifts the ramp instead of darkening it — against a near
- * black page the original stops read as a hole.
+ * This is the one band that deliberately BREAKS from `band-masthead`'s
+ * construction, and the reason is what it's backing. The Waits band's stop ramp
+ * sits behind ride photographs — bright, daylit, full-frame — where a saturated
+ * field is pleasant contrast. This band sits behind horror key art: near-black
+ * posters with a single lit subject. Run the same ramp in orange and the field
+ * is the brightest thing on the row, the posters read as dark holes punched in
+ * a plastic bar, and the whole band looks like a banner ad. Inverting it — a
+ * near-black field with the event's orange arriving as *light* rather than as
+ * paint — makes the same posters read as lit objects in a dark room, which is
+ * both better and closer to what the event's own art direction does.
+ *
+ * Ten layers, front to back: print grain, a vignette, a cold pool, the ember,
+ * five mottle blotches, and the base. The mottle is the part that matters and
+ * the part that looks gratuitous in a diff: five big soft blobs at deliberately
+ * irregular positions are what stop this reading as a gradient and start it
+ * reading as a stained wall. Drop them and you get a tasteful dark fade, which
+ * is not the same thing. `background-blend-mode` is positional — its list must
+ * stay the same length, and in the same order, as `background-image`'s.
+ *
+ * No dark-theme variant on purpose. An event night is dark in both themes, the
+ * same way the Waits band is; a lighter light-theme version would be a lie
+ * about what it depicts.
+ *
+ * Universal publishes the real thing — `hhn26-texture-top-lvp.jpg` and its
+ * siblings on the `/hhn` page, the event's own background plates — and they
+ * beat this. They are also keyed to one year's event (`hhn26-`), so using them
+ * means ingesting per-event artwork rather than hard-coding a URL that rots
+ * every October. This field is the version that owes nothing to a feed.
  */
 @utility band-fright {
+  background-color: #0a0201;
   background-image:
-    linear-gradient(to bottom, rgb(0 0 0 / 0.22), rgb(0 0 0 / 0.5)),
-    linear-gradient(90deg, #1c0602 0%, #6b2207 22%, #e0671c 50%, #6b2207 78%, #1c0602 100%);
-  &:is(.dark *) {
-    background-image:
-      linear-gradient(to bottom, rgb(0 0 0 / 0.06), rgb(0 0 0 / 0.3)),
-      linear-gradient(90deg, #2a0c04 0%, #832c09 22%, #ef7a2c 50%, #832c09 78%, #2a0c04 100%);
-  }
+    /* 1. Print grain. Kills the banding a field this wide shows on an 8-bit
+       display, and is most of why this reads as a printed surface. */
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)' opacity='0.34'/%3E%3C/svg%3E"),
+    /* 2. Vignette — in front of the lights, so the corners go out. */
+      radial-gradient(130% 105% at 50% 42%, transparent 45%, rgb(0 0 0 / 0.72) 100%),
+    /* 3. A cold pool on the far side, so the band isn't one hue. */
+      radial-gradient(55% 100% at 95% 85%, rgb(26 100 112 / 0.3) 0%, transparent 100%),
+    /* 4. The ember: the event's orange, as a light source behind the heading. */
+      radial-gradient(
+        62% 105% at 16% 6%,
+        rgb(224 103 28 / 0.42) 0%,
+        rgb(122 38 6 / 0.18) 45%,
+        transparent 100%
+      ),
+    /* 5–9. Mottle. */ radial-gradient(34% 90% at 8% 22%, rgb(74 33 9 / 0.34) 0%, transparent 100%),
+    radial-gradient(26% 70% at 37% 86%, rgb(18 58 60 / 0.26) 0%, transparent 100%),
+    radial-gradient(30% 85% at 63% 10%, rgb(58 18 6 / 0.28) 0%, transparent 100%),
+    radial-gradient(22% 60% at 80% 70%, rgb(15 48 56 / 0.24) 0%, transparent 100%),
+    radial-gradient(18% 55% at 95% 18%, rgb(74 42 12 / 0.26) 0%, transparent 100%),
+    /* 10. Base. */ linear-gradient(180deg, #170603 0%, #0a0201 55%, #110402 100%);
+  background-size:
+    180px 180px,
+    auto,
+    auto,
+    auto,
+    auto,
+    auto,
+    auto,
+    auto,
+    auto,
+    auto;
+  background-repeat:
+    repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat,
+    no-repeat;
+  background-blend-mode:
+    overlay, normal, screen, screen, screen, screen, screen, screen, screen, normal;
 }
 
 @utility band-tints {

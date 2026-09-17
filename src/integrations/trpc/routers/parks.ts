@@ -697,6 +697,7 @@ export const parksRouter = {
       meta_child_swap: boolean | null;
       meta_virtual_line: boolean | null;
       meta_tags: Array<string> | null;
+      meta_description: string | null;
       hours_today: Array<{ type: string | null; start: string | null; end: string | null }> | null;
       is_open: boolean | null;
       has_schedule: boolean;
@@ -796,6 +797,7 @@ export const parksRouter = {
                m.child_swap AS meta_child_swap,
                m.virtual_line AS meta_virtual_line,
                m.tags AS meta_tags,
+               m.description AS meta_description,
                (SELECT is_open FROM park_open) AS is_open,
                (SELECT has_schedule FROM park_open) AS has_schedule
         FROM attractions a
@@ -868,6 +870,16 @@ export const parksRouter = {
               childSwap: r.meta_child_swap,
               virtualLine: r.meta_virtual_line,
               tags: r.meta_tags ?? [],
+              // Blurb, for haunted houses ONLY. The board ships every
+              // attraction in a park (150+ rows), and `attraction_meta`'s
+              // description is a paragraph — carrying it on every row to serve
+              // the ten that use it would be a few kB of dead weight on the
+              // page's biggest query. The seasonal-houses band is the one
+              // surface that reads it, so the row pays for it only when it is
+              // one of those houses.
+              description: (r.meta_tags ?? []).includes(HAUNTED_HOUSE_TAG)
+                ? r.meta_description
+                : null,
             }
           : null,
     }));
