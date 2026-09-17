@@ -13,7 +13,7 @@ import { cn } from "#/lib/utils.ts";
  * its own narrower `max-w-6xl` row — a centered wordmark flanked by links reads
  * as a masthead at that width and as a spread-out toolbar at this one.
  */
-export const PAGE_WIDTH = "mx-auto w-full max-w-[100rem] px-4 lg:px-6";
+export const PAGE_WIDTH = "mx-auto w-full max-w-480 px-4 lg:px-6";
 
 /**
  * `PAGE_WIDTH` as a component, for route-level content that isn't a full-bleed

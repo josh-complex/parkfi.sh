@@ -1,7 +1,16 @@
 import { Link, useNavigate, useParams, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { LayoutGroup, motion, useReducedMotion, useScroll } from "motion/react";
+import {
+  createContext,
+  Fragment,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { animate, motion, useMotionValue, useReducedMotion, useScroll } from "motion/react";
 import { ArrowDownRight, ArrowUpRight, ChevronDownIcon, MenuIcon, Minus } from "lucide-react";
 
 import { CastMemberHeadline } from "#/components/cast-member-badge.tsx";
@@ -29,6 +38,7 @@ import { formatParkName } from "#/lib/parks.ts";
 import { cn } from "#/lib/utils.ts";
 
 import type { TRPCRouter } from "#/integrations/trpc/router.ts";
+import type { MotionValue } from "motion/react";
 import type { inferRouterOutputs } from "@trpc/server";
 
 type TRPCOutputs = inferRouterOutputs<TRPCRouter>;
@@ -291,24 +301,193 @@ function activeNavKey(pathname: string): string | undefined {
 const navLinkClass =
   "relative rounded-lg px-2 py-1 font-heading text-sm font-semibold tracking-wide whitespace-nowrap uppercase transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/45";
 
+/** The active item handing the track its anchor, and taking it back. */
+type MarkerRegistry = {
+  attach: (el: HTMLElement) => void;
+  detach: (el: HTMLElement) => void;
+};
+
+const NavMarkerCtx = createContext<MarkerRegistry | null>(null);
+
+/** Where the bar should sit, in the track's own coordinates. */
+type MarkerBox = { left: number; width: number; top: number };
+
+/** Stretch · cross · close, as fractions of one trip. */
+const TRAVEL_TIMES = [0, 0.34, 0.66, 1];
+
+/**
+ * The stretch. A bar that simply translates from one label to the next is a box
+ * changing address; this one leans into the trip. The leading edge breaks away
+ * first and draws the bar out to half again the distance it has to cover, it
+ * holds that length while it crosses, and the trailing edge only closes the gap
+ * once the head has landed — rubber rather than cargo.
+ *
+ * Three segments on one timeline, returned as `left`/`width` keyframes that
+ * share their `times` and easing: that shared timing is what lets the pair pin
+ * an edge between them, since a stationary edge is just both values moving by
+ * the same amount at the same rate.
+ */
+function travelKeyframes(from: { left: number; width: number }, to: MarkerBox) {
+  const centre = (b: { left: number; width: number }) => b.left + b.width / 2;
+  const reach = Math.abs(centre(to) - centre(from));
+  const stretch = reach / 2;
+  const stretched = from.width + stretch;
+  return {
+    // Longer trips take longer, but sub-linearly: Queues → Blog crosses the
+    // whole row and still has to land as one gesture.
+    duration: 0.3 + Math.min(reach / 620, 1) * 0.22,
+    left:
+      centre(to) > centre(from)
+        ? // Rightward, so the right edge leads: the left edge holds while the
+          // bar grows, runs the rest of the way, then catches up underneath a
+          // right edge already parked on the target.
+          [from.left, from.left, to.left + to.width - stretched, to.left]
+        : // Leftward, mirrored — the left edge leads and arrives a beat early.
+          [from.left, from.left - stretch, to.left, to.left],
+    width: [from.width, stretched, stretched, to.width],
+  };
+}
+
+/** One value along a trip, on the timing every value in that trip shares. */
+function glide(value: MotionValue<number>, keyframes: Array<number>, duration: number) {
+  return animate(value, keyframes, {
+    duration,
+    times: TRAVEL_TIMES,
+    // Out of the gate, steady across, easy into the stop.
+    ease: ["easeOut", "linear", "easeOut"],
+  });
+}
+
 /**
  * "You are here" — the one place yellow appears in the chrome, the same job it
  * does as the "now" marker in the charts.
  *
- * One element for the whole nav, shared by `layoutId`: only the active item
- * renders it, so when the route changes motion tears it out of the old item and
- * grows it into the new one's box, which reads as the bar *sliding* along the
- * row (across the wordmark included — the two link groups sit in one
- * `LayoutGroup`). A per-item border can only blink from one place to another.
+ * One bar for the whole nav, not one per item: the active item renders only an
+ * invisible *anchor* of the right geometry ({@link NavMarker}), and a single
+ * absolutely-positioned bar ({@link NavMarkerTrack}) measures whichever anchor
+ * is mounted and travels to it. A per-item border can only blink from one place
+ * to another; this reads as the bar sliding along the row — across the wordmark
+ * included, because both link groups sit inside one track.
+ *
+ * It doesn't merely slide, though. See {@link travelKeyframes}.
+ *
+ * This is the bar, and the box it travels inside. It hangs off the nav row —
+ * the same element the Parks panel anchors to — so every anchor is measured
+ * against one origin. (The row is `relative` for exactly this; an absolutely
+ * positioned child is out of the grid's flow, so it costs the three columns
+ * nothing.)
+ */
+function NavMarkerTrack({
+  track,
+  children,
+}: {
+  track: React.RefObject<HTMLDivElement | null>;
+  children: React.ReactNode;
+}) {
+  const reduce = useReducedMotion();
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const left = useMotionValue(0);
+  const width = useMotionValue(0);
+  const top = useMotionValue(0);
+  const opacity = useMotionValue(0);
+  // There is nothing to fly from on the first paint, or after a stretch of
+  // pages with no active item at all — the bar lands rather than travels.
+  const painted = useRef(false);
+
+  const registry = useMemo<MarkerRegistry>(
+    () => ({
+      attach: (el) => setAnchor(el),
+      // By element, not by clearing outright: on a route change the incoming
+      // anchor mounts around the same commit the outgoing one leaves, and a
+      // blind `setAnchor(null)` would drop a live anchor on the floor.
+      detach: (el) => setAnchor((cur) => (cur === el ? null : cur)),
+    }),
+    [],
+  );
+
+  useEffect(() => {
+    const box = track.current;
+    if (!box || !anchor) {
+      opacity.set(0);
+      painted.current = false;
+      return;
+    }
+    const measure = (): MarkerBox => {
+      const t = box.getBoundingClientRect();
+      const a = anchor.getBoundingClientRect();
+      return { left: a.left - t.left, width: a.width, top: a.top - t.top };
+    };
+    const settle = (to: MarkerBox) => {
+      left.set(to.left);
+      width.set(to.width);
+      top.set(to.top);
+      opacity.set(1);
+    };
+
+    let at = measure();
+    if (painted.current && !reduce) {
+      const trip = travelKeyframes({ left: left.get(), width: width.get() }, at);
+      // Height is the one thing that doesn't travel: the row is a single line,
+      // so any difference is sub-pixel and animating it only adds a wobble.
+      top.set(at.top);
+      glide(left, trip.left, trip.duration);
+      glide(width, trip.width, trip.duration);
+    } else {
+      settle(at);
+    }
+    painted.current = true;
+
+    // The row reflows under us — pinned ↔ floating, a resize, a late web font,
+    // the Sign in key turning into an avatar. The bar is already on the right
+    // item there, so it follows instantly rather than flying to where it is.
+    // (Comparing against the target box is also what makes the observer's own
+    // first delivery a no-op, instead of a brake slammed on mid-trip.)
+    const ro = new ResizeObserver(() => {
+      const next = measure();
+      if (next.left === at.left && next.width === at.width && next.top === at.top) return;
+      at = next;
+      settle(next);
+    });
+    ro.observe(box);
+    ro.observe(anchor);
+    return () => ro.disconnect();
+  }, [anchor, left, opacity, reduce, top, track, width]);
+
+  return (
+    <NavMarkerCtx.Provider value={registry}>
+      {children}
+      <motion.span
+        aria-hidden
+        style={{ left, width, top, opacity }}
+        className="pointer-events-none absolute h-[3px] rounded-full bg-brand-yellow"
+      />
+    </NavMarkerCtx.Provider>
+  );
+}
+
+/**
+ * The active item's claim on the bar: an invisible span carrying the geometry
+ * the yellow rule should take under *this* item, for the track to measure.
+ * Outside a track it paints itself, so the mark is never simply missing.
  */
 function NavMarker() {
-  const reduce = useReducedMotion();
+  const registry = useContext(NavMarkerCtx);
+  const ref = useCallback(
+    (el: HTMLSpanElement | null) => {
+      if (!registry || !el) return;
+      registry.attach(el);
+      return () => registry.detach(el);
+    },
+    [registry],
+  );
   return (
-    <motion.span
-      layoutId="site-nav-marker"
+    <span
+      ref={ref}
       aria-hidden
-      className="absolute inset-x-2 -bottom-0.5 h-[3px] rounded-full bg-brand-yellow"
-      transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 480, damping: 40 }}
+      className={cn(
+        "pointer-events-none absolute inset-x-2 -bottom-0.5 h-[3px] rounded-full",
+        registry ? "invisible" : "bg-brand-yellow",
+      )}
     />
   );
 }
@@ -1099,16 +1278,16 @@ export function SiteHeaderDesktop({
       // inward (`justify-between`), so the links hug the wordmark
       // symmetrically while the mark and the keys hold the outer edges.
       className={cn(
-        "mx-auto grid w-full max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-4",
+        "relative mx-auto grid w-full max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-4",
         // The capsule brings its own gutter and rides tighter: a floating bar
         // that's as deep as a full-width masthead reads as a slab, not a key.
         floating ? "px-5 py-3" : "px-4 py-6 sm:px-6",
       )}
     >
-      {/* One group across both sides of the wordmark: the yellow marker is
-          a single `layoutId` element, so motion can only slide it between
-          the left and right nav if they share a group. */}
-      <LayoutGroup id="site-nav">
+      {/* One track across both sides of the wordmark: the yellow marker is a
+          single bar measured against this row, so it can only run between the
+          left and right nav if they share it. */}
+      <NavMarkerTrack track={navRef}>
         <div className="flex min-w-0 items-center justify-between gap-4">
           <div className={cn("flex shrink-0 items-center gap-2", navInk)}>
             <Link
@@ -1197,18 +1376,29 @@ export function SiteHeaderDesktop({
             )}
           >
             <CastMemberHeadline className="hidden bg-primary/10 text-primary ring-primary/20 xl:inline-flex" />
-            <div className="hidden md:block">
-              <NotificationCenter />
-            </div>
-            {/* Full-strength ink, not the keys' default muted grey: these two
-                sit beside the Sign in key, and on a page where the cluster is a
-                row of white chips on a dark field a mid-grey glyph reads as a
+            {/* `md:flex`, never `md:block`: a `block` wrapper puts its key in a
+                *line box*, where an inline-flex button is aligned by baseline —
+                and a flex container with no text synthesizes that baseline from
+                its content's bottom edge. The glyph keys all synthesize from a
+                20px icon and so agreed with each other; the avatar synthesizes
+                from a full-bleed 42px image and sat a few pixels off the line
+                they'd settled on. As flex items there is no baseline to
+                disagree about — every key is centred on the row's own axis.
+                (`OmniSearch` was always a direct flex item, which is why it
+                never drifted.)
+
+                Full-strength ink, not the keys' default muted grey: these sit
+                beside the Sign in key, and on a page where the cluster is a row
+                of white chips on a dark field a mid-grey glyph reads as a
                 disabled control next to a live one. */}
+            <div className="hidden md:flex md:items-center">
+              <NotificationCenter className="text-foreground" />
+            </div>
             <OmniSearch variant="icon" className="text-foreground" />
-            <div className="hidden md:block">
+            <div className="hidden md:flex md:items-center">
               <ThemeToggle className="text-foreground" />
             </div>
-            <div className="hidden md:block">
+            <div className="hidden md:flex md:items-center">
               <HeaderAccountMenu />
             </div>
             {/* The support key (`BuyMeACoffee`) is parked for now — Josh,
@@ -1216,7 +1406,7 @@ export function SiteHeaderDesktop({
                 here when the header should ask again. */}
           </div>
         </div>
-      </LayoutGroup>
+      </NavMarkerTrack>
     </div>
   );
 

@@ -13,7 +13,7 @@ import { LevelBadge, LevelDetails } from "#/components/achievements/level-badge.
 import { LoginLink } from "#/components/login-link.tsx";
 import { useIsAdmin } from "#/components/maintenance-gate.tsx";
 import { Avatar, AvatarFallback, AvatarImage } from "#/components/ui/avatar.tsx";
-import { Button } from "#/components/ui/button.tsx";
+import { Button, buttonVariants } from "#/components/ui/button.tsx";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,6 +26,7 @@ import {
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useUserLevel } from "#/hooks/use-level.ts";
 import { authClient } from "#/lib/auth-client.ts";
+import { cn } from "#/lib/utils.ts";
 import { signOut } from "#/lib/sign-out.ts";
 
 /** Initials fallback for a user with no avatar image. */
@@ -88,13 +89,30 @@ export function HeaderAccountMenu() {
           <button
             type="button"
             aria-label="Account menu"
-            className="relative shrink-0 rounded-[18px] ring-offset-background transition-transform outline-none hover:scale-105 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-95"
+            // The same 44px outline key as the bell, the search and the theme
+            // toggle — rim, shelf and press, not a bare image. A shelf-less
+            // avatar also sat *low* in the `items-center` row: its neighbours
+            // are 44px of face plus a 3px ledge, so centring the box put their
+            // faces higher than a plain 44px circle's.
+            className={cn(
+              buttonVariants({ variant: "outline", size: "icon" }),
+              "size-11 overflow-hidden rounded-[18px] p-0",
+            )}
           />
         }
       >
-        <Avatar className="size-11 rounded-[18px]">
-          <AvatarImage src={user.image ?? undefined} alt={user.name ?? user.email} />
-          <AvatarFallback className="rounded-[18px] text-xs">{initials}</AvatarFallback>
+        {/* Fills the key's content box, and drops the avatar's own hairline
+            ring — the button's rim is already drawing that edge, and the
+            avatar's is a circle that would cut across the squircle. */}
+        <Avatar className="size-full rounded-[inherit] after:hidden">
+          <AvatarImage
+            src={user.image ?? undefined}
+            alt={user.name ?? user.email}
+            className="rounded-[inherit]"
+          />
+          <AvatarFallback className="rounded-[inherit] bg-transparent text-xs">
+            {initials}
+          </AvatarFallback>
         </Avatar>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="min-w-56" align="end" sideOffset={8}>

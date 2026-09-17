@@ -78,7 +78,7 @@ function CompactRow({ alert }: { alert: AlertItem }) {
  * current wait/status and a quick remove, folds in the device push toggle (push
  * must be on for alerts to reach you), and links to /alerts for full management.
  */
-export function NotificationCenter() {
+export function NotificationCenter({ className }: { className?: string } = {}) {
   const trpc = useTRPC();
   const [open, setOpen] = useState(false);
   const { data: session } = authClient.useSession();
@@ -102,8 +102,10 @@ export function NotificationCenter() {
           <Button
             variant="outline"
             size="icon"
-            // Matches the search key beside it (see ThemeToggle).
-            className="relative size-11 rounded-[18px] text-muted-foreground"
+            // Matches the search key beside it (see ThemeToggle) — including
+            // the ink, which the header overrides to full strength so the bell
+            // does not read as a disabled control next to the live keys.
+            className={cn("relative size-11 rounded-[18px] text-muted-foreground", className)}
             aria-label={total > 0 ? `Alerts (${total} active)` : "Alerts"}
           />
         }
