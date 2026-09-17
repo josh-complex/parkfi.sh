@@ -4,14 +4,6 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { ParentSize } from "@visx/responsive";
 
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "#/components/ui/card.tsx";
 import { ChartErrorBoundary } from "#/components/chart-error-boundary.tsx";
 import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { cn } from "#/lib/utils.ts";
@@ -317,6 +309,11 @@ export function intensityColor(t: number): string {
  * action (e.g. a toggle), and an error-isolated body. A crash in one chart
  * renders the fallback instead of taking down its neighbours, and the
  * `[CHART-CRASH:<title>]` log names the culprit.
+ *
+ * A flat hairline card — the detail pages' `--card-edge` surface — and
+ * deliberately not the app's `Card`, whose 3D shelf and heavier border belong
+ * to things that get pressed. A grid of eight embossed slabs read as chrome
+ * competing with the charts inside them.
  */
 export function AnalyticsCard({
   title,
@@ -330,17 +327,19 @@ export function AnalyticsCard({
   children: React.ReactNode;
 }) {
   return (
-    <Card className="@container/analytics flex flex-col overflow-hidden">
-      <CardHeader>
-        <CardTitle className="text-base">{title}</CardTitle>
-        <CardDescription className="truncate">{description}</CardDescription>
-        {action ? <CardAction className="self-center">{action}</CardAction> : null}
-      </CardHeader>
-      <CardContent className="flex min-h-0 flex-1 flex-col px-2 pb-4 sm:px-4">
+    <div className="@container/analytics flex flex-col overflow-hidden rounded-[22px] border border-card-edge bg-card">
+      <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-3 sm:px-5 sm:pt-5">
+        <div className="min-w-0 flex-col gap-0.5">
+          <p className="text-[15px] font-bold tracking-[-0.01em]">{title}</p>
+          <p className="truncate text-xs text-muted-foreground">{description}</p>
+        </div>
+        {action ? <div className="shrink-0 self-center">{action}</div> : null}
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col px-2 pb-4 sm:px-4">
         <ChartErrorBoundary label={title} fallback={<ChartEmpty label="Chart unavailable." />}>
           {children}
         </ChartErrorBoundary>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

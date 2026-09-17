@@ -89,6 +89,12 @@ type StageCtx = {
    * and animates from wherever it was. Returns a cleanup that parks the map.
    */
   attach: (slot: HTMLElement) => (() => void) | void;
+  /**
+   * Wheel/trackpad zoom on the singleton map. A `<MapSlot>` sets it for as long
+   * as it owns the map and hands it back on the way out, so the setting belongs
+   * to the slot rather than to the map — see `MapHandle.setScrollZoom`.
+   */
+  setScrollZoom: (enabled: boolean) => void;
 };
 
 const MapStageContext = React.createContext<StageCtx | null>(null);
@@ -674,8 +680,19 @@ export function MapStageProvider({
   const prevRectRef = React.useRef<DOMRect | null>(null);
   const slotRef = React.useRef<HTMLElement | null>(null);
 
+  // The wheel-zoom setting the current slot asked for. Kept here as well as
+  // pushed to the map, because the renderer mounts *after* the first slot
+  // attaches (it's lazy) — so the setting has to be re-applied when the handle
+  // finally arrives, or the first paint of a park page would zoom on scroll.
+  const scrollZoomRef = React.useRef(true);
   const onMapRef = React.useCallback((m: MapHandle | null) => {
     mapRef.current = m;
+    m?.setScrollZoom(scrollZoomRef.current);
+  }, []);
+
+  const setScrollZoom = React.useCallback((enabled: boolean) => {
+    scrollZoomRef.current = enabled;
+    mapRef.current?.setScrollZoom(enabled);
   }, []);
 
   const attach = React.useCallback(
@@ -736,7 +753,7 @@ export function MapStageProvider({
     [host],
   );
 
-  const value = React.useMemo(() => ({ attach }), [attach]);
+  const value = React.useMemo(() => ({ attach, setScrollZoom }), [attach, setScrollZoom]);
 
   return (
     <MapStageContext.Provider value={value}>
@@ -1007,11 +1024,18 @@ function useStableFullBleedHeight(enabled: boolean): number | undefined {
 export function MapSlot({
   className,
   pinnedFullBleed = false,
+  scrollZoom = true,
 }: {
   className?: string;
   pinnedFullBleed?: boolean;
+  /**
+   * Wheel/trackpad zoom while this slot owns the map. Pass `false` for a map
+   * embedded in a scrolling page — see `MapHandle.setScrollZoom`. Restored on
+   * the way out, so the fullscreen route always gets its own answer.
+   */
+  scrollZoom?: boolean;
 }) {
-  const { attach } = useMapStage();
+  const { attach, setScrollZoom } = useMapStage();
   const ref = React.useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
   const pinnedHeight = useStableFullBleedHeight(pinnedFullBleed && isMobile);
@@ -1022,6 +1046,11 @@ export function MapSlot({
     if (!ref.current) return;
     return attach(ref.current);
   }, [attach]);
+
+  React.useEffect(() => {
+    setScrollZoom(scrollZoom);
+    return () => setScrollZoom(true);
+  }, [setScrollZoom, scrollZoom]);
 
   // Only override geometry on the mobile full-bleed layer; desktop keeps the
   // className's `md:` sizing untouched. Anchoring top + height (bottom:auto)

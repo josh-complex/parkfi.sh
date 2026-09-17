@@ -22,6 +22,12 @@ export interface ParkHoursToday {
   /** Today's two clock times on their own, for a chart's end ticks. */
   openLabel: string | null;
   closeLabel: string | null;
+  /**
+   * "10 PM" — when the window the guest is *standing in* shuts, which on an
+   * event night is the party's close and not the regular one. Null while shut,
+   * before hydration, or when the open window posts no end.
+   */
+  closingLabel: string | null;
   /** Open right now. Null until hydration — it's a reading of the clock, and
    *  the server has no business guessing what time it is where the guest is. */
   openNow: boolean | null;
@@ -30,6 +36,17 @@ export interface ParkHoursToday {
   nextOpen: string | null;
   /** "Early entry 8 AM", when the park posts an early-entry window today. */
   earlyEntry: string | null;
+  /** The operator has posted *any* days for this park. The ticket uses it to
+   *  decide whether its lower half has an hours block to frame at all. */
+  hasSchedule: boolean;
+  /**
+   * The hours query has answered, either way. False on the server *and* on the
+   * client's first render (this query isn't SSR-prefetched), so a caller can
+   * reserve space for the block without the two disagreeing about whether it
+   * exists — which `loading` can't do, since TanStack reports `isLoading` false
+   * on a server that never fetches and true on the client that does.
+   */
+  ready: boolean;
   loading: boolean;
 }
 
@@ -105,27 +122,44 @@ export function useParkHoursToday(parkSlug: string | null): ParkHoursToday {
         : null,
     openLabel: today?.open ? clockTight(today.open, tz) : null,
     closeLabel: today?.close ? clockTight(today.close, tz) : null,
+    closingLabel: active?.close ? clockTight(active.close, tz) : null,
     openNow,
     nextOpen,
     earlyEntry: early ? `Early entry ${clockTight(early.open, tz)}` : null,
+    hasSchedule: (q.data?.days.length ?? 0) > 0,
+    ready: !parkSlug || q.data != null,
     loading: q.isLoading || !parkSlug,
   };
 }
 
 /**
- * The week ahead — a flat card of upcoming operating hours. Today's own hours
- * moved up to the hero chips with the Option C redesign (plan §4.3), so this is
- * the planning strip only: the next six days the park has posted.
+ * "Hours" — today's window and the next few days the park has posted, as a
+ * list.
+ *
+ * `variant="ticket"` drops the card chrome and inks the list for the stub's own
+ * lower half, which is where the park page carries it (2026-09-16, Josh). It
+ * used to head the AHEAD band with the crowd calendar and the price; it reads
+ * better on the ticket, because "what time does this place open" is a fact
+ * about the park in the same way the longest wait is, and the band it was in
+ * was asking a different question — which *other* day to come.
+ *
+ * Today keeps its own row (picked out) even though the ticket's own status pill
+ * carries it too — a column of six dates whose first entry is tomorrow reads as
+ * a park that isn't open today.
  *
  * Client-only (the hours query isn't SSR-prefetched), so it falls back to a
  * skeleton on the server + first client render — no hydration mismatch from the
- * timezone-aware "today" lookup.
+ * timezone-aware "today" lookup. On the ticket it renders nothing at all until
+ * the query lands: a grey slab inside the stub is worse than a stub that grows.
  */
 export function ParkHours({
   parkSlug,
+  variant = "card",
   className,
 }: {
   parkSlug: string | null;
+  /** `"ticket"` renders bare, in the stub's ink — see above. */
+  variant?: "card" | "ticket";
   className?: string;
 }) {
   const trpc = useTRPC();
@@ -133,9 +167,33 @@ export function ParkHours({
     ...trpc.parks.hours.queryOptions({ parkSlug: parkSlug ?? "" }),
     enabled: !!parkSlug,
   });
+  const ticket = variant === "ticket";
 
-  if (q.isLoading || !parkSlug) {
-    return <Skeleton className={cn("h-[104px] w-full rounded-[22px]", className)} />;
+  // Same shape in grey rather than nothing: on the ticket this block sits above
+  // the showtimes and above the whole left column, so appearing late pushed all
+  // of it down. Keyed off the data, not `isLoading` — see `ready` above.
+  if (!q.data) {
+    if (!parkSlug) return null;
+    if (ticket) {
+      return (
+        <div className={cn("flex flex-col gap-3", className)}>
+          <div className="flex items-baseline justify-between gap-3">
+            <h3 className="text-[11px] font-bold tracking-[0.06em] text-ink-on-yellow/60 uppercase">
+              Hours
+            </h3>
+          </div>
+          <div className="flex flex-col gap-1">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="flex items-center gap-2.5 px-2 py-1">
+                <Skeleton className="h-3.5 w-16 rounded bg-ink-on-yellow/10" />
+                <Skeleton className="h-3.5 w-28 rounded bg-ink-on-yellow/10" />
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    return <Skeleton className={cn("h-[248px] w-full rounded-[22px]", className)} />;
   }
 
   const data = q.data;
@@ -144,58 +202,111 @@ export function ParkHours({
   const tz = data.timezone;
   const today = todayInTz(tz);
   const todayEntry = data.days.find((d) => d.date === today) ?? null;
-  const upcoming = data.days.filter((d) => d.date > today).slice(0, 6);
+  // Fewer days on the ticket: the stub is carrying the showtimes under this,
+  // and a week of dates there turns the identity block into a timetable.
+  const upcoming = data.days.filter((d) => d.date > today).slice(0, ticket ? 3 : 5);
   if (upcoming.length === 0 && !todayEntry) return null;
 
   return (
     <div
       className={cn(
-        "flex flex-col gap-3 rounded-[22px] border border-card-edge bg-card p-4 md:p-5",
+        "flex flex-col gap-3",
+        !ticket && "rounded-[22px] border border-card-edge bg-card p-4 md:p-5",
         className,
       )}
     >
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="flex items-center gap-1.5 text-muted-foreground">
-          <ClockIcon className="size-4" />
-          <span className="text-[11px] font-bold uppercase tracking-[0.06em]">Hours</span>
+      <div className="flex items-baseline justify-between gap-3">
+        <h3
+          className={cn(
+            "flex items-center gap-2",
+            ticket
+              ? "text-[11px] font-bold tracking-[0.06em] text-ink-on-yellow/60 uppercase"
+              : "text-[19px] font-extrabold tracking-[-0.01em]",
+          )}
+        >
+          {!ticket && <ClockIcon className="size-4 text-muted-foreground" />}
+          Hours
+        </h3>
+        <span
+          className={cn(
+            "shrink-0 text-xs",
+            ticket ? "font-semibold text-ink-on-yellow/55" : "text-muted-foreground",
+          )}
+        >
+          Next {upcoming.length + (todayEntry ? 1 : 0)} days
         </span>
-        <span className="text-[15px] font-bold tabular-nums">
-          {todayEntry
-            ? (formatHourRange(todayEntry.open, todayEntry.close, tz) ?? "Hours unavailable")
-            : "Closed today"}
-        </span>
-        {todayEntry?.extras.map((ex, i) => {
-          const range = formatHourRange(ex.open, ex.close, tz);
-          return (
+      </div>
+
+      <div className={cn("flex flex-col", ticket ? "gap-1" : "gap-1.5")}>
+        <div
+          className={cn(
+            "flex items-center gap-2.5 rounded-xl px-3 py-2",
+            ticket ? "-mx-1 bg-ink-on-yellow/8 px-2 py-1.5" : "bg-brand-yellow/10",
+          )}
+        >
+          <span
+            className={cn("w-16 shrink-0 font-extrabold", ticket ? "text-[13px]" : "text-[13px]")}
+          >
+            Today
+          </span>
+          <span className="flex-1 text-[13px] font-semibold tabular-nums">
+            {todayEntry
+              ? (formatHourRange(todayEntry.open, todayEntry.close, tz) ?? "Hours unavailable")
+              : "Closed"}
+          </span>
+          {todayEntry?.extras.slice(0, 1).map((ex, i) => (
             <span
               key={`${ex.type}-${i}`}
-              className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground"
+              className={cn(
+                "shrink-0 text-[11.5px] font-bold",
+                ticket ? "text-ink-on-yellow/70" : "text-brand-yellow-shelf",
+              )}
+              title={extraLabel(ex.type, ex.description)}
             >
-              {extraLabel(ex.type, ex.description)}
-              {range ? ` · ${range}` : ` · from ${formatHour(ex.open, tz)}`}
+              {formatHour(ex.open, tz)}
             </span>
+          ))}
+        </div>
+        {upcoming.map((d) => {
+          const range = formatHourRange(d.open, d.close, tz, true);
+          const label = new Date(`${d.date}T00:00:00`).toLocaleDateString("en-US", {
+            weekday: "short",
+            day: "numeric",
+          });
+          const extra = d.extras[0] ?? null;
+          return (
+            <div key={d.date} className={cn("flex items-center gap-2.5", ticket ? "px-2" : "px-3")}>
+              <span
+                className={cn(
+                  "w-16 shrink-0 text-[13px] font-bold",
+                  ticket ? "text-ink-on-yellow/85" : "text-foreground/80",
+                )}
+              >
+                {label}
+              </span>
+              <span
+                className={cn(
+                  "flex-1 text-[13px] tabular-nums",
+                  ticket ? "font-semibold text-ink-on-yellow/70" : "text-muted-foreground",
+                )}
+              >
+                {range ?? "Closed"}
+              </span>
+              {extra && (
+                <span
+                  className={cn(
+                    "shrink-0 text-[11.5px]",
+                    ticket ? "text-ink-on-yellow/60" : "text-muted-foreground",
+                  )}
+                  title={extraLabel(extra.type, extra.description)}
+                >
+                  {formatHour(extra.open, tz)}
+                </span>
+              )}
+            </div>
           );
         })}
       </div>
-
-      {upcoming.length > 0 && (
-        <div className="flex flex-wrap gap-x-5 gap-y-1.5 border-t pt-3 text-xs">
-          {upcoming.map((d) => {
-            const range = formatHourRange(d.open, d.close, tz, true);
-            const label = new Date(`${d.date}T00:00:00`).toLocaleDateString("en-US", {
-              weekday: "short",
-              month: "short",
-              day: "numeric",
-            });
-            return (
-              <span key={d.date} className="text-muted-foreground">
-                <span className="font-semibold text-foreground">{label}</span>{" "}
-                <span className="tabular-nums">{range ?? "Closed"}</span>
-              </span>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }

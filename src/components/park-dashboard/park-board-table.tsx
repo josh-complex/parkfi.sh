@@ -4,7 +4,6 @@ import * as React from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
-  flexRender,
   getCoreRowModel,
   getSortedRowModel,
   useReactTable,
@@ -12,15 +11,7 @@ import {
   type SortingState,
   type Table as ReactTable,
 } from "@tanstack/react-table";
-import {
-  ArrowUpDownIcon,
-  ChevronRightIcon,
-  GemIcon,
-  GhostIcon,
-  InfoIcon,
-  SlidersHorizontalIcon,
-  ZapIcon,
-} from "lucide-react";
+import { ArrowUpDownIcon, GemIcon, GhostIcon, SlidersHorizontalIcon, ZapIcon } from "lucide-react";
 
 import {
   RideAlertButton,
@@ -49,21 +40,8 @@ import {
   SelectValue,
 } from "#/components/ui/select.tsx";
 import { MAP_FILTER_PILL, MAP_FILTER_STACK } from "#/components/rides/ride-filter-button.tsx";
-import {
-  SortRows,
-  TableSortHeader,
-  type SortDir,
-  type SortOption,
-} from "#/components/ui/sort-menu.tsx";
+import { SortRows, type SortDir, type SortOption } from "#/components/ui/sort-menu.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "#/components/ui/table.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "#/components/ui/tooltip.tsx";
 import { formatTimeInZone } from "#/lib/format-time.ts";
 import { useHydrated } from "#/lib/use-hydrated.ts";
@@ -77,6 +55,7 @@ import {
   isUniversal,
   normalizeRideName,
   paidLineInfo,
+  paidLineLive,
   paidLineProduct,
 } from "./lightning-lane.ts";
 import { Sparkline } from "./sparkline.tsx";
@@ -93,54 +72,6 @@ function formatReturnWindow(
   if (start) return `from ${fmt(start)}`;
   if (end) return `until ${fmt(end)}`;
   return null;
-}
-
-function ReturnWindowCell({
-  item,
-  operatorSlug,
-  timeZone,
-}: {
-  item: BoardItem;
-  operatorSlug: string | null | undefined;
-  timeZone: string | null | undefined;
-}) {
-  const ll = paidLineInfo(item, operatorSlug);
-  if (!ll.has) return <span className="text-muted-foreground">—</span>;
-  const window = formatReturnWindow(ll.returnStart, ll.returnEnd, timeZone);
-  if (!window) return <span className="text-muted-foreground">—</span>;
-  return <span className="tabular-nums">{window}</span>;
-}
-
-function PaidLineHeader({ operatorSlug }: { operatorSlug: string | null | undefined }) {
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      {paidLineProduct(operatorSlug)}
-      <Tooltip>
-        <TooltipTrigger
-          className="text-muted-foreground hover:text-foreground inline-flex cursor-help"
-          aria-label="About this column"
-        >
-          <InfoIcon className="size-3.5" />
-        </TooltipTrigger>
-        <TooltipContent className="max-w-xs text-pretty">
-          {isUniversal(operatorSlug) ? (
-            <span>
-              Universal’s free <strong>Virtual Line</strong> state, plus an <strong>Express</strong>{" "}
-              marker on rides that accept the paid Express Pass. Express is a separate park-wide
-              pass — see the Ticket Pricing page for its dates and prices.
-            </span>
-          ) : (
-            <span>
-              Disney has two Lightning Lane tiers. <strong>Multi</strong> = included in the Multi
-              Pass bundle (one price, most rides). <strong>Single</strong> = Individual Lightning
-              Lane, bought per ride and demand-priced — only the top headliners (the $ amount). A
-              ride is one tier or the other.
-            </span>
-          )}
-        </TooltipContent>
-      </Tooltip>
-    </span>
-  );
 }
 
 type StatusFilter = "ALL" | "OPERATING" | "DOWN" | "CLOSED";
@@ -194,39 +125,13 @@ function SingleRiderBadge() {
   );
 }
 
-function AttractionCell({ item, singleRider }: { item: BoardItem; singleRider?: boolean }) {
-  const meta = item.meta;
-  const subtitle = [meta?.tags?.join(" · "), meta?.heightRequirement].filter(Boolean).join(" · ");
-  return (
-    <div className="flex min-w-0 items-center gap-3">
-      {meta?.imageThumbUrl ? (
-        <Image
-          src={meta.imageThumbUrl}
-          alt=""
-          loading="lazy"
-          boxWidth={44}
-          aspect={1}
-          placeholder={meta.imageThumbhash}
-          className="size-11 shrink-0 rounded-lg object-cover"
-        />
-      ) : null}
-      <div className="min-w-0">
-        <span className="block truncate font-medium">{item.name}</span>
-        {subtitle || singleRider ? (
-          <span className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs font-normal">
-            {subtitle ? <span className="truncate">{subtitle}</span> : null}
-            {singleRider ? <SingleRiderBadge /> : null}
-          </span>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
 function StandbyValue({ item, className }: { item: BoardItem; className?: string }) {
   if (item.standbyWait == null) return <span className="text-muted-foreground">—</span>;
   return (
-    <span className={cn("tabular-nums", className)}>
+    // `whitespace-nowrap` or the " min" breaks onto its own line whenever the
+    // row's right-hand cluster gets tight — which, next to a paid-line chip, is
+    // most of the time.
+    <span className={cn("tabular-nums whitespace-nowrap", className)}>
       {item.standbyWait}
       <span className="text-muted-foreground text-xs font-normal"> min</span>
     </span>
@@ -249,46 +154,6 @@ function ExpressAcceptedBadge({ className }: { className?: string }) {
       <ZapIcon className="text-primary size-3" aria-hidden />
       Express
     </Badge>
-  );
-}
-
-function PaidLineCell({
-  item,
-  operatorSlug,
-}: {
-  item: BoardItem;
-  operatorSlug: string | null | undefined;
-}) {
-  const ll = paidLineInfo(item, operatorSlug);
-  const express = ll.expressPass === true;
-  if (!ll.has) {
-    return express ? <ExpressAcceptedBadge /> : <span className="text-muted-foreground">—</span>;
-  }
-  const price = formatPriceCents(ll.priceCents, item.lightningLane.currency);
-  return (
-    <div className="flex items-center gap-2">
-      {express ? <ExpressAcceptedBadge /> : null}
-      {ll.state ? (
-        <Badge variant={ll.soldOut ? "destructive" : "secondary"}>
-          {ll.state.toLowerCase().replace("_", " ")}
-        </Badge>
-      ) : (
-        <Badge variant="outline">offered</Badge>
-      )}
-      {price ? <span className="tabular-nums">{price}</span> : null}
-      {ll.kind ? (
-        <span
-          className="text-muted-foreground text-xs uppercase"
-          title={
-            ll.kind === "Single"
-              ? "Individual Lightning Lane — bought per ride, demand-priced"
-              : "Included in the Lightning Lane Multi Pass bundle"
-          }
-        >
-          {ll.kind}
-        </span>
-      ) : null}
-    </div>
   );
 }
 
@@ -318,6 +183,25 @@ const BOARD_SORTS: ReadonlyArray<SortOption<BoardSortKey>> = [
 ];
 
 const DEFAULT_SORTING: SortingState = [{ id: "standby", desc: true }];
+
+/**
+ * The desktop sort menu. The phone's drawer (`BOARD_SORTS`) offers the same
+ * three keys as a key + direction pair; a `<Select>` has one axis, so the
+ * directions are spelled out as their own options and encoded `key:dir`.
+ */
+const SORT_LABELS = {
+  "standby:desc": "Longest wait",
+  "standby:asc": "Shortest wait",
+  "attraction:asc": "Name A–Z",
+  "attraction:desc": "Name Z–A",
+  "status:asc": "Status",
+} as const;
+
+function sortValue(sorting: SortingState): keyof typeof SORT_LABELS {
+  const { key, dir } = sortingToOption(sorting);
+  const value = `${key}:${dir}`;
+  return value in SORT_LABELS ? (value as keyof typeof SORT_LABELS) : "standby:desc";
+}
 
 function sortingToOption(sorting: SortingState): { key: BoardSortKey; dir: SortDir } {
   const s = sorting[0];
@@ -484,38 +368,24 @@ export function ParkBoardTable({
     return `${open.length} of ${allHouses.length} ${noun} open · longest ${longest} min`;
   }, [allHouses]);
 
+  // Sort definitions only — no `header`, no `cell`.
+  //
+  // The board used to be an eight-column table (attraction, trend, status,
+  // standby, the paid line, its return window, an alert bell and a chevron),
+  // which meant eight header cells and six cell components to say four things.
+  // It is one row per ride now (see `RideRow`), so TanStack is left doing the
+  // only job that was ever hard: keeping the rides and the houses in one sort
+  // order. These three ids are what the sort control offers (`BOARD_SORTS`).
   const columns = React.useMemo<Array<ColumnDef<BoardItem>>>(
     () => [
       {
         id: "attraction",
         accessorFn: (r) => r.name,
-        header: "Attraction",
-        cell: ({ row }) => (
-          <AttractionCell item={row.original} singleRider={singleRiderIds.has(row.original.id)} />
-        ),
         sortingFn: (a, b) => a.original.name.localeCompare(b.original.name),
-      },
-      {
-        id: "trend",
-        header: "24h trend",
-        enableSorting: false,
-        cell: ({ row }) => {
-          const series = sparkByRide.get(row.original.id);
-          const down = row.original.status === "DOWN" || row.original.status === "REFURBISHMENT";
-          return (
-            <Sparkline
-              data={series?.values ?? []}
-              closed={series?.closed}
-              color={down ? "var(--destructive)" : "var(--primary)"}
-            />
-          );
-        },
       },
       {
         id: "status",
         accessorFn: (r) => r.status ?? "UNKNOWN",
-        header: "Status",
-        cell: ({ row }) => <StatusBadge status={row.original.status} />,
         sortingFn: (a, b) =>
           (STATUS_RANK[a.original.status ?? "UNKNOWN"] ?? 9) -
           (STATUS_RANK[b.original.status ?? "UNKNOWN"] ?? 9),
@@ -523,81 +393,10 @@ export function ParkBoardTable({
       {
         id: "standby",
         accessorFn: (r) => r.standbyWait ?? undefined,
-        header: "Standby",
         sortUndefined: "last",
-        cell: ({ row }) => <StandbyValue item={row.original} className="text-right text-base" />,
-        meta: { align: "right" } as const,
-      },
-      {
-        id: "paidline",
-        header: () => <PaidLineHeader operatorSlug={operatorSlug} />,
-        enableSorting: false,
-        cell: ({ row }) => <PaidLineCell item={row.original} operatorSlug={operatorSlug} />,
-      },
-      // Universal's per-ride paid return time is a Disney (Lightning Lane)
-      // concept — omit the "Next Available LL" column there.
-      ...(isUniversal(operatorSlug)
-        ? []
-        : [
-            {
-              id: "return",
-              header: "Next Available LL",
-              enableSorting: false,
-              cell: ({ row }) => (
-                <ReturnWindowCell
-                  item={row.original}
-                  operatorSlug={operatorSlug}
-                  timeZone={timezone}
-                />
-              ),
-            } as ColumnDef<BoardItem>,
-          ]),
-      {
-        id: "alert",
-        header: () => <span className="sr-only">Alert</span>,
-        enableSorting: false,
-        cell: ({ row }) => (
-          <div onClick={(e) => e.stopPropagation()}>
-            <RideAlertButton
-              attractionId={row.original.id}
-              attractionName={row.original.name}
-              alert={alertByAttraction.get(row.original.id)}
-              loggedIn={loggedIn}
-            />
-          </div>
-        ),
-      },
-      {
-        id: "chevron",
-        header: () => null,
-        enableSorting: false,
-        cell: ({ row }) =>
-          parkSlug ? (
-            <Link
-              to="/park/$slug/ride/$rideSlug"
-              params={{ slug: parkSlug, rideSlug: row.original.slug }}
-              onClick={(e) => e.stopPropagation()}
-              aria-label={`Open ${row.original.name} details`}
-              className="inline-flex"
-            >
-              <ChevronRightIcon
-                className={cn(
-                  "size-4 transition-colors hover:text-foreground",
-                  row.original.id === selectedId ? "text-foreground" : "text-muted-foreground",
-                )}
-              />
-            </Link>
-          ) : (
-            <ChevronRightIcon
-              className={cn(
-                "size-4",
-                row.original.id === selectedId ? "text-foreground" : "text-muted-foreground",
-              )}
-            />
-          ),
       },
     ],
-    [sparkByRide, operatorSlug, alertByAttraction, loggedIn, selectedId, parkSlug, singleRiderIds],
+    [],
   );
 
   // One sort state, two tables: the rides board and the houses section reorder
@@ -657,8 +456,30 @@ export function ParkBoardTable({
             className="flex gap-2 md:hidden"
           />
         )}
-        {/* Desktop controls live beside the heading; mobile gets a FAB (below). */}
-        <div className="hidden md:block">
+        {/* Desktop controls live beside the heading; mobile gets a FAB (below).
+            Sort is a control of its own now — the rows replaced a table, so
+            there are no column headers left to click. */}
+        <div className="hidden items-center gap-2 md:flex">
+          <Select
+            value={sortValue(sorting)}
+            onValueChange={(v) => {
+              if (!v) return;
+              const [key, dir] = v.split(":") as [BoardSortKey, SortDir];
+              handleSort(key, dir);
+            }}
+            items={SORT_LABELS}
+          >
+            <SelectTrigger size="sm" className="w-44" aria-label="Sort rides">
+              <SelectValue placeholder="Longest wait" />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(SORT_LABELS) as Array<keyof typeof SORT_LABELS>).map((key) => (
+                <SelectItem key={key} value={key}>
+                  {SORT_LABELS[key]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select
             value={filter}
             onValueChange={(v) => v && handleFilter(v as StatusFilter)}
@@ -780,7 +601,29 @@ function useBoardTable(
   });
 }
 
-/** One section's rows: the sortable table on desktop, stacked cards on mobile. */
+/**
+ * One section's rows.
+ *
+ * There is one layout now, not a desktop table and a mobile card list. The
+ * table's eight columns were mostly restating each other — a status column
+ * beside a standby column beside two Lightning Lane columns — so each ride is
+ * one row built around the two things a guest actually reads it for: the
+ * photograph that tells them what it is, and the trend line that tells them
+ * whether the wait is going their way.
+ *
+ * Deliberately two lines and not one. A single-line row was the first attempt
+ * and it does not fit: the board sits in the page's right column, which is
+ * about 670px of usable width at 1440 — and a trend, a wait, a paid-line chip
+ * and a bell laid out beside the name leave the name around 130px, which
+ * truncates "TRON Lightcycle / Run" to "TRON…". Stacking the numbers under the
+ * name costs about 20px of row height and gives the name the whole width back.
+ * Desktop pulls the paid line up onto the trend line as one chip; the phone
+ * keeps it as a footer strip, where there is no width for it inline.
+ *
+ * Sorting moved with it: there are no column headers to click, so the sort
+ * control sits beside the status filter in the board's heading at every width
+ * (see `ParkBoardTable`).
+ */
 function BoardRows({
   table,
   isMobile,
@@ -806,226 +649,269 @@ function BoardRows({
   loggedIn: boolean;
   singleRiderIds: Set<number>;
 }) {
-  const sortedRows = table.getRowModel().rows;
-  if (isMobile) {
-    return (
-      <MobileCardList
-        rows={sortedRows.map((r) => r.original)}
-        selectedId={selectedId}
-        parkSlug={parkSlug}
-        operatorSlug={operatorSlug}
-        timezone={timezone}
-        sparkByRide={sparkByRide}
-        alertByAttraction={alertByAttraction}
-        loggedIn={loggedIn}
-        singleRiderIds={singleRiderIds}
-      />
-    );
-  }
   return (
-    <div className="min-h-0 flex-1 overflow-x-auto">
-      <Table>
-        <TableHeader>
-          {table.getHeaderGroups().map((hg) => (
-            <TableRow key={hg.id}>
-              {hg.headers.map((header) => {
-                const align =
-                  (header.column.columnDef.meta as { align?: string } | undefined)?.align ?? "left";
-                const canSort = header.column.getCanSort();
-                return (
-                  <TableHead
-                    key={header.id}
-                    className={cn(
-                      header.column.id === "alert" && "w-10 text-center",
-                      header.column.id === "chevron" && "w-8",
-                      align === "right" && "text-right",
-                    )}
-                  >
-                    {header.isPlaceholder ? null : canSort ? (
-                      <TableSortHeader
-                        label={flexRender(header.column.columnDef.header, header.getContext())}
-                        sorted={header.column.getIsSorted()}
-                        onClick={() => header.column.toggleSorting()}
-                      />
-                    ) : (
-                      flexRender(header.column.columnDef.header, header.getContext())
-                    )}
-                  </TableHead>
-                );
-              })}
-            </TableRow>
-          ))}
-        </TableHeader>
-        <TableBody>
-          {sortedRows.map((row) => (
-            <TableRow
-              key={row.id}
-              onClick={() => onSelect(row.original)}
-              data-state={row.original.id === selectedId ? "selected" : undefined}
-              className={cn("h-16 cursor-pointer", row.original.id === selectedId && "bg-muted/60")}
-            >
-              {row.getVisibleCells().map((cell) => {
-                const align =
-                  (cell.column.columnDef.meta as { align?: string } | undefined)?.align ?? "left";
-                return (
-                  <TableCell
-                    key={cell.id}
-                    className={cn(
-                      cell.column.id === "attraction" && "max-w-0 w-full",
-                      cell.column.id === "alert" && "text-center",
-                      align === "right" && "text-right",
-                    )}
-                  >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </TableCell>
-                );
-              })}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+    <div className="flex flex-col gap-2.5 md:gap-2">
+      {table.getRowModel().rows.map((row, index) => (
+        <RideRow
+          key={row.id}
+          item={row.original}
+          index={index}
+          isMobile={isMobile}
+          selected={row.original.id === selectedId}
+          onSelect={onSelect}
+          parkSlug={parkSlug}
+          operatorSlug={operatorSlug}
+          timezone={timezone}
+          series={sparkByRide.get(row.original.id)}
+          alert={alertByAttraction.get(row.original.id)}
+          loggedIn={loggedIn}
+          singleRider={singleRiderIds.has(row.original.id)}
+        />
+      ))}
     </div>
   );
 }
 
-function MobileCardList({
-  rows,
-  selectedId,
+function RideRow({
+  item,
+  index,
+  isMobile,
+  selected,
+  onSelect,
   parkSlug,
   operatorSlug,
   timezone,
-  sparkByRide,
-  alertByAttraction,
+  series,
+  alert,
   loggedIn,
-  singleRiderIds,
+  singleRider,
 }: {
-  rows: Array<BoardItem>;
-  selectedId: number | null;
+  item: BoardItem;
+  index: number;
+  isMobile: boolean;
+  selected: boolean;
+  onSelect: (item: BoardItem) => void;
   parkSlug: string | null;
   operatorSlug: string | null | undefined;
   timezone: string | null | undefined;
-  sparkByRide: Map<number, { values: Array<number | null>; closed: Array<boolean> }>;
-  alertByAttraction: Map<number, RideAlertEntry>;
+  series: { values: Array<number | null>; closed: Array<boolean> } | undefined;
+  alert: RideAlertEntry | undefined;
   loggedIn: boolean;
-  singleRiderIds: Set<number>;
+  singleRider: boolean;
 }) {
-  return (
-    <div className="flex flex-col gap-2.5">
-      {rows.map((item, index) => {
-        const meta = item.meta;
-        const down = item.status === "DOWN" || item.status === "REFURBISHMENT";
-        // "Open with a live wait" gets the wait time; everything else (closed,
-        // down, or open-but-no-standby like a virtual-line-only ride) shows the
-        // status badge — so a row never falls back to a bare em-dash.
-        const openWithWait = item.status === "OPERATING" && item.standbyWait != null;
-        const series = sparkByRide.get(item.id);
-        const hasTrend = (series?.values ?? []).filter((v) => v != null).length >= 2;
-        const subtitle = [meta?.tags?.join(" · "), meta?.heightRequirement]
-          .filter(Boolean)
-          .join(" · ");
-        // Whole card is the link to the ride detail page — interactive children
-        // (the alert bell) stop the click so they don't trigger navigation.
-        const body = (
-          <>
-            <div className="flex items-stretch gap-3">
-              {/* Media rail — bleeds to the card's top & left edges (the card
-                  clips it to its rounded corner) and stretches the full height
-                  of the name + trend rows beside it. */}
-              {meta?.imageThumbUrl ? (
-                <Image
-                  src={meta.imageThumbUrl}
-                  alt=""
-                  // First screenful loads eagerly so the preload scanner grabs
-                  // these from the SSR HTML — lazy images wait for layout/JS.
-                  loading={index < 6 ? "eager" : "lazy"}
-                  boxWidth={96}
-                  placeholder={meta.imageThumbhash}
-                  className="w-24 shrink-0 self-stretch object-cover"
-                />
+  const meta = item.meta;
+  const down = item.status === "DOWN" || item.status === "REFURBISHMENT";
+  // "Open with a live wait" gets the wait time; everything else (closed, down,
+  // or open-but-no-standby like a virtual-line-only ride) shows the status
+  // badge — so a row never falls back to a bare em-dash.
+  const openWithWait = item.status === "OPERATING" && item.standbyWait != null;
+  const hasTrend = (series?.values ?? []).filter((v) => v != null).length >= 2;
+  const subtitle = [meta?.tags?.join(" · "), meta?.heightRequirement].filter(Boolean).join(" · ");
+
+  const body = (
+    <>
+      {/* Vertical padding only. The row's box is the hover/selected wash and
+          nothing else — there is no frame for the content to sit inside — so
+          insetting it horizontally just narrowed every ride name and shrank
+          the photo for no edge to clear. */}
+      <div className="flex items-stretch gap-3.5 py-2">
+        {/* The photo is its own object now, not a rail bled into the row's
+            corner: the row lost its card (no border, no fill), so an image
+            clipped to two of its corners had nothing left to be clipped *by*
+            and read as a torn edge. It is rounded on all four and wider than
+            the old 96px rail — the picture is half of what the row is for. */}
+        {meta?.imageThumbUrl ? (
+          <Image
+            src={meta.imageThumbUrl}
+            alt=""
+            // The first screenful loads eagerly so the preload scanner grabs
+            // these from the SSR HTML — lazy images wait for layout/JS.
+            loading={index < 6 ? "eager" : "lazy"}
+            boxWidth={isMobile ? 112 : 160}
+            placeholder={meta.imageThumbhash}
+            // Height comes from the row (`self-stretch`), so the floor is what
+            // keeps a ride with no tag line from getting a letterbox: without
+            // it the shortest rows crop the photo to a strip.
+            className="min-h-22 w-28 shrink-0 self-stretch rounded-[14px] object-cover md:min-h-26 md:w-40"
+          />
+        ) : null}
+        <div className="flex min-w-0 flex-1 flex-col justify-center gap-2.5 py-2">
+          {/* Name / subtext, with the alert bell pinned to the row's end. */}
+          <div className="flex items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <span className="line-clamp-2 leading-snug font-medium md:line-clamp-1">
+                {item.name}
+              </span>
+              {subtitle || singleRider ? (
+                <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs font-normal text-muted-foreground">
+                  {subtitle ? <span className="line-clamp-1">{subtitle}</span> : null}
+                  {singleRider ? <SingleRiderBadge /> : null}
+                </span>
               ) : null}
-              <div
-                className={cn(
-                  "flex min-w-0 flex-1 flex-col justify-center gap-2 py-3 pr-3",
-                  meta?.imageThumbUrl ? null : "pl-3",
-                )}
-              >
-                {/* Name / subtext with the alert bell pinned to the row end. */}
-                <div className="flex items-start gap-3">
-                  <div className="min-w-0 flex-1">
-                    <span className="line-clamp-2 font-medium leading-snug">{item.name}</span>
-                    {subtitle || singleRiderIds.has(item.id) ? (
-                      <span className="text-muted-foreground mt-0.5 flex min-w-0 items-center gap-1.5 text-xs font-normal">
-                        {subtitle ? <span className="line-clamp-1">{subtitle}</span> : null}
-                        {singleRiderIds.has(item.id) ? <SingleRiderBadge /> : null}
-                      </span>
-                    ) : null}
-                  </div>
-                  <div
-                    className="-mr-1 flex shrink-0 items-center"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }}
-                  >
-                    <RideAlertButton
-                      attractionId={item.id}
-                      attractionName={item.name}
-                      alert={alertByAttraction.get(item.id)}
-                      loggedIn={loggedIn}
-                    />
-                  </div>
-                </div>
-                {/* Trend + live status: sparkline on the left, current wait or
-                    the status badge on the right. */}
-                <div className="flex items-center justify-between gap-3">
-                  {hasTrend ? (
-                    <Sparkline
-                      data={series?.values ?? []}
-                      closed={series?.closed}
-                      width={110}
-                      height={26}
-                      color={down ? "var(--destructive)" : "var(--primary)"}
-                    />
-                  ) : (
-                    <span className="text-muted-foreground text-xs">No recent trend</span>
-                  )}
-                  {openWithWait ? (
-                    <StandbyValue item={item} className="text-lg font-semibold" />
-                  ) : (
-                    <StatusBadge status={item.status} />
-                  )}
-                </div>
-              </div>
             </div>
-            {/* Lightning Lane / Express — a tinted footer strip, shown only when
-                the ride actually has a paid line. Product + tier read as a label
-                on the left; the live availability (and return window, when
-                posted) sit as chips on the right. */}
-            <PaidLineFooter item={item} operatorSlug={operatorSlug} timeZone={timezone} />
-          </>
-        );
-
-        const className = cn(
-          "flex flex-col overflow-hidden rounded-2xl border bg-card text-left transition-colors",
-          item.id === selectedId ? "border-primary bg-muted/50" : "hover:bg-muted/40",
-        );
-
-        return parkSlug ? (
-          <Link
-            key={item.id}
-            to="/park/$slug/ride/$rideSlug"
-            params={{ slug: parkSlug, rideSlug: item.slug }}
-            className={cn("cursor-pointer", className)}
-          >
-            {body}
-          </Link>
-        ) : (
-          <div key={item.id} className={className}>
-            {body}
+            <div
+              // No negative pull any more — it existed to eat the row's old
+              // right padding, and without that it would hang the bell over
+              // the edge.
+              className="flex shrink-0 items-center"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+            >
+              <RideAlertButton
+                attractionId={item.id}
+                attractionName={item.name}
+                alert={alert}
+                loggedIn={loggedIn}
+              />
+            </div>
           </div>
-        );
-      })}
-    </div>
+          {/* Trend and live state: the sparkline on the left, the wait (or the
+              status, when there is no wait) on the right, and — where there's
+              width for it — the paid line as one chip between them. */}
+          <div className="flex items-center justify-between gap-3">
+            {hasTrend ? (
+              <Sparkline
+                data={series?.values ?? []}
+                closed={series?.closed}
+                // Wider on a desktop, where the row has the width to spend: the
+                // trend is the whole reason this replaced a "24h trend" column
+                // squeezed between two others.
+                width={isMobile ? 110 : 168}
+                height={isMobile ? 32 : 40}
+                color={down ? "var(--destructive)" : "var(--primary)"}
+              />
+            ) : (
+              <span className="text-xs text-muted-foreground">No recent trend</span>
+            )}
+            <div className="flex shrink-0 items-center gap-3">
+              <span className="hidden md:block">
+                <PaidLineChip item={item} operatorSlug={operatorSlug} timeZone={timezone} />
+              </span>
+              {openWithWait ? (
+                <StandbyValue item={item} className="text-lg font-semibold" />
+              ) : (
+                <StatusBadge status={item.status} />
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+      {/* Phone: the paid line as a tinted strip under the row, because the
+          trend line has no width left to carry it. */}
+      <PaidLineFooter
+        item={item}
+        operatorSlug={operatorSlug}
+        timeZone={timezone}
+        className="mb-2 md:hidden"
+      />
+    </>
+  );
+
+  // No border and no fill. Thirty-five bordered cards inside a bordered card is
+  // three nested frames deep before any content, and the photos already give
+  // every row a hard edge of its own. What's left is a hover/selected wash,
+  // which is the only thing the frame was really doing.
+  const className = cn(
+    "flex flex-col rounded-[18px] text-left transition-colors",
+    selected ? "bg-muted" : "hover:bg-muted/50",
+  );
+
+  return parkSlug ? (
+    <Link
+      to="/park/$slug/ride/$rideSlug"
+      params={{ slug: parkSlug, rideSlug: item.slug }}
+      onClick={() => onSelect(item)}
+      className={cn("cursor-pointer", className)}
+    >
+      {body}
+    </Link>
+  ) : (
+    <div className={className}>{body}</div>
+  );
+}
+
+/**
+ * The paid line on a desktop row: one chip, where the table gave it two whole
+ * columns plus a header tooltip explaining them.
+ *
+ * That the chip is there at all means the line is offered, so there is no
+ * "offered" badge; what's worth a glance is that the return times have run out,
+ * its price, or when it next returns.
+ *
+ * A premium tier (Individual Lightning Lane, bought per ride) gets both, in
+ * that order — "$19.00 · 8:20 PM". The two are one decision there: the price is
+ * what you'd pay and the time is what you'd get for it, and a price on its own
+ * can't be judged. The bundled Multi tier has no per-ride price to weigh, so it
+ * shows the time alone.
+ *
+ * "No return times" and not "sold out", matching the Skip the line panel: the
+ * product is still on sale, it is the windows that have gone — and beside a
+ * price, "sold out" reads as a contradiction. The window's *start* only
+ * — "7:20 PM", not "7:20 PM – 8:20 PM" — because the chip shares a line with
+ * the trend and the wait, and the end of the window is never the thing that
+ * decides anything. Rides with no paid line get no chip rather than an em-dash;
+ * a column of dashes was most of what the old columns drew.
+ */
+function PaidLineChip({
+  item,
+  operatorSlug,
+  timeZone,
+}: {
+  item: BoardItem;
+  operatorSlug: string | null | undefined;
+  timeZone: string | null | undefined;
+}) {
+  const ll = paidLineInfo(item, operatorSlug);
+  const express = ll.expressPass === true;
+  const price = formatPriceCents(ll.priceCents, item.lightningLane.currency);
+  const window = formatReturnWindow(ll.returnStart, ll.returnEnd, timeZone);
+  const next = ll.returnStart ? formatTimeInZone(ll.returnStart, timeZone) : null;
+  // Nothing posted means no chip — not a bolt and the word "available" (see
+  // `paidLineLive`). At Universal that's most rides most of the time, and the
+  // one thing worth saying about them is whether Express gets you in, so the
+  // Express badge takes the slot instead.
+  const detail = !paidLineLive(ll)
+    ? null
+    : ll.soldOut
+      ? "no return times"
+      : price && next
+        ? `${price} · ${next}`
+        : (price ?? next ?? ll.kind);
+  if (!detail) return express ? <ExpressAcceptedBadge /> : null;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            className={cn(
+              "inline-flex cursor-help items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold",
+              ll.soldOut
+                ? "border-destructive/30 text-destructive"
+                : "border-border text-muted-foreground",
+            )}
+          />
+        }
+      >
+        <ZapIcon
+          className={cn("size-3.5", ll.soldOut ? "text-destructive" : "text-primary")}
+          aria-hidden
+        />
+        {ll.soldOut ? detail : <span className="tabular-nums">{detail}</span>}
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs text-pretty">
+        {paidLineProduct(operatorSlug)}
+        {ll.kind ? ` · ${ll.kind}` : ""}
+        {ll.kind === "Single"
+          ? " — an Individual Lightning Lane, bought per ride and demand-priced."
+          : ll.kind === "Multi"
+            ? " — included in the Lightning Lane Multi Pass bundle."
+            : ""}
+        {window ? ` Next return ${window}.` : ""}
+        {express ? " Also accepts Universal Express Pass." : ""}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -1038,19 +924,26 @@ function PaidLineFooter({
   item,
   operatorSlug,
   timeZone,
+  className,
 }: {
   item: BoardItem;
   operatorSlug: string | null | undefined;
   timeZone: string | null | undefined;
+  className?: string;
 }) {
   const ll = paidLineInfo(item, operatorSlug);
   const express = ll.expressPass === true;
-  if (!ll.has) {
-    // No virtual line, but a ride that accepts Express Pass still earns the
-    // strip — it's the line an Express holder walks into.
+  if (!paidLineLive(ll)) {
+    // Nothing posted. A ride that accepts Express Pass still earns the strip —
+    // it's the line an Express holder walks into.
     if (express) {
       return (
-        <div className="border-border/50 bg-muted/30 flex items-center justify-between gap-2 border-t px-3 py-2.5 text-xs">
+        <div
+          className={cn(
+            "bg-muted/50 flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-xs",
+            className,
+          )}
+        >
           <span className="text-muted-foreground flex items-center gap-1.5 font-medium">
             <ZapIcon className="text-primary size-3.5" />
             Express
@@ -1060,9 +953,19 @@ function PaidLineFooter({
       );
     }
     return (
-      <div className="border-border/50 bg-muted/30 text-muted-foreground/70 flex items-center gap-1.5 border-t px-3 py-2.5 text-xs">
+      <div
+        className={cn(
+          "bg-muted/40 text-muted-foreground/70 flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs",
+          className,
+        )}
+      >
         <ZapIcon className="text-muted-foreground/40 size-3.5" />
-        No {paidLineProduct(operatorSlug)} offered
+        {/* "Offered" is about the ride, "posted right now" is about the hour —
+            and a ride that has the queue but isn't running one today is the
+            second, not the first. */}
+        {ll.has
+          ? `No ${paidLineProduct(operatorSlug)} posted right now`
+          : `No ${paidLineProduct(operatorSlug)} offered`}
       </div>
     );
   }
@@ -1072,7 +975,12 @@ function PaidLineFooter({
   // with a gold gem so it reads apart from the bundled Multi pass.
   const premium = ll.kind === "Single";
   return (
-    <div className="border-border/50 bg-muted/30 flex items-center justify-between gap-2 border-t px-3 py-2.5 text-xs">
+    <div
+      className={cn(
+        "bg-muted/50 flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-xs",
+        className,
+      )}
+    >
       <span className="text-muted-foreground flex items-center gap-1.5 font-medium">
         <ZapIcon className="text-primary size-3.5" />
         {paidLineProduct(operatorSlug)}
@@ -1089,7 +997,7 @@ function PaidLineFooter({
       <div className="flex items-center gap-2.5">
         {/* The row's mere presence means the line is offered, so no affirmative
             chip — only surface the exception (sold out). */}
-        {ll.soldOut ? <Badge variant="destructive">sold out</Badge> : null}
+        {ll.soldOut ? <Badge variant="destructive">no return times</Badge> : null}
         {price ? <span className="tabular-nums">{price}</span> : null}
         {window ? <span className="text-muted-foreground tabular-nums">{window}</span> : null}
         {express ? <ExpressAcceptedBadge /> : null}

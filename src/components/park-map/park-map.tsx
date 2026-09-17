@@ -28,10 +28,12 @@ import {
 import { MarkerCluster, type DeclutterItem } from "./declutter.ts";
 import { fusedHeadingStore } from "./heading-store.ts";
 import { roundCoord, routeBearingAt } from "./nav-geometry.ts";
+import { boundsCenter, parkFillZoom } from "./park-camera.ts";
 import {
   applySelected,
   attractionCardBodyHtml,
   attractionKind,
+  attractionMappable,
   attractionPriority,
   boundaryFeatureCollection,
   buildAttractionEl,
@@ -43,6 +45,7 @@ import {
   sameCoords,
   setUserHeading,
   chromePadding,
+  EMBEDDED_FIT_PAD,
   DECLUTTER_SIZE,
   declutterSizeForZoom,
   escapeHtml,
@@ -314,9 +317,20 @@ function parkAtPoint<T extends { boundary?: GeoPolygon | null; bounds?: ParkBoun
 }
 
 /** Generous box around the park used to cap how far the user can zoom/pan out. */
+/**
+ * How far past a park's own box you can pan and zoom out before the map stops
+ * you — as a multiple of the park's span on each side.
+ *
+ * Was 0.6, which is barely a park's width of context: on a park page you could
+ * hardly pull back far enough to see where the park sits in its resort, which
+ * is most of why you'd zoom out at all. At 2.5 the whole resort and its hotels
+ * fit, and the park is still what the camera returns to.
+ */
+const PARK_CONTEXT_FACTOR = 2.5;
+
 function zoomOutBounds(b: ParkBounds): maplibregl.LngLatBoundsLike {
-  const dLng = (b.lngMax - b.lngMin) * 0.6;
-  const dLat = (b.latMax - b.latMin) * 0.6;
+  const dLng = (b.lngMax - b.lngMin) * PARK_CONTEXT_FACTOR;
+  const dLat = (b.latMax - b.latMin) * PARK_CONTEXT_FACTOR;
   return [
     [b.lngMin - dLng, b.latMin - dLat],
     [b.lngMax + dLng, b.latMax + dLat],
@@ -766,6 +780,10 @@ export function ParkMap({
       resize: () => map.resize(),
       zoomIn: () => map.zoomIn(),
       zoomOut: () => map.zoomOut(),
+      setScrollZoom: (enabled) => {
+        if (enabled) map.scrollZoom.enable();
+        else map.scrollZoom.disable();
+      },
       flyToPark: (slug) => flyToPark(slug),
       flyToLocation: (coords, opts) => {
         const dur = opts?.duration ?? 700;
@@ -1204,7 +1222,7 @@ export function ParkMap({
         parksRef.current?.find((p) => p.slug === effectiveSlug)?.operatorSlug ?? null;
       for (const a of board ?? []) {
         if (a.latitude == null || a.longitude == null) continue;
-        if (a.entityType !== "ATTRACTION") continue;
+        if (!attractionMappable(a)) continue;
         if (
           filter &&
           !rideMatchesFilter(
@@ -2059,17 +2077,38 @@ export function ParkMap({
       // Clear first so the fit isn't constrained mid-flight, then cap the
       // zoom-out once we've arrived at the park.
       map.setMaxBounds(null);
-      map.fitBounds(
-        [
-          [bounds.lngMin, bounds.latMin],
-          [bounds.lngMax, bounds.latMax],
-        ],
-        {
-          padding: chromePadding(containerRef.current),
-          maxZoom: 17,
+      // A park view is only ever shown embedded in a page card (the roam map
+      // reveals parks by zoom instead), so reserve the card's own margin rather
+      // than the fullscreen chrome's — see `EMBEDDED_FIT_PAD` — and frame the
+      // park to *fill* that card rather than to fit inside it (`parkFillZoom`).
+      // A plain `fitBounds` is decided by the park's taller axis, which on a 2:1
+      // card left every park sitting small in the middle of its own resort.
+      const pad = chromePadding(containerRef.current, EMBEDDED_FIT_PAD);
+      const box = containerRef.current?.getBoundingClientRect();
+      const zoom = box
+        ? parkFillZoom(
+            bounds,
+            { width: box.width - pad.left - pad.right, height: box.height - pad.top - pad.bottom },
+            18,
+          )
+        : null;
+      if (zoom != null) {
+        map.easeTo({
+          center: [boundsCenter(bounds).lng, boundsCenter(bounds).lat],
+          zoom,
+          bearing: 0,
+          pitch: 0,
           duration: MAP_FLY_MS,
-        },
-      );
+        });
+      } else {
+        map.fitBounds(
+          [
+            [bounds.lngMin, bounds.latMin],
+            [bounds.lngMax, bounds.latMax],
+          ],
+          { padding: pad, maxZoom: 18, duration: MAP_FLY_MS },
+        );
+      }
       void map.once("moveend", () => map.setMaxBounds(zoomOutBounds(bounds)));
     } else if (park.latitude != null && park.longitude != null) {
       map.setMaxBounds(null);

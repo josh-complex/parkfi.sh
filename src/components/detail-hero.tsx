@@ -60,8 +60,64 @@ export const HERO_CREASE_ALIGNED = [
   "sm:h-[calc(20rem_+_var(--safe-top)_+_var(--app-header-h)_+_0.5rem_+_var(--crease,6.5rem)_-_2.75rem)]",
 ].join(" ");
 
+/**
+ * Desktop only: run the hero up *behind* the floating nav capsule, so the photo
+ * is the first thing on the page rather than a card parked below the chrome —
+ * the same trick the Waits band plays with its navy field.
+ *
+ * The pull has to clear three things, not two: the capsule's slab
+ * (`--floating-nav-height`), the pinned stripe (`--site-header-height`), *and*
+ * the page's own top padding, which is what `HERO_PAGE_PADDING` puts between
+ * the container and its first child. Miss that last term and the photo starts a
+ * pad below the viewport top while the stripe is only ~20px tall in the app's
+ * floating layout (no ticker there), so the difference shows as a white line
+ * ruled across the page under the masthead. Hence the breakpoint pair: the pad
+ * is `1rem` at `md` and `1.5rem` from `lg`, so the pull is too.
+ *
+ * Half a rem of overlap on top of that, for the same reason the Waits band
+ * overshoots: `--site-header-height` is a live measurement and the pad is a
+ * round number, and two values that are only *supposed* to meet will miss on a
+ * subpixel and show the miss as that same hairline. An overlap cannot miss.
+ *
+ * The box grows by the whole pull, so the photo visible *below* the capsule
+ * keeps the 25rem it was designed at plus the pad it has absorbed — i.e. the
+ * page's vertical rhythm is unchanged, the photo has simply eaten the chrome.
+ *
+ * Every variable here is `0px` wherever this chrome isn't (mobile, the
+ * marketing layout), which makes the whole thing a no-op rather than a special
+ * case. The phone needs none of it: `HERO_BLEED` already takes the photo to the
+ * top edge there, under a header that floats over it.
+ *
+ * The hero's top corners square off for this (see the corner classes in
+ * `DetailHero`): rounded ones would hold two crescents of page background
+ * against the pinned stripe.
+ */
+export const HERO_UNDER_NAV = [
+  // Phone and tablet: `HERO_CREASE_ALIGNED`'s heights (16 / 20rem), a fifth
+  // taller, a tenth taller again, and then a tenth back off — the phone was
+  // giving more of a short screen to the photo than the desktop gives of a tall
+  // one. Restated in full rather than composed, because these have to *win* the
+  // Tailwind merge against the ones it sets, which they do by being later in
+  // the class list rather than by being cleverer.
+  "h-[calc(19rem_+_var(--safe-top)_+_var(--app-header-h)_+_0.5rem_+_var(--crease,6.5rem)_-_2.75rem)]",
+  "sm:h-[calc(23.75rem_+_var(--safe-top)_+_var(--app-header-h)_+_0.5rem_+_var(--crease,6.5rem)_-_2.75rem)]",
+  // Desktop: 25rem of visible photo became 33rem by the same two steps, plus
+  // the pad it absorbs and the half-rem overlap (see above).
+  "md:mt-[calc((var(--floating-nav-height)_+_var(--site-header-height)_+_1.5rem)*-1)]",
+  "md:h-[calc(34.5rem_+_var(--floating-nav-height)_+_var(--site-header-height))]",
+  "lg:mt-[calc((var(--floating-nav-height)_+_var(--site-header-height)_+_2rem)*-1)]",
+  "lg:h-[calc(35rem_+_var(--floating-nav-height)_+_var(--site-header-height))]",
+].join(" ");
+
 /** Top-pinned hero overlays, dropped clear of the floating search pill. */
 export const HERO_OVERLAY_TOP = "top-[calc(var(--safe-top)_+_var(--app-header-h))] md:top-4";
+
+/** The same, on a `underNav` hero — where `md:top-4` would park the chip behind
+ *  the glass capsule. The phone half is unchanged: nothing moved there. */
+export const HERO_OVERLAY_TOP_UNDER_NAV = [
+  "top-[calc(var(--safe-top)_+_var(--app-header-h))]",
+  "md:top-[calc(var(--site-header-height)_+_var(--floating-nav-height)_+_0.5rem)]",
+].join(" ");
 
 /** What the hero hands its `overlays` render prop — the entrance stagger and
  *  the landing-target hider, so a page's own chips join the same choreography
@@ -115,8 +171,9 @@ export function DetailHero({
   entrance,
   overlays,
   tear,
-  creaseAligned,
+  crease,
   titleless,
+  underNav,
 }: {
   heroKey: string;
   name: string;
@@ -144,21 +201,30 @@ export function DetailHero({
    */
   tear?: boolean;
   /**
-   * Phone layout for a ticket page: no scalloped cut of its own — the hero's
-   * bottom edge *is* the ticket's crease, so the stub's own die-cut notches and
-   * perforation are the only tear line on screen. The page publishes the
-   * ticket's measured top-half height as `--crease` (see `Ticket`), and the
-   * hero grows by however much that exceeds the old 44px overlap, so the
-   * visible photo above the crease keeps the height it was designed at.
-   * Desktop is unaffected and keeps the scallop.
+   * Where the ticket's crease meets this hero.
+   *
+   * `"phone"` — the phone hangs the stub's crease on the hero's bottom edge
+   * (so the stub's die-cut notches and perforation are the only tear line on
+   * screen) and the desktop keeps the scalloped cut with its fixed 48px
+   * overlap. The page publishes the ticket's measured top-half height as
+   * `--crease` (see `Ticket`) and the hero grows by however much that exceeds
+   * the old 44px overlap, so the visible photo above the crease keeps the
+   * height it was designed at.
+   *
+   * `"always"` — the same alignment at every width, and no scallop anywhere.
+   * The desktop scallop put a row of bites across the photo *and* left the
+   * crease floating in the middle of it: one tear line, on the photo's own
+   * edge, reads as one object; two read as decoration.
    */
-  creaseAligned?: boolean;
+  crease?: "phone" | "always";
   /**
    * Suppress the overlaid name + subtitle — the ticket carries them. The map
    * flight then lands on the ticket's title instead (`card-flight.ts` looks
    * outside the hero for a `data-hero-title` tagged with this flight's key).
    */
   titleless?: boolean;
+  /** Run the photo up behind the desktop floating nav — see `HERO_UNDER_NAV`. */
+  underNav?: boolean;
 }) {
   // Transparent, not unmounted: the flight measures these boxes to land on.
   // `visibility` as well as opacity, because Chrome paints an element's
@@ -222,10 +288,23 @@ export function DetailHero({
         // as an overscroll and the preview would never see it.
         gallerable && "touch-pan-y",
         HERO_BLEED,
-        // A torn hero is taller on desktop, keeps only its top corners, and
-        // drops the card shadow — the ticket below it carries the lift.
-        tear && "md:h-100 md:rounded-t-3xl md:rounded-b-none md:shadow-none",
-        creaseAligned && HERO_CREASE_ALIGNED,
+        // A torn hero is taller on desktop and drops the card shadow — the
+        // ticket below it carries the lift. Only the scalloped variant squares
+        // off its bottom corners (the scallops run edge to edge and a radius
+        // would clip them); a crease-aligned hero keeps a rounded card, with
+        // the ticket overlapping its bottom-left corner.
+        tear && "md:h-100 md:shadow-none",
+        tear && crease !== "always" && "md:rounded-t-3xl md:rounded-b-none",
+        tear &&
+          crease === "always" &&
+          // Square at the top when the photo runs up behind the nav, rounded
+          // all round when it doesn't.
+          (underNav ? "md:rounded-t-none md:rounded-b-3xl" : "md:rounded-3xl"),
+        crease && HERO_CREASE_ALIGNED,
+        // Last of the sizing classes, so its `md:h-*` and `md:mt-*` win the
+        // merge against the `md:h-100` a torn hero asks for above and the
+        // `md:mt-0` in HERO_BLEED.
+        underNav && HERO_UNDER_NAV,
         image || video ? "bg-muted" : "bg-gradient-to-br from-slate-600 via-slate-800 to-slate-900",
       )}
     >
@@ -290,6 +369,21 @@ export function DetailHero({
         className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/40"
       />
 
+      {/* A second, local scrim for the strip the floating nav sits on. The main
+          gradient tops out at 40% black, which is enough for a chip with its own
+          backdrop but not enough to guarantee white nav links over a bright sky
+          — and the masthead has switched to its dark ink by then (see
+          `darkField` in site-header-desktop), so it is committed to light type
+          whatever the photo does. Not part of `data-hero-scrim`: the card flight
+          copies that gradient onto the flying photo, and this one belongs to the
+          page's chrome rather than to the picture. */}
+      {underNav && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 hidden h-[calc(var(--site-header-height)_+_var(--floating-nav-height)_+_2rem)] bg-gradient-to-b from-black/60 via-black/35 to-transparent md:block"
+        />
+      )}
+
       {/* Gallery indicators, centred on the ticket hero's free bottom edge,
           just clear of the stub that overlaps it. A hero that draws its own
           title puts them above it instead (see `dots`). */}
@@ -297,12 +391,21 @@ export function DetailHero({
         dots(
           cn(
             "absolute left-1/2 z-10 -translate-x-1/2",
-            // Phone: above the ticket's top edge, which hangs `--crease` above
-            // the hero's own bottom. Desktop: above the ticket's -48px overlap
-            // of the scalloped tear.
-            creaseAligned
-              ? "bottom-[calc(var(--crease,6.5rem)_+_0.5rem)] md:bottom-16"
-              : "bottom-4 md:bottom-16",
+            // On a phone the stub spans the full width, so the dots have to
+            // clear its top edge — which hangs `--crease` above the hero's own
+            // bottom wherever the crease is aligned.
+            //
+            // From `md` a `crease="always"` page (the park page) lays the stub
+            // out as a narrow card in the left column, so the hero's bottom
+            // edge is free under the centred dots and that is where they
+            // belong: floating them a whole crease up left them stranded in the
+            // middle of the photo, pointing at nothing (2026-09-16, Josh). A
+            // scalloped desktop still clears its fixed -48px overlap instead.
+            crease === "always"
+              ? "bottom-[calc(var(--crease,6.5rem)_+_0.5rem)] md:bottom-4"
+              : crease === "phone"
+                ? "bottom-[calc(var(--crease,6.5rem)_+_0.5rem)] md:bottom-16"
+                : "bottom-4 md:bottom-16",
           ),
         )}
 
@@ -328,9 +431,9 @@ export function DetailHero({
       {/* Last, so the scallops bite through the scrim as well as the photo. Two
           instances rather than one responsive path: the bumps are drawn at a
           real radius per breakpoint (13/30 phone, 14/34 desktop), not scaled. */}
-      {tear && (
+      {tear && crease !== "always" && (
         <>
-          {!creaseAligned && <HeroTear radius={13} step={30} className="md:hidden" />}
+          {crease !== "phone" && <HeroTear radius={13} step={30} className="md:hidden" />}
           <HeroTear radius={14} step={34} className="hidden md:block" />
         </>
       )}

@@ -141,6 +141,14 @@
   --brand-yellow-shelf: #b87d00;
   --ticket-shelf: #c98c00;
   --ticket-top: #ffcf5c;
+  /* The stub's lower half, from the perforation down. Deliberately *not* the
+     brand yellow the top half is: the bottom half carries the read-only facts
+     and the showtimes list, and a full-strength yellow field behind two dozen
+     small figures fights every one of them. A warm cream keeps the stub one
+     object (it is still paper torn off the same ticket) while letting the
+     panels beside it — the mint "Skip the line", the wash curve — sit at the
+     same weight. Like the rest of the ticket it does not theme-swap. */
+  --ticket-bottom: #fff6e4;
   --ink-on-yellow: #1a1a1a;
   --heat-1: #eef2fb;
   --heat-2: #c9d8f3;
@@ -335,6 +343,7 @@ html.native [data-slot="app-shell"] {
   --color-peach-sub: var(--peach-sub);
   --color-brand-yellow: var(--brand-yellow);
   --color-ticket-top: var(--ticket-top);
+  --color-ticket-bottom: var(--ticket-bottom);
   --color-ink-on-yellow: var(--ink-on-yellow);
   --color-heat-1: var(--heat-1);
   --color-heat-2: var(--heat-2);
@@ -703,6 +712,28 @@ html.native [data-slot="app-shell"] {
  * than left to follow the page — the light-theme mint (#0b5c50) is invisible on
  * navy. Everything inside keeps using `text-mint-fg` and friends.
  */
+/**
+ * The hard-ticket event band's field — the Waits band's `band-masthead` run in
+ * the event's own colour rather than the masthead's navy, so a park running
+ * Halloween Horror Nights (or whatever follows it) gets a band that reads as a
+ * different *night* from the rest of the page, not a different section of it.
+ *
+ * Same construction and the same reasons: a darkening pass over a wide stop
+ * ramp, because at full strength the centre stop fights the house artwork it's
+ * backing. Dark theme lifts the ramp instead of darkening it — against a near
+ * black page the original stops read as a hole.
+ */
+@utility band-fright {
+  background-image:
+    linear-gradient(to bottom, rgb(0 0 0 / 0.22), rgb(0 0 0 / 0.5)),
+    linear-gradient(90deg, #1c0602 0%, #6b2207 22%, #e0671c 50%, #6b2207 78%, #1c0602 100%);
+  &:is(.dark *) {
+    background-image:
+      linear-gradient(to bottom, rgb(0 0 0 / 0.06), rgb(0 0 0 / 0.3)),
+      linear-gradient(90deg, #2a0c04 0%, #832c09 22%, #ef7a2c 50%, #832c09 78%, #2a0c04 100%);
+  }
+}
+
 @utility band-tints {
   --mint-fg: #7fe0cf;
   --mint-label: #5fcdb9;

@@ -65,6 +65,9 @@ export const blogRouter = {
             .string()
             .regex(/^\d{4}-\d{2}$/)
             .optional(),
+          /** Filter to posts that name a park (the park page's news card).
+           *  Posts carry `parkSlugs` from the news pipeline's own tagging. */
+          parkSlug: z.string().optional(),
         })
         .optional(),
     )
@@ -81,6 +84,7 @@ export const blogRouter = {
             input?.month
               ? sql`to_char(${blogPost.publishedAt} at time zone 'utc', 'YYYY-MM') = ${input.month}`
               : undefined,
+            input?.parkSlug ? arrayOverlaps(blogPost.parkSlugs, [input.parkSlug]) : undefined,
           ),
         )
         .orderBy(desc(blogPost.publishedAt))

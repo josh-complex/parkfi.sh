@@ -34,6 +34,7 @@ import {
   applySelected,
   attractionCardBodyHtml,
   attractionKind,
+  attractionMappable,
   attractionPriority,
   boundaryFeatureCollection,
   buildAttractionEl,
@@ -49,6 +50,7 @@ import {
   sameCoords,
   setUserHeading,
   chromePadding,
+  EMBEDDED_FIT_PAD,
   DECLUTTER_SIZE,
   declutterSizeForZoom,
   getRoamCamera,
@@ -459,6 +461,10 @@ export function ParkMapLeaflet({
       },
       zoomIn: () => map.zoomIn(),
       zoomOut: () => map.zoomOut(),
+      setScrollZoom: (enabled) => {
+        if (enabled) map.scrollWheelZoom.enable();
+        else map.scrollWheelZoom.disable();
+      },
       flyToPark: (slug) => flyToPark(slug),
       flyToLocation: (coords, opts) => {
         const dur = opts?.duration ?? 700;
@@ -669,7 +675,7 @@ export function ParkMapLeaflet({
         parksRef.current?.find((p) => p.slug === effectiveSlug)?.operatorSlug ?? null;
       for (const a of board ?? []) {
         if (a.latitude == null || a.longitude == null) continue;
-        if (a.entityType !== "ATTRACTION") continue;
+        if (!attractionMappable(a)) continue;
         if (
           filter &&
           !rideMatchesFilter(
@@ -1436,14 +1442,18 @@ export function ParkMapLeaflet({
         [bd.latMax, bd.lngMax],
       ]);
       clearMaxBounds();
-      const pad = chromePadding(containerRef.current);
+      // A park view only ever shows embedded in a page card, so reserve the
+      // card's margin rather than the fullscreen chrome's, and let the camera
+      // pull back far enough to see the park's surroundings (see the GL
+      // renderer's `EMBEDDED_FIT_PAD` / `PARK_CONTEXT_FACTOR`).
+      const pad = chromePadding(containerRef.current, EMBEDDED_FIT_PAD);
       map.flyToBounds(b, {
         paddingTopLeft: L.point(pad.left, pad.top),
         paddingBottomRight: L.point(pad.right, pad.bottom),
-        maxZoom: 17,
+        maxZoom: 18,
         duration: FLY_SECONDS,
       });
-      map.once("moveend", () => map.setMaxBounds(b.pad(0.6)));
+      map.once("moveend", () => map.setMaxBounds(b.pad(2.5)));
     } else if (park.latitude != null && park.longitude != null) {
       clearMaxBounds();
       map.flyTo([park.latitude, park.longitude], park.mapZoom ?? 15, { duration: FLY_SECONDS });

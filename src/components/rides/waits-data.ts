@@ -62,6 +62,14 @@ export interface ParkPulse extends ParkArt {
    * operating" where the schedule feed has nothing to say. See `parkPulses`.
    */
   closed: boolean;
+  /**
+   * The park runs at all today, whether or not it is running this minute. Only
+   * meaningful while `closed`, where it separates the two reasons a park can be
+   * shut: it never opened (`false` — don't come) or it has closed for the night
+   * (`true` — come back tomorrow). Null where the calendar has nothing to say,
+   * and a caller should then claim neither.
+   */
+  openToday: boolean | null;
 }
 
 /**
@@ -155,6 +163,9 @@ export function parkPulses(
         total: g.rides.length,
         delta: trendBySlug.get(slug) ?? null,
         closed: parkOpen == null ? open === 0 : !parkOpen,
+        // Same `find`-the-first-non-null discipline as `parkOpen` above: it is
+        // a fact about the park, so every one of its rows carries it.
+        openToday: g.rides.find((r) => r.parkOpenToday != null)?.parkOpenToday ?? null,
         imageUrl: photo?.imageUrl ?? null,
         imageAlt: photo?.imageAlt ?? null,
         imageThumbhash: photo?.imageThumbhash ?? null,

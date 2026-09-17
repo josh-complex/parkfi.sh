@@ -19,6 +19,8 @@ import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { ToggleGroup, ToggleGroupItem } from "#/components/ui/toggle-group.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
+import { cn } from "#/lib/utils.ts";
+
 import { isSingleRiderName } from "./lightning-lane.ts";
 import { ParkLlDropsHeatmap } from "./ll-drops.tsx";
 import { rideColor } from "./ride-colors.ts";
@@ -1073,14 +1075,6 @@ function TreemapCard({ data }: { data: Array<TreemapDatum> }) {
 }
 
 /** A deliberately empty grid slot, reserved for a future metric. */
-function PlaceholderCell() {
-  return (
-    <div className="flex min-h-[120px] items-center justify-center rounded-2xl border border-dashed bg-muted/10 p-6 text-center text-sm text-muted-foreground lg:col-span-2">
-      More metrics coming soon
-    </div>
-  );
-}
-
 export function ParkAnalytics({ parkSlug }: { parkSlug: string | null }) {
   const trpc = useTRPC();
   const q = useQuery({
@@ -1099,24 +1093,29 @@ export function ParkAnalytics({ parkSlug }: { parkSlug: string | null }) {
     [q.data],
   );
 
-  if (q.isLoading || !parkSlug) {
+  // `!q.data`, not `isLoading`: TanStack's `isLoading` is `isPending &&
+  // isFetching`, which is false on the client's very first render — before the
+  // fetch starts — so an `isLoading` guard renders *nothing* at exactly the
+  // moment the space needs reserving, and the whole grid pops in later. Eight
+  // cards at the real heights (the wide pair run taller), so the page settles
+  // at close to its final length.
+  if (!parkSlug || !q.data) {
     return (
       <div className="grid gap-4 lg:grid-cols-2">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-[296px] w-full rounded-2xl" />
+        {Array.from({ length: 8 }).map((_, i) => (
+          <Skeleton
+            key={i}
+            className={cn("w-full rounded-[22px]", i >= 6 ? "h-[500px]" : "h-[309px]")}
+          />
         ))}
       </div>
     );
   }
 
   return (
+    // No heading of its own: the page's "Know" band already says what these
+    // are, and a second title inside it read as a nested page.
     <section className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <h3 className="text-lg font-semibold tracking-tight">Park analytics</h3>
-        <p className="text-sm text-muted-foreground">
-          Rolling rollups of standby waits across this park&rsquo;s recent history.
-        </p>
-      </div>
       <div className="grid gap-4 lg:grid-cols-2">
         <LlDropsCard parkSlug={parkSlug} />
         <AnalyticsCard
@@ -1140,7 +1139,6 @@ export function ParkAnalytics({ parkSlug }: { parkSlug: string | null }) {
         <RhythmCard data={q.data?.rhythm ?? []} />
         <ScatterCard data={scatter} />
         <TreemapCard data={treemap} />
-        <PlaceholderCell />
       </div>
     </section>
   );

@@ -468,6 +468,83 @@ export const diningRouter = {
   }),
 
   /**
+   * Every active venue inside one park, as the compact row a photo tile needs.
+   *
+   * `byResort` above can't answer this: it matches `park_resort` exactly, and
+   * the feeds disagree with themselves about the suffix — a park we call "Magic
+   * Kingdom" files its restaurants under "Magic Kingdom Park". So both sides are
+   * normalized the same way (drop the operator prefix, drop the trailing
+   * "theme park" / "park" / "resort", drop the trademark glyphs) and then one
+   * has to contain the other. That is the SQL twin of `locationKey()` in
+   * `menus-changed.tsx` — change one and change the other.
+   *
+   * Exists to keep the park page's "Eat here" card full: it leads on the venues
+   * whose menus actually moved, and a park with only one or two of those fills
+   * the rest of the grid from here rather than shrinking to a stub.
+   * Photo-bearing venues sort first for exactly that reason.
+   */
+  byPark: publicProcedure
+    .input(z.object({ parkName: z.string(), limit: z.number().int().min(1).max(60).default(24) }))
+    .query(async ({ input }) => {
+      // Mirrors `locationKey()` on the client. Bound as parameters rather than
+      // inlined so the quotes and backslashes survive the trip intact.
+      const PUNCT = "[™®©'’]";
+      const PREFIX = "^(walt disney world|disneys|disney|universal)\\s+";
+      const SUFFIX = "\\s+(theme park|water park|park|resort)$";
+      const key = input.parkName
+        .toLowerCase()
+        .replace(/[™®©'’]/g, "")
+        .replace(/^(walt disney world|disneys|disney|universal)\s+/, "")
+        .replace(/\s+(theme park|water park|park|resort)$/, "")
+        .trim();
+      if (!key) return [];
+
+      const result = await db.execute<{
+        facility_id: string;
+        name: string;
+        cuisine: string | null;
+        price_range: string | null;
+        image_url: string | null;
+        image_thumbhash: string | null;
+        bookable: boolean;
+      }>(sql`
+        WITH scoped AS (
+          SELECT r.facility_id, r.name, r.cuisine, r.price_range, r.image_url,
+                 r.image_thumbhash, r.bookable, r.priority,
+                 btrim(
+                   regexp_replace(
+                     regexp_replace(
+                       regexp_replace(lower(coalesce(r.park_resort, '')), ${PUNCT}, '', 'g'),
+                       ${PREFIX}, ''),
+                     ${SUFFIX}, '')
+                 ) AS location_key
+          FROM restaurant_dim r
+          WHERE r.active = true
+        )
+        SELECT facility_id, name, cuisine, price_range, image_url, image_thumbhash, bookable
+        FROM scoped
+        WHERE location_key <> ''
+          AND (location_key = ${key}
+               OR position(${key} in location_key) > 0
+               OR position(location_key in ${key}) > 0)
+        -- A tile is mostly its photo, so venues that have one come first; then
+        -- the ones the feeds flag as headline venues, then table service.
+        ORDER BY (image_url IS NOT NULL) DESC, priority DESC, bookable DESC, name
+        LIMIT ${input.limit}
+      `);
+
+      return result.rows.map((r) => ({
+        facilityId: r.facility_id,
+        name: r.name,
+        cuisine: r.cuisine,
+        priceRange: r.price_range,
+        imageUrl: r.image_url,
+        imageThumbhash: r.image_thumbhash,
+        bookable: r.bookable,
+      }));
+    }),
+
+  /**
    * Operating hours for a single date (default: today), keyed by facility. Reads
    * the weekly-refreshed `dining_schedule` window. The client compares the
    * returned start/end times against the current park-local time to drive

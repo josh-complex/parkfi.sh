@@ -33,6 +33,8 @@ import {
 
 import {
   formatPriceCents,
+  isHauntedHouse,
+  isSingleRiderName,
   paidLineInfo,
   paidLineProduct,
 } from "#/components/park-dashboard/lightning-lane.ts";
@@ -76,6 +78,15 @@ export type MapHandle = {
   /** Frame the whole route flat + north-up — the nav "overview" peek. Returns to
    *  follow via the recenter button. No-op for a degenerate route. */
   fitRoute: (coords: Array<[number, number]> | null) => void;
+  /**
+   * Turn wheel/trackpad zoom on or off. Off for a map embedded *in* a scrolling
+   * page (the park page's slot): there, a wheel over the map is almost always
+   * someone trying to scroll past it, and swallowing that gesture to zoom the
+   * basemap traps the page. The fullscreen `/map` route leaves it on, because
+   * there the wheel has nothing else to do. Pinch, drag, double-tap and the
+   * stage's own zoom buttons are untouched at either setting.
+   */
+  setScrollZoom: (enabled: boolean) => void;
 };
 
 /**
@@ -395,6 +406,25 @@ export function attractionPriority(a: BoardItem): number {
   if (a.status === "OPERATING" && a.standbyWait != null) return 2000 + a.standbyWait;
   if (a.status === "OPERATING") return 1000;
   return 0;
+}
+
+/**
+ * Does this attraction earn a pin on a park view?
+ *
+ * Two kinds of row are on the board for good reasons and are pure noise on a
+ * map. Universal's standalone "<Ride> Single Rider" rows carry the parent
+ * ride's own coordinates, so each one lands *exactly* on top of a real pin and
+ * is guaranteed to cluster with it. And a hard-ticket haunted house is shut for
+ * all of the day the map is being looked at: ten of them, all inside one
+ * soundstage block, were most of what a Universal Studios park view opened
+ * with. A house that is actually running keeps its pin — on an event night it's
+ * the thing you're navigating to.
+ */
+export function attractionMappable(a: BoardItem): boolean {
+  if (a.entityType !== "ATTRACTION") return false;
+  if (isSingleRiderName(a.name)) return false;
+  if (isHauntedHouse(a) && a.status !== "OPERATING") return false;
+  return true;
 }
 
 /**
@@ -1921,10 +1951,16 @@ export function buildPoiEl(poi: PoiItem): { el: HTMLButtonElement; detail: HTMLD
  * `base`/`sides` are the minimum pad when nothing overlaps a given edge; the result
  * is clamped so top+bottom / left+right always leave a usable band (maplibre throws
  * on padding that swallows the viewport).
+ *
+ * `scanChrome: false` skips the measuring pass and takes `base`/`sides` as read.
+ * That's what an *embedded* map wants — the park page's card is a few hundred
+ * pixels tall, and reserving the fullscreen chrome inside it (the zoom stack
+ * alone is ~120px, clamped to 40% of the box) left a third of the height to fit
+ * the park into, so every park opened zoomed out over half the resort.
  */
 export function chromePadding(
   container: HTMLElement | null,
-  opts: { base?: number; sides?: number } = {},
+  opts: { base?: number; sides?: number; scanChrome?: boolean } = {},
 ): { top: number; bottom: number; left: number; right: number } {
   const base = opts.base ?? 48;
   const sides = opts.sides ?? 24;
@@ -1933,6 +1969,7 @@ export function chromePadding(
   if (!container || typeof document === "undefined") return pad;
   const root = container.getBoundingClientRect();
   if (root.width === 0 || root.height === 0) return pad;
+  if (opts.scanChrome === false) return clampPad(pad, root);
   for (const node of document.querySelectorAll<HTMLElement>("[data-map-chrome]")) {
     // Skip hidden controls (display:none via breakpoints, unmounted HUD).
     if (node.offsetParent === null && node.getClientRects().length === 0) continue;
@@ -1942,14 +1979,31 @@ export function chromePadding(
     else if (node.dataset.mapChrome === "bottom")
       pad.bottom = Math.max(pad.bottom, root.bottom - r.top + air);
   }
+  return clampPad(pad, root);
+}
+
+/** Keep a fit's padding from swallowing its own viewport (maplibre throws). */
+function clampPad(
+  pad: { top: number; bottom: number; left: number; right: number },
+  root: DOMRect,
+): { top: number; bottom: number; left: number; right: number } {
   const maxV = root.height * 0.4;
   const maxH = root.width * 0.4;
-  pad.top = Math.min(pad.top, maxV);
-  pad.bottom = Math.min(pad.bottom, maxV);
-  pad.left = Math.min(pad.left, maxH);
-  pad.right = Math.min(pad.right, maxH);
-  return pad;
+  return {
+    top: Math.min(pad.top, maxV),
+    bottom: Math.min(pad.bottom, maxV),
+    left: Math.min(pad.left, maxH),
+    right: Math.min(pad.right, maxH),
+  };
 }
+
+/**
+ * Fit padding for the map embedded in a page card (the park page): the frame's
+ * own breathing room, and none of the fullscreen chrome's. Small enough that a
+ * park fills its card, generous enough that the outermost markers' discs aren't
+ * clipped by the card's edge.
+ */
+export const EMBEDDED_FIT_PAD = { base: 28, sides: 24, scanChrome: false } as const;
 
 /**
  * Build an attraction marker's DOM: a root button holding two swappable layers —

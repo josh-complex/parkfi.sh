@@ -798,6 +798,10 @@ const CAPSULE_FADE_MS = 220;
  */
 const CAPSULE_SETTLE_MS = 1000;
 
+/** A park page (`/park/magic-kingdom`) but not its ride child — the one other
+ *  route that runs its own artwork up behind the capsule. */
+const PARK_PAGE = /^\/park\/[^/]+\/?$/;
+
 /** The masthead's metallic bar — Disney's dark-red gradient, in brand blue. */
 const STRIPE_GRADIENT =
   "linear-gradient(90deg,#08152e 0%,#14346b 22%,#3f74cf 50%,#14346b 78%,#08152e 100%)";
@@ -959,11 +963,15 @@ export function SiteHeaderDesktop({
 
   const pathname = useRouterState({ select: (st) => st.location.pathname });
   const showProgress = progress ?? pathname.startsWith("/blog");
-  // The Waits board runs its navy field up behind the capsule, so there the nav
-  // is sitting on dark in *both* themes and its contents have to be read that
-  // way — see `WaitsBlurbs`. Only while the capsule is transparent: engaged, it
-  // goes opaque in the page's own theme and hands the tokens straight back.
-  const darkField = floating && pathname === "/";
+  // The Waits board runs its navy field up behind the capsule, and a park page
+  // runs its hero photo up there (see `HERO_UNDER_NAV`) — so on both the nav is
+  // sitting on dark in *both* themes and its contents have to be read that way
+  // (see `WaitsBlurbs`). Only while the capsule is transparent: engaged, it goes
+  // opaque in the page's own theme and hands the tokens straight back.
+  //
+  // The park *page* only: its ride child (`/park/x/ride/y`) opens on a wash
+  // panel, not on artwork, so the exact match is the point.
+  const darkField = floating && (pathname === "/" || PARK_PAGE.test(pathname));
   // The ink turns over in the same render as the ground, and rides the links'
   // own `transition-colors` across. It used to trail the ground by half the
   // fade, to land on the crossover where both inks are legible — but that meant

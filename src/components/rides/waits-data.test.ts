@@ -31,6 +31,7 @@ function ride(over: Partial<Ride> = {}): Ride {
     // is the case that falls back to the ride count. Tests that care about the
     // calendar set it explicitly.
     parkOpen: null,
+    parkOpenToday: null,
     parkTimezone: "America/New_York",
     closeHour: 22,
     operatorSlug: "wdw",

@@ -50,6 +50,7 @@ export function TintPanel({
   meta,
   children,
   pad = "default",
+  size = "default",
   className,
 }: {
   tone: "mint" | "peach";
@@ -57,14 +58,22 @@ export function TintPanel({
   meta?: ReactNode;
   children: ReactNode;
   pad?: "default" | "tight";
+  /**
+   * `"lg"` gives the panel the weight of the page's wash block — more air and a
+   * heading a step up. For a tint panel that is carrying the column rather than
+   * sitting beside something bigger (the park page's "Skip the line").
+   */
+  size?: "default" | "lg";
   className?: string;
 }) {
+  const large = size === "lg";
   return (
     <section
       className={cn(
-        "flex flex-col gap-3",
+        "flex flex-col",
+        large ? "gap-4" : "gap-3",
         tone === "mint" ? "surface-mint" : "surface-peach",
-        pad === "tight" ? "p-2.5" : "p-4 md:p-5",
+        pad === "tight" ? "p-2.5" : large ? "p-5 md:p-6" : "p-4 md:p-5",
         className,
       )}
     >
@@ -76,7 +85,8 @@ export function TintPanel({
       >
         <h2
           className={cn(
-            "min-w-0 text-lg font-extrabold tracking-[-0.01em] text-balance md:text-xl",
+            "min-w-0 font-extrabold tracking-[-0.01em] text-balance",
+            large ? "text-[22px] md:text-[26px] md:tracking-[-0.015em]" : "text-lg md:text-xl",
             tone === "mint" ? "text-mint-fg" : "text-peach-fg",
           )}
         >

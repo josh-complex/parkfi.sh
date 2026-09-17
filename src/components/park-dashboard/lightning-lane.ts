@@ -168,6 +168,30 @@ export function paidLineInfo(
   };
 }
 
+/**
+ * Is this ride's per-ride line saying anything *right now*?
+ *
+ * `has` is capability — "this attraction has a virtual/return-time queue at
+ * all" — which is deliberately true even when nothing is posted, because that's
+ * what the operator's own `supportsQueueTypes` means. It is not a statement
+ * about today, and surfaces that treat it as one end up claiming a line that
+ * isn't running: at Universal that showed as a lightning bolt and the word
+ * "available" on every ride with the capability, which reads as Lightning Lane
+ * (a Disney product Universal doesn't sell) being available (it isn't a thing
+ * you can take).
+ *
+ * So a line is *live* when it has something concrete to say: a posted return
+ * window, a price, or the fact that the windows have run out. Disney's tier
+ * counts too — "this one is covered by the Multi Pass" and "this one is an
+ * à-la-carte Single" are facts about the ride, not about this minute — which is
+ * why `kind` is in the list, and why Universal (whose `kind` is always null,
+ * Express being a park-wide add-on rather than a tier) needs a real signal.
+ */
+export function paidLineLive(ll: PaidLineInfo): boolean {
+  if (!ll.has) return false;
+  return ll.soldOut || ll.returnStart != null || ll.priceCents != null || ll.kind != null;
+}
+
 export function formatPriceCents(cents: number | null, currency: string | null): string | null {
   if (cents == null) return null;
   const symbol = !currency || currency === "USD" ? "$" : "";

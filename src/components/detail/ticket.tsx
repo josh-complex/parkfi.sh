@@ -70,6 +70,29 @@ export interface TicketFact {
 }
 
 /**
+ * How much of the facts row's leftover width a fact earns.
+ *
+ * Flexbox shares free space by `flex-grow`, and an equal share is the wrong
+ * answer here: "Avg wait · 20 min" is finished at sixty pixels while "Longest ·
+ * 60 · Buzz Lightyear's Space Ranger Spin" is still hyphenating itself down
+ * four lines beside it. Weighting by the value's own length hands the room to
+ * whichever fact is actually using it, without the ticket needing to know which
+ * page it is on or which of its three cells is the verbose one.
+ *
+ * Quarter-of-a-character granularity, floored at 1: the point is a coarse
+ * ordering ("this one is roughly three times the other"), not a second layout
+ * engine running beside the real one.
+ *
+ * A non-string value (a node carrying a chip) falls back to the minimum —
+ * there is nothing to measure, and guessing wide would starve the cells either
+ * side to feed a cell that may not need it.
+ */
+function factWeight(f: TicketFact): number {
+  const text = typeof f.value === "string" || typeof f.value === "number" ? String(f.value) : "";
+  return Math.max(1, Math.round(text.length / 4));
+}
+
+/**
  * The detail-page identity block: a die-cut ticket stub on brand yellow,
  * overlapping the hero's torn bottom edge. It carries the name, one line of
  * place, and exactly three facts — plus an optional row of chips and keys.
@@ -88,6 +111,7 @@ export function Ticket({
   facts,
   chips,
   keys,
+  footer,
   heroKey,
   titleHidden,
   onCreaseHeight,
@@ -100,6 +124,13 @@ export function Ticket({
   chips?: ReactNode;
   /** Keys under the chips (Call, Official site…). */
   keys?: ReactNode;
+  /**
+   * A block on the stub's lower half, under the facts and keys, separated by a
+   * hairline — the park page's showtimes list. It rides *inside* the ticket
+   * rather than in a card below it because "what starts next" is the same kind
+   * of fact as "what is the longest wait": a reading of this park, right now.
+   */
+  footer?: ReactNode;
   heroKey?: string;
   titleHidden?: CSSProperties;
   /**
@@ -163,10 +194,13 @@ export function Ticket({
         className="flex flex-col rounded-[22px] md:rounded-3xl"
         style={{
           ...NOTCH_MASK,
-          // Lighter at the top, flat brand yellow from the crease down — the
-          // two halves' gradients, as one fill, so there is no join to show.
+          // Lighter at the top, ramping to full brand yellow as it reaches the
+          // crease, then a flat cream from the perforation down. One fill for
+          // both halves, so there is no join to show — and the hard stop lands
+          // exactly on the crease the notches are cut at, which is why the two
+          // stops share `var(--ticket-crease)` rather than being nudged apart.
           backgroundImage:
-            "linear-gradient(to bottom, var(--ticket-top), var(--brand-yellow) var(--ticket-crease))",
+            "linear-gradient(to bottom, var(--ticket-top), var(--brand-yellow) var(--ticket-crease), var(--ticket-bottom) var(--ticket-crease))",
         }}
       >
         <div ref={topRef} className="flex flex-col gap-1 px-5 pb-4 pt-5 md:px-6 md:pb-5 md:pt-6">
@@ -202,21 +236,20 @@ export function Ticket({
             aria-hidden
             className="absolute inset-x-5 -top-px border-t-2 border-dashed border-ink-on-yellow/35"
           />
-          {/* Never a fixed three columns: two facts in a three-column grid leave
-              a visibly empty third of the stub, and each cell has to be wide
-              enough for its value to wrap to two lines at most. */}
-          <div
-            className={cn(
-              "grid gap-x-3 gap-y-2",
-              facts.length >= 3
-                ? "grid-cols-3"
-                : facts.length === 2
-                  ? "grid-cols-2"
-                  : "grid-cols-1",
-            )}
-          >
+          {/* Content-proportional, not equal thirds. Every cell starts at its
+              own content width (`basis-auto`) and then takes a share of the
+              leftover weighted by how long its value is (`factWeight`), so the
+              fact that needs the room gets most of it rather than a third of
+              it. `flex-wrap` is the release valve when even that isn't
+              enough. */}
+          <div className="flex flex-wrap gap-x-4 gap-y-2">
             {facts.map((f) => (
-              <div key={f.label} className="flex min-w-0 flex-col gap-0.5" title={f.hint}>
+              <div
+                key={f.label}
+                style={{ flexGrow: factWeight(f) }}
+                className="flex min-w-0 shrink basis-auto flex-col gap-0.5"
+                title={f.hint}
+              >
                 <span className="truncate text-[10px] font-bold uppercase tracking-[0.06em] text-ink-on-yellow/60">
                   {f.label}
                 </span>
@@ -230,6 +263,11 @@ export function Ticket({
             <div className="flex flex-col gap-2.5">
               {chips && <div className="flex flex-wrap gap-1.5">{chips}</div>}
               {keys}
+            </div>
+          )}
+          {footer && (
+            <div className="flex flex-col gap-3 border-t border-ink-on-yellow/12 pt-3.5">
+              {footer}
             </div>
           )}
         </div>

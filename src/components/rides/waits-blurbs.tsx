@@ -454,7 +454,7 @@ export function WaitsBlurbs({
               </span>
             </div>
 
-            <div className="grid rounded-[26px] max-w-400 w-full mx-auto border border-white/12 bg-white/6 md:grid-cols-2">
+            <div className="grid rounded-[26px] max-w-7xl w-full mx-auto border border-white/12 bg-white/6 md:grid-cols-2">
               <MoverHalf
                 tone="mint"
                 title="Dropping"

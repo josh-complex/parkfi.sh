@@ -82,11 +82,23 @@ export const CACHEABLE_TRPC_PATHS: ReadonlyMap<string, string> = new Map([
   ["dining.picks", CACHE.TRPC_DATA],
   ["dining.menuChanges", CACHE.TRPC_DATA],
   ["dining.recentlyUpdated", CACHE.TRPC_DATA],
+  ["dining.byPark", CACHE.TRPC_DATA],
   ["parks.dining", CACHE.TRPC_DATA],
   ["parks.shops", CACHE.TRPC_DATA],
   ["parks.poi", CACHE.TRPC_DATA],
   ["stays.catalog", CACHE.TRPC_DATA],
   ["stays.availability", CACHE.TRPC_DATA],
+  // The park page's AHEAD band: per-date crowd index and per-date ticket price
+  // for one park. Both are pure public reads that change at most daily (the
+  // forecast on a nightly retrain, prices on the tickets cron), and every
+  // visitor to a park page asks for the identical range.
+  ["forecast.parkCalendar", CACHE.TRPC_DATA],
+  ["tickets.priceCalendar", CACHE.TRPC_DATA],
+  // Published posts — public and identical for everyone. A publish purges the
+  // blog's own HTML but not this query, so a new post can take the 5-minute
+  // edge TTL to appear in the park page's news card. That's the right trade for
+  // a card of headlines.
+  ["blog.list", CACHE.TRPC_DATA],
   // Public-records feed — refreshed by a daily cron, identical for everyone.
   ["records.feed", CACHE.TRPC_DATA],
   ["records.byId", CACHE.TRPC_DATA],

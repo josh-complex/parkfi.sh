@@ -352,7 +352,8 @@ export function LightningLaneDrops({
     enabled: attractionId > 0,
   });
 
-  if (q.isLoading) {
+  // See the note in `ParkAnalytics` — `isLoading` is false on the first render.
+  if (!q.data) {
     return (
       <div className="grid gap-4 lg:grid-cols-2">
         {Array.from({ length: 3 }).map((_, i) => (

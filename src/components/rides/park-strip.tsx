@@ -181,9 +181,24 @@ function ParkCard({
           )}
         </span>
         {/* "0 open" under "Closed" is just the same fact twice; under "Open" it
-            is a contradiction. An open park with nothing posting says so. */}
+            is a contradiction. An open park with nothing posting says so.
+
+            A shut park is shut for one of two reasons and they are different
+            news: it never opened today (don't come) or it has closed for the
+            night (come back tomorrow). At 8 PM the whole strip used to read
+            "closed today", which is wrong about every park that had been open
+            since nine that morning. Where the calendar can't say, the line
+            claims neither. */}
         <span className="truncate text-[11px] font-semibold opacity-85">
-          {park.open > 0 ? `${park.open} open` : park.closed ? "closed today" : "no waits yet"}
+          {park.open > 0
+            ? `${park.open} open`
+            : park.closed
+              ? park.openToday === false
+                ? "closed today"
+                : park.openToday
+                  ? "now closed"
+                  : "closed"
+              : "no waits yet"}
         </span>
       </span>
     </button>

@@ -952,6 +952,7 @@ export const parksRouter = {
       showtimes: Array<{ type: string | null; start: string | null; end: string | null }> | null;
       is_open: boolean | null;
       has_schedule: boolean;
+      open_today: boolean;
       close_hour: number | null;
     }>(sql`
       WITH live AS (
@@ -967,7 +968,7 @@ export const parksRouter = {
       ),
       sched AS (
         SELECT DISTINCT ON (park_id, service_date, opening_time)
-               park_id, opening_time, closing_time
+               park_id, service_date, opening_time, closing_time
         FROM park_schedule
         WHERE type IN ${OPEN_SCHEDULE_TYPES} AND closing_time IS NOT NULL
         ORDER BY park_id, service_date, opening_time, snapshot_date DESC
@@ -975,7 +976,18 @@ export const parksRouter = {
       park_open AS (
         SELECT p.id AS park_id,
                bool_or(s.opening_time <= now() AND now() < s.closing_time) AS is_open,
-               count(s.opening_time) > 0 AS has_schedule
+               count(s.opening_time) > 0 AS has_schedule,
+               -- Does the park run *at all* today, whether or not it is running
+               -- this minute? service_date is the feed's own day key, so a
+               -- hard-ticket night that closes past midnight still belongs to
+               -- the day it opened on -- which is the day a guest means by
+               -- "today". Every window type in OPEN_SCHEDULE_TYPES counts, so
+               -- an early-entry-only morning or an event-only evening is an
+               -- open day.
+               coalesce(
+                 bool_or(s.service_date = (now() AT TIME ZONE p.timezone)::date),
+                 false
+               ) AS open_today
         FROM parks p
         LEFT JOIN sched s ON s.park_id = p.id
         GROUP BY p.id
@@ -1036,6 +1048,7 @@ export const parksRouter = {
              -- the Waits band's "next show 3:40" pick rule reads these.
              lv.showtimes,
              po.is_open, coalesce(po.has_schedule, false) AS has_schedule,
+             coalesce(po.open_today, false) AS open_today,
              tc.close_hour
       FROM attractions a
       JOIN parks p ON p.id = a.park_id AND p.active = true
@@ -1076,6 +1089,15 @@ export const parksRouter = {
          * calendar knows; the ride count is a proxy that only usually agrees.
          */
         parkOpen: r.has_schedule ? Boolean(r.is_open) : null,
+        /**
+         * Whether the park runs at all today, which is a different question
+         * from `parkOpen`'s "is it running this minute". A shut park is shut
+         * for one of two reasons and they are not the same news: it never
+         * opened (don't come), or it has closed for the night (come back
+         * tomorrow). Null where the calendar has nothing to say, so a caller
+         * can decline to claim either.
+         */
+        parkOpenToday: r.has_schedule ? r.open_today : null,
         // Every "since 2 PM" / "next show 3:40" line on the Waits band is a
         // park-local clock, so the zone travels with the row rather than being
         // assumed (all ten parks are America/New_York today — that is a fact

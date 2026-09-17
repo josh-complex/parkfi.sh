@@ -259,7 +259,7 @@ function DiningHero({
       flying={flying}
       entrance={entrance}
       tear
-      creaseAligned
+      crease="phone"
       titleless
       overlays={({ chipFx }) => (
         <>

@@ -1,6 +1,7 @@
 "use client";
 
 import { DetailCard } from "#/components/detail/panels.tsx";
+import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { cn } from "#/lib/utils.ts";
 
 import type { ParkCrowd } from "./types.ts";
@@ -146,10 +147,22 @@ function ByWeekday({ days }: { days: ParkCrowd["days"] }) {
  * watched for four days can't have a five-week calendar, and drawing one with
  * two rows of grey is worse than drawing none.
  */
-export function ParkCrowdCalendar({ crowd }: { crowd: ParkCrowd | undefined }) {
+export function ParkCrowdCalendar({
+  crowd,
+  className,
+}: {
+  crowd: ParkCrowd | undefined;
+  className?: string;
+}) {
   const days = crowd?.days ?? [];
   // A park we've only watched for a few days can't have a five-week calendar,
   // and two rows of grey is worse than no card.
+  // A calendar needs a week. Before the query lands there is nothing to say,
+  // but there *will* be — so hold the box rather than letting a ~310px block
+  // appear under the band heading and shove the analytics grid down.
+  if (!crowd) {
+    return <Skeleton className={cn("h-[309px] w-full rounded-[22px]", className)} />;
+  }
   if (days.length < 7) return null;
 
   return (
