@@ -90,6 +90,9 @@ export const CACHEABLE_TRPC_PATHS: ReadonlyMap<string, string> = new Map([
   ["dining.byPark", CACHE.TRPC_DATA],
   ["parks.dining", CACHE.TRPC_DATA],
   ["parks.shops", CACHE.TRPC_DATA],
+  // The shop page's wide column — twelve rows of the same catalog `shops`
+  // serves, for one park.
+  ["parks.shopsNear", CACHE.TRPC_DATA],
   ["parks.poi", CACHE.TRPC_DATA],
   ["stays.catalog", CACHE.TRPC_DATA],
   ["stays.availability", CACHE.TRPC_DATA],

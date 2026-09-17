@@ -111,6 +111,24 @@ export const HERO_UNDER_NAV = [
 ].join(" ");
 
 /**
+ * A photoless hero's box — see `DetailHero`'s `field`. The part a reader
+ * actually sees (everything above the ticket's crease) is 13rem on a phone,
+ * 14rem from `sm` and 15rem from `md`; the rest of the height is whatever the
+ * stub hangs over it, exactly as on a photo hero.
+ *
+ * Spelled out fresh rather than composed from `HERO_CREASE_ALIGNED`, which
+ * carries `HERO_BLEED`'s designed 16rem *and* the 44px overlap the scalloped
+ * hero was drawn with. Both of those are the photograph's numbers. A field
+ * carrying a dish's price or a pin on a plate has nothing to fill 25rem with,
+ * and a page that opens on 400px of flat blue reads as a failed image load.
+ */
+export const HERO_FIELD = [
+  "h-[calc(13rem_+_var(--safe-top)_+_var(--app-header-h)_+_0.5rem_+_var(--crease,6.5rem))]",
+  "sm:h-[calc(14rem_+_var(--safe-top)_+_var(--app-header-h)_+_0.5rem_+_var(--crease,6.5rem))]",
+  "md:h-[calc(15rem_+_var(--crease,6.5rem))]",
+].join(" ");
+
+/**
  * The gap the gallery dots keep from the ticket stub's edge when the photo's
  * own centre isn't clear of it — the same 1rem they keep from the hero's
  * bottom edge.
@@ -206,6 +224,7 @@ export function DetailHero({
   crease,
   titleless,
   underNav,
+  field,
 }: {
   heroKey: string;
   name: string;
@@ -257,6 +276,22 @@ export function DetailHero({
   titleless?: boolean;
   /** Run the photo up behind the desktop floating nav — see `HERO_UNDER_NAV`. */
   underNav?: boolean;
+  /**
+   * The hero for a page that has no landscape photograph of its own — a dish, a
+   * pin. Instead of the photo it draws a flat `--wash` field at reduced height
+   * (`HERO_FIELD`), with `image` — whatever related picture the page *does*
+   * hold, the venue's photo on a dish page — blurred out of legibility behind
+   * it, and `subject` set in the middle of the part the stub doesn't cover.
+   *
+   * A field rather than the photoless slate gradient, and the plan says why
+   * (§4.9): the tear has to have something to tear *from*, and a page whose
+   * first 200px are a grey ramp reads as a photo that failed to load rather
+   * than as a page that never had one.
+   *
+   * It brings no scrim, no gallery and no ambient loop: there is no photograph
+   * to hold type off, nothing to rotate, and nothing to play.
+   */
+  field?: { subject?: ReactNode };
 }) {
   // Transparent, not unmounted: the flight measures these boxes to land on.
   // `visibility` as well as opacity, because Chrome paints an element's
@@ -271,7 +306,7 @@ export function DetailHero({
   // `titleless` hero, whose bottom edge is free for the indicator row. (A hero
   // carrying its own title has that seat taken; ride and park pages get both
   // when they get their tickets.)
-  const gallerable = !video && gallery.total > 1;
+  const gallerable = !field && !video && gallery.total > 1;
   // Swipe it. Off while a map-card flight is still in the air — the photo layer
   // is hidden and mid-flight, so there is nothing to drag.
   const swipe = useHeroSwipe({
@@ -388,69 +423,109 @@ export function DetailHero({
         // merge against the `md:h-100` a torn hero asks for above and the
         // `md:mt-0` in HERO_BLEED.
         underNav && HERO_UNDER_NAV,
-        image || video ? "bg-muted" : "bg-gradient-to-br from-slate-600 via-slate-800 to-slate-900",
+        // …except a field, which is shorter than all of them and so has to come
+        // after every one for the same reason.
+        field && HERO_FIELD,
+        field
+          ? "bg-wash"
+          : image || video
+            ? "bg-muted"
+            : "bg-gradient-to-br from-slate-600 via-slate-800 to-slate-900",
       )}
     >
-      {/* The photo, its ambient loop and its gallery crossfade travel together
-          as one layer — that whole stack is what the card's header flies into,
-          so it hides and reveals as a unit. */}
-      <div data-hero-image className="absolute inset-0" style={hidden}>
-        {/* A light copy of the photo in the hero's *own* crop, held underneath
-            for the life of the page — the same rendition the flight fades to in
-            mid-air, so it's already decoded when it gets here. It gives the
-            <Image> above something correctly-framed to fade in over: anything
-            that makes that element replay its fade (a src resolving differently
-            once the query lands, or the thumbhash arriving and restructuring it)
-            becomes a crossfade between two identical framings rather than a
-            blink through an empty box. */}
-        {underlay && (
-          <img
-            src={underlay}
-            alt=""
-            aria-hidden
-            className={cn("absolute inset-0 size-full object-cover", imageFocusClass(underlay))}
+      {field ? (
+        /* The field. A blurred copy of whatever related picture the page holds
+           (a dish's venue, most often) gives the flat wash some weather without
+           ever resolving into a photograph of the wrong thing, and the subject
+           sits in the middle of the part the stub leaves visible.
+
+           Blur radius and opacity are both deliberate: at `blur-2xl` and 30%
+           nothing in the source is legible, which matters because a dish page
+           showing a nearly-sharp picture of the *dining room* is worse than
+           showing no picture at all. `scale-110` hides the transparent fringe a
+           blur leaves around its own edges. */
+        <>
+          {image && (
+            <img
+              src={disneyResizeUrl(image, 480)}
+              alt=""
+              aria-hidden
+              className="absolute inset-0 size-full scale-110 object-cover opacity-30 blur-2xl"
+            />
+          )}
+          {field.subject && (
+            /* Centred on the *visible* field rather than on the box: the bottom
+               `--crease` of it is under the ticket, and on a phone the top strip
+               is under the floating search header. */
+            <div className="absolute inset-x-0 top-[calc(var(--safe-top)_+_var(--app-header-h))] bottom-[var(--crease,6.5rem)] flex items-center justify-center px-4 md:top-0">
+              {field.subject}
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          {/* The photo, its ambient loop and its gallery crossfade travel together
+            as one layer — that whole stack is what the card's header flies into,
+            so it hides and reveals as a unit. */}
+          <div data-hero-image className="absolute inset-0" style={hidden}>
+            {/* A light copy of the photo in the hero's *own* crop, held underneath
+              for the life of the page — the same rendition the flight fades to in
+              mid-air, so it's already decoded when it gets here. It gives the
+              <Image> above something correctly-framed to fade in over: anything
+              that makes that element replay its fade (a src resolving differently
+              once the query lands, or the thumbhash arriving and restructuring it)
+              becomes a crossfade between two identical framings rather than a
+              blink through an empty box. */}
+            {underlay && (
+              <img
+                src={underlay}
+                alt=""
+                aria-hidden
+                className={cn("absolute inset-0 size-full object-cover", imageFocusClass(underlay))}
+              />
+            )}
+            {image && (
+              <Image
+                src={disneyResizeUrl(image, HERO_IMAGE.resizeWidth)}
+                alt={imageAlt ?? name}
+                className="size-full object-cover"
+                loading="eager"
+                fetchPriority="high"
+                sizes={HERO_IMAGE.sizes}
+                widths={HERO_IMAGE.widths}
+                quality={HERO_IMAGE.quality}
+                // A thumbhash placeholder switches `Image` to its wrapper-span
+                // structure, so passing one only *after* the query lands would
+                // remount the <img> and replay its blur/scale fade-in — the shift
+                // this underlay exists to remove. With a real photo already beneath,
+                // the hash has nothing left to stand in for.
+                placeholder={underlay ? undefined : (thumbhash ?? undefined)}
+              />
+            )}
+            {/* Ambient hero loop (plan item 1.9): fades in over the still once it
+              can play; never mounts under prefers-reduced-motion. Video-less
+              entities crossfade their gallery stills instead. */}
+            {video ? (
+              <AmbientHeroVideo src={video.url} poster={video.poster ?? null} />
+            ) : (
+              <HeroCrossfade
+                slides={slides ?? []}
+                active={gallery.active}
+                drag={swipe.drag}
+                fast={gallery.manual}
+              />
+            )}
+          </div>
+          {/* Scrim: heavy at the bottom for the title, light at the top so the
+            overlay chips keep their contrast without flattening the photo.
+            Tagged so the card flight can copy this exact gradient onto the
+            flying photo and fade it in en route (see `flyPhoto`). */}
+          <div
+            data-hero-scrim
+            className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/40"
           />
-        )}
-        {image && (
-          <Image
-            src={disneyResizeUrl(image, HERO_IMAGE.resizeWidth)}
-            alt={imageAlt ?? name}
-            className="size-full object-cover"
-            loading="eager"
-            fetchPriority="high"
-            sizes={HERO_IMAGE.sizes}
-            widths={HERO_IMAGE.widths}
-            quality={HERO_IMAGE.quality}
-            // A thumbhash placeholder switches `Image` to its wrapper-span
-            // structure, so passing one only *after* the query lands would
-            // remount the <img> and replay its blur/scale fade-in — the shift
-            // this underlay exists to remove. With a real photo already beneath,
-            // the hash has nothing left to stand in for.
-            placeholder={underlay ? undefined : (thumbhash ?? undefined)}
-          />
-        )}
-        {/* Ambient hero loop (plan item 1.9): fades in over the still once it
-            can play; never mounts under prefers-reduced-motion. Video-less
-            entities crossfade their gallery stills instead. */}
-        {video ? (
-          <AmbientHeroVideo src={video.url} poster={video.poster ?? null} />
-        ) : (
-          <HeroCrossfade
-            slides={slides ?? []}
-            active={gallery.active}
-            drag={swipe.drag}
-            fast={gallery.manual}
-          />
-        )}
-      </div>
-      {/* Scrim: heavy at the bottom for the title, light at the top so the
-          overlay chips keep their contrast without flattening the photo.
-          Tagged so the card flight can copy this exact gradient onto the
-          flying photo and fade it in en route (see `flyPhoto`). */}
-      <div
-        data-hero-scrim
-        className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/40"
-      />
+        </>
+      )}
 
       {/* A second, local scrim for the strip the floating nav sits on. The main
           gradient tops out at 40% black, which is enough for a chip with its own

@@ -284,23 +284,30 @@ export function Ticket({
               fact that needs the room gets most of it rather than a third of
               it. `flex-wrap` is the release valve when even that isn't
               enough. */}
-          <div className="flex flex-wrap gap-x-4 gap-y-2">
-            {facts.map((f) => (
-              <div
-                key={f.label}
-                style={{ flexGrow: factWeight(f) }}
-                className="flex min-w-0 shrink basis-auto flex-col gap-0.5"
-                title={f.hint}
-              >
-                <span className="truncate text-[10px] font-bold uppercase tracking-[0.06em] text-ink-on-yellow/60">
-                  {f.label}
-                </span>
-                <span className="text-[13px] font-bold leading-[1.25] text-balance hyphens-auto md:text-[15px]">
-                  {f.value}
-                </span>
-              </div>
-            ))}
-          </div>
+          {/* Dropped entirely when a page has none, rather than left as an empty
+              row: the pin catalog holds ten thousand pins whose only recorded
+              attribute is a name, and a stub with a 14px gap where its facts
+              would be reads as a stub that failed to load them. Three is still
+              the target (plan §4.9) — this is the floor, not a licence. */}
+          {facts.length > 0 && (
+            <div className="flex flex-wrap gap-x-4 gap-y-2">
+              {facts.map((f) => (
+                <div
+                  key={f.label}
+                  style={{ flexGrow: factWeight(f) }}
+                  className="flex min-w-0 shrink basis-auto flex-col gap-0.5"
+                  title={f.hint}
+                >
+                  <span className="truncate text-[10px] font-bold uppercase tracking-[0.06em] text-ink-on-yellow/60">
+                    {f.label}
+                  </span>
+                  <span className="text-[13px] font-bold leading-[1.25] text-balance hyphens-auto md:text-[15px]">
+                    {f.value}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
           {(chips || keys) && (
             <div className="flex flex-col gap-2.5">
               {chips && <div className="flex flex-wrap gap-1.5">{chips}</div>}

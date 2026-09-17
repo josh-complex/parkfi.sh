@@ -625,7 +625,7 @@ export function ResortDetail({ slug }: { slug: string }) {
           // the hero's bottom edge (the hero is `crease="always"`), and nudged
           // past the column's left edge on a desktop so the stub reads as laid
           // *on* the page rather than ruled into the grid.
-          className="mt-[calc(var(--crease)*-1)] md:mx-auto md:w-full md:max-w-[34rem] wide:col-start-1 wide:row-start-1 wide:-mx-2.5 wide:w-auto wide:max-w-none"
+          className="mt-[calc(var(--crease)*-1)] md:mx-auto md:w-full md:max-w-[34rem] wide:col-start-1 wide:row-start-1 wide:-mx-4.5 wide:w-auto wide:max-w-none"
           heroKey={heroFlightKey("resort", resort.slug)}
           title={resort.name}
           subtitle={

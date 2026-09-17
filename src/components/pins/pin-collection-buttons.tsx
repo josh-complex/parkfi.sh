@@ -17,13 +17,35 @@ import {
 } from "#/components/ui/popover.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
+import { cn } from "#/lib/utils.ts";
 
 /**
  * "I have this" / "I want this" actions for a pin detail page. Logged-out users
  * get a sign-in prompt; logged-in users add the pin to the relevant list and we
  * reflect the membership inline.
+ *
+ * `variant="key"` is the detail page's own call to action (docs/plans/
+ * dining-redesign §4.7): the same two actions, with "I have this" promoted to
+ * the page's one yellow key. It keeps that colour even once the pin is in the
+ * collection — the key is where this action *lives*, and moving it to the
+ * outline row on the second visit would make the panel rearrange itself under
+ * a returning owner.
+ *
+ * `compact` shortens the labels for the floating phone bar, where the two keys
+ * split ~340px between them: "In your collection" needs about 195px of that at
+ * the bar's 15px semibold and simply does not fit beside anything.
  */
-export function PinCollectionButtons({ pinId }: { pinId: string }) {
+export function PinCollectionButtons({
+  pinId,
+  variant = "default",
+  compact = false,
+  className,
+}: {
+  pinId: string;
+  variant?: "default" | "key";
+  compact?: boolean;
+  className?: string;
+}) {
   const { data: session } = authClient.useSession();
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -60,28 +82,58 @@ export function PinCollectionButtons({ pinId }: { pinId: string }) {
     }),
   );
 
+  const isKey = variant === "key";
+  const size = isKey ? ("lg" as const) : ("default" as const);
+  const haveLabel = compact
+    ? hasHave
+      ? "Collected"
+      : "Have it"
+    : hasHave
+      ? "In your collection"
+      : "I have this";
+  const wantLabel = compact
+    ? hasWant
+      ? "Wishlisted"
+      : "Want it"
+    : hasWant
+      ? "On your wishlist"
+      : "I want this";
+
   if (!loggedIn) {
     return (
-      <div className="flex flex-wrap items-center gap-2">
-        <SignInPrompt label="I have this" icon={<PlusIcon />} />
-        <SignInPrompt label="I want this" icon={<HeartIcon />} variant="outline" />
+      <div className={cn("flex flex-wrap items-center gap-2", className)}>
+        <SignInPrompt
+          label={haveLabel}
+          icon={<PlusIcon />}
+          variant={isKey ? "yellow" : "default"}
+          size={size}
+        />
+        <SignInPrompt label={wantLabel} icon={<HeartIcon />} variant="outline" size={size} />
       </div>
     );
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Button disabled={hasHave || addHave.isPending} onClick={() => addHave.mutate({ pinId })}>
+    <div className={cn("flex flex-wrap items-center gap-2", className)}>
+      <Button
+        variant={isKey ? "yellow" : "default"}
+        size={size}
+        className={cn(isKey && "font-bold")}
+        disabled={hasHave || addHave.isPending}
+        onClick={() => addHave.mutate({ pinId })}
+      >
         {hasHave ? <CheckIcon /> : <PlusIcon />}
-        {hasHave ? "In your collection" : "I have this"}
+        {haveLabel}
       </Button>
       <Button
         variant="outline"
+        size={size}
+        className={cn(isKey && "font-bold")}
         disabled={hasWant || addWant.isPending}
         onClick={() => addWant.mutate({ pinId })}
       >
         {hasWant ? <CheckIcon /> : <HeartIcon />}
-        {hasWant ? "On your wishlist" : "I want this"}
+        {wantLabel}
       </Button>
     </div>
   );
@@ -91,14 +143,16 @@ function SignInPrompt({
   label,
   icon,
   variant = "default",
+  size = "default",
 }: {
   label: string;
   icon: React.ReactNode;
-  variant?: "default" | "outline";
+  variant?: "default" | "outline" | "yellow";
+  size?: "default" | "lg";
 }) {
   return (
     <Popover>
-      <PopoverTrigger render={<Button variant={variant} />}>
+      <PopoverTrigger render={<Button variant={variant} size={size} className="font-bold" />}>
         {icon}
         {label}
       </PopoverTrigger>

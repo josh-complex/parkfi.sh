@@ -1,23 +1,17 @@
 "use client";
 
-import * as React from "react";
 import { Link, createFileRoute, notFound } from "@tanstack/react-router";
 import { isServer, useQuery } from "@tanstack/react-query";
 
-import { PinCollectionButtons } from "#/components/pins/pin-collection-buttons.tsx";
-import { PinImage } from "#/components/pins/pin-card.tsx";
-import { formatCents } from "#/components/pins/format.ts";
-import { Badge } from "#/components/ui/badge.tsx";
+import { HERO_FIELD, HERO_PAGE_PADDING } from "#/components/detail-hero.tsx";
+import { PAGE_WIDTH } from "#/components/page-container.tsx";
+import { PinDetail } from "#/components/pins/pin-detail.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Empty, EmptyDescription, EmptyTitle } from "#/components/ui/empty.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { seo } from "#/lib/seo.ts";
-
-import type { inferRouterOutputs } from "@trpc/server";
-import type { TRPCRouter } from "#/integrations/trpc/router.ts";
-
-type PinDetailData = NonNullable<inferRouterOutputs<TRPCRouter>["pinCatalog"]["detail"]>;
+import { cn } from "#/lib/utils.ts";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -65,127 +59,36 @@ function PinDetailPage() {
   const trpc = useTRPC();
   const detailQ = useQuery(trpc.pinCatalog.detail.queryOptions({ id: pinId }));
 
-  return (
-    <div className="flex flex-1 flex-col">
-      <div className="@container/main flex flex-1 flex-col gap-2">
-        <div className="mx-auto w-full max-w-4xl space-y-5 px-4 py-8">
-          {detailQ.isLoading ? (
-            <div className="grid gap-6 sm:grid-cols-2">
-              <Skeleton className="aspect-square w-full rounded-2xl" />
-              <div className="space-y-3">
-                <Skeleton className="h-7 w-2/3" />
-                <Skeleton className="h-5 w-1/2" />
-                <Skeleton className="h-20 w-full" />
-              </div>
-            </div>
-          ) : !detailQ.data ? (
-            <Empty>
-              <EmptyTitle>Pin not found</EmptyTitle>
-              <EmptyDescription>
-                This pin isn't in our catalog, or the link is out of date.
-              </EmptyDescription>
-              <Button className="mt-4" render={<Link to="/pins" />}>
-                Back to catalog
-              </Button>
-            </Empty>
-          ) : (
-            <PinDetail pin={detailQ.data} />
-          )}
-        </div>
+  if (detailQ.isLoading) {
+    // The hero's own box, not a generic block: a skeleton at any other height
+    // leaves the stub's crease floating off the field's edge until the query
+    // lands (see `HERO_CREASE_ALIGNED`).
+    return (
+      <div className={cn(PAGE_WIDTH, "flex flex-col gap-5", HERO_PAGE_PADDING)}>
+        <Skeleton
+          className={cn("-mx-4 w-[calc(100%+2rem)] rounded-none md:mx-0 md:w-full", HERO_FIELD)}
+        />
+        <Skeleton className="h-52 w-full rounded-none md:mx-auto md:max-w-[34rem]" />
+        <Skeleton className="h-40 w-full rounded-3xl md:mx-auto md:max-w-[34rem]" />
       </div>
-    </div>
-  );
-}
+    );
+  }
 
-function PinDetail({ pin }: { pin: PinDetailData }) {
-  const images =
-    pin.images.length > 0
-      ? pin.images
-      : pin.imageUrl
-        ? [{ id: "primary", url: pin.imageUrl, isPrimary: true }]
-        : [];
-  const initial = images.find((i) => i.isPrimary)?.url ?? images[0]?.url ?? null;
-  const [active, setActive] = React.useState<string | null>(initial);
-  React.useEffect(() => setActive(initial), [initial]);
-
-  return (
-    <div className="space-y-6">
-      <div className="grid gap-6 sm:grid-cols-2">
-        <div className="space-y-3">
-          <PinImage
-            src={active}
-            alt={pin.name}
-            className="aspect-square w-full rounded-2xl border bg-muted"
-          />
-          {images.length > 1 ? (
-            <div className="flex flex-wrap gap-2">
-              {images.map((img) => (
-                <button
-                  key={img.id}
-                  type="button"
-                  onClick={() => setActive(img.url)}
-                  className={`size-16 overflow-hidden rounded-lg border ${
-                    active === img.url ? "ring-2 ring-primary" : ""
-                  }`}
-                >
-                  <PinImage src={img.url} alt="" className="size-full bg-muted" />
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="space-y-4">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold">{pin.name}</h1>
-            {pin.series ? <p className="text-muted-foreground">{pin.series}</p> : null}
-          </div>
-
-          {pin.characters.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {pin.characters.map((c) => (
-                <Badge key={c} variant="secondary">
-                  {c}
-                </Badge>
-              ))}
-            </div>
-          ) : null}
-
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-            {pin.year != null ? <Field label="Year" value={String(pin.year)} /> : null}
-            {pin.editionType ? <Field label="Edition" value={pin.editionType} /> : null}
-            {pin.leCount != null ? (
-              <Field label="LE count" value={pin.leCount.toLocaleString()} />
-            ) : null}
-            {pin.park ? <Field label="Park" value={pin.park} /> : null}
-            <Field label="Est. value" value={formatCents(pin.estValueCents)} />
-          </dl>
-
-          <div className="text-muted-foreground flex gap-4 text-sm">
-            <span>
-              <span className="text-foreground font-semibold tabular-nums">
-                {pin.availableForTrade}
-              </span>{" "}
-              available for trade
-            </span>
-            <span>
-              <span className="text-foreground font-semibold tabular-nums">{pin.wantedBy}</span>{" "}
-              want it
-            </span>
-          </div>
-
-          <PinCollectionButtons pinId={pin.id} />
-        </div>
+  if (!detailQ.data) {
+    return (
+      <div className={cn(PAGE_WIDTH, "py-16")}>
+        <Empty>
+          <EmptyTitle>Pin not found</EmptyTitle>
+          <EmptyDescription>
+            This pin isn&apos;t in our catalog, or the link is out of date.
+          </EmptyDescription>
+          <Button className="mt-4" render={<Link to="/pins" />}>
+            Back to catalog
+          </Button>
+        </Empty>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
-function Field({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-muted-foreground text-xs">{label}</dt>
-      <dd className="font-medium">{value}</dd>
-    </div>
-  );
+  return <PinDetail pin={detailQ.data} />;
 }

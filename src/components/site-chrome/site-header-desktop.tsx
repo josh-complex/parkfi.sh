@@ -993,6 +993,7 @@ const UNDER_NAV_PAGES = [
   /^\/park\/[^/]+\/ride\/[^/]+\/?$/,
   /^\/dining\/[^/]+\/?$/,
   /^\/resort\/[^/]+\/?$/,
+  /^\/shop\/[^/]+\/?$/,
 ];
 
 /** The masthead's metallic bar — Disney's dark-red gradient, in brand blue. */

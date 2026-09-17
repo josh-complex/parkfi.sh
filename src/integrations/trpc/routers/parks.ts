@@ -1052,6 +1052,64 @@ export const parksRouter = {
   }),
 
   /**
+   * The other shops in one shop's own park or resort — the wide column of the
+   * `/shop/$slug` page. Same-land rows lead, because the useful answer to "what
+   * else is here" when you are standing in Fantasyland is the rest of
+   * Fantasyland; after that it is whatever the park has a photograph of.
+   *
+   * Rows with no finder slug are dropped rather than rendered inert: a fair
+   * number of `shop_dim` entries are carts and kiosks that the finder never
+   * gave a page, and a tile that cannot be tapped is worse than one fewer tile.
+   *
+   * Deliberately its own query rather than a filter over `shops` (the map's
+   * layer): that one carries every shop on the property so the map can plot
+   * them, which is several hundred rows and their artwork to answer a question
+   * about twelve.
+   */
+  shopsNear: publicProcedure
+    .input(
+      z.object({
+        /** The finder's own location name — `shop_dim.park_resort`, matched verbatim. */
+        parkResort: z.string(),
+        /** The land to float to the top of the list, when the caller is in one. */
+        land: z.string().nullable().default(null),
+        /** The shop the reader is already on. */
+        excludeId: z.string().nullable().default(null),
+        limit: z.number().int().min(1).max(24).default(12),
+      }),
+    )
+    .query(async ({ input }) => {
+      const result = await db.execute<{
+        facility_id: string;
+        name: string;
+        url_friendly_id: string;
+        land: string | null;
+        image_url: string | null;
+        image_thumbhash: string | null;
+        merchandise: Array<string> | null;
+      }>(sql`
+        SELECT facility_id, name, url_friendly_id, land, image_url, image_thumbhash, merchandise
+        FROM shop_dim
+        WHERE active = true
+          AND park_resort = ${input.parkResort}
+          AND url_friendly_id IS NOT NULL
+          AND (${input.excludeId}::text IS NULL OR facility_id <> ${input.excludeId})
+        ORDER BY (${input.land}::text IS NOT NULL AND land = ${input.land}) DESC,
+                 (image_url IS NULL), name
+        LIMIT ${input.limit}
+      `);
+      return result.rows.map((r) => ({
+        id: r.facility_id,
+        slug: r.url_friendly_id,
+        name: r.name,
+        land: r.land,
+        imageUrl: r.image_url,
+        imageThumbhash: r.image_thumbhash,
+        merchandise: r.merchandise ?? [],
+      }));
+    }),
+
+  /**
    * Every active ride across all parks with its live status + standby wait + the
    * fields the unified Waits list filters on (category, land, height requirement,
    * thumbnail) and its park/operator context. Mirrors `board`'s per-park schedule
