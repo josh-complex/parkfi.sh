@@ -9,6 +9,7 @@ import { Image } from "#/components/ui/image.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { disneyResizeUrl } from "#/lib/image.ts";
+import { samePark } from "#/lib/parks.ts";
 import { cn } from "#/lib/utils.ts";
 
 /** Tiles in the grid — three rows of two. */
@@ -17,33 +18,6 @@ const TILES = 6;
 const SINCE_DAYS = 7;
 /** Enough of the park's catalog to fill the grid after the changed venues. */
 const CATALOG_LIMIT = 24;
-
-/**
- * Loose match between a park's own name and the finder's location name for a
- * dining venue: "Magic Kingdom Park" ↔ "Magic Kingdom", "Disney's Hollywood
- * Studios" ↔ "Hollywood Studios". Both sides lose the operator prefix and the
- * "theme park" suffix the feeds disagree about, then one has to contain the
- * other — a venue's location is never a *different* park's name.
- *
- * `dining.byPark` runs the SQL twin of this; change one and change the other.
- */
-function locationKey(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[™®©'’]/g, "")
-    .replace(/^(walt disney world|disneys|disney|universal)\s+/, "")
-    .replace(/\s+(theme park|water park|park|resort)$/, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-function samePark(venueLocation: string | null, parkName: string): boolean {
-  if (!venueLocation) return false;
-  const a = locationKey(venueLocation);
-  const b = locationKey(parkName);
-  if (!a || !b) return false;
-  return a === b || a.includes(b) || b.includes(a);
-}
 
 interface Counts {
   addedCount: number;
@@ -101,7 +75,7 @@ function venueMeta(cuisine: string | null, priceRange: string | null): string | 
 }
 
 /** The card's own shape in grey — see `ParkNewsSkeleton`. */
-function EatHereSkeleton({ className }: { className?: string }) {
+function EatHereSkeleton({ title, className }: { title: string; className?: string }) {
   return (
     <section
       className={cn(
@@ -112,7 +86,7 @@ function EatHereSkeleton({ className }: { className?: string }) {
       <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-1 md:px-5 md:pt-5">
         <h2 className="flex min-w-0 items-center gap-2 text-[19px] font-extrabold tracking-[-0.01em]">
           <UtensilsCrossedIcon className="size-4 shrink-0 text-muted-foreground" />
-          Eat here
+          {title}
         </h2>
       </div>
       <Skeleton className="mx-4 mt-2 h-3 w-48 rounded md:mx-5" />
@@ -144,8 +118,24 @@ function EatHereSkeleton({ className }: { className?: string }) {
  * Adventure on a dead one.
  *
  * Renders nothing only when we hold no venues for this park at all.
+ *
+ * Shared with the dining venue page, which runs it as "More here" over the same
+ * park minus the venue you are standing on (`excludeFacilityId`) — one grid, so
+ * a tile means the same thing on both pages.
  */
-export function EatHere({ parkName, className }: { parkName: string | null; className?: string }) {
+export function EatHere({
+  parkName,
+  excludeFacilityId,
+  title = "Eat here",
+  className,
+}: {
+  parkName: string | null;
+  /** Drop one venue from the grid — the page you are already on. */
+  excludeFacilityId?: string;
+  /** The card's heading. The park page's default names the park you're in. */
+  title?: string;
+  className?: string;
+}) {
   const trpc = useTRPC();
   const changedQ = useQuery(
     trpc.dining.recentlyUpdated.queryOptions({ sinceDays: SINCE_DAYS, limit: 50 }),
@@ -160,9 +150,12 @@ export function EatHere({ parkName, className }: { parkName: string | null; clas
 
     // The cross-resort rollup carries no park id, so it's matched by the
     // finder's own location name (see `samePark`).
-    const changed = (changedQ.data ?? []).filter((v) => samePark(v.parkResort, parkName));
+    const changed = (changedQ.data ?? [])
+      .filter((v) => samePark(v.parkResort, parkName))
+      .filter((v) => v.facilityId !== excludeFacilityId);
     const out: Array<Tile> = [];
-    const seen = new Set<string>();
+    // Seeded with the venue to drop, so neither pass can re-add it.
+    const seen = new Set<string>(excludeFacilityId ? [excludeFacilityId] : []);
 
     for (const v of changed) {
       const flag = changeFlag(v);
@@ -198,12 +191,12 @@ export function EatHere({ parkName, className }: { parkName: string | null; clas
     // point — so trim to a pair boundary once there is more than one row.
     const paired = out.length > 2 ? out.length - (out.length % 2) : out.length;
     return { tiles: out.slice(0, Math.min(paired, TILES)), changedCount: changed.length };
-  }, [changedQ.data, catalogQ.data, parkName]);
+  }, [changedQ.data, catalogQ.data, parkName, excludeFacilityId]);
 
   // Reserve the grid while either query is out — see `ParkNewsSkeleton` for why
   // this tests the data rather than `isLoading`.
   if (!changedQ.data || (!!parkName && !catalogQ.data)) {
-    return <EatHereSkeleton className={className} />;
+    return <EatHereSkeleton title={title} className={className} />;
   }
   if (tiles.length === 0) return null;
 
@@ -217,7 +210,7 @@ export function EatHere({ parkName, className }: { parkName: string | null; clas
       <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-1 md:px-5 md:pt-5">
         <h2 className="flex min-w-0 items-center gap-2 text-[19px] font-extrabold tracking-[-0.01em]">
           <UtensilsCrossedIcon className="size-4 shrink-0 text-muted-foreground" />
-          Eat here
+          {title}
         </h2>
         {/* Mirrors Park news' "All posts" directly above it — the two cards
             close the column together, and a footer link on one and a header

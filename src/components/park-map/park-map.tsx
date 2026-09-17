@@ -12,6 +12,7 @@ import {
   rideMatchesFilter,
   type RideFilter,
 } from "#/components/rides/ride-filter.tsx";
+import { VENUE_HOURS_DAYS } from "#/components/dining/venue-hours.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { preferredRouteLanguage, preferredUnitSystem, valhallaUnits } from "#/lib/units.ts";
 import { distanceMeters, pointInPolygon } from "#/server/living/geofence.ts";
@@ -1497,7 +1498,15 @@ export function ParkMap({
                 void queryClient.prefetchQuery(
                   trpc.dining.venue.queryOptions({ facilityId: press.facilityId }),
                 );
-                void queryClient.prefetchQuery(trpc.dining.hours.queryOptions({}));
+                // The venue ticket's hours block. Venue-scoped since the page's
+                // redesign — it used to warm the whole catalog's schedules,
+                // which is a payload the destination no longer reads.
+                void queryClient.prefetchQuery(
+                  trpc.dining.venueSchedule.queryOptions({
+                    facilityId: press.facilityId,
+                    days: VENUE_HOURS_DAYS,
+                  }),
+                );
               } else if (press?.kind === "shop") {
                 void queryClient.prefetchQuery(trpc.parks.shop.queryOptions({ slug: press.slug }));
               }

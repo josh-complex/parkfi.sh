@@ -95,3 +95,35 @@ export function formatParkName(name: string): string {
       .trim()
   );
 }
+
+/**
+ * A park name reduced to what the feeds agree on: no operator prefix, no
+ * trailing "theme park" / "park" / "resort", no trademark glyphs, no
+ * punctuation. "Magic Kingdom Park" and "Magic Kingdom" both key to
+ * `magic kingdom`; "Disney's Hollywood Studios" keys to `hollywood studios`.
+ *
+ * `dining.byPark` runs the SQL twin of this — change one and change the other.
+ */
+export function parkLocationKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[™®©'’]/g, "")
+    .replace(/^(walt disney world|disneys|disney|universal)\s+/, "")
+    .replace(/\s+(theme park|water park|park|resort)$/, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/**
+ * Loose match between a park's own name and the name a feed files a venue (or
+ * any other facility) under: both sides lose what the feeds disagree about,
+ * then one has to contain the other — a venue's location is never a *different*
+ * park's name.
+ */
+export function samePark(facilityLocation: string | null | undefined, parkName: string): boolean {
+  if (!facilityLocation) return false;
+  const a = parkLocationKey(facilityLocation);
+  const b = parkLocationKey(parkName);
+  if (!a || !b) return false;
+  return a === b || a.includes(b) || b.includes(a);
+}

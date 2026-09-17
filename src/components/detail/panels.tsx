@@ -54,7 +54,13 @@ export function TintPanel({
   className,
 }: {
   tone: "mint" | "peach";
-  title: string;
+  /**
+   * Omit it when the panel's heading is carried above it by a `BandHeading` —
+   * the menu panel does that in the venue page's wide column. The field then
+   * opens straight onto its content instead of restating the band's title a
+   * line below it.
+   */
+  title?: string;
   meta?: ReactNode;
   children: ReactNode;
   pad?: "default" | "tight";
@@ -77,23 +83,27 @@ export function TintPanel({
         className,
       )}
     >
-      <div
-        className={cn(
-          "flex flex-wrap items-center justify-between gap-x-3 gap-y-2",
-          pad === "tight" && "px-2 pt-1",
-        )}
-      >
-        <h2
+      {(title || meta) && (
+        <div
           className={cn(
-            "min-w-0 font-extrabold tracking-[-0.01em] text-balance",
-            large ? "text-[22px] md:text-[26px] md:tracking-[-0.015em]" : "text-lg md:text-xl",
-            tone === "mint" ? "text-mint-fg" : "text-peach-fg",
+            "flex flex-wrap items-center justify-between gap-x-3 gap-y-2",
+            pad === "tight" && "px-2 pt-1",
           )}
         >
-          {title}
-        </h2>
-        {meta && <div className="ml-auto shrink-0">{meta}</div>}
-      </div>
+          {title && (
+            <h2
+              className={cn(
+                "min-w-0 font-extrabold tracking-[-0.01em] text-balance",
+                large ? "text-[22px] md:text-[26px] md:tracking-[-0.015em]" : "text-lg md:text-xl",
+                tone === "mint" ? "text-mint-fg" : "text-peach-fg",
+              )}
+            >
+              {title}
+            </h2>
+          )}
+          {meta && <div className="ml-auto shrink-0">{meta}</div>}
+        </div>
+      )}
       {children}
     </section>
   );

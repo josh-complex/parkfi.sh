@@ -10,7 +10,7 @@ import { disneyResizeUrl } from "#/lib/image.ts";
 import { formatHourRange, todayInTz } from "#/lib/park-hours.ts";
 import { cn } from "#/lib/utils.ts";
 
-import { BandHeading } from "./band.tsx";
+import { BandHeading } from "#/components/detail/band.tsx";
 import { isHauntedHouse } from "./lightning-lane.ts";
 import type { BoardItem } from "./types.ts";
 

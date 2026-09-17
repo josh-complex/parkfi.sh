@@ -179,19 +179,51 @@ export function openStatusDetail(schedules: Array<ScheduleEntry>, nowMin: number
   }
 }
 
+/** "17:00:00" → "5 PM" / "5:30 PM". The one clock the dining surfaces print. */
+export function clockLabel(time: string): string {
+  const min = toMinutes(time);
+  const h24 = Math.floor(min / 60) % 24;
+  const m = min % 60;
+  const ampm = h24 < 12 ? "AM" : "PM";
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return m === 0 ? `${h12} ${ampm}` : `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
 /** Compact label for a venue's primary operating window today ("11:00 AM–9:00 PM"). */
 export function hoursLabel(schedules: Array<ScheduleEntry>): string | null {
   const op = operating(schedules);
   if (!op.length) return null;
-  const fmt = (t: string) => {
-    const min = toMinutes(t);
-    const h24 = Math.floor(min / 60) % 24;
-    const m = min % 60;
-    const ampm = h24 < 12 ? "AM" : "PM";
-    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-    return m === 0 ? `${h12} ${ampm}` : `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
-  };
   const first = op[0]!;
   const last = op[op.length - 1]!;
-  return `${fmt(first.startTime)}–${fmt(last.endTime)}`;
+  return `${clockLabel(first.startTime)}–${clockLabel(last.endTime)}`;
+}
+
+/**
+ * The venue ticket's one-line status: "Open til 9 PM" while the doors are open,
+ * "Closed · Opens 11 AM" when they aren't and they will be again today, plain
+ * "Closed" otherwise.
+ *
+ * The park page's stub says the same thing from `useParkHoursToday`; this is
+ * the dining twin, reading the schedule rows we hold instead of park hours.
+ * Every caller must gate it on hydration — it is a reading of the clock, and a
+ * server-rendered verdict would be both stale and a hydration mismatch.
+ */
+export function statusLabel(schedules: Array<ScheduleEntry>, nowMin: number): string | null {
+  const op = operating(schedules);
+  if (op.length === 0) return null;
+  const untilClose = minutesUntilClose(schedules, nowMin);
+  if (untilClose !== null) {
+    // The window the guest is standing in, not the last one of the day: a venue
+    // that serves lunch and dinner shuts twice.
+    const closing = op.find((sched) => {
+      const start = toMinutes(sched.startTime);
+      const end = toMinutes(sched.endTime);
+      return end <= start ? nowMin >= start || nowMin < end : nowMin >= start && nowMin < end;
+    });
+    return closing ? `Open til ${clockLabel(closing.endTime)}` : "Open now";
+  }
+  const next = op
+    .filter((sched) => toMinutes(sched.startTime) > nowMin)
+    .sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime))[0];
+  return next ? `Closed · Opens ${clockLabel(next.startTime)}` : "Closed";
 }

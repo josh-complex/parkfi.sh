@@ -16,16 +16,12 @@ import {
 } from "lucide-react";
 
 import { ACTION_BAR_PAGE_PAD, DetailActionBar } from "#/components/detail/action-bar.tsx";
+import { Band, BandHeading } from "#/components/detail/band.tsx";
+import { DayHeatGrid, WeekdayBars } from "#/components/detail/day-series.tsx";
 import { MoreKey, PunchDay, TimeKey } from "#/components/detail/keys.tsx";
-import {
-  DetailCard,
-  FactTile,
-  SectionHeading,
-  TintMeta,
-  TintPanel,
-  WashPanel,
-} from "#/components/detail/panels.tsx";
+import { DetailCard, FactTile, TintPanel, WashPanel } from "#/components/detail/panels.tsx";
 import { RightSheet } from "#/components/detail/right-sheet.tsx";
+import { TimeBandStrip } from "#/components/detail/time-bands.tsx";
 import { PAGE_WIDTH } from "#/components/page-container.tsx";
 import {
   TICKET_DEFAULT_CREASE,
@@ -37,10 +33,13 @@ import {
   DetailHero,
   HERO_BLEED,
   HERO_CREASE_ALIGNED,
-  HERO_OVERLAY_TOP,
+  HERO_OVERLAY_TOP_UNDER_NAV,
   HERO_PAGE_PADDING,
+  HERO_UNDER_NAV,
 } from "#/components/detail-hero.tsx";
 import { DiningAlertButton } from "#/components/dining/dining-alert-button.tsx";
+import { EatHere } from "#/components/dining/eat-here.tsx";
+import { useVenueHours, VenueHours } from "#/components/dining/venue-hours.tsx";
 import {
   byMealPeriod,
   cuisineList,
@@ -51,7 +50,6 @@ import {
   type Offer,
 } from "#/components/dining/dining-filters.ts";
 import {
-  hoursLabel,
   OPEN_STATUS_LABELS,
   openStatus,
   openStatusDetail,
@@ -74,6 +72,7 @@ import {
   type TeaserCandidate,
 } from "#/components/dining/menu-teaser.ts";
 import { LocationMap } from "#/components/maps/location-map.tsx";
+import { ParkNews } from "#/components/park-dashboard/park-news.tsx";
 import {
   heroFlightKey,
   launchHeroReturn,
@@ -100,11 +99,14 @@ import {
 } from "#/components/ui/select.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useIsNative } from "#/hooks/use-is-native.ts";
+import { useHydrated } from "#/lib/use-hydrated.ts";
 import { useIsMobile } from "#/hooks/use-mobile.ts";
+import { useParkClock } from "#/hooks/use-park-clock.ts";
 import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
 import { resortSlugByName } from "#/components/stays/resort-detail.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
+import { formatParkName, samePark } from "#/lib/parks.ts";
 import { decodeEntities } from "#/lib/text.ts";
 import { cn } from "#/lib/utils.ts";
 
@@ -161,9 +163,13 @@ const PARTY_SIZES = [1, 2, 3, 4, 5, 6, 7, 8];
 /** Days in the availability strip under the picker. */
 const STRIP_DAYS = 7;
 const AVAIL_HORIZON = 60;
-/** Days of the availability horizon the desktop heatmap shows. */
+/** Days of the availability horizon the calendar shows — five whole weeks. */
 const HEAT_DAYS = 35;
-/** Days averaged into the weekday bars. */
+/**
+ * Days averaged into the weekday bars — two whole weeks, so each weekday rests
+ * on the same two dates. Whole weeks or the ranking is a slicing artifact; see
+ * `WeekdayBars`, which withholds its caption when the window isn't one.
+ */
 const WEEKDAY_DAYS = 14;
 const ISO = "yyyy-MM-dd";
 /** Times per meal period before the "+N more" fold, and per nearest-day row. */
@@ -201,13 +207,21 @@ type OfferHref = (deepLink: string | null) => string | null;
 
 /**
  * The venue page's identity hero: the shared `DetailHero` shell plus dining's
- * own overlay chips — the live walk-up wait as the headline number on the left,
- * today's open state on the right. Rendered identically by the loaded page and
- * the seeded loading state (see `DetailHero` for why both configurations must
- * match).
+ * one overlay — the live walk-up wait, the only number here that is a reading
+ * of this minute. Rendered identically by the loaded page and the seeded
+ * loading state (see `DetailHero` for why both configurations must match).
  *
- * `titleless`: the ticket overlapping the torn bottom edge carries the name, so
- * the hero shows only the photo and its chips.
+ * `titleless`: the ticket overlapping the hero's bottom edge carries the name,
+ * so the hero shows only the photo.
+ *
+ * `underNav` + `crease="always"`, as the park page's hero does since its
+ * redesign: the photo runs up behind the desktop nav capsule and squares off
+ * its top corners, and the ticket's own crease is the single tear line at every
+ * width (the desktop scallop drew a second one across the middle of the photo).
+ *
+ * Today's open state used to ride here as a chip. It is on the ticket now, next
+ * to the venue's name — the stub says what this place *is*, and whether its
+ * doors are open is the same kind of fact as what it costs.
  */
 function DiningHero({
   heroKey,
@@ -222,7 +236,6 @@ function DiningHero({
   entrance,
   walkupWaitMin,
   walkupDetail,
-  schedules,
 }: {
   heroKey: string;
   name: string;
@@ -239,13 +252,7 @@ function DiningHero({
   walkupWaitMin?: number | null;
   /** Per-party-size breakdown behind the walk-up chip's tooltip. */
   walkupDetail?: string;
-  schedules?: Array<ScheduleEntry>;
 }) {
-  const nowMin = parkNowMinutes();
-  const sched = schedules ?? [];
-  const hoursText = sched.length > 0 ? hoursLabel(sched) : null;
-  const status = sched.length > 0 ? openStatus(sched, nowMin) : null;
-  const isOpen = status === "open" || status === "closes-soon";
   return (
     <DetailHero
       heroKey={heroKey}
@@ -259,60 +266,34 @@ function DiningHero({
       flying={flying}
       entrance={entrance}
       tear
-      crease="phone"
+      crease="always"
       titleless
-      overlays={({ chipFx }) => (
-        <>
-          {/* The headline number: the live walk-up list, when one is posted —
-              dining's analogue of the ride hero's standby block. Not a flight
-              landing target (POI cards fly no wait chip), so it just joins
-              the entrance cascade. */}
-          {walkupWaitMin != null && (
-            <div
-              style={chipFx(0).style}
-              title={walkupDetail || undefined}
-              className={cn(
-                "absolute left-4 flex items-center gap-2 rounded-2xl bg-black/75 px-3.5 py-2 text-white shadow-lg backdrop-blur-sm md:left-5",
-                HERO_OVERLAY_TOP,
-                chipFx(0).className,
-              )}
-            >
-              <span className="text-3xl font-bold leading-none tabular-nums sm:text-4xl">
-                {walkupWaitMin}
-              </span>
-              <span className="flex flex-col text-[10px] font-semibold uppercase leading-tight tracking-wide">
-                <span>min</span>
-                <span className="text-white/70">walk-up</span>
-              </span>
-            </div>
-          )}
-
-          {/* Open state, opposite the walk-up number. Freshness moved onto the
-              ticket as its accent chip. */}
-          {hoursText && (
-            <div
-              className={cn(
-                "absolute right-4 flex max-w-[60%] flex-col items-end gap-1.5 text-right md:right-5",
-                HERO_OVERLAY_TOP,
-              )}
-            >
-              <span
-                style={chipFx(0).style}
-                title={openStatusDetail(sched, nowMin)}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm",
-                  chipFx(0).className,
-                )}
-              >
-                <span
-                  className={cn("size-1.5 rounded-full", isOpen ? "bg-emerald-400" : "bg-white/60")}
-                />
-                {isOpen ? "Open" : "Closed"} · {hoursText}
-              </span>
-            </div>
-          )}
-        </>
-      )}
+      underNav
+      overlays={({ chipFx }) =>
+        /* The headline number: the live walk-up list, when one is posted —
+           dining's analogue of the ride hero's standby block. Not a flight
+           landing target (POI cards fly no wait chip), so it just joins the
+           entrance cascade. */
+        walkupWaitMin != null ? (
+          <div
+            style={chipFx(0).style}
+            title={walkupDetail || undefined}
+            className={cn(
+              "absolute left-4 flex items-center gap-2 rounded-2xl bg-black/75 px-3.5 py-2 text-white shadow-lg backdrop-blur-sm md:left-5",
+              HERO_OVERLAY_TOP_UNDER_NAV,
+              chipFx(0).className,
+            )}
+          >
+            <span className="text-3xl font-bold leading-none tabular-nums sm:text-4xl">
+              {walkupWaitMin}
+            </span>
+            <span className="flex flex-col text-[10px] font-semibold uppercase leading-tight tracking-wide">
+              <span>min</span>
+              <span className="text-white/70">walk-up</span>
+            </span>
+          </div>
+        ) : null
+      }
     />
   );
 }
@@ -741,19 +722,21 @@ function WalkUpPanel({
   schedules,
   walkupWaitMin,
   walkupWaitList,
+  mobileOrder,
   className,
 }: {
   schedules: Array<ScheduleEntry>;
   walkupWaitMin: number | null;
   walkupWaitList: boolean;
+  mobileOrder: boolean;
   className?: string;
 }) {
   const nowMin = parkNowMinutes();
-  const hours = schedules.length > 0 ? hoursLabel(schedules) : null;
   const status = schedules.length > 0 ? openStatus(schedules, nowMin) : null;
-  // Today's hours once, not three times: the header says whether the door is
-  // open, the tile says when, and the sentence underneath only earns its line
-  // when it has a countdown the other two can't carry.
+  // Today's window is on the ticket above (`VenueHours`) and its state is in
+  // the stub's own status chip, so the panel says what it alone can: how you
+  // get served, and — when the clock is about to change the answer — the
+  // countdown neither of those can carry.
   const countdown =
     status === "closes-soon" || status === "opens-soon"
       ? openStatusDetail(schedules, nowMin).replace(/ · .*$/, "")
@@ -765,7 +748,6 @@ function WalkUpPanel({
       className={className}
     >
       <div className="grid grid-cols-2 gap-2">
-        <FactTile className="bg-background/70" label="Today" value={hours ?? "Hours not posted"} />
         <FactTile
           className="bg-background/70"
           label={walkupWaitMin != null ? "Walk-up wait" : "Walk-ups"}
@@ -776,6 +758,11 @@ function WalkUpPanel({
                 ? "Join the list in person"
                 : "First come, first served"
           }
+        />
+        <FactTile
+          className="bg-background/70"
+          label="Order ahead"
+          value={mobileOrder ? "Mobile order in the app" : "At the counter"}
         />
       </div>
       {countdown && <p className="text-[13px] text-wash-muted">{countdown}</p>}
@@ -865,7 +852,6 @@ function DishRow({ item }: { item: MenuItemData }) {
 function MenuPanel({
   loading,
   hasMenu,
-  period,
   cover,
   dishes,
   itemCount,
@@ -873,18 +859,16 @@ function MenuPanel({
 }: {
   loading: boolean;
   hasMenu: boolean;
-  period: string | null;
   cover: MenuCover | null;
   dishes: Array<MenuItemData>;
   itemCount: number;
   onOpen: () => void;
 }) {
   return (
-    <TintPanel
-      tone="mint"
-      title={COPY.menu}
-      meta={period ? <TintMeta tone="mint">{period}</TintMeta> : null}
-    >
+    /* Title-less: the column's own band heading carries "What\'s cookin\'" and
+       the meal period, so a second heading a line below it would only restate
+       them. The mint field opens straight onto the food. */
+    <TintPanel tone="mint">
       {loading ? (
         <div className="flex flex-col gap-2" aria-hidden>
           {Array.from({ length: TEASER_DISHES }, (_, i) => (
@@ -902,12 +886,18 @@ function MenuPanel({
         <>
           {cover && <DishCover {...cover} />}
           {dishes.length > 0 && (
-            <div className="rounded-[18px] bg-card px-3.5 py-0.5">
+            /* Two columns from `lg`, where this panel is sitting in the page's
+               wide column: a single file of four rows under a full-width
+               photograph left a hand's width of mint doing nothing on either
+               side of every price. The rule between rows is drawn per column,
+               so it never runs across the gap. */
+            <div className="rounded-[18px] bg-card px-3.5 py-0.5 lg:grid lg:grid-cols-2 lg:gap-x-6 lg:px-5">
               {dishes.map((item, i) => (
-                <React.Fragment key={item.title}>
-                  {i > 0 && <div className="h-px bg-card-edge" />}
+                <div key={item.title} className="flex flex-col">
+                  {i > 0 && <div className="h-px bg-card-edge lg:hidden" />}
+                  {i > 1 && <div className="hidden h-px bg-card-edge lg:block" />}
                   <DishRow item={item} />
-                </React.Fragment>
+                </div>
               ))}
             </div>
           )}
@@ -921,123 +911,190 @@ function MenuPanel({
   );
 }
 
-// ── Plan ahead (desktop) ──────────────────────────────────────────────────────
-
-/** Five-bucket heat ramp for a value against the horizon's busiest day. */
-function heatVar(value: number, max: number): string {
-  if (value <= 0) return "var(--heat-1)";
-  const t = Math.min(4, Math.floor((value / Math.max(max, 1)) * 4.999));
-  return `var(--heat-${t + 1})`;
-}
-
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+// ── Plan ahead ────────────────────────────────────────────────────────────────
 
 /**
- * What the 60-day sweep knows that no single day's search can show: which dates
- * still have room, and which weekday reliably does. Both cards are derived
- * client-side from the availability horizon the panel above already fetched —
- * no extra query, no server change.
+ * How long ago the sweep last looked at this venue, in words.
+ *
+ * Deliberately a reading rather than a promise: this band used to say "swept
+ * hourly", which the cron aims at but does not guarantee — the run is
+ * budget-bounded and orders venues least-recently-swept first, so a long run
+ * leaves a tail whose figures are hours old under copy claiming minutes.
+ * `observed_at` is on every row the API already returns; nothing read it.
+ *
+ * Null until hydration, for the reason `useParkClock` is: a relative time
+ * rendered on the server is wrong by however long the HTML sat in the edge
+ * cache, and mismatches on the way in.
  */
-function PlanAhead({ r }: { r: Reservations }) {
-  const heatDays = r.days.slice(0, HEAT_DAYS);
-  const max = heatDays.reduce((m, d) => Math.max(m, d.offerCount), 0);
-  const leading = heatDays[0] ? new Date(`${heatDays[0].date}T00:00:00`).getDay() : 0;
+function useSweptLabel(observedAt: string | null | undefined): string | null {
+  const hydrated = useHydrated();
+  if (!hydrated || !observedAt) return null;
+  const ms = Date.now() - Date.parse(observedAt);
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  const mins = Math.round(ms / 60_000);
+  if (mins < 2) return "just now";
+  if (mins < 90) return `${mins} min ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 36) return `${hours} hr ago`;
+  return `${Math.round(hours / 24)} days ago`;
+}
 
-  const weekday = React.useMemo(() => {
-    const sums = WEEKDAYS.map(() => ({ total: 0, n: 0 }));
-    for (const d of r.days.slice(0, WEEKDAY_DAYS)) {
-      const slot = sums[new Date(`${d.date}T00:00:00`).getDay()];
-      if (!slot) continue;
-      slot.total += d.offerCount;
-      slot.n += 1;
-    }
-    return sums.map((s) => (s.n > 0 ? Math.round(s.total / s.n) : null));
-  }, [r.days]);
-  const present = weekday.filter((v): v is number => v != null);
-  const wMax = present.length > 0 ? Math.max(...present) : 0;
-  const best = weekday.indexOf(wMax);
-  const wMin = present.length > 0 ? Math.min(...present) : 0;
-  const worst = weekday.indexOf(wMin);
+/**
+ * What the sweep knows that no single day's search can show: which dates still
+ * have room, which weekday reliably does, and — the one the other two can't
+ * answer — which stretch of the clock.
+ *
+ * ## Why the series starts tomorrow
+ *
+ * A row in `dining_obs` is the times still bookable *at sweep time*. For a
+ * future date that is the date's availability; for today it is whatever is left
+ * of today, a number that shrinks to zero by dinnertime. They are different
+ * quantities and cannot share a scale. Measured across the Disney priority set
+ * for a party of two, today averages 3.4 open times against tomorrow's 16.7,
+ * and 52 of 111 venues read zero — so mixing it in did two things:
+ *
+ *   - it decided the weekday caption. Each weekday rests on two dates, one of
+ *     which is today for today's weekday, and 71 of 126 venues named *today's
+ *     weekday* as their worst. The sentence rotated with the day of the week
+ *     you happened to open the page on (37% of venues changed their answer once
+ *     today was dropped), which is a property of the clock, not the restaurant.
+ *   - it anchored the heat ramp. Today was the sole minimum on 41 of 105
+ *     charted venues, stretching the average colour span by half and squashing
+ *     a real month of variation into the top two steps.
+ *
+ * Today is still drawn, still ringed, and deliberately blank — `todayLabel`
+ * says why. The panel above it is where today's actual times live.
+ *
+ * ## Why "times" and not "tables"
+ *
+ * `offerCount` counts bookable arrival *times*: Frontera Cocina's 48 is every
+ * 15-minute slot from 11:00 to 22:45, not 48 tables. The ceiling is the venue's
+ * slot grid rather than its dining room, so the figure says nothing about size
+ * and saturates once everything is open.
+ *
+ * It renders only when the sweep has something to say. A venue we hold a
+ * fortnight of *empty* days for gets no band at all: a calendar of "nothing
+ * open" looks like a broken chart and answers nothing the panel above hasn't
+ * already answered.
+ */
+function PlanAhead({ r, facilityId }: { r: Reservations; facilityId: string }) {
+  const trpc = useTRPC();
+  // Only the stretch we have actually swept. Beyond it every day would read
+  // "no tables", which is a claim we can't make — the sweep simply stops.
+  const swept = r.days.slice(0, HEAT_DAYS);
+  const points = React.useMemo(
+    () =>
+      swept.filter((d) => d.date > r.todayIso).map((d) => ({ date: d.date, value: d.offerCount })),
+    [swept, r.todayIso],
+  );
+  // Today, present so the calendar opens on the week the guest is in, and
+  // valueless so it neither anchors the ramp nor votes on a weekday.
+  const gridDays = React.useMemo(
+    () => [{ date: r.todayIso, value: null }, ...points],
+    [points, r.todayIso],
+  );
+  // Whole weeks only — an uneven window ranks weekdays by where it was cut.
+  // Never empty at render: the guard below drops the band under seven days.
+  const weekdayDays = React.useMemo(
+    () => points.slice(0, Math.min(WEEKDAY_DAYS, Math.floor(points.length / 7) * 7)),
+    [points],
+  );
+  const openDays = points.filter((p) => p.value > 0).length;
+  // The newest generation across the horizon, not `days[0]`'s: today's row
+  // stops being rewritten every evening from 8 PM Eastern (the sweep's own
+  // window is UTC), so the first day is the stalest one on the page.
+  const lastSwept = React.useMemo(
+    () =>
+      swept.reduce<string | null>(
+        (a, d) => (a == null || d.observedAt > a ? d.observedAt : a),
+        null,
+      ),
+    [swept],
+  );
+  const sweptLabel = useSweptLabel(lastSwept);
 
-  if (heatDays.length === 0) return null;
+  const bandsQ = useQuery({
+    ...trpc.dining.timeBands.queryOptions({
+      facilityId,
+      partySize: r.partySize,
+      days: HEAT_DAYS,
+    }),
+    enabled: points.length >= 7,
+  });
+  const bandDays = React.useMemo(
+    () => (bandsQ.data ?? []).filter((d) => d.date > r.todayIso),
+    [bandsQ.data, r.todayIso],
+  );
+
+  // Under a week of forward sweep, or a horizon with nothing open in it: the
+  // charts would be a grid of grey and seven empty bars.
+  if (points.length < 7 || openDays === 0) return null;
+
+  const times = (value: number) => `${value.toLocaleString()} ${value === 1 ? "time" : "times"}`;
+  // The span the window really covers, which is not the same as the number of
+  // days we hold rows for the moment the sweep drops one.
+  const spanDays =
+    Math.round(
+      (Date.parse(`${points[points.length - 1]!.date}T00:00:00`) -
+        Date.parse(`${points[0]!.date}T00:00:00`)) /
+        86_400_000,
+    ) + 1;
 
   return (
-    <section className="hidden flex-col gap-4 md:mt-10 md:flex">
-      <SectionHeading
+    /* The page's one band, and the last thing on it: everything above is this
+       venue today, and this is what our sweep knows about it in general — the
+       park page's "Know" band, over tables instead of waits. */
+    <Band className="mt-10 md:mt-12">
+      <BandHeading
+        kicker="Know"
         title={COPY.planAhead}
-        description={`Reservation availability we've swept for a party of ${r.partySize} · updated hourly`}
+        meta={`${sweptLabel ? `Checked ${sweptLabel} ` : ""}for a party of ${r.partySize} · ${openDays} of the next ${spanDays} days have openings`}
       />
-      <div className="grid gap-5 lg:grid-cols-[3fr_2fr]">
+      {/* Three charts that each want a different width: a calendar wants to be
+          square and small, seven bars want to be squat, and a 30-column strip
+          wants to be long. Stacked on a phone, calendar-and-bars beside each
+          other from `md` with the strip under them, and all three abreast from
+          `xl` — where a two-column split left the bars floating in the top
+          third of a card sized by the calendar next to it. The first column is
+          fixed rather than fractional so the calendar's cells stay cells
+          instead of growing into 90px tiles on a wide monitor. */}
+      <div className="grid gap-4 md:grid-cols-[19rem_minmax(0,1fr)] md:gap-6 xl:grid-cols-[19rem_minmax(0,1fr)_minmax(0,1.45fr)]">
         <DetailCard
-          title={`Tables by day, next ${heatDays.length} days`}
-          description="Open tables per service date · today outlined"
+          title="Openings by date"
+          description="Bookable times per service date · from tomorrow, today ringed"
         >
-          <div className="flex flex-col gap-1.5">
-            <div className="grid grid-cols-7 gap-1 text-center text-[10px] text-muted-foreground">
-              {WEEKDAYS.map((d) => (
-                <span key={d}>{d.slice(0, 1)}</span>
-              ))}
-            </div>
-            <div className="grid grid-cols-7 gap-1">
-              {Array.from({ length: leading }, (_, i) => (
-                <span key={`pad-${i}`} />
-              ))}
-              {heatDays.map((d) => (
-                <span
-                  key={d.date}
-                  // The count lives in the tooltip, not the cell: at 9px on a
-                  // 30-cell grid the numerals were unreadable (deviation D3).
-                  title={`${format(new Date(`${d.date}T00:00:00`), "EEE, MMM d")} · ${d.offerCount} table${d.offerCount === 1 ? "" : "s"}`}
-                  className={cn(
-                    "aspect-square rounded-md",
-                    d.date === r.todayIso &&
-                      "ring-2 ring-inset ring-brand-yellow dark:ring-foreground",
-                  )}
-                  style={{ backgroundColor: heatVar(d.offerCount, max) }}
-                />
-              ))}
-            </div>
-            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-              <span>Fewer</span>
-              {[1, 2, 3, 4, 5].map((i) => (
-                <span
-                  key={i}
-                  className="h-2.5 w-3.5 rounded-sm"
-                  style={{ backgroundColor: `var(--heat-${i})` }}
-                />
-              ))}
-              <span>More tables</span>
-            </div>
-          </div>
+          <DayHeatGrid
+            days={gridDays}
+            today={r.todayIso}
+            align="start"
+            weeks={6}
+            unit={times}
+            zeroLabel="Fully booked"
+            todayLabel="today — see the times above"
+          />
         </DetailCard>
-
         <DetailCard
-          title="Tables by weekday"
-          description={`Average open tables · next ${WEEKDAY_DAYS} days`}
+          title="Openings by weekday"
+          description={`Average bookable times per weekday · next ${weekdayDays.length} days · best in green`}
         >
-          <div className="flex h-40 items-end gap-2">
-            {weekday.map((v, i) => (
-              <div key={WEEKDAYS[i]} className="flex flex-1 flex-col items-center gap-1">
-                <span className="text-[10px] font-semibold tabular-nums">{v ?? "—"}</span>
-                <span
-                  className="w-full rounded-t-md"
-                  style={{
-                    height: `${wMax > 0 ? Math.max(2, ((v ?? 0) / wMax) * 100) : 2}%`,
-                    backgroundColor: i === best ? "var(--wait-cool)" : "var(--primary)",
-                  }}
-                />
-                <span className="text-[10px] text-muted-foreground">{WEEKDAYS[i]}</span>
-              </div>
-            ))}
-          </div>
-          {best >= 0 && worst >= 0 && best !== worst && (
-            <p className="text-xs text-muted-foreground">
-              {WEEKDAYS[best]}days open the most tables; {WEEKDAYS[worst]}days the fewest.
-            </p>
-          )}
+          <WeekdayBars
+            days={weekdayDays}
+            good="max"
+            unit={times}
+            caption={({ best, worst }) => `${best}s open the most times; ${worst}s the fewest.`}
+          />
         </DetailCard>
+        {bandDays.length >= 7 && (
+          <DetailCard
+            title="Openings by time of day"
+            description="One column per date, down the clock · darkest is most open"
+            className="md:col-span-2 xl:col-span-1"
+          >
+            <TimeBandStrip days={bandDays} />
+          </DetailCard>
+        )}
       </div>
-    </section>
+    </Band>
   );
 }
 
@@ -1068,7 +1125,10 @@ export function DiningVenueDetail({
   const native = useIsNative();
   const venueQ = useQuery(trpc.dining.venue.queryOptions({ facilityId }));
   const venue = venueQ.data;
-  const hoursQ = useQuery(trpc.dining.hours.queryOptions({}));
+  // This venue's own posted window, today first. Not `dining.hours`, which
+  // answers the *list* page's question ("what is open right now") by shipping
+  // four hundred venues' schedules — see `dining.venueSchedule`.
+  const hours = useVenueHours(facilityId);
   const state = useMenuState(facilityId, true, targetItemSlug);
   // Set when this page was opened by tapping a map POI card: the card's own
   // name, subtitle and photo, plus whether its flown clones are still in the
@@ -1084,8 +1144,24 @@ export function DiningVenueDetail({
   // isn't the map doesn't paint a stale hero from it.
   React.useEffect(() => () => releaseHeroFlight(heroKey), [heroKey]);
 
-  const schedules = hoursQ.data?.find((h) => h.facilityId === facilityId)?.schedules ?? [];
+  const schedules = hours.today;
   const webUrl = venue ? diningReserveUrl(venue.urlFriendlyId, venue.detailUrl) : null;
+
+  // The park this venue stands in, matched on the finder's own location name
+  // (`samePark`) — there is no park id on a restaurant row. It buys the wide
+  // column its news card; a resort-hosted venue simply doesn't have one.
+  const parksQ = useQuery(trpc.parks.list.queryOptions());
+  const park = React.useMemo(
+    () =>
+      venue?.parkResort
+        ? (parksQ.data?.find((p) => samePark(venue.parkResort, p.name)) ?? null)
+        : null,
+    [parksQ.data, venue?.parkResort],
+  );
+
+  // The clock the wide column is stamped with. Orlando, both resorts — the same
+  // timezone every other dining surface assumes (see `parkNowMinutes`).
+  const clock = useParkClock("America/New_York");
 
   const r = useReservations({
     facilityId,
@@ -1263,7 +1339,6 @@ export function DiningVenueDetail({
   // ── Ticket contents ────────────────────────────────────────────────────────
   // Exactly three facts, always filled: the venue's own numbers first, then its
   // most useful stable metadata. Nothing invented, no empty cell (plan §4.9).
-  const hoursText = schedules.length > 0 ? hoursLabel(schedules) : null;
   const cuisines = venue ? cuisineList(venue.cuisine) : [];
   const facts: Array<TicketFact> = [];
   if (venue) {
@@ -1278,7 +1353,9 @@ export function DiningVenueDetail({
       : null;
     const service = venue.experienceType ?? cuisines[0] ?? null;
     if (service) facts.push({ label: "Service", value: service });
-    if (hoursText) facts.push({ label: "Hours", value: hoursText });
+    // No "Hours" cell: the stub's lower half lists the whole posted window now
+    // (`VenueHours`), and its status chip says whether the doors are open. The
+    // freed cell goes to the price band, which nothing else on the page states.
     if (venue.minPartySize != null && venue.maxPartySize != null) {
       facts.push({ label: "Party", value: `${venue.minPartySize}–${venue.maxPartySize}` });
     } else if (priceFact) {
@@ -1399,6 +1476,28 @@ export function DiningVenueDetail({
   // three columns of dense rows, and readers browsing one want the room.
   const [menuWide, setMenuWide] = React.useState(false);
 
+  // The wide column's heading line: which menu is on show, and how much of it
+  // there is. It reads beside the title on a desktop and drops on a phone,
+  // where both facts are a tap away inside the sheet.
+  const menuBandMeta = hasMenu
+    ? [
+        teaser?.period,
+        `${menuItemCount.toLocaleString()} ${menuItemCount === 1 ? "dish" : "dishes"}`,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : undefined;
+
+  // "More in Islands of Adventure" — the park's short name when we resolved one,
+  // the venue's own location when it fits a heading, else no place at all
+  // ("Disney's Grand Floridian Resort & Spa" is not a heading).
+  const eatHerePlace = park
+    ? formatParkName(park.name)
+    : venue?.parkResort && venue.parkResort.length <= 24
+      ? decodeEntities(venue.parkResort)
+      : null;
+  const eatHereTitle = eatHerePlace ? `More in ${eatHerePlace}` : "More places to eat";
+
   return (
     <div
       style={{ "--crease": `${crease}px` } as React.CSSProperties}
@@ -1423,21 +1522,35 @@ export function DiningVenueDetail({
             underlay={flight.seed.previewImageUrl ?? flight.seed.cardImageUrl}
             flying={flight.flying}
             entrance
-            schedules={schedules}
           />
         ) : (
-          /* Same bleed *and* the same crease-aligned height as the real hero,
-             so the ticket's crease lands on its bottom edge while the venue is
-             still loading and data landing shifts nothing. */
+          /* Same bleed, the same crease-aligned height *and* the same run up
+             behind the nav as the real hero, so the ticket's crease lands on
+             its bottom edge while the venue is still loading and nothing shifts
+             when the data lands. */
           <Skeleton
             className={cn(
               HERO_BLEED,
               HERO_CREASE_ALIGNED,
-              "md:h-100 md:rounded-t-3xl md:rounded-b-none",
+              "md:h-100 md:rounded-t-none md:rounded-b-3xl",
+              HERO_UNDER_NAV,
             )}
           />
         )
-      ) : !venue ? null : (
+      ) : !venue ? (
+        /* No venue at this id. Still a hero, bare: the masthead inks itself for
+           a photograph on this route (`UNDER_NAV_PAGES` in site-header-desktop),
+           so a page that drops the hero entirely prints white nav links on a
+           white page. `DetailHero` with no image is its dark gradient. */
+        <DiningHero
+          heroKey={heroKey}
+          name=""
+          subtitle={null}
+          image={null}
+          flying={false}
+          entrance={false}
+        />
+      ) : (
         <DiningHero
           heroKey={heroKey}
           name={venue.name}
@@ -1456,7 +1569,6 @@ export function DiningVenueDetail({
             .filter((p) => p.waitMin != null)
             .map((p) => `Party of ${p.partySize}: ~${p.waitMin} min`)
             .join(" · ")}
-          schedules={schedules}
         />
       )}
 
@@ -1472,78 +1584,156 @@ export function DiningVenueDetail({
           </p>
         </div>
       ) : (
-        /* Two independent columns on desktop, one stack on a phone. The columns
-           never share grid rows — that's what let the blue block drift away from
-           the ticket — so on mobile each wrapper collapses to `contents` and its
-           children become items of this one flex column, in DOM order. */
-        <div className="flex flex-col gap-5 md:-mt-12 md:grid md:grid-cols-[3fr_2fr] md:items-start md:gap-6">
-          <div className="contents md:flex md:flex-col md:gap-6">
-            {venueQ.isLoading && !flight ? (
-              /* Nothing to name the ticket with yet (no map-card seed): hold its
-                 box so the blocks below don't jump when the venue lands. */
-              <Skeleton className="mt-[calc(var(--crease)*-1)] h-52 rounded-[22px] md:mt-0" />
-            ) : (
-              <Ticket
-                onCreaseHeight={setCrease}
-                // Phone: pulled up by its own top half, so the crease lands on
-                // the hero's bottom edge. Desktop: the grid's -48px overlap of
-                // the scalloped tear instead.
-                className="mt-[calc(var(--crease)*-1)] md:mt-0"
-                heroKey={heroKey}
-                titleHidden={flight?.flying ? { opacity: 0, visibility: "hidden" } : undefined}
-                title={venue?.name ?? flight?.seed.name ?? ""}
-                subtitle={placeLine ?? flight?.seed.subtitle}
-                facts={facts}
-                chips={
-                  venue && (shownChips.length > 0 || freshChange || isNewVenue) ? (
-                    <>
-                      {isNewVenue && <TicketChip accent>Newly added</TicketChip>}
-                      {!isNewVenue && freshChange && (
-                        <TicketChip accent onPress={jumpToFreshItem}>
-                          Freshly updated
-                        </TicketChip>
-                      )}
-                      {shownChips.map((label) => (
-                        <TicketChip key={label}>{label}</TicketChip>
-                      ))}
-                      {foldedChips.length > 0 && (
-                        <TicketChip title={foldedChips.join(" · ")}>
-                          +{foldedChips.length}
-                        </TicketChip>
-                      )}
-                    </>
-                  ) : null
-                }
-                keys={
-                  venue && (venue.phone || venue.detailUrl) ? (
-                    <div className="grid grid-cols-2 gap-2">
-                      {venue.phone && (
-                        <Button
-                          variant="ticket"
-                          size="lg"
-                          render={<a href={`tel:${venue.phone}`} />}
-                        >
-                          <PhoneIcon />
-                          <span className="truncate">Call</span>
-                        </Button>
-                      )}
-                      {venue.detailUrl && (
-                        <Button
-                          variant="ticket"
-                          size="lg"
-                          className={cn(!venue.phone && "col-span-2")}
-                          render={<a href={venue.detailUrl} target="_blank" rel="noreferrer" />}
-                        >
-                          <span className="truncate">Official site</span>
-                          <ExternalLinkIcon />
-                        </Button>
-                      )}
-                    </div>
-                  ) : null
-                }
-              />
+        /* Three children on a two-column grid, placed explicitly (the park page's
+           arrangement, over a venue's material): the ticket and the rest of the
+           narrow column take rows 1 and 2 of column 1, and the wide column spans
+           both rows of column 2 — so the menu rides up beside the ticket into
+           what would otherwise be dead space under the hero.
+
+           The order is chosen for the *phone*, where the grid collapses to this
+           one flex column: ticket, the job, the food, then the place itself, and
+           the neighbourhood cards last. Three `order`s carry it (see each), and
+           all of them dissolve at `md`, where the columns place themselves. */
+        <div className="flex flex-col gap-5 md:grid md:grid-cols-[minmax(0,30rem)_minmax(0,1fr)] md:grid-rows-[auto_1fr] md:items-start md:gap-x-6 md:gap-y-5 xl:grid-cols-[minmax(0,34rem)_minmax(0,1fr)]">
+          {venueQ.isLoading && !flight ? (
+            /* Nothing to name the ticket with yet (no map-card seed): hold its
+               box so the blocks below don't jump when the venue lands. */
+            <Skeleton className="mt-[calc(var(--crease)*-1)] h-52 rounded-[22px] md:col-start-1 md:row-start-1" />
+          ) : (
+            <Ticket
+              onCreaseHeight={setCrease}
+              // Pulled up by its own top half at every width, so the crease
+              // lands on the hero's bottom edge (the hero is `crease="always"`
+              // now), and nudged past the column's left edge on a desktop so
+              // the stub reads as laid *on* the page rather than ruled into
+              // the grid.
+              className="mt-[calc(var(--crease)*-1)] md:col-start-1 md:row-start-1 md:-ml-3 lg:-mx-2.5"
+              heroKey={heroKey}
+              titleHidden={flight?.flying ? { opacity: 0, visibility: "hidden" } : undefined}
+              title={venue?.name ?? flight?.seed.name ?? ""}
+              // The place, then whether its doors are open — the same line the
+              // park stub carries. `hours.status` is null until hydration (it
+              // is a reading of the clock), so the chip simply appears.
+              subtitle={
+                placeLine || hours.status ? (
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    {placeLine && <span>{placeLine}</span>}
+                    {hours.status && (
+                      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-ink-on-yellow px-2.5 py-[3px] text-[11px] font-bold text-brand-yellow">
+                        <span
+                          className={cn(
+                            "size-1.5 rounded-full",
+                            hours.openNow ? "bg-emerald-400" : "bg-white/50",
+                          )}
+                        />
+                        {hours.status}
+                      </span>
+                    )}
+                  </span>
+                ) : (
+                  flight?.seed.subtitle
+                )
+              }
+              facts={facts}
+              chips={
+                venue && (shownChips.length > 0 || freshChange || isNewVenue) ? (
+                  <>
+                    {isNewVenue && <TicketChip accent>Newly added</TicketChip>}
+                    {!isNewVenue && freshChange && (
+                      <TicketChip accent onPress={jumpToFreshItem}>
+                        Freshly updated
+                      </TicketChip>
+                    )}
+                    {shownChips.map((label) => (
+                      <TicketChip key={label}>{label}</TicketChip>
+                    ))}
+                    {foldedChips.length > 0 && (
+                      <TicketChip title={foldedChips.join(" · ")}>+{foldedChips.length}</TicketChip>
+                    )}
+                  </>
+                ) : null
+              }
+              keys={
+                venue && (venue.phone || venue.detailUrl) ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {venue.phone && (
+                      <Button variant="ticket" size="lg" render={<a href={`tel:${venue.phone}`} />}>
+                        <PhoneIcon />
+                        <span className="truncate">Call</span>
+                      </Button>
+                    )}
+                    {venue.detailUrl && (
+                      <Button
+                        variant="ticket"
+                        size="lg"
+                        className={cn(!venue.phone && "col-span-2")}
+                        render={<a href={venue.detailUrl} target="_blank" rel="noreferrer" />}
+                      >
+                        <span className="truncate">Official site</span>
+                        <ExternalLinkIcon />
+                      </Button>
+                    )}
+                  </div>
+                ) : null
+              }
+              // The stub's lower half: this venue's posted window, today
+              // picked out. It is a fact about the place — the same kind as
+              // its price band — so it rides on the ticket rather than in a
+              // card, exactly as the park's hours do.
+              footer={
+                !hours.ready || hours.hasSchedule ? <VenueHours facilityId={facilityId} /> : null
+              }
+            />
+          )}
+
+          {/* THE FOOD. The wide column, spanning both of the grid's rows so it
+              runs up beside the ticket — the park page's live column, over a
+              venue's material. Its heading is the page's "Now": what this
+              kitchen is serving, at the hour you are reading it. */}
+          <div className="contents md:col-start-2 md:row-span-2 md:row-start-1 md:flex md:flex-col md:gap-4 md:pt-4">
+            {venue && (state.menuQ.isLoading || hasMenu || !hasJobPanel) && (
+              <div className="order-1 flex flex-col gap-4 md:contents">
+                <BandHeading
+                  kicker={clock ? `Now · ${clock}` : "Now"}
+                  title={COPY.menu}
+                  meta={menuBandMeta}
+                />
+                <div id="menu" className="scroll-mt-16">
+                  <MenuPanel
+                    loading={state.menuQ.isLoading}
+                    hasMenu={hasMenu}
+                    cover={menuCover}
+                    dishes={teaserDishes}
+                    itemCount={menuItemCount}
+                    onOpen={() => setMenuOpen(true)}
+                  />
+                </div>
+              </div>
             )}
 
+            {/* The neighbourhood: what we've written about the park this venue
+                stands in, and the other kitchens in it. Both self-hide when
+                there is nothing to show, and both are the park page's own cards
+                — one grid of restaurants in the app, not two. Last on a phone
+                (`order-3`): they are about somewhere else. */}
+            <div className="order-3 flex flex-col gap-5 md:contents">
+              {park?.slug && (
+                <ParkNews parkSlug={park.slug} title={`News from ${formatParkName(park.name)}`} />
+              )}
+              {venue?.parkResort && (
+                <EatHere
+                  parkName={venue.parkResort}
+                  excludeFacilityId={facilityId}
+                  title={eatHereTitle}
+                />
+              )}
+            </div>
+          </div>
+
+          {/* The rest of the narrow column, under the ticket. */}
+          <div className="contents md:col-start-1 md:row-start-2 md:flex md:flex-col md:gap-5">
+            {/* The page's job, directly under the ticket at every width. First
+                in this wrapper, so the phone reads it straight after the stub. */}
             {venue &&
               hasJobPanel &&
               (venue.availabilityEligible ? (
@@ -1562,53 +1752,37 @@ export function DiningVenueDetail({
                   schedules={schedules}
                   walkupWaitMin={venue.walkupWaitMin}
                   walkupWaitList={venue.walkupWaitList}
+                  mobileOrder={venue.mobileOrder}
                 />
               ))}
-          </div>
 
-          {/* DOM order *is* the phone order — hero, ticket, job, menu, prose, map
-              (§3.1) — so nothing here depends on `order-*` resolving correctly
-              through the `display: contents` wrappers. Desktop wants the prose
-              at the top of its right column instead, and that one exception is
-              the only `order` on the page. */}
-          <div className="contents md:flex md:flex-col md:gap-6 md:pt-16">
-            {venue && (state.menuQ.isLoading || hasMenu || !hasJobPanel) && (
-              <div id="menu" className="scroll-mt-16">
-                <MenuPanel
-                  loading={state.menuQ.isLoading}
-                  hasMenu={hasMenu}
-                  period={teaser?.period ?? null}
-                  cover={menuCover}
-                  dishes={teaserDishes}
-                  itemCount={menuItemCount}
-                  onOpen={() => setMenuOpen(true)}
-                />
-              </div>
-            )}
+            {/* What this place *is*, rather than what it is doing tonight: its
+                own copy, and where to find it. Behind the food on a phone
+                (`order-2`), beside it on a desktop, where `md:contents`
+                dissolves this wrapper into the narrow column. */}
+            <div className="order-2 flex flex-col gap-5 md:contents">
+              {/* The venue's own copy — official marketing text, never rewritten
+                  (only un-escaped: the feed hands it to us as HTML). */}
+              {venue?.description && (
+                <div className="flex flex-col gap-2">
+                  <p className="text-[15px] leading-[1.45] text-pretty text-muted-foreground md:text-base md:leading-[1.55]">
+                    {decodeEntities(venue.description)}
+                  </p>
+                  {resortSlug && (
+                    <Link
+                      to="/resort/$slug"
+                      params={{ slug: resortSlug }}
+                      className="w-fit text-sm font-medium text-primary hover:underline"
+                    >
+                      More at {decodeEntities(venue.parkResort)}
+                    </Link>
+                  )}
+                </div>
+              )}
 
-            {/* The venue's own copy — official marketing text, never rewritten
-                (only un-escaped: the feed hands it to us as HTML). */}
-            {venue?.description && (
-              <div className="flex flex-col gap-2 md:order-first">
-                <p className="text-[15px] leading-[1.45] text-pretty text-muted-foreground md:text-base md:leading-[1.55]">
-                  {decodeEntities(venue.description)}
-                </p>
-                {resortSlug && (
-                  <Link
-                    to="/resort/$slug"
-                    params={{ slug: resortSlug }}
-                    className="w-fit text-sm font-medium text-primary hover:underline"
-                  >
-                    More at {decodeEntities(venue.parkResort)}
-                  </Link>
-                )}
-              </div>
-            )}
-
-            {/* Disney venues carry finder coordinates; many UOR ones don't, and
-                the panel simply doesn't render for those. */}
-            {venue?.latitude != null && venue.longitude != null && (
-              <div>
+              {/* Disney venues carry finder coordinates; many UOR ones don't, and
+                  the panel simply doesn't render for those. */}
+              {venue?.latitude != null && venue.longitude != null && (
                 <TintPanel
                   tone="peach"
                   pad="tight"
@@ -1640,21 +1814,23 @@ export function DiningVenueDetail({
                     className="h-48 w-full overflow-hidden rounded-[18px] sm:h-56 md:h-[15.5rem]"
                   />
                 </TintPanel>
-              </div>
-            )}
+              )}
 
-            {/* Cast-member-only; renders nothing for everyone else. */}
-            <RemovalRequestDialog
-              entityType="restaurant"
-              entityId={facilityId}
-              entityName={venue?.name}
-              className="w-fit"
-            />
+              {/* Cast-member-only; renders nothing for everyone else. */}
+              <RemovalRequestDialog
+                entityType="restaurant"
+                entityId={facilityId}
+                entityName={venue?.name}
+                className="w-fit"
+              />
+            </div>
           </div>
         </div>
       )}
 
-      {venue?.availabilityEligible && r.days.length > 0 && <PlanAhead r={r} />}
+      {venue?.availabilityEligible && r.days.length > 0 && (
+        <PlanAhead r={r} facilityId={facilityId} />
+      )}
 
       {/* The menu destination. A phone gets the full-screen drawer it always
           had; desktop gets the right-hand sheet. */}

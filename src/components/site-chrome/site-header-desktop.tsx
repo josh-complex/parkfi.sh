@@ -798,9 +798,18 @@ const CAPSULE_FADE_MS = 220;
  */
 const CAPSULE_SETTLE_MS = 1000;
 
-/** A park page (`/park/magic-kingdom`) but not its ride child — the one other
- *  route that runs its own artwork up behind the capsule. */
-const PARK_PAGE = /^\/park\/[^/]+\/?$/;
+/**
+ * The routes that run their own artwork up behind the capsule, so the nav is
+ * sitting on a photograph and has to be inked for one (see `HERO_UNDER_NAV`,
+ * and `darkField` below). Keep this list and the pages' `underNav` heroes in
+ * step: a page that turns its hero `underNav` without landing here gets the
+ * page's own near-black links printed on a bright sky.
+ *
+ * A park page (`/park/magic-kingdom`) but *not* its ride child
+ * (`/park/x/ride/y`), which opens on a wash panel rather than on artwork — and
+ * a dining venue (`/dining/<facilityId>`) but not its menu-item child.
+ */
+const UNDER_NAV_PAGES = [/^\/park\/[^/]+\/?$/, /^\/dining\/[^/]+\/?$/];
 
 /** The masthead's metallic bar — Disney's dark-red gradient, in brand blue. */
 const STRIPE_GRADIENT =
@@ -969,9 +978,10 @@ export function SiteHeaderDesktop({
   // (see `WaitsBlurbs`). Only while the capsule is transparent: engaged, it goes
   // opaque in the page's own theme and hands the tokens straight back.
   //
-  // The park *page* only: its ride child (`/park/x/ride/y`) opens on a wash
-  // panel, not on artwork, so the exact match is the point.
-  const darkField = floating && (pathname === "/" || PARK_PAGE.test(pathname));
+  // The exact matches are the point: these routes' *children* open on a wash
+  // panel rather than on artwork (see `UNDER_NAV_PAGES`).
+  const darkField =
+    floating && (pathname === "/" || UNDER_NAV_PAGES.some((re) => re.test(pathname)));
   // The ink turns over in the same render as the ground, and rides the links'
   // own `transition-colors` across. It used to trail the ground by half the
   // fade, to land on the crossover where both inks are legible — but that meant

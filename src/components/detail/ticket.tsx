@@ -2,11 +2,13 @@
 
 import * as React from "react";
 import type { CSSProperties, ReactNode } from "react";
+import { mergeProps } from "@base-ui/react/merge-props";
+import { useRender } from "@base-ui/react/use-render";
 
 import { cn } from "#/lib/utils.ts";
 
 /** The notch radius, in px. Shared by the mask and the dashed cut line's inset. */
-const NOTCH = 14;
+const NOTCH = 18;
 
 /**
  * The ticket's top-half height before it has been measured — a two-line name's
@@ -312,4 +314,109 @@ export function TicketChip({
       {children}
     </span>
   );
+}
+
+/**
+ * One titled block on the stub's lower half — the park page's hours and
+ * showtimes, the venue page's hours. A small uppercase heading in the ticket's
+ * own ink, an optional right-hand count, rows, and an optional closing line.
+ *
+ * It exists so those lists are printed once rather than per page: three
+ * components were each carrying their own copy of the stub's type scale
+ * (`text-[11px] font-bold tracking-[0.06em] text-ink-on-yellow/60`) and drifting
+ * from it one edit at a time.
+ */
+export function TicketBlock({
+  title,
+  meta,
+  note,
+  gap = "default",
+  className,
+  children,
+}: {
+  title: string;
+  /** Right-hand line in the heading row — "Next 4 days", "3 still to come". */
+  meta?: ReactNode;
+  /** A closing line under the rows ("2 more shows later today."). */
+  note?: ReactNode;
+  /** `"tight"` for a column of dates, which reads as a table rather than a stack. */
+  gap?: "default" | "tight";
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={cn("flex flex-col gap-3", className)}>
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-[11px] font-bold tracking-[0.06em] text-ink-on-yellow/60 uppercase">
+          {title}
+        </h3>
+        {meta && (
+          <span className="shrink-0 text-xs font-semibold text-ink-on-yellow/55">{meta}</span>
+        )}
+      </div>
+      <div className={cn("flex flex-col", gap === "tight" ? "gap-1" : "gap-1.5")}>{children}</div>
+      {note && <p className="text-xs text-ink-on-yellow/55">{note}</p>}
+    </div>
+  );
+}
+
+/**
+ * A row inside a `TicketBlock`: a fixed lead cell (a weekday, a clock time),
+ * the line itself, and an optional tail (an extra-hours time, a countdown
+ * pill). The row owns the spacing and the lead's width; the caller inks its own
+ * line, because a date range wants `tabular-nums` where a show's name wants a
+ * clamp.
+ *
+ * `render` makes the row a link — a show row navigates to its ride. There is no
+ * muted token to hover into on the stub (the field is the ticket's own cream),
+ * so a pressable row warms with the ink it is already printed in.
+ */
+export function TicketRow({
+  lead,
+  tail,
+  highlight,
+  pressable,
+  className,
+  render,
+  children,
+  ...props
+}: useRender.ComponentProps<"div"> & {
+  lead?: ReactNode;
+  tail?: ReactNode;
+  /** Picks the row out of the list — today, among the days ahead. */
+  highlight?: boolean;
+  /** Hover ink for a row `render` has made navigable. */
+  pressable?: boolean;
+}) {
+  return useRender({
+    defaultTagName: "div",
+    props: mergeProps<"div">(
+      {
+        className: cn(
+          "-mx-1 flex items-center gap-2.5 rounded-xl px-2",
+          highlight && "bg-ink-on-yellow/8 py-1.5",
+          pressable && "hover:bg-ink-on-yellow/6",
+          className,
+        ),
+        children: (
+          <>
+            {lead != null && (
+              <span
+                className={cn(
+                  "w-16 shrink-0 text-[13px] tabular-nums",
+                  highlight ? "font-extrabold" : "font-bold text-ink-on-yellow/85",
+                )}
+              >
+                {lead}
+              </span>
+            )}
+            <span className="min-w-0 flex-1 text-[13px]">{children}</span>
+            {tail != null && <span className="shrink-0 text-[11.5px]">{tail}</span>}
+          </>
+        ),
+      },
+      props,
+    ),
+    render,
+  });
 }

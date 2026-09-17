@@ -20,7 +20,7 @@ const ROWS = 5;
  * the right height: the point is that nothing *moves* when the posts land, and
  * a card that changes shape as well as filling in still reads as a jump.
  */
-function ParkNewsSkeleton({ className }: { className?: string }) {
+function ParkNewsSkeleton({ title, className }: { title: string; className?: string }) {
   return (
     <section
       className={cn(
@@ -31,7 +31,7 @@ function ParkNewsSkeleton({ className }: { className?: string }) {
       <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-3 md:px-5 md:pt-5">
         <h2 className="flex min-w-0 items-center gap-2 text-[19px] font-extrabold tracking-[-0.01em]">
           <NewspaperIcon className="size-4 shrink-0 text-muted-foreground" />
-          Park news
+          {title}
         </h2>
       </div>
       <Skeleton className="aspect-[16/9] w-full rounded-none" />
@@ -76,8 +76,20 @@ function dayLabel(iso: Date | string): string {
  *
  * Renders nothing for a park we haven't written about yet — an empty "news"
  * card reads as a broken feed.
+ *
+ * Shared with the dining venue page, which runs it over the park the venue
+ * stands in and renames it there (`title`) — the stories are the same stories.
  */
-export function ParkNews({ parkSlug, className }: { parkSlug: string | null; className?: string }) {
+export function ParkNews({
+  parkSlug,
+  title = "Park news",
+  className,
+}: {
+  parkSlug: string | null;
+  /** The card's heading — "News from Magic Kingdom" on a venue page. */
+  title?: string;
+  className?: string;
+}) {
   const trpc = useTRPC();
   const q = useQuery({
     ...trpc.blog.list.queryOptions({ parkSlug: parkSlug ?? "", limit: ROWS }),
@@ -90,7 +102,7 @@ export function ParkNews({ parkSlug, className }: { parkSlug: string | null; cla
   // all of them. `q.data` rather than `isLoading`: on the server the query
   // never fetches, so `isLoading` is false there and true on the client's first
   // render, which is a hydration mismatch. "No data yet" is true in both.
-  if (!q.data) return <ParkNewsSkeleton className={className} />;
+  if (!q.data) return <ParkNewsSkeleton title={title} className={className} />;
 
   const posts = q.data.items;
   if (posts.length === 0) return null;
@@ -111,7 +123,7 @@ export function ParkNews({ parkSlug, className }: { parkSlug: string | null; cla
       <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-3 md:px-5 md:pt-5">
         <h2 className="flex min-w-0 items-center gap-2 text-[19px] font-extrabold tracking-[-0.01em]">
           <NewspaperIcon className="size-4 shrink-0 text-muted-foreground" />
-          Park news
+          {title}
         </h2>
         <Link
           to="/blog"

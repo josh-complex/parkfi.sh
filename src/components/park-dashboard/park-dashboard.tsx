@@ -29,6 +29,7 @@ import { PaperTrail } from "#/components/records/paper-trail.tsx";
 import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
 import { ChartErrorBoundary } from "#/components/chart-error-boundary.tsx";
 import { Button } from "#/components/ui/button.tsx";
+import { useParkClock } from "#/hooks/use-park-clock.ts";
 import { lazyWithReload } from "#/lib/lazy-with-reload.tsx";
 import { useHydrated } from "#/lib/use-hydrated.ts";
 
@@ -37,9 +38,9 @@ import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { formatParkName } from "#/lib/parks.ts";
 import { cn } from "#/lib/utils.ts";
 
-import { Band, BandHeading } from "./band.tsx";
+import { Band, BandHeading } from "#/components/detail/band.tsx";
 import { CrowdAhead } from "./crowd-ahead.tsx";
-import { EatHere } from "./eat-here.tsx";
+import { EatHere } from "#/components/dining/eat-here.tsx";
 import { MovingNow } from "./moving-now.tsx";
 import { NextShows } from "./next-shows.tsx";
 import { ParkBoardTable } from "./park-board-table.tsx";
@@ -88,27 +89,6 @@ function AnalyticsSkeleton() {
 /** Characters of ride name the ticket's "Longest" fact will carry — see the
  *  comment at the `facts` array. */
 const LONGEST_NAME_MAX = 24;
-
-/**
- * The park's own clock, to the minute. Null until hydration: the time is a
- * reading of the clock, and the server has no business guessing it — a
- * server-rendered "2:14 PM" would be wrong by however long the HTML sat in the
- * edge cache, and it would trip a hydration mismatch on the way.
- */
-function useParkClock(timezone: string | undefined): string | null {
-  const hydrated = useHydrated();
-  const [now, setNow] = React.useState(() => Date.now());
-  React.useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 60_000);
-    return () => clearInterval(id);
-  }, []);
-  if (!hydrated) return null;
-  return new Date(now).toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone: timezone ?? "America/New_York",
-  });
-}
 
 /**
  * The park page, organised by time horizon (design direction A):
@@ -392,7 +372,7 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
             // on the hero's bottom edge (see the hero's `crease="always"`), and
             // nudged past the column's left edge on a desktop so the stub reads
             // as laid *on* the page rather than ruled into the grid.
-            className="mt-[calc(var(--crease)*-1)] md:col-start-1 md:row-start-1 md:-ml-3 lg:-ml-5"
+            className="mt-[calc(var(--crease)*-1)] md:col-start-1 md:row-start-1 md:-ml-3 lg:-mx-2.5"
             heroKey={heroKey}
             titleHidden={flight?.flying ? { opacity: 0, visibility: "hidden" } : undefined}
             title={parkName ?? flight?.seed.name ?? ""}

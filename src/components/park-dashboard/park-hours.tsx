@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ClockIcon } from "lucide-react";
 
+import { TicketBlock, TicketRow } from "#/components/detail/ticket.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { clockTight, formatHour, formatHourRange, todayInTz } from "#/lib/park-hours.ts";
@@ -176,21 +177,16 @@ export function ParkHours({
     if (!parkSlug) return null;
     if (ticket) {
       return (
-        <div className={cn("flex flex-col gap-3", className)}>
-          <div className="flex items-baseline justify-between gap-3">
-            <h3 className="text-[11px] font-bold tracking-[0.06em] text-ink-on-yellow/60 uppercase">
-              Hours
-            </h3>
-          </div>
-          <div className="flex flex-col gap-1">
-            {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="flex items-center gap-2.5 px-2 py-1">
-                <Skeleton className="h-3.5 w-16 rounded bg-ink-on-yellow/10" />
-                <Skeleton className="h-3.5 w-28 rounded bg-ink-on-yellow/10" />
-              </div>
-            ))}
-          </div>
-        </div>
+        <TicketBlock title="Hours" gap="tight" className={className}>
+          {[0, 1, 2, 3].map((i) => (
+            <TicketRow
+              key={i}
+              lead={<Skeleton className="h-3.5 w-14 rounded bg-ink-on-yellow/10" />}
+            >
+              <Skeleton className="h-3.5 w-28 rounded bg-ink-on-yellow/10" />
+            </TicketRow>
+          ))}
+        </TicketBlock>
       );
     }
     return <Skeleton className={cn("h-[248px] w-full rounded-[22px]", className)} />;
@@ -207,105 +203,108 @@ export function ParkHours({
   const upcoming = data.days.filter((d) => d.date > today).slice(0, ticket ? 3 : 5);
   if (upcoming.length === 0 && !todayEntry) return null;
 
+  const todayRange = todayEntry
+    ? (formatHourRange(todayEntry.open, todayEntry.close, tz) ?? "Hours unavailable")
+    : "Closed";
+  const todayExtra = todayEntry?.extras[0] ?? null;
+  const days = upcoming.map((d) => ({
+    date: d.date,
+    label: new Date(`${d.date}T00:00:00`).toLocaleDateString("en-US", {
+      weekday: "short",
+      day: "numeric",
+    }),
+    range: formatHourRange(d.open, d.close, tz, true) ?? "Closed",
+    extra: d.extras[0] ?? null,
+  }));
+  const dayCount = upcoming.length + (todayEntry ? 1 : 0);
+
+  // On the stub: the shared ticket list, so this block and the showtimes under
+  // it are printed from one set of rules (see `TicketBlock`).
+  if (ticket) {
+    return (
+      <TicketBlock title="Hours" meta={`Next ${dayCount} days`} gap="tight" className={className}>
+        <TicketRow
+          highlight
+          lead="Today"
+          tail={
+            todayExtra && (
+              <span
+                className="font-bold text-ink-on-yellow/70"
+                title={extraLabel(todayExtra.type, todayExtra.description)}
+              >
+                {formatHour(todayExtra.open, tz)}
+              </span>
+            )
+          }
+        >
+          <span className="font-semibold tabular-nums">{todayRange}</span>
+        </TicketRow>
+        {days.map((d) => (
+          <TicketRow
+            key={d.date}
+            lead={d.label}
+            tail={
+              d.extra && (
+                <span
+                  className="text-ink-on-yellow/60"
+                  title={extraLabel(d.extra.type, d.extra.description)}
+                >
+                  {formatHour(d.extra.open, tz)}
+                </span>
+              )
+            }
+          >
+            <span className="font-semibold tabular-nums text-ink-on-yellow/70">{d.range}</span>
+          </TicketRow>
+        ))}
+      </TicketBlock>
+    );
+  }
+
   return (
     <div
       className={cn(
-        "flex flex-col gap-3",
-        !ticket && "rounded-[22px] border border-card-edge bg-card p-4 md:p-5",
+        "flex flex-col gap-3 rounded-[22px] border border-card-edge bg-card p-4 md:p-5",
         className,
       )}
     >
       <div className="flex items-baseline justify-between gap-3">
-        <h3
-          className={cn(
-            "flex items-center gap-2",
-            ticket
-              ? "text-[11px] font-bold tracking-[0.06em] text-ink-on-yellow/60 uppercase"
-              : "text-[19px] font-extrabold tracking-[-0.01em]",
-          )}
-        >
-          {!ticket && <ClockIcon className="size-4 text-muted-foreground" />}
+        <h3 className="flex items-center gap-2 text-[19px] font-extrabold tracking-[-0.01em]">
+          <ClockIcon className="size-4 text-muted-foreground" />
           Hours
         </h3>
-        <span
-          className={cn(
-            "shrink-0 text-xs",
-            ticket ? "font-semibold text-ink-on-yellow/55" : "text-muted-foreground",
-          )}
-        >
-          Next {upcoming.length + (todayEntry ? 1 : 0)} days
-        </span>
+        <span className="shrink-0 text-xs text-muted-foreground">Next {dayCount} days</span>
       </div>
 
-      <div className={cn("flex flex-col", ticket ? "gap-1" : "gap-1.5")}>
-        <div
-          className={cn(
-            "flex items-center gap-2.5 rounded-xl px-3 py-2",
-            ticket ? "-mx-1 bg-ink-on-yellow/8 px-2 py-1.5" : "bg-brand-yellow/10",
-          )}
-        >
-          <span
-            className={cn("w-16 shrink-0 font-extrabold", ticket ? "text-[13px]" : "text-[13px]")}
-          >
-            Today
-          </span>
-          <span className="flex-1 text-[13px] font-semibold tabular-nums">
-            {todayEntry
-              ? (formatHourRange(todayEntry.open, todayEntry.close, tz) ?? "Hours unavailable")
-              : "Closed"}
-          </span>
-          {todayEntry?.extras.slice(0, 1).map((ex, i) => (
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center gap-2.5 rounded-xl bg-brand-yellow/10 px-3 py-2">
+          <span className="w-16 shrink-0 text-[13px] font-extrabold">Today</span>
+          <span className="flex-1 text-[13px] font-semibold tabular-nums">{todayRange}</span>
+          {todayExtra && (
             <span
-              key={`${ex.type}-${i}`}
-              className={cn(
-                "shrink-0 text-[11.5px] font-bold",
-                ticket ? "text-ink-on-yellow/70" : "text-brand-yellow-shelf",
-              )}
-              title={extraLabel(ex.type, ex.description)}
+              className="shrink-0 text-[11.5px] font-bold text-brand-yellow-shelf"
+              title={extraLabel(todayExtra.type, todayExtra.description)}
             >
-              {formatHour(ex.open, tz)}
+              {formatHour(todayExtra.open, tz)}
             </span>
-          ))}
+          )}
         </div>
-        {upcoming.map((d) => {
-          const range = formatHourRange(d.open, d.close, tz, true);
-          const label = new Date(`${d.date}T00:00:00`).toLocaleDateString("en-US", {
-            weekday: "short",
-            day: "numeric",
-          });
-          const extra = d.extras[0] ?? null;
-          return (
-            <div key={d.date} className={cn("flex items-center gap-2.5", ticket ? "px-2" : "px-3")}>
+        {days.map((d) => (
+          <div key={d.date} className="flex items-center gap-2.5 px-3">
+            <span className="w-16 shrink-0 text-[13px] font-bold text-foreground/80">
+              {d.label}
+            </span>
+            <span className="flex-1 text-[13px] tabular-nums text-muted-foreground">{d.range}</span>
+            {d.extra && (
               <span
-                className={cn(
-                  "w-16 shrink-0 text-[13px] font-bold",
-                  ticket ? "text-ink-on-yellow/85" : "text-foreground/80",
-                )}
+                className="shrink-0 text-[11.5px] text-muted-foreground"
+                title={extraLabel(d.extra.type, d.extra.description)}
               >
-                {label}
+                {formatHour(d.extra.open, tz)}
               </span>
-              <span
-                className={cn(
-                  "flex-1 text-[13px] tabular-nums",
-                  ticket ? "font-semibold text-ink-on-yellow/70" : "text-muted-foreground",
-                )}
-              >
-                {range ?? "Closed"}
-              </span>
-              {extra && (
-                <span
-                  className={cn(
-                    "shrink-0 text-[11.5px]",
-                    ticket ? "text-ink-on-yellow/60" : "text-muted-foreground",
-                  )}
-                  title={extraLabel(extra.type, extra.description)}
-                >
-                  {formatHour(extra.open, tz)}
-                </span>
-              )}
-            </div>
-          );
-        })}
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );

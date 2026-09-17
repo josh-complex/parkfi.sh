@@ -4,6 +4,7 @@ import { isServer, useQuery } from "@tanstack/react-query";
 
 import { validateDiningSearch } from "#/components/dining/dining-search-params.ts";
 import { DiningVenueDetail } from "#/components/dining/dining-venue-detail.tsx";
+import { VENUE_HOURS_DAYS } from "#/components/dining/venue-hours.tsx";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
 import { useAchievementTrack } from "#/hooks/use-achievement-track.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
@@ -26,8 +27,16 @@ export const Route = createFileRoute("/_app/dining_/$facilityId")({
     void context.queryClient.prefetchQuery(
       context.trpc.dining.menu.queryOptions({ facilityId: params.facilityId }),
     );
-    // Today's operating hours back the SSR'd open-now chip (indexable, no flash).
-    void context.queryClient.prefetchQuery(context.trpc.dining.hours.queryOptions({}));
+    // This venue's posted window backs the ticket's hours block, so it ships in
+    // the SSR'd markup rather than appearing as a grey slab on the stub. Venue-
+    // scoped since the page's redesign: the old `dining.hours` prefetch shipped
+    // every venue's schedule to read one of them.
+    void context.queryClient.prefetchQuery(
+      context.trpc.dining.venueSchedule.queryOptions({
+        facilityId: params.facilityId,
+        days: VENUE_HOURS_DAYS,
+      }),
+    );
     if (!isServer) {
       void context.queryClient.prefetchQuery(venueOptions);
       return;

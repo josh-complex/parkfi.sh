@@ -11,6 +11,23 @@ import { publicProcedure } from "../init.ts";
 import type { MenuPriceTier, ParkHeroSlide } from "#/db/schema.ts";
 import type { TRPCRouterRecord } from "@trpc/server";
 
+/** Both resorts we cover are in Orlando, so one timezone answers for every
+ *  venue — the same assumption the client's `parkToday()` makes. */
+const PARK_TZ = "America/New_York";
+
+/**
+ * Today's date at the parks, as SQL.
+ *
+ * Deliberately not `current_date`: the database runs on UTC, where every
+ * evening from 8 PM Eastern "today" is already tomorrow. A `dining_schedule`
+ * read filtered on `current_date` therefore hands back *tomorrow's* service
+ * hours for the four hours of the day a guest is most likely to be standing in
+ * a park looking for dinner — while the client is still comparing them against
+ * an Eastern clock (`parkNowMinutes`), so an open venue reads closed and a
+ * closed one reads open.
+ */
+const PARK_TODAY = sql`(now() AT TIME ZONE ${PARK_TZ})::date`;
+
 export const diningRouter = {
   restaurants: publicProcedure.query(async () => {
     const result = await db.execute<{
@@ -554,7 +571,9 @@ export const diningRouter = {
   hours: publicProcedure
     .input(z.object({ date: z.string().optional() }).optional())
     .query(async ({ input }) => {
-      const dateFilter = input?.date ? sql`= ${input.date}::date` : sql`= current_date`;
+      // An explicit date is already absolute; only the default needed fixing
+      // (see `PARK_TODAY`).
+      const dateFilter = input?.date ? sql`= ${input.date}::date` : sql`= ${PARK_TODAY}`;
       const result = await db.execute<{
         facility_id: string;
         schedule_type: string;
@@ -583,6 +602,51 @@ export const diningRouter = {
         facilityId,
         schedules,
       }));
+    }),
+
+  /**
+   * One venue's posted schedule, today first, for as many days forward as the
+   * feeds have filled in (Universal publishes a 14-day window; WDW's weekly
+   * per-venue detail sweep fills a shorter one).
+   *
+   * `hours` above answers "what is open right now" for the whole catalog on one
+   * date — the list page's question. A venue page asking it downloads four
+   * hundred venues' schedules to read one, and still can't say what time the
+   * place opens on Friday, which is what the ticket's hours block is for.
+   */
+  venueSchedule: publicProcedure
+    .input(z.object({ facilityId: z.string(), days: z.number().int().min(1).max(30).default(7) }))
+    .query(async ({ input }) => {
+      const result = await db.execute<{
+        schedule_date: string;
+        schedule_type: string;
+        start_time: string;
+        end_time: string;
+      }>(sql`
+        SELECT schedule_date, schedule_type, start_time, end_time
+        FROM dining_schedule
+        WHERE facility_id = ${input.facilityId}
+          AND schedule_date >= ${PARK_TODAY}
+          AND schedule_date < ${PARK_TODAY} + ${input.days}::int
+        ORDER BY schedule_date, start_time
+      `);
+
+      const byDate = new Map<
+        string,
+        Array<{ scheduleType: string; startTime: string; endTime: string }>
+      >();
+      for (const r of result.rows) {
+        // `date` comes back as a "YYYY-MM-DD" string from node-postgres; keep it
+        // that way, because every caller compares it against `parkToday()`.
+        const date = String(r.schedule_date).slice(0, 10);
+        if (!byDate.has(date)) byDate.set(date, []);
+        byDate.get(date)!.push({
+          scheduleType: r.schedule_type,
+          startTime: r.start_time,
+          endTime: r.end_time,
+        });
+      }
+      return [...byDate.entries()].map(([date, schedules]) => ({ date, schedules }));
     }),
 
   /**
@@ -1115,8 +1179,13 @@ export const diningRouter = {
         WITH latest_ts AS (
           SELECT facility_id, service_date, party_size, max(observed_at) AS observed_at
           FROM dining_obs
-          WHERE service_date >= current_date
-            AND service_date < current_date + ${input.days}::int
+          -- Park-local (PARK_TODAY), for the same reason the schedule reads
+          -- are: on the database's UTC day this window starts at tomorrow every
+          -- evening from 8 PM Eastern, and the client -- which picks its
+          -- selected day park-locally -- then finds no row for the day it is
+          -- asking about and reports it unchecked.
+          WHERE service_date >= ${PARK_TODAY}
+            AND service_date < ${PARK_TODAY} + ${input.days}::int
             AND party_size = ${input.partySize}
             ${facilityFilter}
           GROUP BY facility_id, service_date, party_size
@@ -1286,5 +1355,77 @@ export const diningRouter = {
       }
 
       return [...byDate.entries()].map(([date, offers]) => ({ date, offers }));
+    }),
+
+  /**
+   * The sweep horizon folded onto the clock: per service date, how many
+   * distinct times are open in each hour of the day.
+   *
+   * `availability` collapses a date to one count, which can't tell a venue with
+   * thirty wide-open 9 PM slots from one with thirty wide-open 7 PM slots —
+   * and 7 PM is the only one anybody wants. `offers` has the times but is
+   * capped at five dates by design. This sits between them: the whole horizon,
+   * at hour resolution, for one venue and one party. ~30 dates × ~17 hours, so
+   * the payload is smaller than a single day's offer list.
+   *
+   * `count(DISTINCT offer_time)` rather than `count(*)`: a time that falls in
+   * two of Disney's overlapping meal periods (its "Lunch" runs to 4:50 PM, its
+   * "Dinner" opens at 2 PM) is one table, not two.
+   */
+  timeBands: publicProcedure
+    .input(
+      z.object({
+        facilityId: z.string(),
+        days: z.number().int().min(1).max(60).default(31),
+        partySize: z.number().int().min(1).max(8).default(2),
+      }),
+    )
+    .query(async ({ input }) => {
+      const result = await db.execute<{
+        service_date: string;
+        hour: number | null;
+        slots: string | null;
+      }>(sql`
+        WITH latest_ts AS (
+          SELECT service_date, max(observed_at) AS observed_at
+          FROM dining_obs
+          -- Park-local, for the reason PARK_TODAY exists: on the database's UTC
+          -- day this window starts at tomorrow every evening from 8 PM Eastern.
+          WHERE facility_id = ${input.facilityId}
+            AND party_size = ${input.partySize}
+            AND service_date >= ${PARK_TODAY}
+            AND service_date < ${PARK_TODAY} + ${input.days}::int
+          GROUP BY service_date
+        )
+        SELECT d.service_date,
+               -- NULL on a date whose only row is the "checked, none available"
+               -- sentinel: the date was swept, and nothing was open.
+               CASE WHEN d.meal_period <> '' THEN extract(hour FROM d.offer_time)::int END AS hour,
+               count(DISTINCT d.offer_time) FILTER (WHERE d.meal_period <> '') AS slots
+        FROM dining_obs d
+        JOIN latest_ts lt
+          ON lt.service_date = d.service_date
+          AND lt.observed_at = d.observed_at
+        WHERE d.facility_id = ${input.facilityId}
+          AND d.party_size = ${input.partySize}
+        GROUP BY d.service_date, 2
+        ORDER BY d.service_date, 2
+      `);
+
+      // A date present in the result was swept, whatever it holds — that's the
+      // distinction the strip draws as grey ("nothing open") versus a hairline
+      // ("we never looked"), and collapsing the two is what made the venue
+      // page's first availability chart unreadable.
+      const byDate = new Map<string, Array<{ hour: number; slots: number }>>();
+      for (const row of result.rows) {
+        const date = String(row.service_date).slice(0, 10);
+        const hours = byDate.get(date) ?? [];
+        if (row.hour !== null) hours.push({ hour: Number(row.hour), slots: Number(row.slots) });
+        byDate.set(date, hours);
+      }
+
+      return [...byDate.entries()]
+        .map(([date, hours]) => ({ date, checked: true, hours }))
+        .sort((a, b) => a.date.localeCompare(b.date));
     }),
 } satisfies TRPCRouterRecord;

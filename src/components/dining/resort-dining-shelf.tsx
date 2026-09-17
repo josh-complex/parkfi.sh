@@ -6,7 +6,7 @@ import { useStore } from "@tanstack/react-store";
 
 import { PickCard, type PickVenue } from "#/components/dining/dining-picks.tsx";
 import { diningStore } from "#/components/dining/dining-store.ts";
-import { parkNowMinutes, type ScheduleEntry } from "#/components/dining/dining-hours.ts";
+import { parkNowMinutes, parkToday, type ScheduleEntry } from "#/components/dining/dining-hours.ts";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { cn } from "#/lib/utils.ts";
 import {
@@ -78,7 +78,9 @@ export function ResortDiningShelf({ resortName }: { resortName: string }) {
   const availabilityQ = useQuery(
     trpc.dining.availability.queryOptions({ partySize: Number(partySize), days: 30 }),
   );
-  const referenceDate = new Date().toISOString().slice(0, 10);
+  // Park-local, not the browser's UTC day — after 8 PM Eastern the two differ,
+  // and this date is what labels an availability day "today" (see `parkToday`).
+  const referenceDate = parkToday();
   const nextAvail = React.useMemo(() => {
     const m = new Map<string, string>();
     for (const entry of availabilityQ.data ?? []) {

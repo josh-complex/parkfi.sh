@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Link } from "@tanstack/react-router";
 
+import { TicketBlock, TicketRow } from "#/components/detail/ticket.tsx";
 import { cn } from "#/lib/utils.ts";
 import {
   nextShowtime,
@@ -86,48 +87,73 @@ export function NextShows({
     const postsAny = (board ?? []).some((b) => b.entityType === "SHOW" && b.showtimes.length > 0);
     if (!ticket || !postsAny) return null;
     return (
-      <div className={cn("flex flex-col gap-1", className)}>
-        <h2 className="text-[11px] font-bold tracking-[0.06em] text-ink-on-yellow/60 uppercase">
-          Next shows
-        </h2>
+      <TicketBlock title="Next shows" className={className}>
         <p className="text-[13px] font-semibold text-ink-on-yellow/70">
           That&rsquo;s every show for today.
         </p>
-      </div>
+      </TicketBlock>
     );
   }
 
   const shown = rows.slice(0, ticket ? TICKET_ROWS : ROWS);
   const remaining = rows.length - shown.length;
+  const note =
+    remaining > 0 ? `${remaining} more ${remaining === 1 ? "show" : "shows"} later today.` : null;
+
+  // On the stub: the shared ticket list, so this block and the hours above it
+  // are printed from one set of rules (see `TicketBlock`).
+  if (ticket) {
+    return (
+      <TicketBlock
+        title="Next shows"
+        meta={`${rows.length} still to come`}
+        note={note}
+        className={className}
+      >
+        {shown.map(({ item, next }) => {
+          const minutes = Math.round((next.ms - nowMs) / 60_000);
+          return (
+            <TicketRow
+              key={item.id}
+              pressable
+              lead={
+                <span className="font-extrabold text-ink-on-yellow">{showClock(next.iso, tz)}</span>
+              }
+              tail={
+                minutes >= 0 &&
+                minutes <= 90 && (
+                  <span className="rounded-full border border-ink-on-yellow/25 px-2.5 py-0.5 text-[11px] font-semibold text-ink-on-yellow/75">
+                    {untilLabel(minutes)}
+                  </span>
+                )
+              }
+              render={
+                <Link
+                  to="/park/$slug/ride/$rideSlug"
+                  params={{ slug: parkSlug, rideSlug: item.slug }}
+                />
+              }
+            >
+              <span className="line-clamp-1 font-semibold">{item.name}</span>
+            </TicketRow>
+          );
+        })}
+      </TicketBlock>
+    );
+  }
 
   return (
     <div
       className={cn(
-        "flex flex-col gap-3",
-        !ticket && "rounded-[22px] border border-card-edge bg-card p-4 md:p-5",
+        "flex flex-col gap-3 rounded-[22px] border border-card-edge bg-card p-4 md:p-5",
         className,
       )}
     >
       <div className="flex items-baseline justify-between gap-3">
-        <h2
-          className={cn(
-            ticket
-              ? "text-[11px] font-bold uppercase tracking-[0.06em] text-ink-on-yellow/60"
-              : "text-[19px] font-extrabold tracking-[-0.01em]",
-          )}
-        >
-          Next shows
-        </h2>
-        <span
-          className={cn(
-            "shrink-0 text-xs",
-            ticket ? "font-semibold text-ink-on-yellow/55" : "text-muted-foreground",
-          )}
-        >
-          {rows.length} still to come
-        </span>
+        <h2 className="text-[19px] font-extrabold tracking-[-0.01em]">Next shows</h2>
+        <span className="shrink-0 text-xs text-muted-foreground">{rows.length} still to come</span>
       </div>
-      <div className={cn("flex flex-col", ticket ? "gap-1.5" : "gap-2")}>
+      <div className="flex flex-col gap-2">
         {shown.map(({ item, next }) => {
           const minutes = Math.round((next.ms - nowMs) / 60_000);
           return (
@@ -135,32 +161,14 @@ export function NextShows({
               key={item.id}
               to="/park/$slug/ride/$rideSlug"
               params={{ slug: parkSlug, rideSlug: item.slug }}
-              className={cn(
-                "flex items-center gap-3 rounded-xl px-1 py-0.5",
-                // On the stub there is no muted token to hover into — the field
-                // is the ticket's own cream — so the row warms with the ink it
-                // is already printed in.
-                ticket ? "-mx-1 px-2 hover:bg-ink-on-yellow/6" : "hover:bg-muted",
-              )}
+              className="flex items-center gap-3 rounded-xl px-1 py-0.5 hover:bg-muted"
             >
-              <span
-                className={cn(
-                  "w-[62px] shrink-0 text-[13.5px] font-extrabold tabular-nums",
-                  ticket ? "text-ink-on-yellow" : "text-wash-fg",
-                )}
-              >
+              <span className="w-[62px] shrink-0 text-[13.5px] font-extrabold tabular-nums text-wash-fg">
                 {showClock(next.iso, tz)}
               </span>
               <span className="line-clamp-1 flex-1 text-[13.5px] font-semibold">{item.name}</span>
               {minutes >= 0 && minutes <= 90 && (
-                <span
-                  className={cn(
-                    "shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
-                    ticket
-                      ? "border border-ink-on-yellow/25 text-ink-on-yellow/75"
-                      : "border border-card-edge text-muted-foreground",
-                  )}
-                >
+                <span className="shrink-0 rounded-full border border-card-edge px-2.5 py-0.5 text-[11px] font-semibold text-muted-foreground">
                   {untilLabel(minutes)}
                 </span>
               )}
@@ -168,11 +176,7 @@ export function NextShows({
           );
         })}
       </div>
-      {remaining > 0 && (
-        <p className={cn("text-xs", ticket ? "text-ink-on-yellow/55" : "text-muted-foreground")}>
-          {remaining} more {remaining === 1 ? "show" : "shows"} later today.
-        </p>
-      )}
+      {note && <p className="text-xs text-muted-foreground">{note}</p>}
     </div>
   );
 }

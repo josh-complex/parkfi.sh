@@ -150,6 +150,12 @@
      same weight. Like the rest of the ticket it does not theme-swap. */
   --ticket-bottom: #fff6e4;
   --ink-on-yellow: #1a1a1a;
+  /* "Measured, and there was nothing" — the step *below* the heat ramp, and
+     deliberately not `--muted`: at chart-cell size a neutral 97% grey and the
+     palest blue of the ramp are the same colour, so "fully booked" and "a few
+     left" read identically. Neutral in hue and a clear step darker than
+     `--heat-1`, so it separates by both. */
+  --heat-none: #e3e6ea;
   --heat-1: #eef2fb;
   --heat-2: #c9d8f3;
   --heat-3: #8fb0e6;
@@ -274,6 +280,9 @@ html.native [data-slot="app-shell"] {
   --peach-edge: #4a2e1e;
   --peach-fg: #f5b98a;
   --peach-sub: #d9a27a;
+  /* Slate rather than navy: dark mode's `--muted` is itself a blue, so a zero
+     cell drawn in it sat inside the ramp instead of under it. */
+  --heat-none: #252c3a;
   --heat-1: #152847;
   --heat-2: #1f3f78;
   --heat-3: #2f5cab;
@@ -345,6 +354,7 @@ html.native [data-slot="app-shell"] {
   --color-ticket-top: var(--ticket-top);
   --color-ticket-bottom: var(--ticket-bottom);
   --color-ink-on-yellow: var(--ink-on-yellow);
+  --color-heat-none: var(--heat-none);
   --color-heat-1: var(--heat-1);
   --color-heat-2: var(--heat-2);
   --color-heat-3: var(--heat-3);

@@ -32,6 +32,7 @@ import {
 } from "#/components/dining/dining-filters.ts";
 import {
   parkNowMinutes,
+  parkToday,
   type HoursMap,
   type ScheduleEntry,
 } from "#/components/dining/dining-hours.ts";
@@ -47,10 +48,6 @@ import { authClient } from "#/lib/auth-client.ts";
 const PAGE_SIZE = 12;
 
 const diningRoute = getRouteApi("/_app/dining");
-
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 /** Pre-search browse: the menu-change feed + curated picks shelves only. */
 function BrowseView({
@@ -190,7 +187,10 @@ export function DiningBoard() {
 
   const options = React.useMemo(() => deriveOptions(restaurants ?? []), [restaurants]);
 
-  const todayStr = today();
+  // Park-local, not the browser's UTC day: a guest reading this at 9 PM Eastern
+  // is still on today's service date, and the server's availability and hours
+  // reads are keyed to the same date (see `PARK_TODAY` in the dining router).
+  const todayStr = parkToday();
   const nowMin = parkNowMinutes();
   const referenceDate = todayStr;
 
