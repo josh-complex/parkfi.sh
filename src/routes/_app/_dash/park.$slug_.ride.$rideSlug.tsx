@@ -5,6 +5,18 @@ import { RideDetail } from "#/components/park-dashboard/ride-detail.tsx";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import {
+  actionRow,
+  canEmbedMedia,
+  container,
+  discordComponentEmbed,
+  linkButton,
+  section,
+  separator,
+  text,
+  thumbnail,
+} from "#/lib/discord-embed.ts";
+import {
+  SITE_URL,
   attractionJsonLd,
   breadcrumbJsonLd,
   liveCardVersion,
@@ -53,6 +65,9 @@ export const Route = createFileRoute("/_app/_dash/park/$slug_/ride/$rideSlug")({
       operatorSlug: ride?.park.operatorSlug ?? null,
       standbyWait: ride?.standbyWait ?? null,
       description: ride?.meta?.description ?? null,
+      // Thumbnail for the Discord component embed. Same source the page's
+      // JSON-LD uses; `head()` can't reach into the query cache, so carry it.
+      imageUrl: ride?.meta?.imageHeroUrl ?? ride?.meta?.imageThumbUrl ?? null,
     };
   },
   head: ({ params, loaderData }) => {
@@ -66,14 +81,42 @@ export const Route = createFileRoute("/_app/_dash/park/$slug_/ride/$rideSlug")({
     const waitLede = wait != null ? `Now ${wait} min standby. ` : "";
     // Official copy (plan item 2.3) beats the template blurb when we have it.
     const about = loaderData?.description ? ` ${truncateMeta(loaderData.description)}` : "";
-    return seo({
-      title: `${name} Wait Times${isUniversal ? "" : " & Lightning Lane"} — ${parkName} — ParkFi`,
-      description: `${waitLede}Live standby wait, ride status, and ${lineLabel} availability for ${name} at ${parkName}.${about}`,
-      path: `/park/${params.slug}/ride/${params.rideSlug}`,
-      image: `/og/ride/${params.slug}/${params.rideSlug}/card.jpg?v=${liveCardVersion()}`,
-      imageWidth: 1200,
-      imageHeight: 630,
-    });
+    const path = `/park/${params.slug}/ride/${params.rideSlug}`;
+    return {
+      ...seo({
+        title: `${name} Wait Times${isUniversal ? "" : " & Lightning Lane"} — ${parkName} — ParkFi`,
+        description: `${waitLede}Live standby wait, ride status, and ${lineLabel} availability for ${name} at ${parkName}.${about}`,
+        path,
+        image: `/og/ride/${params.slug}/${params.rideSlug}/card.jpg?v=${liveCardVersion()}`,
+        imageWidth: 1200,
+        imageHeight: 630,
+      }),
+      // First route to carry a Discord component embed — see `lib/discord-embed.ts`.
+      // Purely additive: the OG tags above still render whenever Discord rejects
+      // or ignores this. Deliberately no wait number in the headline — Discord
+      // caches a preview for ~30 minutes and the shared URL is the cache key, so
+      // there's no version trick (unlike `og:image`) to keep a figure honest.
+      scripts: discordComponentEmbed(
+        container([
+          canEmbedMedia(loaderData?.imageUrl)
+            ? section(
+                [text(`## [${name}](${SITE_URL}${path})\n${parkName}`)],
+                thumbnail(loaderData.imageUrl, name),
+              )
+            : text(`## [${name}](${SITE_URL}${path})\n${parkName}`),
+          text(
+            wait != null
+              ? `**${wait} min** standby at last check · ${lineLabel} status and wait history on the ride page.`
+              : `Live standby wait, ride status, and ${lineLabel} availability.`,
+          ),
+          separator(),
+          actionRow(
+            linkButton(`All ${parkName} waits`, `/park/${params.slug}`),
+            linkButton("Crowd forecast", "/predictions"),
+          ),
+        ]),
+      ),
+    };
   },
 });
 

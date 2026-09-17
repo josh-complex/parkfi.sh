@@ -44,6 +44,7 @@ import { db } from "#/db/index.ts";
 import {
   attractionMeta,
   externalIds,
+  parkEventArt,
   parkPoi,
   shopDim,
   type GeoPolygon,
@@ -98,6 +99,7 @@ import {
   curatedUniversalArtwork,
   fetchAllUniversalRideFacts,
   fetchUniversalFiltersData,
+  fetchUniversalHhnEventArt,
   fetchUniversalHhnHouses,
   universalAssetUrl,
   tileInfo,
@@ -281,6 +283,39 @@ async function overrideCategories(
 }
 
 /** Upsert per-attraction Disney enrichment, refreshing every field on re-crawl. */
+/**
+ * One event's artwork for one park. Coalesced per column, exactly like
+ * `attraction_meta`'s copy fields and for the same reason: a run that reaches
+ * the event page but finds it mid-re-skin (plate republished, logo not yet)
+ * must leave the half it couldn't see alone rather than blank the band's
+ * dressing out for however long the gap lasts.
+ */
+async function upsertEventArt(
+  parkId: number,
+  slug: string,
+  art: {
+    name: string | null;
+    logoUrl: string | null;
+    logoAlt: string | null;
+    plateUrl: string | null;
+  },
+): Promise<void> {
+  await db
+    .insert(parkEventArt)
+    .values({ parkId, slug, ...art, source: Source.UNIVERSAL_DIRECT })
+    .onConflictDoUpdate({
+      target: [parkEventArt.parkId, parkEventArt.slug],
+      set: {
+        name: sql`coalesce(excluded.name, park_event_art.name)`,
+        logoUrl: sql`coalesce(excluded.logo_url, park_event_art.logo_url)`,
+        logoAlt: sql`coalesce(excluded.logo_alt, park_event_art.logo_alt)`,
+        plateUrl: sql`coalesce(excluded.plate_url, park_event_art.plate_url)`,
+        source: sql`excluded.source`,
+        updatedAt: sql`now()`,
+      },
+    });
+}
+
 async function upsertAttractionMeta(
   rows: Array<typeof attractionMeta.$inferInsert>,
 ): Promise<void> {
@@ -324,6 +359,10 @@ async function upsertAttractionMeta(
           // none) — a failed per-attraction detail fetch leaves both null.
           description: sql`coalesce(excluded.description, attraction_meta.description)`,
           heroMedia: sql`coalesce(excluded.hero_media, attraction_meta.hero_media)`,
+          // Same rule: an off-season run with no HHN page must leave last
+          // year's card copy alone rather than blank it.
+          tagline: sql`coalesce(excluded.tagline, attraction_meta.tagline)`,
+          trailerUrl: sql`coalesce(excluded.trailer_url, attraction_meta.trailer_url)`,
           source: sql`excluded.source`,
           updatedAt: sql`now()`,
         },
@@ -1243,6 +1282,10 @@ async function enrichUniversalPark(
         place?.short_description?.trim() ||
         attrs?.description ||
         null,
+      // Card-only copy — HHN houses publish both, ordinary rides publish
+      // neither, so these are null for almost every row.
+      tagline: attrs?.tagline ?? null,
+      trailerUrl: attrs?.trailerUrl ?? null,
       source: Source.UNIVERSAL_DIRECT,
     });
   }
@@ -1580,7 +1623,7 @@ async function main() {
       venues = await fetchUniversalVenues(AbortSignal.timeout(config.fetchTimeoutMs));
     });
     await runStep("universal content", async () => {
-      const [pois, tiles, rideFacts, hhnHouses] = await Promise.all([
+      const [pois, tiles, rideFacts, hhnHouses, eventArt] = await Promise.all([
         fetchUniversalPois(AbortSignal.timeout(config.fetchTimeoutMs)).catch((err) => {
           reportServiceError("geo", "universal pois", err);
           return null;
@@ -1599,6 +1642,10 @@ async function main() {
           reportServiceError("geo", "universal hhn houses", err);
           return [];
         }),
+        fetchUniversalHhnEventArt().catch((err) => {
+          reportServiceError("geo", "universal hhn event art", err);
+          return null;
+        }),
       ]);
       universalContent = buildUniversalContentIndex({
         pois,
@@ -1610,8 +1657,17 @@ async function main() {
       });
       console.log(
         `[geo] universal content: ${pois?.Rides.length ?? 0} rides, ${tiles.length} tiles, ` +
-          `${rideFacts.length} ride pages, ${hhnHouses.length} HHN houses`,
+          `${rideFacts.length} ride pages, ${hhnHouses.length} HHN houses` +
+          `${eventArt ? ", HHN event art" : ""}`,
       );
+      // HHN belongs to one park (Universal Studios Florida), which is where the
+      // houses are and where the band renders. Written here rather than in the
+      // per-park sweep because the page is resort-wide: fetching it once per
+      // park would be the same GET three times for two parks that don't run it.
+      if (eventArt) {
+        const usf = parks.find((p) => p.slug === "universal-studios-florida");
+        if (usf) await upsertEventArt(usf.id, "hhn", eventArt);
+      }
     });
   }
 

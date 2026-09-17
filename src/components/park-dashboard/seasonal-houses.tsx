@@ -2,6 +2,7 @@
 
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { PlayIcon } from "lucide-react";
 
 import { PAGE_WIDTH } from "#/components/page-container.tsx";
 import { CarouselArrows } from "#/components/ui/carousel.tsx";
@@ -72,6 +73,11 @@ const HOUSE_IMAGE_SIZES =
  *  tuned for photographs and visibly softens lettering at this size. */
 const HOUSE_IMAGE_QUALITY = 62;
 
+/** The band's background plate is out-of-focus grunge behind everything else,
+ *  and it's the widest asset on the page — the one place to spend fewer bytes,
+ *  not more. */
+const PLATE_IMAGE_QUALITY = 40;
+
 /**
  * The park's hard-ticket event houses — Halloween Horror Nights and whatever
  * follows it — as their own full-bleed band.
@@ -112,12 +118,22 @@ export function SeasonalHouses({
   });
 
   const houses = (board ?? []).filter(isHauntedHouse);
-  if (!parkSlug || houses.length === 0) return null;
+  const hasHouses = houses.length > 0;
+  // Only a park actually running an event pays for this round trip, and only
+  // once it has something to dress. Cheap, cacheable, and usually one row.
+  const artQ = useQuery({
+    ...trpc.parks.eventArt.queryOptions({ parkSlug: parkSlug ?? "" }),
+    enabled: !!parkSlug && hasHouses,
+  });
+
+  if (!parkSlug || !hasHouses) return null;
 
   const tz = hoursQ.data?.timezone ?? "America/New_York";
   const todayRow = hoursQ.data?.days.find((d) => d.date === todayInTz(tz)) ?? null;
   const event = todayRow?.extras.find((ex) => ex.type === "TICKETED_EVENT") ?? null;
   const eventRange = event ? formatHourRange(event.open, event.close, tz) : null;
+  const title = event?.description ?? "Haunted houses";
+  const art = matchEventArt(artQ.data, event?.description ?? null);
   const meta = [
     `${houses.length} ${houses.length === 1 ? "house" : "houses"}`,
     eventRange,
@@ -127,13 +143,57 @@ export function SeasonalHouses({
     .join(" · ");
 
   return (
-    <section className={cn("band-fright band-tints py-8 text-white md:py-12", className)}>
+    <section
+      className={cn(
+        // `band-fright` is the floor, not the wallpaper: it paints a lit, mottled
+        // field with no assets at all, so a park whose event art we've never
+        // fetched — or a season whose plate Universal has re-skinned out from
+        // under us — still gets a designed band rather than a hole.
+        "band-fright band-tints relative isolate py-8 text-white md:py-12",
+        className,
+      )}
+    >
+      {art?.plateUrl && (
+        <Image
+          src={art.plateUrl}
+          alt=""
+          aria-hidden
+          loading="lazy"
+          sizes="100vw"
+          quality={PLATE_IMAGE_QUALITY}
+          // `object-top`: the plate is a tall page-height asset composed to sit
+          // under the opening content and fade out downward, so the band wants
+          // its top, not its middle. -z-10 inside the section's own stacking
+          // context puts it behind the content but in front of the CSS field.
+          className="absolute inset-0 -z-10 size-full object-cover object-top"
+        />
+      )}
       <div className={cn(PAGE_WIDTH, "flex flex-col")}>
-        <RailShelf className="gap-5" aria-label={event?.description ?? "Haunted houses"}>
+        <RailShelf className="gap-5" aria-label={title}>
           <BandHeading
             tone="invert"
             kicker="Tonight, separate ticket"
-            title={event?.description ?? "Haunted houses"}
+            title={
+              art?.logoUrl ? (
+                // The operator's own lockup, which says the thing better than
+                // our type can. It stays inside the `<h2>` and carries the
+                // event's name as alt, so the heading still reads as a heading
+                // to a screen reader and to a crawler.
+                <img
+                  src={art.logoUrl}
+                  alt={art.logoAlt ?? art.name ?? title}
+                  loading="lazy"
+                  // Sized by WIDTH, not height. These lockups are wide and
+                  // multi-line — Universal's stacks "Universal Orlando" over
+                  // "HALLOWEEN HORROR NIGHTS 35" at 600×173 — so matching the
+                  // 26px headline's height would render the main line at about
+                  // six pixels. A logo that can't be read isn't a heading.
+                  className="mt-0.5 h-auto w-[min(100%,17rem)] object-contain object-left md:w-[min(100%,21rem)]"
+                />
+              ) : (
+                title
+              )
+            }
             // The shelf bleeds to the screen edge below `lg`; the heading has to
             // put the page gutter back or it sits flush against the bezel.
             className={SHELF_VIEWPORT}
@@ -158,28 +218,66 @@ export function SeasonalHouses({
   );
 }
 
+/** One row of `parks.eventArt`. */
+type EventArt = {
+  slug: string;
+  name: string | null;
+  logoUrl: string | null;
+  logoAlt: string | null;
+  plateUrl: string | null;
+};
+
 /**
- * One house: its key art, then its name, where it is, and what it's about.
+ * Which of a park's events tonight is, so a Mardi Gras night can't be dressed in
+ * Halloween plates.
+ *
+ * Matched on the event's *name* rather than on the park, because that's the
+ * only thing both sides know: the schedule row carries the operator's own
+ * description ("Halloween Horror Nights") and the art row carries the name off
+ * that event's own page, with the year stripped for exactly this comparison.
+ * Loose containment in either direction, since one side may or may not carry a
+ * qualifier ("Halloween Horror Nights 35"). A park with one event and no name
+ * match still gets its art — the alternative is a bare band on the only park
+ * this has ever run on — but a park with several does not guess.
+ */
+function matchEventArt(
+  rows: Array<EventArt> | undefined,
+  eventName: string | null,
+): EventArt | null {
+  if (!rows || rows.length === 0) return null;
+  const key = eventName?.trim().toLowerCase();
+  if (key) {
+    const hit = rows.find((r) => {
+      const name = r.name?.trim().toLowerCase();
+      return name != null && (name.includes(key) || key.includes(name));
+    });
+    if (hit) return hit;
+  }
+  return rows.length === 1 ? rows[0] : null;
+}
+
+/**
+ * One house, laid out the way Universal's own card is: key art, the house name,
+ * its tagline, its blurb, and the trailer where there is one.
  *
  * The name sits *under* the art rather than over it. The art already carries
  * the house's own title lockup — laying our type over that meant a black
  * gradient up three-fifths of the frame, hiding the artwork to re-print a name
  * the artwork was already saying. Below the art, the lockup stays whole and the
- * text does the jobs the lockup can't: which land to walk to, and what the
- * house actually is.
+ * text does the jobs the lockup can't: what the house is called in a form you
+ * can search, what it's about, and which land to walk to.
+ *
+ * Two links, so the card is a `<div>` with a *stretched* primary link rather
+ * than an anchor wrapping everything: an `<a>` inside an `<a>` is invalid and
+ * browsers recover from it by dropping one. The house link's `::after` covers
+ * the whole card, and the trailer sits above it on its own layer.
  */
 function HouseCard({ house, parkSlug }: { house: BoardItem; parkSlug: string }) {
   const hero = house.meta?.imageHeroUrl ?? house.meta?.imageThumbUrl ?? null;
   const wait = house.status === "OPERATING" ? house.standbyWait : null;
+  const trailer = house.meta?.trailerUrl ?? null;
   return (
-    <Link
-      to="/park/$slug/ride/$rideSlug"
-      params={{ slug: parkSlug, rideSlug: house.slug }}
-      // The shell goes on the anchor itself so the art can react to *focus* as
-      // well as hover — `RAIL_CARD` kills the default outline, and a keyboard
-      // reader on a dark band with no ring has no idea where they are.
-      className={cn(RAIL_CARD, "gap-3")}
-    >
+    <div className={cn(RAIL_CARD, "relative gap-3")}>
       <div
         className={cn(
           HOUSE_MEDIA_ASPECT,
@@ -193,7 +291,10 @@ function HouseCard({ house, parkSlug }: { house: BoardItem; parkSlug: string }) 
           "transition-[box-shadow,top,border-top-width,margin-top] duration-150 ease-out",
           "group-hover:-top-px group-hover:shadow-3d-hover",
           "group-active:top-[3px] group-active:shadow-3d-active",
-          "group-focus-visible:ring-3 group-focus-visible:ring-white/60",
+          // `focus-within` rather than `focus-visible` on the link: the ring has
+          // to react to focus landing on the stretched link, which is a sibling
+          // of this box rather than its parent now.
+          "group-has-[a:focus-visible]:ring-3 group-has-[a:focus-visible]:ring-white/60",
         )}
       >
         {hero ? (
@@ -226,20 +327,45 @@ function HouseCard({ house, parkSlug }: { house: BoardItem; parkSlug: string }) 
       </div>
 
       <div className="flex flex-col gap-1 px-0.5">
-        <span className="line-clamp-2 text-[15px] leading-tight font-extrabold text-white group-hover:underline">
+        <Link
+          to="/park/$slug/ride/$rideSlug"
+          params={{ slug: parkSlug, rideSlug: house.slug }}
+          // The stretched link: its `::after` is the card's whole hit area, so
+          // the art, the blurb and the gaps between them all navigate here while
+          // the markup stays one anchor around one name.
+          className="line-clamp-2 text-[15px] leading-tight font-extrabold text-white outline-none group-hover:underline after:absolute after:inset-0 after:content-['']"
+        >
           {house.name}
-        </span>
-        {house.meta?.land && (
-          <span className="line-clamp-1 text-[12px] font-semibold text-white/65">
-            {house.meta.land}
+        </Link>
+        {house.meta?.tagline && (
+          <span className="line-clamp-1 text-[12.5px] font-semibold text-white/70">
+            {house.meta.tagline}
           </span>
         )}
         {house.meta?.description && (
-          <span className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-white/75">
+          <span className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-white/70">
             {house.meta.description}
           </span>
         )}
+        {(house.meta?.land || trailer) && (
+          <span className="mt-1.5 flex items-center gap-3 text-[12px] font-semibold">
+            {house.meta?.land && <span className="text-white/55">{house.meta.land}</span>}
+            {trailer && (
+              <a
+                href={trailer}
+                target="_blank"
+                rel="noreferrer noopener"
+                // Above the stretched link's overlay, or the whole card would
+                // swallow this click.
+                className="relative z-10 inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-white/85 ring-1 ring-white/20 transition-colors hover:bg-white/20 hover:text-white focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:outline-none"
+              >
+                <PlayIcon className="size-3 fill-current" />
+                Trailer
+              </a>
+            )}
+          </span>
+        )}
       </div>
-    </Link>
+    </div>
   );
 }

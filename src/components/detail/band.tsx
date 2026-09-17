@@ -23,7 +23,10 @@ export function BandHeading({
   className,
 }: {
   kicker: string;
-  title: string;
+  /** Usually the headline text. A node for the one band that has an operator's
+   *  own logo lockup to show instead — it still renders inside the `<h2>`, so
+   *  an image passed here must carry its own alt. */
+  title: ReactNode;
   /** Right-hand prose line — a count, a caveat. Drops below `md`. */
   meta?: ReactNode;
   /** Right-hand controls (a segmented control, a key). Stays at every width. */

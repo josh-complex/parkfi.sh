@@ -264,6 +264,13 @@ export interface UniversalRideFacts {
   /** Card copy, where the source has any (HHN houses); ride pages publish none
    *  in the components we read, so this stays null there. */
   description?: string | null;
+  /** The card's own subtitle — an HHN house card's `heading`, which sits under
+   *  the house name in the `eyebrow` ("Raise Some Hell"). Ride pages have none. */
+  tagline?: string | null;
+  /** Official trailer, where the card's button links one (HHN's licensed houses
+   *  do; the original ones mostly don't). Video hosts only — see
+   *  {@link trailerLink}. */
+  trailerUrl?: string | null;
 }
 
 /**
@@ -312,9 +319,10 @@ function text(raw: string | null): string | null {
  * `wheel-chair` / `accessibility`).
  */
 /** First linked Multimedia URL of a hero breakpoint slot. */
-function renditionUrl(rendition?: {
-  LinkedComponentValues?: Array<{ Multimedia?: { Url?: string | null } | null }>;
-}): string | null {
+/** One responsive-image rendition slot (`desktop` / `tablet` / `mobile`). */
+type Rendition = { LinkedComponentValues?: Array<{ Multimedia?: { Url?: string | null } | null }> };
+
+function renditionUrl(rendition?: Rendition): string | null {
   return rendition?.LinkedComponentValues?.[0]?.Multimedia?.Url ?? null;
 }
 
@@ -433,6 +441,8 @@ function artworkFacts(input: {
   imageHero: string | null;
   imageAlt: string | null;
   description?: string | null;
+  tagline?: string | null;
+  trailerUrl?: string | null;
 }): UniversalRideFacts {
   return {
     slug: input.slug,
@@ -446,6 +456,8 @@ function artworkFacts(input: {
     imageHero: input.imageHero,
     imageAlt: input.imageAlt,
     description: input.description ?? null,
+    tagline: input.tagline ?? null,
+    trailerUrl: input.trailerUrl ?? null,
   };
 }
 
@@ -485,10 +497,47 @@ export function hhnHousesFromPage(page: unknown): Array<UniversalRideFacts> {
         // better as alt than "The Final Chapter".
         imageAlt: text(val(slot?.alt)) ?? heading,
         description: text(val(fields?.description)),
+        // The card's own subtitle. Universal puts the house NAME in `eyebrow`
+        // and the tagline in `heading`, which is the opposite of what those two
+        // field names suggest — don't "fix" this to read the other way round.
+        tagline: text(val(fields?.heading)),
+        trailerUrl: trailerLink(node),
       }),
     );
   }
   return out;
+}
+
+/**
+ * Hosts we're willing to call a trailer. A house card's button is labelled
+ * "Learn More" and points at whatever Universal wants — a teaser on YouTube for
+ * the licensed houses, a ticket page or nothing for the rest. Storing a ticket
+ * page under `trailer_url` would make the UI lie about what the link is, so an
+ * unrecognised host is dropped rather than downgraded to "some link".
+ */
+const TRAILER_HOSTS = /^(?:www\.)?(?:youtube\.com|youtu\.be|m\.youtube\.com)$/i;
+
+/**
+ * The first video link anywhere inside one card component.
+ *
+ * Walks the card's own subtree for `External` fields rather than modelling the
+ * path, for the same reason `hhnHousesFromPage` walks the document: the button
+ * sits behind a Flexible Container wrapping a Media Detail wrapping a button
+ * wrapping a link, and that nesting is exactly the kind of thing a republish
+ * reshuffles.
+ */
+function trailerLink(card: unknown): string | null {
+  for (const node of objectNodes(card)) {
+    const external = node.External as { Values?: Array<string> } | undefined;
+    const href = val(external);
+    if (!href) continue;
+    try {
+      if (TRAILER_HOSTS.test(new URL(href).hostname)) return href;
+    } catch {
+      // Not an absolute URL — an internal Tridion link, which is never a video.
+    }
+  }
+  return null;
 }
 
 /** Fetch + parse the haunted-houses page; empty when the page is gone (off-season). */
@@ -497,6 +546,104 @@ export async function fetchUniversalHhnHouses(): Promise<Array<UniversalRideFact
     `${config.universalContentBase}/uor/en/us${HHN_HOUSES_PATH}/index.html`,
   );
   return body == null ? [] : hhnHousesFromPage(body);
+}
+
+// --- hard-ticket event artwork --------------------------------------------
+
+/** The event's own landing page, which is where it dresses itself. */
+const HHN_EVENT_PATH = "/hhn";
+
+/** The logo lockup and background plate an event page dresses itself with. */
+export interface UniversalEventArt {
+  name: string | null;
+  logoUrl: string | null;
+  logoAlt: string | null;
+  plateUrl: string | null;
+}
+
+/**
+ * Pull an event landing page's own artwork: the lockup it puts in its local
+ * navigation, and the background plate its opening section sits on.
+ *
+ * **Document order, not filenames.** The plates are named for the year
+ * (`hhn26-texture-top-lvp.jpg`, then `-side-`, then `-bottom-`), so matching on
+ * `-top-` would break the first October Universal renames them. The page uses
+ * them in that order down the page, so the first `backgroundImage` in the
+ * document IS the top plate — the one composed to sit under the opening content
+ * and fade out downward, which is the shape a band wants.
+ *
+ * Desktop rendition only. The mobile plate exists because Universal runs these
+ * full-page, where a wide crop on a phone loses the composition; the band is a
+ * short strip that crops the plate to abstraction at every width anyway, so a
+ * second asset would be bytes for nothing.
+ *
+ * Everything is independently optional — a page that drops its logo still
+ * yields its plate — because the reader falls back to a plain field per slot.
+ */
+export function eventArtFromPage(page: unknown): UniversalEventArt {
+  /** One `{desktop, tablet, mobile}` responsive slot. */
+  type Slot = { desktop?: Rendition; tablet?: Rendition; mobile?: Rendition };
+  const slotOf = <T>(field: unknown): T | undefined =>
+    (field as { EmbeddedValues?: Array<T> } | undefined)?.EmbeddedValues?.[0];
+
+  let name: string | null = null;
+  let logoUrl: string | null = null;
+  let plateUrl: string | null = null;
+  for (const node of objectNodes(page)) {
+    if (plateUrl == null) {
+      const slot = slotOf<Slot>(node.backgroundImage);
+      if (slot) plateUrl = contentImageUrl(renditionUrl(slot.desktop ?? slot.tablet));
+    }
+    if (logoUrl == null && node.imageButton != null) {
+      // NOT a responsive slot: the local nav's image button holds a single
+      // rendition under `image`, where a `backgroundImage` holds three under
+      // `desktop`/`tablet`/`mobile`. Same-looking field, different shape.
+      const button = slotOf<{ image?: Rendition }>(node.imageButton);
+      logoUrl = contentImageUrl(renditionUrl(button?.image));
+      // The button's own `ariaLabel` is chrome boilerplate ("Logo and Link
+      // details"), so the event's name comes from the page the logo links to —
+      // its own landing page, whose SEO title is the only place on the page
+      // that spells the event out.
+      if (logoUrl) name = eventName(node.imageButton);
+    }
+    if (plateUrl && logoUrl) break;
+  }
+  return { name, logoUrl, logoAlt: name, plateUrl };
+}
+
+/**
+ * The event's display name, from the SEO title of the page a node links to:
+ * "Halloween Horror Nights 2026 | Universal Orlando" → "Halloween Horror
+ * Nights". The year comes off because the name has to match the park's
+ * ticketed-event schedule row, which carries no year, and because the row is
+ * keyed by an across-years slug anyway.
+ */
+function eventName(node: unknown): string | null {
+  for (const child of objectNodes(node)) {
+    const seo = val(child.SEOTitle as { Values?: Array<string> } | undefined);
+    if (!seo) continue;
+    const cleaned = seo
+      .split("|")[0]
+      .replace(/\b(19|20)\d{2}\b/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (cleaned) return cleaned;
+  }
+  return null;
+}
+
+/**
+ * Halloween Horror Nights' own page dressing. Empty-ish (all nulls) off-season,
+ * when the page 404s — the caller then writes nothing and last year's row stays
+ * until the next event replaces it.
+ */
+export async function fetchUniversalHhnEventArt(): Promise<UniversalEventArt | null> {
+  const body = await getJson(
+    `${config.universalContentBase}/uor/en/us${HHN_EVENT_PATH}/index.html`,
+  );
+  if (body == null) return null;
+  const art = eventArtFromPage(body);
+  return art.logoUrl || art.plateUrl ? art : null;
 }
 
 /**

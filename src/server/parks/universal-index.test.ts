@@ -8,6 +8,7 @@ import {
 } from "./codes.ts";
 import {
   curatedUniversalArtwork,
+  eventArtFromPage,
   hhnHousesFromPage,
   parseFeatureHeightInches,
   rideFactsFromPage,
@@ -298,6 +299,31 @@ describe("hhnHousesFromPage", () => {
     Schema: { Title: "GDS - Content - Feature" },
     Fields: fields,
   });
+  /** A card's CTA, nested the way the live page nests it. */
+  const button = (href: string) => ({
+    EmbeddedValues: [
+      {
+        label: field("Learn More"),
+        link: {
+          EmbeddedValues: [
+            {
+              Component: {
+                LinkedComponentValues: [
+                  {
+                    Fields: {
+                      button: {
+                        EmbeddedValues: [{ link: { EmbeddedValues: [{ External: field(href) }] } }],
+                      },
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    ],
+  });
   // The live page nests the cards several container/swimlane levels down.
   const page = {
     ComponentPresentations: [
@@ -323,6 +349,9 @@ describe("hhnHousesFromPage", () => {
                                 image: image(
                                   "/uor/en/us/files/Images/usf-halloween-horror-nights-jack-oddfellow-house-cf-a.jpg",
                                 ),
+                                // The real button nests four levels deep behind
+                                // a Flexible Container; the parser walks for it.
+                                buttons: button("https://youtu.be/wmEl_YZJlOc"),
                               }),
                               card({
                                 eyebrow: field(
@@ -332,6 +361,9 @@ describe("hhnHousesFromPage", () => {
                                 image: image(
                                   "/uor/en/us/files/Images/usf-halloween-horror-nights-house-cybergoria-a3.jpg",
                                 ),
+                                // A marketing page, not a trailer — dropped
+                                // rather than stored under `trailer_url`.
+                                buttons: button("https://www.universalorlando.com/hhn/tickets"),
                               }),
                               // Promo card: no eyebrow → not a house.
                               card({
@@ -371,6 +403,22 @@ describe("hhnHousesFromPage", () => {
     expect(houses[1]?.expressPass).toBe(false);
   });
 
+  it("reads the tagline out of `heading`, not the house name", () => {
+    // Universal puts the NAME in `eyebrow` and the tagline in `heading`, which
+    // is the opposite of what those field names suggest.
+    const houses = hhnHousesFromPage(page);
+    expect(houses[0]?.tagline).toBe("The Forces of Horror Collide");
+    expect(houses[1]?.tagline).toBe("Immortality Comes at a Cost");
+  });
+
+  it("keeps a trailer link and drops a CTA that isn't one", () => {
+    const houses = hhnHousesFromPage(page);
+    expect(houses[0]?.trailerUrl).toBe("https://youtu.be/wmEl_YZJlOc");
+    // A ticket page stored as `trailer_url` would make the UI lie about the
+    // link, so an unrecognised host is dropped rather than downgraded.
+    expect(houses[1]?.trailerUrl).toBeNull();
+  });
+
   it("joins a house to its wait-board attraction and feeds the card copy in", () => {
     const attrs = resolveUniversalRideAttrs(
       index({
@@ -383,6 +431,20 @@ describe("hhnHousesFromPage", () => {
     expect(attrs.matched).toBe(true);
     expect(attrs.imageThumbUrl).toContain("house-cybergoria-a3.jpg");
     expect(attrs.imageHeroUrl).toContain("house-cybergoria-a3.jpg");
+    expect(attrs.tagline).toBe("Immortality Comes at a Cost");
+  });
+
+  it("leaves card-only copy null for an ordinary ride", () => {
+    // Nothing but an HHN card publishes either, so a ride matched from the POI
+    // feed must not inherit a tagline from anywhere.
+    const attrs = resolveUniversalRideAttrs(
+      index({ rides: [{ MblDisplayName: "Revenge of the Mummy", VenueId: USF }] }),
+      USF,
+      "Revenge of the Mummy",
+    );
+    expect(attrs.matched).toBe(true);
+    expect(attrs.tagline).toBeNull();
+    expect(attrs.trailerUrl).toBeNull();
   });
 
   it("curated artwork resolves absolute on the /contentdata host", () => {
@@ -708,5 +770,106 @@ describe("venue geometry", () => {
   it("returns null rather than a degenerate polygon", () => {
     expect(venueBoundary({ GpsBoundary: [{ Latitude: 1, Longitude: 2 }] } as never)).toBeNull();
     expect(venueBoundary({} as never)).toBeNull();
+  });
+});
+
+describe("eventArtFromPage", () => {
+  const field = (value: string) => ({ Values: [value] });
+  const rendition = (url: string) => ({ LinkedComponentValues: [{ Multimedia: { Url: url } }] });
+  /** The local nav's logo button: a single rendition under `image`, plus an
+   *  `href` resolving to the event's own page (where its name lives). */
+  const localNav = (logo: string, seoTitle: string) => ({
+    Component: {
+      Schema: { Title: "GDS - Local Navigation" },
+      Fields: {
+        imageButton: {
+          EmbeddedValues: [
+            {
+              image: rendition(logo),
+              ariaLabel: field("Logo and Link details"),
+              href: {
+                EmbeddedValues: [
+                  {
+                    Component: {
+                      LinkedComponentValues: [{ MetadataFields: { SEOTitle: field(seoTitle) } }],
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    },
+  });
+  /** A section's background plate: three renditions, like every other
+   *  responsive image slot. */
+  const plate = (desktop: string, mobile: string) => ({
+    Component: {
+      Schema: { Title: "GDS - Container" },
+      Fields: {
+        backgroundImage: {
+          EmbeddedValues: [{ desktop: rendition(desktop), mobile: rendition(mobile) }],
+        },
+      },
+    },
+  });
+
+  const page = {
+    ComponentPresentations: [
+      { Component: { Schema: { Title: "GDS - Hero" }, Fields: {} } },
+      localNav(
+        "/uor/en/us/files/Images/usf-halloween-horror-nights-35th-anniversary-logo-600x173.png",
+        "Halloween Horror Nights 2026 | Universal Orlando",
+      ),
+      plate(
+        "/uor/en/us/files/Images/hhn26-texture-top-lvp.jpg",
+        "/uor/en/us/files/Images/hhn26-texture-top-svp.jpg",
+      ),
+      // The page keeps using plates further down; the band wants the first.
+      plate(
+        "/uor/en/us/files/Images/hhn26-texture-side-lvp.jpg",
+        "/uor/en/us/files/Images/hhn26-texture-side-svp.jpg",
+      ),
+    ],
+  };
+
+  it("takes the logo, the first plate, and the event's name off its own page", () => {
+    const art = eventArtFromPage(page);
+    expect(art.logoUrl).toBe(
+      "https://www.universalorlando.com/contentdata/uor/en/us/files/Images/usf-halloween-horror-nights-35th-anniversary-logo-600x173.png",
+    );
+    // Document order, not filename: matching `-top-` would break the first
+    // October Universal renames the plates.
+    expect(art.plateUrl).toContain("hhn26-texture-top-lvp.jpg");
+    // Year stripped, so it can match a ticketed-event schedule row (which
+    // carries none) across seasons.
+    expect(art.name).toBe("Halloween Horror Nights");
+    expect(art.logoAlt).toBe("Halloween Horror Nights");
+  });
+
+  it("yields each slot independently, so a re-skin degrades instead of breaking", () => {
+    const logoOnly = eventArtFromPage({
+      ComponentPresentations: [localNav("/uor/en/us/files/Images/logo.png", "Mardi Gras | UOR")],
+    });
+    expect(logoOnly.logoUrl).toContain("logo.png");
+    expect(logoOnly.plateUrl).toBeNull();
+    expect(logoOnly.name).toBe("Mardi Gras");
+
+    const plateOnly = eventArtFromPage({
+      ComponentPresentations: [
+        plate("/uor/en/us/files/Images/p.jpg", "/uor/en/us/files/Images/m.jpg"),
+      ],
+    });
+    expect(plateOnly.plateUrl).toContain("p.jpg");
+    expect(plateOnly.logoUrl).toBeNull();
+    expect(plateOnly.name).toBeNull();
+
+    expect(eventArtFromPage({})).toEqual({
+      name: null,
+      logoUrl: null,
+      logoAlt: null,
+      plateUrl: null,
+    });
   });
 });

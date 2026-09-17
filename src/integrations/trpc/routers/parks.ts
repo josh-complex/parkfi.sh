@@ -698,6 +698,8 @@ export const parksRouter = {
       meta_virtual_line: boolean | null;
       meta_tags: Array<string> | null;
       meta_description: string | null;
+      meta_tagline: string | null;
+      meta_trailer_url: string | null;
       hours_today: Array<{ type: string | null; start: string | null; end: string | null }> | null;
       is_open: boolean | null;
       has_schedule: boolean;
@@ -798,6 +800,8 @@ export const parksRouter = {
                m.virtual_line AS meta_virtual_line,
                m.tags AS meta_tags,
                m.description AS meta_description,
+               m.tagline AS meta_tagline,
+               m.trailer_url AS meta_trailer_url,
                (SELECT is_open FROM park_open) AS is_open,
                (SELECT has_schedule FROM park_open) AS has_schedule
         FROM attractions a
@@ -815,74 +819,79 @@ export const parksRouter = {
     // Capability + historical baseline (supportsQueueTypes, histStandbyWait) stay,
     // since they aren't claims about the park being open right now.
     const knownClosed = Boolean(result.rows[0]?.has_schedule) && result.rows[0]?.is_open === false;
-    return result.rows.map((r) => ({
-      id: Number(r.id),
-      name: r.name,
-      slug: r.slug,
-      entityType: r.entity_type,
-      status: knownClosed ? "CLOSED" : code(STATUS_CODE, r.status),
-      standbyWait: knownClosed ? null : r.standby_wait,
-      // Universal's single-rider line (the CDN wait-board overlay); null at
-      // Disney and wherever the ride runs none.
-      singleRiderWait: knownClosed ? null : r.single_rider_wait,
-      observedAt: r.observed_at,
-      lightningLane: knownClosed
-        ? { state: null, priceCents: null, currency: null, returnStart: null, returnEnd: null }
-        : {
-            state: code(QUEUE_STATE_CODE, r.ll_state),
-            priceCents: r.ll_price_cents,
-            currency: r.ll_currency?.trim() ?? null,
-            returnStart: r.ll_return_start,
-            returnEnd: r.ll_return_end,
-          },
-      returnTimeState: knownClosed ? null : code(QUEUE_STATE_CODE, r.return_state),
-      returnTimeWindow: knownClosed
-        ? { start: null, end: null }
-        : { start: r.return_start ?? null, end: r.return_end ?? null },
-      // Today's showtimes for SHOW entities (plan item 1.1); [] otherwise.
-      showtimes: knownClosed ? [] : (r.showtimes ?? []).filter((s) => s.start != null),
-      // Per-entity operating windows today (plan item 1.4) — feeds the "Early
-      // Entry rides today" rail; [] when unposted or the park is closed.
-      hoursToday: knownClosed ? [] : (r.hours_today ?? []).filter((h) => h.start != null),
-      supportsQueueTypes: (r.support_types ?? []).map(Number),
-      histStandbyWait: r.hist_standby_wait,
-      latitude: r.latitude,
-      longitude: r.longitude,
-      category: r.category,
-      meta:
-        r.meta_image_thumb_url != null ||
-        r.meta_image_hero_url != null ||
-        r.meta_detail_url != null ||
-        r.meta_land != null ||
-        r.meta_height_requirement != null ||
-        (r.meta_tags != null && r.meta_tags.length > 0)
-          ? {
-              imageThumbUrl: r.meta_image_thumb_url,
-              imageHeroUrl: r.meta_image_hero_url,
-              imageAlt: r.meta_image_alt,
-              imageThumbhash: r.meta_image_thumbhash,
-              detailUrl: r.meta_detail_url,
-              land: r.meta_land,
-              heightRequirement: r.meta_height_requirement,
-              minHeightIn: r.meta_min_height_in,
-              expressPass: r.meta_express_pass,
-              singleRider: r.meta_single_rider,
-              childSwap: r.meta_child_swap,
-              virtualLine: r.meta_virtual_line,
-              tags: r.meta_tags ?? [],
-              // Blurb, for haunted houses ONLY. The board ships every
-              // attraction in a park (150+ rows), and `attraction_meta`'s
-              // description is a paragraph — carrying it on every row to serve
-              // the ten that use it would be a few kB of dead weight on the
-              // page's biggest query. The seasonal-houses band is the one
-              // surface that reads it, so the row pays for it only when it is
-              // one of those houses.
-              description: (r.meta_tags ?? []).includes(HAUNTED_HOUSE_TAG)
-                ? r.meta_description
-                : null,
-            }
-          : null,
-    }));
+    return result.rows.map((r) => {
+      const house = (r.meta_tags ?? []).includes(HAUNTED_HOUSE_TAG);
+      return {
+        id: Number(r.id),
+        name: r.name,
+        slug: r.slug,
+        entityType: r.entity_type,
+        status: knownClosed ? "CLOSED" : code(STATUS_CODE, r.status),
+        standbyWait: knownClosed ? null : r.standby_wait,
+        // Universal's single-rider line (the CDN wait-board overlay); null at
+        // Disney and wherever the ride runs none.
+        singleRiderWait: knownClosed ? null : r.single_rider_wait,
+        observedAt: r.observed_at,
+        lightningLane: knownClosed
+          ? { state: null, priceCents: null, currency: null, returnStart: null, returnEnd: null }
+          : {
+              state: code(QUEUE_STATE_CODE, r.ll_state),
+              priceCents: r.ll_price_cents,
+              currency: r.ll_currency?.trim() ?? null,
+              returnStart: r.ll_return_start,
+              returnEnd: r.ll_return_end,
+            },
+        returnTimeState: knownClosed ? null : code(QUEUE_STATE_CODE, r.return_state),
+        returnTimeWindow: knownClosed
+          ? { start: null, end: null }
+          : { start: r.return_start ?? null, end: r.return_end ?? null },
+        // Today's showtimes for SHOW entities (plan item 1.1); [] otherwise.
+        showtimes: knownClosed ? [] : (r.showtimes ?? []).filter((s) => s.start != null),
+        // Per-entity operating windows today (plan item 1.4) — feeds the "Early
+        // Entry rides today" rail; [] when unposted or the park is closed.
+        hoursToday: knownClosed ? [] : (r.hours_today ?? []).filter((h) => h.start != null),
+        supportsQueueTypes: (r.support_types ?? []).map(Number),
+        histStandbyWait: r.hist_standby_wait,
+        latitude: r.latitude,
+        longitude: r.longitude,
+        category: r.category,
+        meta:
+          r.meta_image_thumb_url != null ||
+          r.meta_image_hero_url != null ||
+          r.meta_detail_url != null ||
+          r.meta_land != null ||
+          r.meta_height_requirement != null ||
+          (r.meta_tags != null && r.meta_tags.length > 0)
+            ? {
+                imageThumbUrl: r.meta_image_thumb_url,
+                imageHeroUrl: r.meta_image_hero_url,
+                imageAlt: r.meta_image_alt,
+                imageThumbhash: r.meta_image_thumbhash,
+                detailUrl: r.meta_detail_url,
+                land: r.meta_land,
+                heightRequirement: r.meta_height_requirement,
+                minHeightIn: r.meta_min_height_in,
+                expressPass: r.meta_express_pass,
+                singleRider: r.meta_single_rider,
+                childSwap: r.meta_child_swap,
+                virtualLine: r.meta_virtual_line,
+                tags: r.meta_tags ?? [],
+                // Card copy, for haunted houses ONLY. The board ships every
+                // attraction in a park (150+ rows) and this is a paragraph plus
+                // two more strings — carrying them on every row to serve the ten
+                // that use them would be kBs of dead weight on the page's biggest
+                // query. The seasonal-houses band is the only surface that reads
+                // them, so a row pays for them only when it is one of those
+                // houses. (Tagline and trailer are HHN's alone today; the gate is
+                // what keeps the cost bounded if other sources start publishing
+                // them.)
+                description: house ? r.meta_description : null,
+                tagline: house ? r.meta_tagline : null,
+                trailerUrl: house ? r.meta_trailer_url : null,
+              }
+            : null,
+      };
+    });
   }),
 
   /**
@@ -1346,6 +1355,41 @@ export const parksRouter = {
    * Evening, hard-ticket events). `timestamptz` instants are returned raw; the
    * client renders them in the park's `timezone` (also returned).
    */
+  /**
+   * A park's hard-ticket event artwork — the operator's own logo lockup and
+   * background plate (`park_event_art`), for the seasonal-houses band to dress
+   * itself with.
+   *
+   * Its own query rather than a field on `board` or `hours` because almost no
+   * park has a row: only a park actually running an event pays for it, and the
+   * band only asks once it has houses to show. Returns every event the park has
+   * artwork for — usually one — and lets the caller match it against today's
+   * ticketed-event schedule row, which is the only thing that knows *which*
+   * event is on tonight.
+   */
+  eventArt: publicProcedure.input(z.object({ parkSlug: z.string() })).query(async ({ input }) => {
+    const result = await db.execute<{
+      slug: string;
+      name: string | null;
+      logo_url: string | null;
+      logo_alt: string | null;
+      plate_url: string | null;
+    }>(sql`
+        SELECT e.slug, e.name, e.logo_url, e.logo_alt, e.plate_url
+        FROM park_event_art e
+        JOIN parks p ON p.id = e.park_id
+        WHERE p.slug = ${input.parkSlug}
+        ORDER BY e.updated_at DESC
+      `);
+    return result.rows.map((r) => ({
+      slug: r.slug,
+      name: r.name,
+      logoUrl: r.logo_url,
+      logoAlt: r.logo_alt,
+      plateUrl: r.plate_url,
+    }));
+  }),
+
   hours: publicProcedure
     .input(
       z.object({

@@ -192,6 +192,10 @@ export interface UniversalRideAttrs {
   imageAlt: string | null;
   imageThumbUrl: string | null;
   imageHeroUrl: string | null;
+  /** The card's own subtitle, where a source publishes one (HHN houses). */
+  tagline: string | null;
+  /** Official trailer, where a source links one (HHN's licensed houses). */
+  trailerUrl: string | null;
   land: string | null;
   /** False when no feed knew this attraction — the caller then writes nothing. */
   matched: boolean;
@@ -235,6 +239,8 @@ export function resolveUniversalRideAttrs(
     imageAlt: null,
     imageThumbUrl: null,
     imageHeroUrl: null,
+    tagline: null,
+    trailerUrl: null,
     land: null,
     matched: false,
   };
@@ -317,6 +323,11 @@ export function resolveUniversalRideAttrs(
     imageHeroUrl: universalAssetUrl(
       tile?.imageHero ?? facts?.imageHero ?? (poiTrusted ? poi?.DetailImages?.[0] : null) ?? null,
     ),
+    // Card-only copy: nothing but the HHN house cards publishes either, so
+    // these stay null for every ordinary ride rather than being synthesised
+    // from the description.
+    tagline: facts?.tagline ?? null,
+    trailerUrl: facts?.trailerUrl ?? null,
     land: tile?.land ?? (poi?.LandId != null ? (index.landById.get(poi.LandId) ?? null) : null),
     matched: true,
   };

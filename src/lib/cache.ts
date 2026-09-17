@@ -94,6 +94,9 @@ export const CACHEABLE_TRPC_PATHS: ReadonlyMap<string, string> = new Map([
   // serves, for one park.
   ["parks.shopsNear", CACHE.TRPC_DATA],
   ["parks.poi", CACHE.TRPC_DATA],
+  // A park's hard-ticket event artwork: operator-published URLs that change
+  // once a season, identical for every visitor.
+  ["parks.eventArt", CACHE.TRPC_DATA],
   ["stays.catalog", CACHE.TRPC_DATA],
   ["stays.availability", CACHE.TRPC_DATA],
   // The resort page's rate calendar: pure reads of observations the sweep has

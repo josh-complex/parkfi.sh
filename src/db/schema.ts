@@ -292,11 +292,71 @@ export const attractionMeta = pgTable("attraction_meta", {
   // UOR places feed has no per-ride media collection). Null until the geo
   // cron's description pass has fetched the venue.
   heroMedia: jsonb("hero_media").$type<Array<ParkHeroSlide>>(),
+  /**
+   * The attraction's own marketing subtitle, where the operator publishes one
+   * separately from its name — Universal's HHN house cards carry the house name
+   * as the card's `eyebrow` and a tagline as its `heading` ("Immortality Comes
+   * at a Cost"), which is a different thing from `description` and reads as one.
+   * Sparse; nothing else populates it today.
+   */
+  tagline: text("tagline"),
+  /**
+   * Official trailer/teaser URL the operator publishes on the attraction's own
+   * card (HHN houses link one from their "Learn More" button). Stored only for
+   * links we can recognise as video — an arbitrary marketing page called a
+   * trailer would be a lie to the reader — so it's null for most rows.
+   */
+  trailerUrl: text("trailer_url"),
   source: smallint("source")
     .notNull()
     .references(() => refSource.id),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Artwork for a park's hard-ticket event — the logo lockup and the background
+ * plate the operator dresses its own event pages with.
+ *
+ * Its own table rather than columns on `parks` because it is **per event, not
+ * per park**: Universal Studios Florida runs Halloween Horror Nights and then
+ * Mardi Gras out of the same park, and Universal keys the artwork to the
+ * event's year (`hhn26-texture-top-lvp.jpg`), so a single park-level slot would
+ * have each season silently overwrite the last. `slug` is the ingester's stable
+ * key for the event across years (`hhn`), `name` is what that year's page calls
+ * it, and the band matches `name` against the park's ticketed-event schedule
+ * row so it can't dress a Mardi Gras night in Halloween plates.
+ *
+ * Every column is nullable artwork: a row exists as soon as the event page does,
+ * and the band falls back to its own CSS field for anything missing, so a
+ * re-skin upstream degrades to the old look instead of a hole.
+ */
+export const parkEventArt = pgTable(
+  "park_event_art",
+  {
+    parkId: bigint("park_id", { mode: "number" })
+      .notNull()
+      .references(() => parks.id),
+    /** Stable across years — `hhn`, not `hhn26`. */
+    slug: text("slug").notNull(),
+    /** This year's display name, e.g. "Halloween Horror Nights". */
+    name: text("name"),
+    /** Transparent knockout lockup; assume it needs a dark field behind it. */
+    logoUrl: text("logo_url"),
+    logoAlt: text("logo_alt"),
+    /**
+     * The event's background plate — the first `backgroundImage` the event's
+     * landing page uses, which is the one composed to sit under the page's
+     * opening content and fade out downward. Taken in document order rather
+     * than by filename, so it survives Universal renaming the file.
+     */
+    plateUrl: text("plate_url"),
+    source: smallint("source")
+      .notNull()
+      .references(() => refSource.id),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.parkId, t.slug] })],
+);
 
 /**
  * Static per-coaster facts (published figures — track length, official top
