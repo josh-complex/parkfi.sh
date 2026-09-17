@@ -8,7 +8,12 @@ import { BellIcon, MapIcon } from "lucide-react";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 
 import { ACTION_BAR_PAGE_PAD, DetailActionBar } from "#/components/detail/action-bar.tsx";
-import { TICKET_DEFAULT_CREASE, Ticket, type TicketFact } from "#/components/detail/ticket.tsx";
+import {
+  TICKET_DEFAULT_CREASE,
+  Ticket,
+  TicketStatusChip,
+  type TicketFact,
+} from "#/components/detail/ticket.tsx";
 import {
   DetailHero,
   HERO_BLEED,
@@ -239,12 +244,7 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
       : hoursToday.nextOpen
         ? `Closed · ${hoursToday.nextOpen}`
         : "Closed";
-    return (
-      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-ink-on-yellow px-2.5 py-[3px] text-[11px] font-bold text-brand-yellow">
-        <span className={cn("size-1.5 rounded-full", open ? "bg-emerald-400" : "bg-white/50")} />
-        {label}
-      </span>
-    );
+    return <TicketStatusChip tone={open ? "open" : "closed"}>{label}</TicketStatusChip>;
   })();
 
   // Does this park run timed entertainment today at all? Stable across
@@ -354,23 +354,33 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
         )}
 
         {/* NOW + NEXT. Three children, placed explicitly on a two-column grid from
-          `md`: the ticket and the rest of the left column sit in rows 1 and 2 of
+          `wide`: the ticket and the rest of the left column sit in rows 1 and 2 of
           column 1, and the live column spans both rows of column 2 — so the map
           and the board ride up beside the ticket into what would otherwise be
           dead space under the hero.
 
+          `wide` (75rem), not `md` (2026-09-17, Josh): column 1 is a *fixed*
+          30rem, so column 2 is whatever is left — 217px at `md`, and narrower
+          than the ticket beside it until about 1000px. The board's row is
+          160px of photo plus a 168px sparkline plus a nowrap price chip and a
+          wait, ~590px before anything can shrink, so every width under 75rem
+          drew it off the right edge of the page. One column below that is not
+          a fallback: it hands the board 720–1130px, more than it gets in the
+          two-column layout at `xl`.
+
           The order is chosen for the *phone*, where the grid collapses to this
           one flex column in DOM order: ticket, then what the park is doing now,
-          then the rest of today. On a desktop the placement classes put the
-          "rest of today" panels back beside the live column. */}
-        <div className="flex flex-col gap-5 md:grid md:grid-cols-[minmax(0,30rem)_minmax(0,1fr)] md:grid-rows-[auto_1fr] md:items-start md:gap-x-6 md:gap-y-5 xl:grid-cols-[minmax(0,34rem)_minmax(0,1fr)]">
+          then the rest of today — the same running order a tablet gets. On a
+          desktop the placement classes put the "rest of today" panels back
+          beside the live column. */}
+        <div className="flex flex-col gap-5 wide:grid wide:grid-cols-[minmax(0,30rem)_minmax(0,1fr)] wide:grid-rows-[auto_1fr] wide:items-start wide:gap-x-6 wide:gap-y-5 xl:grid-cols-[minmax(0,34rem)_minmax(0,1fr)]">
           <Ticket
             onCreaseHeight={setCrease}
             // Pulled up by its own top half at every width, so the crease lands
             // on the hero's bottom edge (see the hero's `crease="always"`), and
             // nudged past the column's left edge on a desktop so the stub reads
             // as laid *on* the page rather than ruled into the grid.
-            className="mt-[calc(var(--crease)*-1)] md:col-start-1 md:row-start-1 md:-ml-3 lg:-mx-2.5"
+            className="mt-[calc(var(--crease)*-1)] md:mx-auto md:w-full md:max-w-[34rem] wide:col-start-1 wide:row-start-1 wide:-mx-4.5 wide:w-auto wide:max-w-none"
             heroKey={heroKey}
             titleHidden={flight?.flying ? { opacity: 0, visibility: "hidden" } : undefined}
             title={parkName ?? flight?.seed.name ?? ""}
@@ -419,7 +429,7 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
             }
           />
 
-          <div className="contents md:col-start-2 md:row-span-2 md:row-start-1 md:flex md:flex-col md:gap-4 md:pt-4">
+          <div className="contents wide:col-start-2 wide:row-span-2 wide:row-start-1 wide:flex wide:flex-col wide:gap-4 wide:pt-4">
             {/* The map, bare — no panel, no band heading, no control row
               (2026-09-17, Josh). The mint panel was costing it 40-odd px of
               height on every side; "Where everyone is standing" named a map of
@@ -465,9 +475,9 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
                 // Phone running order: the map, then the rest of today, then
                 // the board. Only two `order`s are needed for it — this one and
                 // the block below the curve — because everything else is
-                // already in DOM order, and both reset at `md`, where the two
+                // already in DOM order, and both reset at `wide`, where the two
                 // columns place themselves on the grid instead.
-                "order-1 md:order-none",
+                "order-1 wide:order-none",
               )}
             >
               <ParkBoardTable
@@ -490,7 +500,7 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
             </section>
           </div>
 
-          <div className="contents md:col-start-1 md:row-start-2 md:flex md:flex-col md:gap-5">
+          <div className="contents wide:col-start-1 wide:row-start-2 wide:flex wide:flex-col wide:gap-5">
             {/* The curve is drawn from `crowd`, so it is loading until *that*
               lands — passing the board's flag let it render nothing in the gap
               between the two queries, and a 485px panel then appeared under
@@ -506,9 +516,9 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
 
             {/* Everything that isn't about the next few hours, in one block so
               the phone can push the lot past the board with a single `order`.
-              `md:contents` dissolves it again on a desktop, where these are
+              `wide:contents` dissolves it again on a desktop, where these are
               just the rest of the left column. */}
-            <div className="order-2 flex flex-col gap-5 md:contents">
+            <div className="order-2 flex flex-col gap-5 wide:contents">
               {/* What we've written about this park, and what changed on its
                 menus. Both used to sit in bands at the foot of the page, where
                 nothing reached them. */}

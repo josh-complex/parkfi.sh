@@ -19,7 +19,6 @@ import {
 } from "#/components/notifications/ride-alert-button.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { authClient } from "#/lib/auth-client.ts";
-import { useIsMobile } from "#/hooks/use-mobile.ts";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Image } from "#/components/ui/image.tsx";
@@ -210,6 +209,45 @@ function sortingToOption(sorting: SortingState): { key: BoardSortKey; dir: SortD
   return { key, dir: s.desc ? "desc" : "asc" };
 }
 
+/**
+ * The width, in CSS pixels, below which a row drops to its compact furniture:
+ * a 112px photo, a short sparkline, and the paid line moved to its own strip
+ * under the row instead of a chip inside it.
+ *
+ * The *board's own box* decides, not the viewport (2026-09-17, Josh). This
+ * used to be `useIsMobile()` — a `< 768px` viewport check — which meant the
+ * row grew its furniture at exactly the width where the park page's grid
+ * halved the column it sits in, and the photo, sparkline, price chip and wait
+ * (all of them `shrink-0`) ran off the right of the page from `md` to about
+ * 1000px. A row needs ~558px inside the card for the full set: 160 photo + 14
+ * gap + a 168 sparkline + a nowrap price chip + the wait. 576 is that with
+ * headroom, and it matches the `@xl/board` variants the markup uses for the
+ * same switch, so the CSS and the measured half never disagree.
+ */
+const DENSE_BELOW = 576;
+
+/**
+ * Whether the board is drawing its compact rows, measured off the element the
+ * rows live in.
+ *
+ * Starts `false` — the server has no box to measure, and a `true` default
+ * would ship SSR HTML asking the preload scanner for 112px covers that the
+ * first client paint then replaces with 160px ones.
+ */
+function useDenseBoard(ref: React.RefObject<HTMLElement | null>) {
+  const [dense, setDense] = React.useState(false);
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const read = () => setDense(el.getBoundingClientRect().width < DENSE_BELOW);
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return dense;
+}
+
 export function ParkBoardTable({
   board,
   loading,
@@ -240,7 +278,9 @@ export function ParkBoardTable({
 }) {
   const [filter, setFilter] = React.useState<StatusFilter>("ALL");
   const [sorting, setSorting] = React.useState<SortingState>(DEFAULT_SORTING);
-  const isMobile = useIsMobile();
+  // Doubles as the scroll anchor for sort/filter (see `scrollToBoardStart`).
+  const wrapperRef = React.useRef<HTMLDivElement>(null);
+  const dense = useDenseBoard(wrapperRef);
   // The sparkline history query is NOT awaited in the route loader, so under
   // SSR streaming the HTML shell flushes with empty sparklines while the fetch
   // is still in flight — but its result is then streamed into the client cache
@@ -407,7 +447,6 @@ export function ParkBoardTable({
   // Changing sort/filter reshuffles the list, so snap back to the section start
   // (heading) rather than leaving the user stranded mid-list looking at a
   // reordered set with no anchor.
-  const wrapperRef = React.useRef<HTMLDivElement>(null);
   const scrollToBoardStart = React.useCallback(() => {
     const el = wrapperRef.current;
     if (!el) return;
@@ -430,146 +469,154 @@ export function ParkBoardTable({
   );
 
   return (
-    <div
-      ref={wrapperRef}
-      className={cn("flex flex-col gap-4", className)}
-      style={{ scrollMarginTop: "calc(var(--safe-top) + 4rem)" }}
-    >
-      {/* Section heading — matches the drawer/section headings elsewhere in the
+    <>
+      {/* `@container/board` is what the rows size themselves against — and it
+          is also a containing block for any `position: fixed` descendant, so
+          the floating control stack is a *sibling* of it rather than a child
+          (it would otherwise pin itself to the board instead of the viewport).
+          `wrapperRef` measures this same element, so the CSS half of the
+          switch and the measured half never see different widths. */}
+      <div
+        ref={wrapperRef}
+        className={cn("@container/board flex flex-col gap-4", className)}
+        style={{ scrollMarginTop: "calc(var(--safe-top) + 4rem)" }}
+      >
+        {/* Section heading — matches the drawer/section headings elsewhere in the
           dash (title + muted subtext), no card chrome. */}
-      <div className="flex items-end justify-between gap-4">
-        <div className="flex flex-col gap-0.5">
-          <h3 className="text-lg font-semibold tracking-tight">Live Ride Board</h3>
-          <p className="text-muted-foreground text-sm">
-            {loading
-              ? "Loading…"
-              : `${boardRows.length} attractions · select a ride to chart its history`}
-          </p>
-        </div>
-        {/* Phone controls, when the page can't spare the floating stack. */}
-        {controls === "inline" && !loading && (
-          <BoardControls
-            sort={sortingToOption(sorting)}
-            onSort={handleSort}
-            filter={filter}
-            onFilter={handleFilter}
-            className="flex gap-2 md:hidden"
-          />
-        )}
-        {/* Desktop controls live beside the heading; mobile gets a FAB (below).
-            Sort is a control of its own now — the rows replaced a table, so
-            there are no column headers left to click. */}
-        <div className="hidden items-center gap-2 md:flex">
-          <Select
-            value={sortValue(sorting)}
-            onValueChange={(v) => {
-              if (!v) return;
-              const [key, dir] = v.split(":") as [BoardSortKey, SortDir];
-              handleSort(key, dir);
-            }}
-            items={SORT_LABELS}
-          >
-            <SelectTrigger size="sm" className="w-44" aria-label="Sort rides">
-              <SelectValue placeholder="Longest wait" />
-            </SelectTrigger>
-            <SelectContent>
-              {(Object.keys(SORT_LABELS) as Array<keyof typeof SORT_LABELS>).map((key) => (
-                <SelectItem key={key} value={key}>
-                  {SORT_LABELS[key]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={filter}
-            onValueChange={(v) => v && handleFilter(v as StatusFilter)}
-            items={FILTER_LABELS}
-          >
-            <SelectTrigger size="sm" className="w-36" aria-label="Filter by status">
-              <SelectValue placeholder="All statuses" />
-            </SelectTrigger>
-            <SelectContent>
-              {(Object.keys(FILTER_LABELS) as Array<StatusFilter>).map((key) => (
-                <SelectItem key={key} value={key}>
-                  {FILTER_LABELS[key]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="flex flex-col gap-2">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <Skeleton key={i} className="h-16 w-full" />
-          ))}
-        </div>
-      ) : boardRows.length === 0 && houseRows.length === 0 ? (
-        <div className="text-muted-foreground py-12 text-center text-sm">
-          No attractions match this filter.
-        </div>
-      ) : (
-        <>
-          {boardRows.length === 0 ? (
-            <div className="text-muted-foreground py-8 text-center text-sm">
-              No rides match this filter.
-            </div>
-          ) : (
-            <BoardRows
-              table={table}
-              isMobile={isMobile}
-              selectedId={selectedId}
-              onSelect={onSelect}
-              parkSlug={parkSlug}
-              operatorSlug={operatorSlug}
-              timezone={timezone}
-              sparkByRide={sparkByRide}
-              alertByAttraction={alertByAttraction}
-              loggedIn={loggedIn}
-              singleRiderIds={singleRiderIds}
+        <div className="flex items-end justify-between gap-4">
+          <div className="flex flex-col gap-0.5">
+            <h3 className="text-lg font-semibold tracking-tight">Live Ride Board</h3>
+            <p className="text-muted-foreground text-sm">
+              {loading
+                ? "Loading…"
+                : `${boardRows.length} attractions · select a ride to chart its history`}
+            </p>
+          </div>
+          {/* Phone controls, when the page can't spare the floating stack. */}
+          {controls === "inline" && !loading && (
+            <BoardControls
+              sort={sortingToOption(sorting)}
+              onSort={handleSort}
+              filter={filter}
+              onFilter={handleFilter}
+              className="flex gap-2 @xl/board:hidden"
             />
           )}
+          {/* Desktop controls live beside the heading; mobile gets a FAB (below).
+            Sort is a control of its own now — the rows replaced a table, so
+            there are no column headers left to click. */}
+          <div className="hidden items-center gap-2 @xl/board:flex">
+            <Select
+              value={sortValue(sorting)}
+              onValueChange={(v) => {
+                if (!v) return;
+                const [key, dir] = v.split(":") as [BoardSortKey, SortDir];
+                handleSort(key, dir);
+              }}
+              items={SORT_LABELS}
+            >
+              <SelectTrigger size="sm" className="w-44" aria-label="Sort rides">
+                <SelectValue placeholder="Longest wait" />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(SORT_LABELS) as Array<keyof typeof SORT_LABELS>).map((key) => (
+                  <SelectItem key={key} value={key}>
+                    {SORT_LABELS[key]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={filter}
+              onValueChange={(v) => v && handleFilter(v as StatusFilter)}
+              items={FILTER_LABELS}
+            >
+              <SelectTrigger size="sm" className="w-36" aria-label="Filter by status">
+                <SelectValue placeholder="All statuses" />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(FILTER_LABELS) as Array<StatusFilter>).map((key) => (
+                  <SelectItem key={key} value={key}>
+                    {FILTER_LABELS[key]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
 
-          {/* Hard-ticket event attractions get their own heading — same shape as
-              the board's, so the two read as sections of one page. */}
-          {allHouses.length > 0 ? (
-            <div className="mt-2 flex flex-col gap-4 border-t pt-6">
-              <div className="flex flex-col gap-0.5">
-                <h3 className="flex items-center gap-2 text-lg font-semibold tracking-tight">
-                  <GhostIcon className="text-muted-foreground size-4.5" aria-hidden />
-                  Halloween Horror Nights
-                </h3>
-                <p className="text-muted-foreground text-sm">
-                  {houseSummary} · event nights only, separate ticket
-                </p>
+        {loading ? (
+          <div className="flex flex-col gap-2">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="h-16 w-full" />
+            ))}
+          </div>
+        ) : boardRows.length === 0 && houseRows.length === 0 ? (
+          <div className="text-muted-foreground py-12 text-center text-sm">
+            No attractions match this filter.
+          </div>
+        ) : (
+          <>
+            {boardRows.length === 0 ? (
+              <div className="text-muted-foreground py-8 text-center text-sm">
+                No rides match this filter.
               </div>
-              {houseRows.length === 0 ? (
-                <div className="text-muted-foreground py-8 text-center text-sm">
-                  No houses match this filter.
+            ) : (
+              <BoardRows
+                table={table}
+                dense={dense}
+                selectedId={selectedId}
+                onSelect={onSelect}
+                parkSlug={parkSlug}
+                operatorSlug={operatorSlug}
+                timezone={timezone}
+                sparkByRide={sparkByRide}
+                alertByAttraction={alertByAttraction}
+                loggedIn={loggedIn}
+                singleRiderIds={singleRiderIds}
+              />
+            )}
+
+            {/* Hard-ticket event attractions get their own heading — same shape as
+              the board's, so the two read as sections of one page. */}
+            {allHouses.length > 0 ? (
+              <div className="mt-2 flex flex-col gap-4 border-t pt-6">
+                <div className="flex flex-col gap-0.5">
+                  <h3 className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+                    <GhostIcon className="text-muted-foreground size-4.5" aria-hidden />
+                    Halloween Horror Nights
+                  </h3>
+                  <p className="text-muted-foreground text-sm">
+                    {houseSummary} · event nights only, separate ticket
+                  </p>
                 </div>
-              ) : (
-                <BoardRows
-                  table={houseTable}
-                  isMobile={isMobile}
-                  selectedId={selectedId}
-                  onSelect={onSelect}
-                  parkSlug={parkSlug}
-                  operatorSlug={operatorSlug}
-                  timezone={timezone}
-                  sparkByRide={sparkByRide}
-                  alertByAttraction={alertByAttraction}
-                  loggedIn={loggedIn}
-                  singleRiderIds={singleRiderIds}
-                />
-              )}
-            </div>
-          ) : null}
-        </>
-      )}
+                {houseRows.length === 0 ? (
+                  <div className="text-muted-foreground py-8 text-center text-sm">
+                    No houses match this filter.
+                  </div>
+                ) : (
+                  <BoardRows
+                    table={houseTable}
+                    dense={dense}
+                    selectedId={selectedId}
+                    onSelect={onSelect}
+                    parkSlug={parkSlug}
+                    operatorSlug={operatorSlug}
+                    timezone={timezone}
+                    sparkByRide={sparkByRide}
+                    alertByAttraction={alertByAttraction}
+                    loggedIn={loggedIn}
+                    singleRiderIds={singleRiderIds}
+                  />
+                )}
+              </div>
+            ) : null}
+          </>
+        )}
+      </div>
 
       {/* Mobile-only sort/filter FAB, center-bottom, above the safe area. */}
-      {isMobile && !loading && controls === "floating" && (
+      {dense && !loading && controls === "floating" && (
         <BoardControls
           sort={sortingToOption(sorting)}
           onSort={handleSort}
@@ -579,7 +626,7 @@ export function ParkBoardTable({
           style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1.4rem)" }}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -626,7 +673,7 @@ function useBoardTable(
  */
 function BoardRows({
   table,
-  isMobile,
+  dense,
   selectedId,
   onSelect,
   parkSlug,
@@ -638,7 +685,7 @@ function BoardRows({
   singleRiderIds,
 }: {
   table: ReactTable<BoardItem>;
-  isMobile: boolean;
+  dense: boolean;
   selectedId: number | null;
   onSelect: (item: BoardItem) => void;
   parkSlug: string | null;
@@ -656,7 +703,7 @@ function BoardRows({
           key={row.id}
           item={row.original}
           index={index}
-          isMobile={isMobile}
+          dense={dense}
           selected={row.original.id === selectedId}
           onSelect={onSelect}
           parkSlug={parkSlug}
@@ -675,7 +722,7 @@ function BoardRows({
 function RideRow({
   item,
   index,
-  isMobile,
+  dense,
   selected,
   onSelect,
   parkSlug,
@@ -688,7 +735,7 @@ function RideRow({
 }: {
   item: BoardItem;
   index: number;
-  isMobile: boolean;
+  dense: boolean;
   selected: boolean;
   onSelect: (item: BoardItem) => void;
   parkSlug: string | null;
@@ -727,19 +774,19 @@ function RideRow({
             // The first screenful loads eagerly so the preload scanner grabs
             // these from the SSR HTML — lazy images wait for layout/JS.
             loading={index < 6 ? "eager" : "lazy"}
-            boxWidth={isMobile ? 112 : 160}
+            boxWidth={dense ? 112 : 160}
             placeholder={meta.imageThumbhash}
             // Height comes from the row (`self-stretch`), so the floor is what
             // keeps a ride with no tag line from getting a letterbox: without
             // it the shortest rows crop the photo to a strip.
-            className="min-h-22 w-28 shrink-0 self-stretch rounded-[14px] object-cover md:min-h-26 md:w-40"
+            className="min-h-22 w-28 shrink-0 self-stretch rounded-[14px] object-cover @xl/board:min-h-26 @xl/board:w-40"
           />
         ) : null}
         <div className="flex min-w-0 flex-1 flex-col justify-center gap-2.5 py-2">
           {/* Name / subtext, with the alert bell pinned to the row's end. */}
           <div className="flex items-start gap-3">
             <div className="min-w-0 flex-1">
-              <span className="line-clamp-2 leading-snug font-medium md:line-clamp-1">
+              <span className="line-clamp-2 leading-snug font-medium @xl/board:line-clamp-1">
                 {item.name}
               </span>
               {subtitle || singleRider ? (
@@ -778,15 +825,15 @@ function RideRow({
                 // Wider on a desktop, where the row has the width to spend: the
                 // trend is the whole reason this replaced a "24h trend" column
                 // squeezed between two others.
-                width={isMobile ? 110 : 168}
-                height={isMobile ? 32 : 40}
+                width={dense ? 110 : 168}
+                height={dense ? 32 : 40}
                 color={down ? "var(--destructive)" : "var(--primary)"}
               />
             ) : (
               <span className="text-xs text-muted-foreground">No recent trend</span>
             )}
             <div className="flex shrink-0 items-center gap-3">
-              <span className="hidden md:block">
+              <span className="hidden @xl/board:block">
                 <PaidLineChip item={item} operatorSlug={operatorSlug} timeZone={timezone} />
               </span>
               {openWithWait ? (
@@ -804,7 +851,7 @@ function RideRow({
         item={item}
         operatorSlug={operatorSlug}
         timeZone={timezone}
-        className="mb-2 md:hidden"
+        className="mb-2 @xl/board:hidden"
       />
     </>
   );

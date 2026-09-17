@@ -14,6 +14,7 @@ import {
   TicketBlock,
   TicketChip,
   TicketRow,
+  TicketStatusChip,
   type TicketFact,
 } from "#/components/detail/ticket.tsx";
 import {
@@ -125,10 +126,16 @@ function CoasterStatsPanel({ stats, attractionId }: { stats: CoasterStats; attra
 
   return (
     <TintPanel tone="mint" title="Coaster stats">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-        {facts.map((f) => (
-          <FactTile key={f.label} className="bg-card" label={f.label} value={f.value} />
-        ))}
+      {/* Counted off the panel, not the viewport: this sits in the page's
+          narrow column, which is ~480px on a desktop and the full page width
+          below `wide` — so `lg:grid-cols-4` was cutting "Bolliger & Mabillard"
+          into 110px tiles on exactly the screens that had room to spare. */}
+      <div className="@container/stats">
+        <div className="grid grid-cols-2 gap-2 @sm/stats:grid-cols-3 @2xl/stats:grid-cols-4">
+          {facts.map((f) => (
+            <FactTile key={f.label} className="bg-card" label={f.label} value={f.value} />
+          ))}
+        </div>
       </div>
       {/* The one line here that is about *you* rather than about the ride —
           recorded by the native sensor, so it only ever appears for a signed-in
@@ -361,7 +368,7 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
             )}
           />
         )}
-        <Skeleton className="mt-[calc(var(--crease)*-1)] h-52 rounded-none md:w-[30rem]" />
+        <Skeleton className="mt-[calc(var(--crease)*-1)] h-52 rounded-none md:mx-auto md:w-full md:max-w-[34rem] wide:max-w-none wide:w-[30rem]" />
       </div>
     );
   }
@@ -551,15 +558,9 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
   // carry. `status` is a server fact here (not a reading of the viewer's
   // clock), so there's no hydration hazard and it renders straight away.
   const statusChip = (
-    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-ink-on-yellow px-2.5 py-[3px] text-[11px] font-bold text-brand-yellow">
-      <span
-        className={cn(
-          "size-1.5 rounded-full",
-          isOpen ? "bg-emerald-400" : status === "DOWN" ? "bg-red-400" : "bg-white/50",
-        )}
-      />
+    <TicketStatusChip tone={isOpen ? "open" : status === "DOWN" ? "down" : "closed"}>
       {STATUS_LABEL[status] ?? STATUS_LABEL.UNKNOWN}
-    </span>
+    </TicketStatusChip>
   );
 
   // A show has no standby to curve: its job block is the clock. Everything
@@ -610,6 +611,77 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
     </div>
   );
 
+  // The stub's lower half: this ride's own printing. Its posted window today,
+  // the copy the operator publishes about it, and how it seats you — all three
+  // are the same kind of thing as the height rule already on the face, so they
+  // ride on the ticket rather than in loose prose under it (2026-09-17, Josh).
+  // Sections are ruled off from one another with the hairline the `Ticket`
+  // already opens its footer with, so the stub's fine print reads as one
+  // printing in several paragraphs rather than three stacked cards.
+  const footerSections: Array<{ key: string; node: React.ReactNode }> = [];
+  if (hourRows.length > 0) {
+    footerSections.push({
+      key: "today",
+      node: (
+        <TicketBlock title="Today" gap="tight">
+          {hourRows.map((h) => (
+            <TicketRow key={`${h.label}-${h.range}`} lead={h.label}>
+              <span className="tabular-nums">{h.range}</span>
+            </TicketRow>
+          ))}
+        </TicketBlock>
+      ),
+    });
+  }
+  if (hasAbout) {
+    footerSections.push({
+      key: "about",
+      // The ride's own copy — official marketing text, never rewritten.
+      node: (
+        <TicketBlock title="About">
+          {/* One wrapper rather than two children of the block: `TicketBlock`
+              spaces a list of rows, and 6px between two paragraphs of running
+              copy reads as one paragraph with a fault in it. */}
+          <div className="flex flex-col gap-2.5">
+            {ride.meta?.description && (
+              <p className="text-[13px] leading-[1.5] text-pretty text-ink-on-yellow/85">
+                {ride.meta.description}
+              </p>
+            )}
+            {/* Universal publishes a trivia blurb per ride; Disney none. */}
+            {ride.meta?.funFact && (
+              <p className="text-[13px] leading-[1.5] text-pretty text-ink-on-yellow/70">
+                {ride.meta.funFact}
+              </p>
+            )}
+          </div>
+        </TicketBlock>
+      ),
+    });
+  }
+  if (hasAccessibility) {
+    footerSections.push({
+      key: "accessibility",
+      node: (
+        <TicketBlock title="Accessibility" gap="tight">
+          {/* Bulleted by a pseudo-element rather than `list-disc`: a marker
+              inherits the list's ink at full strength, and a solid dot in
+              `--ink-on-yellow` beside 85%-opacity text reads as a misprint. */}
+          <ul className="flex flex-col gap-1 text-[13px] leading-[1.4] text-ink-on-yellow/85">
+            {ride.meta?.accessibility?.map((a) => (
+              <li
+                key={a}
+                className="relative pl-3.5 before:absolute before:left-1 before:top-[0.55em] before:size-1 before:rounded-full before:bg-ink-on-yellow/45"
+              >
+                {a}
+              </li>
+            ))}
+          </ul>
+        </TicketBlock>
+      ),
+    });
+  }
+
   return (
     <div
       style={{ "--crease": `${crease}px` } as React.CSSProperties}
@@ -643,15 +715,15 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
 
           The order is chosen for the *phone*, where the grid collapses to one
           flex column: ticket, when to ride, what the ride is, then where it is.
-          Two `order`s carry it, and both dissolve at `md`. */}
-      <div className="flex flex-col gap-5 md:grid md:grid-cols-[minmax(0,30rem)_minmax(0,1fr)] md:grid-rows-[auto_1fr] md:items-start md:gap-x-6 md:gap-y-5 xl:grid-cols-[minmax(0,34rem)_minmax(0,1fr)]">
+          Two `order`s carry it, and both dissolve at `wide`. */}
+      <div className="flex flex-col gap-5 wide:grid wide:grid-cols-[minmax(0,30rem)_minmax(0,1fr)] wide:grid-rows-[auto_1fr] wide:items-start wide:gap-x-6 wide:gap-y-5 xl:grid-cols-[minmax(0,34rem)_minmax(0,1fr)]">
         <Ticket
           onCreaseHeight={setCrease}
           // Pulled up by its own top half at every width, so the crease lands
           // on the hero's bottom edge (the hero is `crease="always"`), and
           // nudged past the column's left edge on a desktop so the stub reads
           // as laid *on* the page rather than ruled into the grid.
-          className="mt-[calc(var(--crease)*-1)] md:col-start-1 md:row-start-1 md:-ml-3 lg:-mx-2.5"
+          className="mt-[calc(var(--crease)*-1)] md:mx-auto md:w-full md:max-w-[34rem] wide:col-start-1 wide:row-start-1 wide:-mx-2.5 wide:w-auto wide:max-w-none"
           heroKey={heroKey}
           titleHidden={flight?.flying ? { opacity: 0, visibility: "hidden" } : undefined}
           title={ride.name}
@@ -708,19 +780,20 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
               </div>
             ) : null
           }
-          // The stub's lower half: this ride's own posted window, when it
-          // publishes one that differs from the park's. A fact about the ride —
-          // the same kind as its height rule — so it rides on the ticket
-          // rather than in a card, exactly as the park's hours do.
+          // The stub's lower half (see `footerSections`): today's posted
+          // window, the ride's own copy, and its accessibility notes.
           footer={
-            hourRows.length > 0 ? (
-              <TicketBlock title="Today" gap="tight">
-                {hourRows.map((h) => (
-                  <TicketRow key={`${h.label}-${h.range}`} lead={h.label}>
-                    <span className="tabular-nums">{h.range}</span>
-                  </TicketRow>
+            footerSections.length > 0 ? (
+              <>
+                {footerSections.map((s, i) => (
+                  <div
+                    key={s.key}
+                    className={i > 0 ? "border-t border-ink-on-yellow/12 pt-3.5" : undefined}
+                  >
+                    {s.node}
+                  </div>
                 ))}
-              </TicketBlock>
+              </>
             ) : null
           }
         />
@@ -729,14 +802,14 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
             up beside the ticket — the park page's live column, over one ride's
             material. It opens on the job block itself: the panel is the page's
             "Now". */}
-        <div className="contents md:col-start-2 md:row-span-2 md:row-start-1 md:flex md:flex-col md:gap-4 md:pt-4">
+        <div className="contents wide:col-start-2 wide:row-span-2 wide:row-start-1 wide:flex wide:flex-col wide:gap-4 wide:pt-4">
           {/* No band heading over the job block (2026-09-17, Josh): the panel
               under it already says "When to ride" and states the wait in its
               own header row, so the band was a heading about a heading — a
               kicker, a 26px title and a wait the ticket beside it was already
               carrying, spent on three lines of restatement. The panel gets the
               space. */}
-          <div className="order-1 flex flex-col gap-4 md:contents">
+          <div className="order-1 flex flex-col gap-4 wide:contents">
             {isShow ? (
               <ShowtimesCard
                 showtimes={ride.showtimes}
@@ -782,29 +855,31 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
             {(singleRiderWait != null ||
               ride.boardingGroup != null ||
               ride.boardingAllocation != null) && (
-              <div className="grid gap-2 sm:grid-cols-2">
-                {singleRiderWait != null && (
-                  <FactTile label="Single rider" value={`${singleRiderWait} min`} />
-                )}
-                {(ride.boardingGroup != null || ride.boardingAllocation != null) && (
-                  <FactTile
-                    label="Virtual queue"
-                    value={
-                      ride.boardingAllocation === "SOLD_OUT"
-                        ? "All groups distributed"
-                        : ride.boardingAllocation === "PAUSED"
-                          ? "Distribution paused"
-                          : ride.boardingGroup != null
-                            ? `Now boarding ${ride.boardingGroup}${
-                                ride.boardingGroupEnd != null &&
-                                ride.boardingGroupEnd !== ride.boardingGroup
-                                  ? `–${ride.boardingGroupEnd}`
-                                  : ""
-                              }`
-                            : "Groups available"
-                    }
-                  />
-                )}
+              <div className="@container/queues">
+                <div className="grid gap-2 @sm/queues:grid-cols-2">
+                  {singleRiderWait != null && (
+                    <FactTile label="Single rider" value={`${singleRiderWait} min`} />
+                  )}
+                  {(ride.boardingGroup != null || ride.boardingAllocation != null) && (
+                    <FactTile
+                      label="Virtual queue"
+                      value={
+                        ride.boardingAllocation === "SOLD_OUT"
+                          ? "All groups distributed"
+                          : ride.boardingAllocation === "PAUSED"
+                            ? "Distribution paused"
+                            : ride.boardingGroup != null
+                              ? `Now boarding ${ride.boardingGroup}${
+                                  ride.boardingGroupEnd != null &&
+                                  ride.boardingGroupEnd !== ride.boardingGroup
+                                    ? `–${ride.boardingGroupEnd}`
+                                    : ""
+                                }`
+                              : "Groups available"
+                      }
+                    />
+                  )}
+                </div>
               </div>
             )}
 
@@ -826,42 +901,17 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
 
         {/* The rest of the narrow column, under the ticket: what this ride *is*,
             rather than what it is doing this afternoon. Behind the day on a
-            phone (`order-2`), beside it on a desktop, where `md:contents`
+            phone (`order-2`), beside it on a desktop, where `wide:contents`
             dissolves this wrapper into the column. */}
-        <div className="contents md:col-start-1 md:row-start-2 md:flex md:flex-col md:gap-5">
-          <div className="order-2 flex flex-col gap-5 md:contents">
-            {/* The ride's own copy — official marketing text, never rewritten. */}
-            {hasAbout && (
-              <div className="flex flex-col gap-3">
-                {ride.meta?.description && (
-                  <p className="text-[15px] leading-[1.45] text-pretty text-muted-foreground md:text-base md:leading-[1.55]">
-                    {ride.meta.description}
-                  </p>
-                )}
-                {/* Universal publishes a trivia blurb per ride; Disney none. */}
-                {ride.meta?.funFact && (
-                  <p className="text-[15px] leading-[1.45] text-pretty text-muted-foreground md:text-base md:leading-[1.55]">
-                    {ride.meta.funFact}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* The reference block: published coaster facts, plus your own
-                sensor-recorded bests when you've ridden it. */}
+        <div className="contents wide:col-start-1 wide:row-start-2 wide:flex wide:flex-col wide:gap-5">
+          <div className="order-2 flex flex-col gap-5 wide:contents">
+            {/* The ride's own copy and its accessibility notes used to open
+                this column; both are printed on the ticket's lower half now
+                (2026-09-17, Josh), so the column starts on the reference
+                block: published coaster facts, plus your own sensor-recorded
+                bests when you've ridden it. */}
             {ride.coasterStats && (
               <CoasterStatsPanel stats={ride.coasterStats} attractionId={ride.id} />
-            )}
-
-            {hasAccessibility && (
-              <div className="flex flex-col gap-1.5">
-                <h2 className="text-lg font-bold tracking-[-0.01em]">Accessibility</h2>
-                <ul className="max-w-prose list-inside list-disc text-sm text-muted-foreground">
-                  {ride.meta?.accessibility?.map((a) => (
-                    <li key={a}>{a}</li>
-                  ))}
-                </ul>
-              </div>
             )}
 
             {/* The exit block: where it is, and the key that walks you there.

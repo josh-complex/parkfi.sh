@@ -134,15 +134,21 @@ export const HERO_OVERLAY_TOP_UNDER_NAV = [
  * the eye lands first, and spending it on a number the page states again a few
  * hundred pixels down (in the ticket, and in the job block's own heading) meant
  * the photo opened on a restatement. Bottom-right it reads as a caption on the
- * picture instead: last thing seen, nothing blocked. The corner is free on
- * every ticket page — the stub overlaps bottom-*left*, and the gallery dots are
- * centred.
+ * picture instead: last thing seen, nothing blocked.
+ *
+ * *How far* down depends on where the stub is (2026-09-17, Josh). From `wide`
+ * it is a card in the left column and the bottom-right corner is simply free.
+ * Below that it is centred and up to 34rem across, so at the narrow end of the
+ * band its right edge reaches past where this blob starts — at 768px the two
+ * overlap by ~60px — and the blob has to ride above the stub's crease the way
+ * the gallery dots do, rather than under it.
  */
 export const HERO_OVERLAY_HEADLINE = [
   "left-4 top-[calc(var(--safe-top)_+_var(--app-header-h))]",
   // `*-auto` has to come after the phone values: these are one class list, and
   // the merge resolves `md:top-*` / `md:left-*` last-wins.
-  "md:top-auto md:bottom-4 md:left-auto md:right-5",
+  "md:top-auto md:bottom-[calc(var(--crease,6.5rem)_+_0.5rem)] md:left-auto md:right-5",
+  "wide:bottom-4",
 ].join(" ");
 
 /** What the hero hands its `overlays` render prop — the entrance stagger and
@@ -284,10 +290,11 @@ export function DetailHero({
    *
    * Measured rather than derived: the pill's width is a function of how many
    * slides this entity has, and the stub's of a grid track, a pair of negative
-   * margins and the breakpoint. Published as `--dots-left` and read by a `md:`
-   * class, so the phone — which hangs its dots a whole crease above a stub that
-   * spans the full width — never sees it, and so the server and the first
-   * client render agree (there is no variable until a layout effect sets one).
+   * margins and the breakpoint. Published as `--dots-left` and read by a
+   * `wide:` class, so everything below it — where the dots hang a whole crease
+   * above a stub that owns the middle of the edge — never sees it, and so the
+   * server and the first client render agree (there is no variable until a
+   * layout effect sets one).
    */
   const heroRef = React.useRef<HTMLDivElement>(null);
   const [dotsLeft, setDotsLeft] = React.useState<string>();
@@ -467,18 +474,25 @@ export function DetailHero({
         dots(
           cn(
             "absolute left-1/2 z-10 -translate-x-1/2",
-            // On a phone the stub spans the full width, so the dots have to
-            // clear its top edge — which hangs `--crease` above the hero's own
-            // bottom wherever the crease is aligned.
+            // Below `wide` the stub is the width of the page (a phone) or a
+            // 34rem card centred on it (a tablet), so either way it owns the
+            // middle of the hero's bottom edge and the dots have to clear its
+            // top — which hangs `--crease` above the hero's own bottom
+            // wherever the crease is aligned.
             //
-            // From `md` a `crease="always"` page (the park page) lays the stub
-            // out as a narrow card in the left column, so the hero's bottom
-            // edge is free under the centred dots and that is where they
-            // belong: floating them a whole crease up left them stranded in the
-            // middle of the photo, pointing at nothing (2026-09-16, Josh). A
-            // scalloped desktop still clears its fixed -48px overlap instead.
+            // From `wide` a `crease="always"` page lays the stub out as a
+            // narrow card in the *left column*, so the bottom edge is free to
+            // the right of it and that is where the dots belong: floating them
+            // a whole crease up left them stranded in the middle of the photo,
+            // pointing at nothing (2026-09-16, Josh).
+            //
+            // `wide`, not `md` (2026-09-17, Josh): that left-column premise
+            // only holds once the two columns exist. In between, the dots were
+            // shoved past the right edge of a *centred* stub and into the
+            // hero's own corner. A scalloped desktop still clears its fixed
+            // -48px overlap instead.
             crease === "always"
-              ? "bottom-[calc(var(--crease,6.5rem)_+_0.5rem)] md:bottom-4 md:left-[var(--dots-left,50%)]"
+              ? "bottom-[calc(var(--crease,6.5rem)_+_0.5rem)] wide:bottom-4 wide:left-[var(--dots-left,50%)]"
               : crease === "phone"
                 ? "bottom-[calc(var(--crease,6.5rem)_+_0.5rem)] md:bottom-16"
                 : "bottom-4 md:bottom-16",

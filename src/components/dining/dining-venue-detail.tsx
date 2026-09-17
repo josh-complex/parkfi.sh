@@ -27,6 +27,7 @@ import {
   TICKET_DEFAULT_CREASE,
   Ticket,
   TicketChip,
+  TicketStatusChip,
   type TicketFact,
 } from "#/components/detail/ticket.tsx";
 import {
@@ -889,19 +890,26 @@ function MenuPanel({
         <>
           {cover && <DishCover {...cover} />}
           {dishes.length > 0 && (
-            /* Two columns from `lg`, where this panel is sitting in the page's
-               wide column: a single file of four rows under a full-width
-               photograph left a hand's width of mint doing nothing on either
-               side of every price. The rule between rows is drawn per column,
-               so it never runs across the gap. */
-            <div className="rounded-[18px] bg-card px-3.5 py-0.5 lg:grid lg:grid-cols-2 lg:gap-x-6 lg:px-5">
-              {dishes.map((item, i) => (
-                <div key={item.title} className="flex flex-col">
-                  {i > 0 && <div className="h-px bg-card-edge lg:hidden" />}
-                  {i > 1 && <div className="hidden h-px bg-card-edge lg:block" />}
-                  <DishRow item={item} />
-                </div>
-              ))}
+            /* Two columns once the block itself is 48rem wide: a single file of
+               four rows under a full-width photograph left a hand's width of
+               mint doing nothing on either side of every price. The rule
+               between rows is drawn per column, so it never runs across the
+               gap.
+
+               The block's own width, not `lg` (2026-09-17, Josh): this panel
+               rides in the page's wide column, which is ~630px at `lg` — so a
+               viewport query split a title, a description and a price into
+               216px columns on precisely the widths that couldn't hold them. */
+            <div className="@container/dishes">
+              <div className="rounded-[18px] bg-card px-3.5 py-0.5 @3xl/dishes:grid @3xl/dishes:grid-cols-2 @3xl/dishes:gap-x-6 @3xl/dishes:px-5">
+                {dishes.map((item, i) => (
+                  <div key={item.title} className="flex flex-col">
+                    {i > 0 && <div className="h-px bg-card-edge @3xl/dishes:hidden" />}
+                    {i > 1 && <div className="hidden h-px bg-card-edge @3xl/dishes:block" />}
+                    <DishRow item={item} />
+                  </div>
+                ))}
+              </div>
             </div>
           )}
           <Button variant="outline" size="lg" className="w-full font-bold" onClick={onOpen}>
@@ -1390,9 +1398,16 @@ export function DiningVenueDetail({
         venue.diningPackage && "Package",
         venue.walkupWaitList && "Walk-up list",
         venue.mobileOrder && "Mobile order",
-        [venue.diningPlanQs && "QS", venue.diningPlanTs && "TS"].filter(Boolean).length > 0
-          ? `Dining Plan: ${[venue.diningPlanQs && "QS", venue.diningPlanTs && "TS"].filter(Boolean).join(" + ")}`
-          : null,
+        // Spelled out, not "QS"/"TS" (2026-09-17, Josh): those are Disney's own
+        // shorthand for the two entitlement kinds, and nothing on the page
+        // expands them — the reader is left to guess at a chip that is trying
+        // to tell them what their plan buys here.
+        (() => {
+          const kinds = [venue.diningPlanQs && "Quick", venue.diningPlanTs && "Table"].filter(
+            Boolean,
+          );
+          return kinds.length > 0 ? `Dining Plan: ${kinds.join(" & ")} Service` : null;
+        })(),
         venue.annualPassDiscount &&
           (venue.apDiscountPct != null
             ? `Annual Pass ${venue.apDiscountPct}% off`
@@ -1464,6 +1479,14 @@ export function DiningVenueDetail({
 
   // The floating bar overlaps the page, so the page owes it that height back.
   const hasActionBar = !!venue && (!!bookHref || hasMenu);
+
+  // The stub's keys, in the order they are laid out two to a row. An odd count
+  // leaves the last one alone on its row, so that one takes the full width
+  // rather than sitting in half a row beside a gap.
+  const keyList = (["call", "site", "menu"] as const).filter((k) =>
+    k === "call" ? !!venue?.phone : k === "site" ? !!venue?.detailUrl : hasMenu,
+  );
+  const wideKey = keyList.length % 2 === 1 ? keyList[keyList.length - 1] : null;
 
   // The phone layout hangs the ticket's crease on the hero's bottom edge, so
   // both boxes need the stub's top-half height — it varies with how many lines
@@ -1592,12 +1615,12 @@ export function DiningVenueDetail({
            The order is chosen for the *phone*, where the grid collapses to this
            one flex column: ticket, the job, the food, then the place itself, and
            the neighbourhood cards last. Three `order`s carry it (see each), and
-           all of them dissolve at `md`, where the columns place themselves. */
-        <div className="flex flex-col gap-5 md:grid md:grid-cols-[minmax(0,30rem)_minmax(0,1fr)] md:grid-rows-[auto_1fr] md:items-start md:gap-x-6 md:gap-y-5 xl:grid-cols-[minmax(0,34rem)_minmax(0,1fr)]">
+           all of them dissolve at `wide`, where the columns place themselves. */
+        <div className="flex flex-col gap-5 wide:grid wide:grid-cols-[minmax(0,30rem)_minmax(0,1fr)] wide:grid-rows-[auto_1fr] wide:items-start wide:gap-x-6 wide:gap-y-5 xl:grid-cols-[minmax(0,34rem)_minmax(0,1fr)]">
           {venueQ.isLoading && !flight ? (
             /* Nothing to name the ticket with yet (no map-card seed): hold its
                box so the blocks below don't jump when the venue lands. */
-            <Skeleton className="mt-[calc(var(--crease)*-1)] h-52 rounded-none md:col-start-1 md:row-start-1" />
+            <Skeleton className="mt-[calc(var(--crease)*-1)] h-52 rounded-none md:mx-auto md:w-full md:max-w-[34rem] wide:col-start-1 wide:row-start-1 wide:w-auto wide:max-w-none" />
           ) : (
             <Ticket
               onCreaseHeight={setCrease}
@@ -1606,7 +1629,7 @@ export function DiningVenueDetail({
               // now), and nudged past the column's left edge on a desktop so
               // the stub reads as laid *on* the page rather than ruled into
               // the grid.
-              className="mt-[calc(var(--crease)*-1)] md:col-start-1 md:row-start-1 md:-ml-3 lg:-mx-2.5"
+              className="mt-[calc(var(--crease)*-1)] md:mx-auto md:w-full md:max-w-[34rem] wide:col-start-1 wide:row-start-1 wide:-mx-4.5 wide:w-auto wide:max-w-none"
               heroKey={heroKey}
               titleHidden={flight?.flying ? { opacity: 0, visibility: "hidden" } : undefined}
               title={venue?.name ?? flight?.seed.name ?? ""}
@@ -1618,15 +1641,9 @@ export function DiningVenueDetail({
                   <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     {placeLine && <span>{placeLine}</span>}
                     {hours.status && (
-                      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-ink-on-yellow px-2.5 py-[3px] text-[11px] font-bold text-brand-yellow">
-                        <span
-                          className={cn(
-                            "size-1.5 rounded-full",
-                            hours.openNow ? "bg-emerald-400" : "bg-white/50",
-                          )}
-                        />
+                      <TicketStatusChip tone={hours.openNow ? "open" : "closed"}>
                         {hours.status}
-                      </span>
+                      </TicketStatusChip>
                     )}
                   </span>
                 ) : (
@@ -1652,24 +1669,45 @@ export function DiningVenueDetail({
                   </>
                 ) : null
               }
+              // Two to a row, and an odd one out takes the whole width
+              // (`wideKey`). The menu key is here as well as in the floating
+              // bar because that bar is the *phone's* (`md:hidden`): from
+              // 768px up this was the only detail page whose headline action —
+              // read the menu — had nowhere on the page to be pressed.
               keys={
-                venue && (venue.phone || venue.detailUrl) ? (
+                keyList.length > 0 ? (
                   <div className="grid grid-cols-2 gap-2">
-                    {venue.phone && (
-                      <Button variant="ticket" size="lg" render={<a href={`tel:${venue.phone}`} />}>
+                    {venue?.phone && (
+                      <Button
+                        variant="ticket"
+                        size="lg"
+                        className={cn(wideKey === "call" && "col-span-2")}
+                        render={<a href={`tel:${venue.phone}`} />}
+                      >
                         <PhoneIcon />
                         <span className="truncate">Call</span>
                       </Button>
                     )}
-                    {venue.detailUrl && (
+                    {venue?.detailUrl && (
                       <Button
                         variant="ticket"
                         size="lg"
-                        className={cn(!venue.phone && "col-span-2")}
+                        className={cn(wideKey === "site" && "col-span-2")}
                         render={<a href={venue.detailUrl} target="_blank" rel="noreferrer" />}
                       >
                         <span className="truncate">Official site</span>
                         <ExternalLinkIcon />
+                      </Button>
+                    )}
+                    {hasMenu && (
+                      <Button
+                        variant="ticket"
+                        size="lg"
+                        className={cn(wideKey === "menu" && "col-span-2")}
+                        onClick={() => setMenuOpen(true)}
+                      >
+                        <BookOpenTextIcon />
+                        <span className="truncate">View menu</span>
                       </Button>
                     )}
                   </div>
@@ -1689,9 +1727,9 @@ export function DiningVenueDetail({
               runs up beside the ticket — the park page's live column, over a
               venue's material. Its heading is the page's "Now": what this
               kitchen is serving, at the hour you are reading it. */}
-          <div className="contents md:col-start-2 md:row-span-2 md:row-start-1 md:flex md:flex-col md:gap-4 md:pt-4">
+          <div className="contents wide:col-start-2 wide:row-span-2 wide:row-start-1 wide:flex wide:flex-col wide:gap-4 wide:pt-4">
             {venue && (state.menuQ.isLoading || hasMenu || !hasJobPanel) && (
-              <div className="order-1 flex flex-col gap-4 md:contents">
+              <div className="order-1 flex flex-col gap-4 wide:contents">
                 {/* No band heading over it (2026-09-17, Josh): one heading per
                     block, and it belongs to the panel — see `MenuPanel`. */}
                 <div id="menu" className="scroll-mt-16">
@@ -1713,7 +1751,7 @@ export function DiningVenueDetail({
                 there is nothing to show, and both are the park page's own cards
                 — one grid of restaurants in the app, not two. Last on a phone
                 (`order-3`): they are about somewhere else. */}
-            <div className="order-3 flex flex-col gap-5 md:contents">
+            <div className="order-3 flex flex-col gap-5 wide:contents">
               {park?.slug && (
                 <ParkNews parkSlug={park.slug} title={`News from ${formatParkName(park.name)}`} />
               )}
@@ -1728,7 +1766,7 @@ export function DiningVenueDetail({
           </div>
 
           {/* The rest of the narrow column, under the ticket. */}
-          <div className="contents md:col-start-1 md:row-start-2 md:flex md:flex-col md:gap-5">
+          <div className="contents wide:col-start-1 wide:row-start-2 wide:flex wide:flex-col wide:gap-5">
             {/* The page's job, directly under the ticket at every width. First
                 in this wrapper, so the phone reads it straight after the stub. */}
             {venue &&
@@ -1755,9 +1793,9 @@ export function DiningVenueDetail({
 
             {/* What this place *is*, rather than what it is doing tonight: its
                 own copy, and where to find it. Behind the food on a phone
-                (`order-2`), beside it on a desktop, where `md:contents`
+                (`order-2`), beside it on a desktop, where `wide:contents`
                 dissolves this wrapper into the narrow column. */}
-            <div className="order-2 flex flex-col gap-5 md:contents">
+            <div className="order-2 flex flex-col gap-5 wide:contents">
               {/* The venue's own copy — official marketing text, never rewritten
                   (only un-escaped: the feed hands it to us as HTML). */}
               {venue?.description && (

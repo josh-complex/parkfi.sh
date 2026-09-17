@@ -604,7 +604,7 @@ export function ResortDetail({ slug }: { slug: string }) {
           into what would otherwise be dead space under the hero.
 
           The phone order is ticket → what it costs → what it is → where it is →
-          what to eat, carried by two `order`s that dissolve at `md`. */}
+          what to eat, carried by two `order`s that dissolve at `wide`. */}
       <div
         className={cn(
           "flex flex-col gap-5",
@@ -615,7 +615,7 @@ export function ResortDetail({ slug }: { slug: string }) {
           // classes below are inert in a flex container, and the `contents`
           // wrappers dissolve into it exactly as they do on a phone.
           hasWide
-            ? "md:grid md:grid-cols-[minmax(0,30rem)_minmax(0,1fr)] md:grid-rows-[auto_1fr] md:items-start md:gap-x-6 md:gap-y-5 xl:grid-cols-[minmax(0,34rem)_minmax(0,1fr)]"
+            ? "wide:grid wide:grid-cols-[minmax(0,30rem)_minmax(0,1fr)] wide:grid-rows-[auto_1fr] wide:items-start wide:gap-x-6 wide:gap-y-5 xl:grid-cols-[minmax(0,34rem)_minmax(0,1fr)]"
             : "md:max-w-[34rem]",
         )}
       >
@@ -625,7 +625,7 @@ export function ResortDetail({ slug }: { slug: string }) {
           // the hero's bottom edge (the hero is `crease="always"`), and nudged
           // past the column's left edge on a desktop so the stub reads as laid
           // *on* the page rather than ruled into the grid.
-          className="mt-[calc(var(--crease)*-1)] md:col-start-1 md:row-start-1 md:-ml-3 lg:-mx-2.5"
+          className="mt-[calc(var(--crease)*-1)] md:mx-auto md:w-full md:max-w-[34rem] wide:col-start-1 wide:row-start-1 wide:-mx-2.5 wide:w-auto wide:max-w-none"
           heroKey={heroFlightKey("resort", resort.slug)}
           title={resort.name}
           subtitle={
@@ -665,13 +665,13 @@ export function ResortDetail({ slug }: { slug: string }) {
             ride pages: the card brings its own, and the two stacked read as a
             heading about a heading. Last on a phone (`order-3`). */}
         {hasWide && (
-          <div className="order-3 md:col-start-2 md:row-span-2 md:row-start-1 md:pt-4">
+          <div className="order-3 wide:col-start-2 wide:row-span-2 wide:row-start-1 wide:pt-4">
             <EatHere parkName={resort.name} title="Eat without leaving" />
           </div>
         )}
 
         {/* The rest of the narrow column, under the ticket. */}
-        <div className="contents md:col-start-1 md:row-start-2 md:flex md:flex-col md:gap-5">
+        <div className="contents wide:col-start-1 wide:row-start-2 wide:flex wide:flex-col wide:gap-5">
           {/* The page's job, directly under the ticket at every width. */}
           <CheckRatesPanel
             resort={resort}
@@ -681,7 +681,7 @@ export function ResortDetail({ slug }: { slug: string }) {
             bookHref={bookHref}
           />
 
-          <div className="order-2 flex flex-col gap-5 md:contents">
+          <div className="order-2 flex flex-col gap-5 wide:contents">
             {/* What this tier *is*, rather than what it costs this weekend. */}
             {blurb && (
               <p className="text-[15px] leading-[1.45] text-pretty text-muted-foreground md:text-base md:leading-[1.55]">

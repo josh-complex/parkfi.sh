@@ -80,8 +80,8 @@ export const FEATURE_FILTERS: Array<{
   { key: "fine", label: "Signature dining", has: (r) => r.fineDining },
   { key: "annualPass", label: "Passholder discount", has: (r) => r.annualPassDiscount },
   { key: "disneyVisa", label: "Disney Visa", has: (r) => r.disneyVisaDiscount },
-  { key: "planQs", label: "Dining Plan (QS)", has: (r) => r.diningPlanQs },
-  { key: "planTs", label: "Dining Plan (TS)", has: (r) => r.diningPlanTs },
+  { key: "planQs", label: "Dining Plan (Quick Service)", has: (r) => r.diningPlanQs },
+  { key: "planTs", label: "Dining Plan (Table Service)", has: (r) => r.diningPlanTs },
 ];
 
 const FEATURE_LABEL: Record<FeatureKey, string> = Object.fromEntries(

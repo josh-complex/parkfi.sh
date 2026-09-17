@@ -47,25 +47,27 @@ export function MovingNow({
   if (rows.length === 0) return null;
 
   return (
-    <div
-      className={cn(
-        "surface-wash flex flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3",
-        className,
-      )}
-    >
+    // One row, always (2026-09-17, Josh). The chips used to `flex-wrap` inside
+    // an `items-center` strip, so a column too narrow for four of them stacked
+    // them four deep and left the label and the key floating in the middle of
+    // 150px of wash with a hand's width of nothing on either side. They scroll
+    // sideways instead: the strip is the same 65px at every width — which is
+    // also what its own skeleton has been claiming all along, so the board
+    // under it no longer jumps when the query lands.
+    <div className={cn("surface-wash flex items-center gap-x-4 px-4 py-3", className)}>
       <div className="shrink-0">
         <span className="block text-[10px] font-bold tracking-[0.06em] text-wash-muted uppercase">
           Moving now
         </span>
         <span className="text-[12.5px] font-bold text-wash-fg">Last 30 min</span>
       </div>
-      <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+      <div className="no-scrollbar flex min-w-0 flex-1 gap-2 overflow-x-auto">
         {rows.map((m) => (
           <Link
             key={m.rideId}
             to="/park/$slug/ride/$rideSlug"
             params={{ slug: parkSlug, rideSlug: m.rideSlug }}
-            className="flex items-center gap-2 rounded-xl border border-wash-edge bg-card px-2.5 py-1.5 hover:bg-muted"
+            className="flex shrink-0 items-center gap-2 rounded-xl border border-wash-edge bg-card px-2.5 py-1.5 hover:bg-muted"
             title={`${m.rideName} · ${m.prevWait} → ${m.waitMin} min`}
           >
             <span

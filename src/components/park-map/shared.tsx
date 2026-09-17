@@ -233,6 +233,47 @@ function operatorColor(operatorSlug: string | null): string {
   return "#475569"; // slate fallback
 }
 
+/** A park's bounding box in degrees, as `parks.list` ships it. */
+export interface ParkBox {
+  latMin: number;
+  latMax: number;
+  lngMin: number;
+  lngMax: number;
+}
+
+/** Stable empty slug list, so "no parks in frame" never churns a memo/effect. */
+export const EMPTY_SLUGS: ReadonlyArray<string> = [];
+
+/**
+ * Does any of this park fall inside the viewport box?
+ *
+ * Free-roam draws every park in the frame, not just the one under the crosshair,
+ * and this is the test that decides which those are. It prefers `fence` — the
+ * real-footprint bbox, boundary-polygon first — over `bounds`, which is the
+ * *attraction* hull and stops well short of the park's edges: frame Magic
+ * Kingdom's entrance and half the park sits outside its hull, so a hull test
+ * would call a park that fills the window off-screen.
+ */
+export function parkInFrame(
+  park: { bounds?: ParkBox | null; fence?: ParkBox | null },
+  frame: { west: number; south: number; east: number; north: number },
+): boolean {
+  const box = park.fence ?? park.bounds;
+  if (!box) return false;
+  if (box.latMin > frame.north || box.latMax < frame.south) return false;
+  // Longitude wraps: a map panned across the antimeridian reports west > east.
+  // Orlando never straddles it, but degrading to "no parks" there would blank
+  // the map rather than simply show nothing useful.
+  return frame.west <= frame.east
+    ? box.lngMin <= frame.east && box.lngMax >= frame.west
+    : box.lngMax >= frame.west || box.lngMin <= frame.east;
+}
+
+/** Same slugs in the same order — lets a camera watcher skip no-op state writes. */
+export function sameSlugs(a: ReadonlyArray<string>, b: ReadonlyArray<string>): boolean {
+  return a.length === b.length && a.every((s, i) => s === b[i]);
+}
+
 /** A park-boundary feature: the OSM polygon plus its operator-brand color, read
  *  by both engines (Leaflet `style`, MapLibre `['get','color']`). */
 export type BoundaryFeature = Feature<Polygon | MultiPolygon, { color: string }>;

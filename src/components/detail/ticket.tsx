@@ -356,6 +356,62 @@ export function TicketChip({
   );
 }
 
+const STATUS_DOT = {
+  open: "bg-emerald-400",
+  down: "bg-red-400",
+  closed: "bg-white/50",
+} as const;
+
+/**
+ * The stub's state pill — a coloured dot and a few words on the ticket's ink,
+ * sitting beside the place line in every `subtitle`: "Open til 11 PM",
+ * "Closed · Opens 9 AM Thu", "Temporarily down".
+ *
+ * Printed once rather than per page (2026-09-17, Josh): the park, ride and
+ * venue stubs each carried their own copy of this class string, and it needs
+ * two corrections that are easy to lose in a copy.
+ *
+ * Rubik splits its em 935 above the baseline and 250 below, so a line box
+ * reserves ~2.8px under an 11px baseline that only a "p" ever reaches into:
+ * the band the eye actually reads — cap height down to the baseline — sits
+ * about 1.1px *above* the line box's geometric centre. Two things follow, and
+ * both are deliberate:
+ *
+ * - **The padding is lopsided**, 4px over 2px rather than 3 and 3. Centring
+ *   the box leaves the words riding high in the pill, which at this size reads
+ *   as a misprint.
+ * - **The dot is lifted a pixel** (`mb-0.5` — flexbox centres an item's
+ *   *margin* box, so 2px of bottom margin raises it by 1). It is a circle, so
+ *   `items-center` puts it on the geometric centre, which is exactly the line
+ *   the words don't sit on. Without this it hangs visibly below them.
+ *
+ * **The line-height is pinned** (`text-[11px]/[15px]`) so that arithmetic
+ * holds: an arbitrary `text-[Npx]` sets only the font size, so this used to
+ * inherit whatever `leading-*` the subtitle above it happened to carry — the
+ * pill's height, and both corrections with it, moved with its surroundings.
+ */
+export function TicketStatusChip({
+  tone,
+  children,
+  className,
+}: {
+  tone: keyof typeof STATUS_DOT;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1.5 rounded-full bg-ink-on-yellow px-2.5 pt-1 pb-0.5 text-[11px]/[15px] font-bold text-brand-yellow",
+        className,
+      )}
+    >
+      <span className={cn("mb-0.5 size-1.5 shrink-0 rounded-full", STATUS_DOT[tone])} />
+      {children}
+    </span>
+  );
+}
+
 /**
  * One titled block on the stub's lower half — the park page's hours and
  * showtimes, the venue page's hours. A small uppercase heading in the ticket's

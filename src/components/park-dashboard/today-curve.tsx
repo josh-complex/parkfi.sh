@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import type { ReactNode } from "react";
 
 import { hourLabel } from "#/components/detail/hour-bars.tsx";
@@ -20,10 +21,43 @@ interface Point {
   now: boolean;
 }
 
-/** The chart's own coordinate space; the SVG scales to its box. */
-const W = 400;
+/**
+ * The width the chart draws at before it has measured itself — the server's
+ * markup and the first client render, so the two agree.
+ */
+const W_FALLBACK = 400;
+/** The chart's height, in viewBox units *and* CSS pixels: the box is 1:1. */
 const H = 190;
+/** The narrowest the chart will draw; under this it falls back to scaling. */
+const W_MIN = 280;
 const PAD = { top: 16, right: 6, bottom: 22, left: 26 };
+
+/**
+ * The chart's drawing width in CSS pixels, so the SVG's user units *are*
+ * device pixels and its 10px labels stay 10px at every size.
+ *
+ * A fixed `viewBox` plus `w-full` scales the whole drawing, which is right for
+ * an icon and wrong for a chart (2026-09-17, Josh): this panel runs at ~480px
+ * in a detail page's narrow column, at ~630px in the wide one, and at the full
+ * page width below `wide` — so one 400-unit box drew the axis labels at 5px in
+ * the first case and 28px in the last, with a 540px-tall curve to match.
+ *
+ * Height is constant, so a measurement never moves anything below the panel;
+ * before one lands the SVG simply centres its natural 400×190 drawing, which
+ * is also what a reader with no JavaScript gets.
+ */
+function useCurveWidth(el: Element | null) {
+  const [width, setWidth] = React.useState(W_FALLBACK);
+  React.useEffect(() => {
+    if (!el) return;
+    const read = () => setWidth(Math.max(W_MIN, Math.round(el.getBoundingClientRect().width)));
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [el]);
+  return width;
+}
 
 /** "Sunday" for a park-local `YYYY-MM-DD`, parsed at local midnight (never
  *  `Date.parse("2026-09-13")`, which is UTC and lands a day early). */
@@ -134,6 +168,8 @@ export function TodayCurve({
   className?: string;
 }) {
   const weekday = weekdayName(crowd?.date);
+  const [plot, setPlot] = React.useState<SVGSVGElement | null>(null);
+  const W = useCurveWidth(plot);
 
   const points: Array<Point> = (crowd?.hours ?? []).reduce<Array<Point>>((out, h) => {
     const value = h.actual ?? h.typical;
@@ -182,8 +218,10 @@ export function TodayCurve({
       className={className}
     >
       <svg
+        ref={setPlot}
         viewBox={`0 0 ${W} ${H}`}
-        className="block h-auto w-full"
+        style={{ height: H }}
+        className="block w-full"
         role="img"
         aria-label={`Average standby by hour. Busiest around ${hourLabel(peak.hour)} at about ${peak.value} minutes.`}
       >

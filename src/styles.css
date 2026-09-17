@@ -291,6 +291,21 @@ html.native [data-slot="app-shell"] {
   --card-edge: #24407a;
 }
 
+/**
+ * The detail pages' two-column threshold, between `lg` and `xl`.
+ *
+ * Those pages put a fixed 30rem ticket beside a `1fr` column, so the flexible
+ * column is the one that pays for a narrow viewport: at `md` it is 217px wide,
+ * and it doesn't pass the ticket until about 1000px. The live board it carries
+ * needs ~590px before its photo, sparkline and wait chip stop running off the
+ * page. 75rem is the first width that clears that with headroom (633px), so
+ * everything below it runs as one column — where the board gets 720–1130px,
+ * more than the two-column desktop layout gives it at `xl`.
+ */
+@theme {
+  --breakpoint-wide: 75rem;
+}
+
 @theme inline {
   --font-sans: "Rubik Variable", sans-serif;
   --color-background: var(--background);

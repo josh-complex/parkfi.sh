@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import maplibregl from "maplibre-gl";
 import { useTheme } from "next-themes";
 
@@ -18,6 +18,7 @@ import { useTRPC } from "#/integrations/trpc/react.ts";
 import { preferredRouteLanguage, preferredUnitSystem, valhallaUnits } from "#/lib/units.ts";
 import { distanceMeters, pointInPolygon } from "#/server/living/geofence.ts";
 import type { GeoPolygon } from "#/db/schema.ts";
+import type { BoardItem } from "#/components/park-dashboard/types.ts";
 import { reportError } from "#/lib/report-error.ts";
 
 import {
@@ -50,8 +51,11 @@ import {
   EMBEDDED_FIT_PAD,
   DECLUTTER_SIZE,
   declutterSizeForZoom,
+  EMPTY_SLUGS,
   escapeHtml,
   getRoamCamera,
+  parkInFrame,
+  sameSlugs,
   type MapHandle,
   MAP_FLY_MS,
   MORPH_MS,
@@ -422,14 +426,15 @@ export function ParkMap({
   /** Fires on a real user gesture (drag/zoom/rotate) so the stage can drop
    *  follow-cam — distinguished from our programmatic camera moves. */
   onUserInteract?: () => void;
-  /** Free-roam mode (the `/map` page): the map self-manages which park is in
-   *  focus from the zoom level + viewport (no route navigation). Zooming into a
-   *  park reveals its rides; zooming back out shows park badges again. */
+  /** Free-roam mode (the `/map` page): the map self-manages what it draws from
+   *  the zoom level + viewport (no route navigation). Zooming in reveals the
+   *  rides of every park in the frame; zooming back out shows park badges. */
   roam?: boolean;
   /** Shared ride filter — hides ride markers that don't match. */
   filter?: RideFilter;
-  /** Roam only: reports which park's rides are currently revealed (or null), so
-   *  the stage can offer a "view park details" shortcut. */
+  /** Roam only: reports the park the camera is centred on (or null when zoomed
+   *  out), so the stage can offer a "view park details" shortcut. Other parks in
+   *  the frame draw their rides too — this is the one the chrome names. */
   onRoamFocusChange?: (slug: string | null) => void;
   /**
    * Reports the visible box (degrees) once the map is up and after every camera
@@ -461,18 +466,35 @@ export function ParkMap({
 
   const [mounted, setMounted] = React.useState(false);
   const [ready, setReady] = React.useState(false);
-  // Free-roam focus: which park's rides are revealed, driven by zoom/click (not
-  // the route). Outside roam mode the route's `activeSlug` is authoritative.
+  // Free-roam focus: the park the camera is *centred* on, driven by zoom/click
+  // (not the route). It no longer decides what the map draws — see `roamSlugs`
+  // below — it is the park the chrome talks about: the "view park details"
+  // shortcut, the layer chips, play mode. Outside roam the route's `activeSlug`
+  // is authoritative.
   const [focusSlug, setFocusSlug] = React.useState<string | null>(null);
   const focusSlugRef = React.useRef<string | null>(null);
   focusSlugRef.current = focusSlug;
+  /**
+   * Free-roam: every park with anything in the frame, not just the one under the
+   * crosshair. Zooming to ride level between Universal Studios and Islands of
+   * Adventure used to blank one of them — half a screen of outlined park with no
+   * pins in it — because focus was a single slug. The map draws whatever is in
+   * view, so what it draws is a *set*.
+   */
+  const [roamSlugs, setRoamSlugs] = React.useState<ReadonlyArray<string>>(EMPTY_SLUGS);
   // True from the start of a deliberate `flyToPark` (a chip / badge tap) until its
   // settling `moveend` — that one move's focus is owned by the tap, so the roam
   // watcher must not re-derive (and possibly clear) it from the camera geometry.
   const focusFlyLockRef = React.useRef(false);
   const effectiveSlug = roam ? focusSlug : activeSlug;
-  const effectiveSlugRef = React.useRef<string | null>(effectiveSlug);
-  effectiveSlugRef.current = effectiveSlug;
+  // The parks whose contents the map is drawing: the framed set in roam, the
+  // route's park otherwise. Empty means "zoomed out" — park badges, no pins.
+  const activeSlugs = React.useMemo<ReadonlyArray<string>>(
+    () => (roam ? roamSlugs : activeSlug ? [activeSlug] : EMPTY_SLUGS),
+    [roam, roamSlugs, activeSlug],
+  );
+  const activeSlugsRef = React.useRef<ReadonlyArray<string>>(activeSlugs);
+  activeSlugsRef.current = activeSlugs;
   // Stable dep for the marker effect: it rebuilds when navigation starts/ends (or
   // the destination changes) so the non-destination markers hide/return, but not
   // on every re-route/GPS tick (the destination coords hold steady through those).
@@ -580,23 +602,47 @@ export function ParkMap({
   // mid-fly must not fire the zoom-less recenter, which would interrupt the fly
   // before it reaches the close nav zoom. Cleared on the fly's moveend.
   const engagingRef = React.useRef(false);
-  // The park context (`effectiveSlug`, or the overview) whose markers we've
-  // already faded in. The marker effect reruns on every live-wait refetch, but a
-  // fade should only play when the set genuinely (re)appears — a zoom into a park
-  // or a jump to another — so we ramp opacity only when this differs from the
-  // current context, then remember it. `undefined` at mount → the first paint
-  // fades. See `wireMarkerFadeIn`.
-  const fadedSlugRef = React.useRef<string | null | undefined>(undefined);
+  // Which parks' markers are currently painted (an empty set = the overview's
+  // park badges). The marker effect reruns on every live-wait refetch, but a
+  // fade should only play where markers genuinely (re)appear — so a park fades
+  // in only when it wasn't in this set, and panning a second park into frame
+  // fades that park's pins without re-fading the ones already on screen.
+  // `undefined` at mount → the first paint fades. See `wireMarkerFadeIn`.
+  const paintedSlugsRef = React.useRef<ReadonlySet<string> | undefined>(undefined);
 
   const listQ = useQuery(trpc.parks.list.queryOptions());
   const overviewQ = useQuery(trpc.parks.overview.queryOptions());
-  const boardQ = useQuery({
-    ...trpc.parks.board.queryOptions({ parkSlug: effectiveSlug ?? "" }),
-    enabled: !!effectiveSlug,
+  // One board per park in frame (usually one; two when the camera straddles
+  // Universal Studios and Islands of Adventure, or a Disney park and its water
+  // park). Each is the same per-park query the single-focus map ran — cached and
+  // edge-cached per slug, so panning between parks re-reads warm data.
+  const boardQs = useQueries({
+    queries: activeSlugs.map((slug) => trpc.parks.board.queryOptions({ parkSlug: slug })),
   });
+  /**
+   * The framed parks paired with their boards, held at a stable identity so the
+   * marker effect reruns when a board actually lands (or the framed set changes)
+   * rather than on every render — `useQueries` hands back a fresh array each
+   * time, which as an effect dep would rebuild every marker on the map per
+   * render.
+   */
+  const parkBoardsRef = React.useRef<
+    ReadonlyArray<{ slug: string; board: ReadonlyArray<BoardItem> | undefined }>
+  >([]);
+  const nextParkBoards = activeSlugs.map((slug, i) => ({ slug, board: boardQs[i]?.data }));
+  if (
+    parkBoardsRef.current.length !== nextParkBoards.length ||
+    parkBoardsRef.current.some(
+      (p, i) => p.slug !== nextParkBoards[i]!.slug || p.board !== nextParkBoards[i]!.board,
+    )
+  ) {
+    parkBoardsRef.current = nextParkBoards;
+  }
+  const parkBoards = parkBoardsRef.current;
+  const boardsLoaded = boardQs.some((q) => q.isSuccess);
 
   // Optional map overlay layers, driven by the shared filter. Markers only
-  // render once a park is focused (`effectiveSlug`) and the layer is toggled on
+  // render once a park is in frame (see `activeSlugs`) and the layer is toggled on
   // (see the POI block below) — but we start fetching before the toggle, so the
   // data is already warm when the user flips "Eats"/"Shops" and the markers
   // appear instantly instead of after a round trip. The feeds are resort-wide
@@ -613,7 +659,7 @@ export function ParkMap({
   // The Shows chip drives both show-categorised ride markers and the board's
   // showtime markers (see `showsLit`).
   const showsOn = showsLit(filter);
-  const poisEnabled = !!effectiveSlug && boardQ.isSuccess;
+  const poisEnabled = boardsLoaded;
   const diningQ = useQuery({
     ...trpc.parks.dining.queryOptions(),
     enabled: poisEnabled,
@@ -660,7 +706,6 @@ export function ParkMap({
 
   const parks = listQ.data;
   const overview = overviewQ.data;
-  const board = boardQ.data;
   // Latest parks list read inside map event handlers (focus watcher / auto-focus)
   // without resubscribing them on every refetch.
   const parksRef = React.useRef(parks);
@@ -1053,16 +1098,23 @@ export function ParkMap({
     };
   }, []);
 
-  // Recompute the park outline(s) and (re)install the layers: all parks on the
-  // overview, just the active park in a park view.
+  // Recompute the park outline(s) and (re)install the layers.
+  //
+  // Free-roam draws every park's outline at every zoom: the roam map is a map of
+  // Orlando's parks, so zooming into one is no reason to rub the one next door
+  // off it (and an outline that vanishes as you cross into a neighbour reads as
+  // a bug). A *park view* is scoped to its park by definition, so there it stays
+  // the active outline alone.
   React.useEffect(() => {
     if (!ready) return;
-    const shapes = effectiveSlug
-      ? (parks ?? []).filter((p) => p.slug === effectiveSlug)
-      : (overview?.parks ?? []);
+    const shapes = roam
+      ? (parks ?? overview?.parks ?? [])
+      : effectiveSlug
+        ? (parks ?? []).filter((p) => p.slug === effectiveSlug)
+        : (overview?.parks ?? []);
     boundaryFCRef.current = boundaryFeatureCollection(shapes);
     ensureBoundaries();
-  }, [effectiveSlug, parks, overview, ready, ensureBoundaries]);
+  }, [roam, effectiveSlug, parks, overview, ready, ensureBoundaries]);
 
   // Keep the canvas correct as the layout width animates.
   React.useEffect(() => {
@@ -1088,7 +1140,7 @@ export function ParkMap({
     if (!layer) return;
     // Cluster inside a park until we're zoomed in far enough, then spread so
     // markers stop grouping and just nudge apart. Overview always spreads.
-    const inPark = effectiveSlugRef.current != null;
+    const inPark = activeSlugsRef.current.length > 0;
     const zoom = map?.getZoom() ?? 0;
     layer.setMode(inPark && zoom < SPREAD_ZOOM ? "cluster" : "spread");
     // Tighten the grouping berth as we close in so near-but-distinct rides stop
@@ -1129,6 +1181,9 @@ export function ParkMap({
     // the viewport center outside the boundary) and lock the ensuing moveend from
     // overriding it.
     setFocusSlug(slug);
+    // Draw the tapped park's pins straight away rather than waiting out the
+    // flight; the settling `moveend` widens this to whatever else it framed.
+    setRoamSlugs((prev) => (prev.includes(slug) ? prev : [slug]));
     focusFlyLockRef.current = true;
     // The tap also owns the camera: drop the follow-cam (else the next GPS fix
     // recenters on the user and yanks the camera straight back to where they're
@@ -1172,17 +1227,20 @@ export function ParkMap({
     const layer = layerRef.current;
     if (!map || !layer || !ready) return;
     clearMarkers();
-    // Fade the markers in only when the park context actually changed (a zoom
-    // into a park / a jump to another) — not on a live-wait refetch that rebuilds
-    // the same set. Committed below once we've actually built markers, so an
-    // early rebuild with an empty board still fades once the board lands.
-    const shouldFade = fadedSlugRef.current !== effectiveSlug;
+    // What's already on screen, and what each branch below therefore fades in.
+    // The badges fade when the map is coming back from a park; a park's pins
+    // fade when that park wasn't painted a moment ago. `paintedNow` records
+    // what this pass actually drew — a park whose board hasn't landed yet
+    // contributes nothing, so its fade is still owed when the rides arrive.
+    const painted = paintedSlugsRef.current;
+    const shouldFade = painted === undefined || painted.size > 0;
+    const paintedNow = new Set<string>();
     // Overview spreads its handful of parks apart; a park view clusters its rides
     // until it's zoomed in past SPREAD_ZOOM, where it spreads too (no grouping).
-    layer.setMode(effectiveSlug && map.getZoom() < SPREAD_ZOOM ? "cluster" : "spread");
+    layer.setMode(parkBoards.length > 0 && map.getZoom() < SPREAD_ZOOM ? "cluster" : "spread");
     const items: Array<DeclutterItem> = [];
 
-    if (!effectiveSlug) {
+    if (parkBoards.length === 0) {
       cardRef.current?.close();
       cardRef.current = null;
       for (const p of overview?.parks ?? []) {
@@ -1218,486 +1276,512 @@ export function ParkMap({
         });
       }
     } else {
-      // Every attraction pin on a park view belongs to the focused park, so its
-      // operator (Disney vs Universal) is fixed — resolve it once for the card's
-      // Lightning Lane / Express labelling.
-      const operatorSlug =
-        parksRef.current?.find((p) => p.slug === effectiveSlug)?.operatorSlug ?? null;
-      for (const a of board ?? []) {
-        if (a.latitude == null || a.longitude == null) continue;
-        if (!attractionMappable(a)) continue;
-        if (
-          filter &&
-          !rideMatchesFilter(
-            {
-              category: a.category,
-              status: a.status,
-              standbyWait: a.standbyWait,
-              heightRequirement: a.meta?.heightRequirement ?? null,
-              minHeightIn: a.meta?.minHeightIn ?? null,
-              expressPass: a.meta?.expressPass ?? null,
-              singleRider: a.meta?.singleRider ?? null,
-              childSwap: a.meta?.childSwap ?? null,
-            },
-            filter,
-            // On the roam map, once the user has turned on another layer
-            // (Shops/Eats), deselecting every ride group hides the rides
-            // instead of falling back to showing them all. With nothing
-            // selected at all we keep the default rides+shows.
-            { emptyCategoriesMatchNone: roam && anyMapLayerActive(filter.layers) },
-          )
-        )
-          continue;
-        const lngLat: [number, number] = [a.longitude, a.latitude];
-        // Actively navigating: show only the destination, hide every other ride.
-        if (navDest && !sameCoords(lngLat, navDest)) continue;
-        const { el, detail } = buildAttractionEl(a, a.id === selectedIdRef.current);
-        if (shouldFade) wireMarkerFadeIn(detail);
-        const raise = makeRaise(el);
-        const waitLabel = waitLabelFor(a);
-        const marker = new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map);
-        markersRef.current.push(marker);
-        markerElsRef.current.set(a.id, detail);
-        items.push({
-          id: a.id,
-          point: () => map.project(lngLat),
-          detail,
-          raise,
-          onActivate: () => {
-            const wasSelected = a.id === selectedIdRef.current;
-            onSelectRef.current?.({ id: a.id, name: a.name });
-            // Warm the ride page's data the moment its card opens, so tapping the
-            // card navigates instantly instead of blocking on the route loader's
-            // uncached `attraction` fetch (the imperative navigate in onPress
-            // never triggers the router's intent-preload).
-            void queryClient.prefetchQuery(
-              trpc.parks.attraction.queryOptions({ parkSlug: effectiveSlug, rideSlug: a.slug }),
-            );
-            cardRef.current?.close();
-            if (!containerRef.current) return;
-            // Morph the marker's own disc into an info card in place, pinning it
-            // above every other marker for as long as it's open (dropped on close).
-            raise.pinTop(true);
-            const { card, close } = openAttractionCard({
-              detail,
-              container: containerRef.current,
-              bodyHtml: attractionCardBodyHtml(a, waitLabel, operatorSlug),
-              wasSelected,
-              onClose: () => raise.pinTop(false),
-              // The whole card is a button now — tapping it opens the ride page,
-              // flying the card's photo, wait chip and title on to that page's
-              // hero (and seeding it, so there's a hero to land on right away).
-              onPress: (nodes) => {
-                launchHeroFlight(
-                  rideFlightSeed({
-                    parkSlug: effectiveSlug,
-                    parkName: parksRef.current?.find((p) => p.slug === effectiveSlug)?.name ?? null,
-                    ride: a,
-                  }),
-                  nodes,
-                );
-                void navigate({
-                  to: "/park/$slug/ride/$rideSlug",
-                  params: { slug: effectiveSlug, rideSlug: a.slug },
-                });
-              },
-            });
-            cardRef.current = { close };
-            // Walk time from here (§4.1) — the number that converts a glance
-            // into a trip, and a warm cache for the Directions tap.
-            const estimate = fetchWalkEstimate(lngLat);
-            if (estimate) wireCardWalkTime(card, estimate);
-            // "Directions" asks the stage to route from the user's location here.
-            // stopPropagation so pressing it never also reads as a card press.
-            card
-              .querySelector<HTMLButtonElement>("[data-directions]")
-              ?.addEventListener("click", (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                if (a.longitude != null && a.latitude != null) {
-                  onRequestDirectionsRef.current?.({
-                    id: a.id,
-                    name: a.name,
-                    coords: [a.longitude, a.latitude],
-                  });
-                }
-                close();
-                cardRef.current = null;
-              });
-          },
-          priority: attractionPriority(a),
-          kind: attractionKind(a.category),
-          wait: a.status === "OPERATING" && a.standbyWait != null ? a.standbyWait : null,
-        });
-      }
-
-      // Optional POI overlay layers (dining/shops), folded into the SAME cluster
-      // as the rides so they group + collision-avoid together. Scoped to the
-      // focused park's boundary (the resort-wide feed clipped to this park — the
-      // same containment test roam uses); no boundary → plot nothing rather than
-      // dumping every WDW venue here. Negative ids keep them clear of the
-      // positive attraction/park id space the cluster + selection use.
-      const boundary = parks?.find((p) => p.slug === effectiveSlug)?.boundary ?? null;
-      if (boundary) {
-        // Entertainment/character finder-POI hygiene. Disney's finder feed
-        // (park_poi) and the live board (SHOW attractions) both list the park's
-        // entertainment under loosely-agreeing names — plotting both draws two
-        // pins for one act (verified 2026-07: ~50 of 91 ent/char POIs duplicate
-        // a board SHOW; names diverge by ™/dashes ("Indiana Jones™"), spacing
-        // ("Side Show"/"Sideshow"), articles ("The Dapper Dans"), and outright
-        // renames ("Mickey's Royal Friendship Faire" → "…Magical…")). The finder
-        // is also date-blind, carrying hard-ticket holiday-party shows
-        // year-round. Policy (2026-07-22): the showtime marker wins where one
-        // renders; a POI naming a board SHOW that is dark today is hidden (no
-        // performance today = don't advertise it — forward schedules don't
-        // exist upstream, so "today" is the only signal we have); event-named
-        // POIs are hidden outright; everything else (year-round streetmosphere
-        // the live feed doesn't track) keeps its plain pin.
-        //
-        // "Where one renders" is now the Shows chip, not this layer: an act
-        // that's performing only yields its POI pin while Shows is actually
-        // drawing the showtime marker that supersedes it. With Shows off, the
-        // pin is all the map has for that act, so it stays.
-        const supersededKeys: Array<string> = [];
-        const todayShows: Array<{ lngLat: [number, number]; words: Set<string> }> = [];
-        if (layers?.entertainment && !navDest) {
-          for (const a of board ?? []) {
-            if (a.entityType !== "SHOW") continue;
-            const performing = a.showtimes.length > 0 && parseShowtimes(a.showtimes).length > 0;
-            if (!performing || showsOn) supersededKeys.push(squashName(a.name));
-            if (!performing || !showsOn) continue;
-            if (a.latitude == null || a.longitude == null) continue;
-            if (!pointInPolygon([a.longitude, a.latitude], boundary)) continue;
-            todayShows.push({ lngLat: [a.longitude, a.latitude], words: nameWords(a.name) });
-          }
-        }
-        const hideEntertainmentPoi = (p: {
-          name: string;
-          latitude: number | null;
-          longitude: number | null;
-        }): boolean => {
-          // Same act on the board (performing → superseded by the showtime
-          // marker; dark today → hidden per policy). Containment either way so
-          // articles, ™-suffixes, and "X at Y-event" wrappers still match; the
-          // ≥6-char guard keeps short names from matching inside longer ones.
-          const key = squashName(p.name);
+      /**
+       * A park view has exactly one park; free-roam can be framing several. Each
+       * pass below draws one park's own contents — its board, its boundary, its
+       * operator — so two parks under the same camera appear side by side
+       * instead of the nearer one blanking the other.
+       *
+       * The POI and showtime marker ids are handed out from counters that run
+       * across the whole rebuild rather than per park, so a second park's pins
+       * can't land on the first's ids in the cluster's id space.
+       */
+      let poiSeq = 0;
+      let showSeq = 0;
+      for (const ctx of parkBoards) {
+        const parkSlug = ctx.slug;
+        const board = ctx.board;
+        const park = parksRef.current?.find((p) => p.slug === parkSlug) ?? null;
+        // This park's own fade: a park already on screen doesn't re-fade when a
+        // neighbour joins it, and a marker count taken now says whether this
+        // park drew anything worth remembering as painted.
+        const shouldFadePark = painted === undefined || !painted.has(parkSlug);
+        const markersBefore = markersRef.current.length;
+        // Every attraction pin here belongs to this park, so its operator
+        // (Disney vs Universal) is fixed — resolved once for the card's
+        // Lightning Lane / Express labelling.
+        const operatorSlug = park?.operatorSlug ?? null;
+        for (const a of board ?? []) {
+          if (a.latitude == null || a.longitude == null) continue;
+          if (!attractionMappable(a)) continue;
           if (
-            supersededKeys.some(
-              (k) =>
-                k === key ||
-                (key.length >= 6 && k.includes(key)) ||
-                (k.length >= 6 && key.includes(k)),
+            filter &&
+            !rideMatchesFilter(
+              {
+                category: a.category,
+                status: a.status,
+                standbyWait: a.standbyWait,
+                heightRequirement: a.meta?.heightRequirement ?? null,
+                minHeightIn: a.meta?.minHeightIn ?? null,
+                expressPass: a.meta?.expressPass ?? null,
+                singleRider: a.meta?.singleRider ?? null,
+                childSwap: a.meta?.childSwap ?? null,
+              },
+              filter,
+              // On the roam map, once the user has turned on another layer
+              // (Shops/Eats), deselecting every ride group hides the rides
+              // instead of falling back to showing them all. With nothing
+              // selected at all we keep the default rides+shows.
+              { emptyCategoriesMatchNone: roam && anyMapLayerActive(filter.layers) },
             )
           )
-            return true;
-          // Hard-ticket party / holiday one-offs the finder lists year-round.
-          if (SEASONAL_POI_RE.test(p.name)) return true;
-          // Renames the name matching can't see (e.g. "Music of Mexico" is the
-          // board's "Mariachi Cobre"): pinned at the same spot as a show
-          // performing today and sharing a distinctive word — or the exact
-          // same pin.
-          if (p.latitude != null && p.longitude != null) {
-            const at: [number, number] = [p.longitude, p.latitude];
-            const words = nameWords(p.name);
-            for (const s of todayShows) {
-              const d = distanceMeters(at, s.lngLat);
-              if (d <= 20 && (d <= 3 || [...words].some((w) => s.words.has(w)))) return true;
-            }
-          }
-          return false;
-        };
-        // Finder-POI media keyed by squashed name so a showtime marker that
-        // replaces a finder pin can borrow its image (below). `attraction_meta`
-        // only keeps a 90x90 thumb, but the finder feed carries the full
-        // 800x450 card asset — usually the same image at higher res,
-        // occasionally a better one. Prefer it over the attraction's own hero
-        // so the finder's richer media wins.
-        const poiMediaByName = new Map<string, string | null>();
-        for (const p of poiQ.data ?? []) {
-          if (p.category === "entertainment" || p.category === "character") {
-            poiMediaByName.set(squashName(p.name), p.imageUrl ?? null);
-          }
-        }
-        // The park_poi feed carries all three overlay categories; pick the ones
-        // whose layer is lit (Live folds entertainment + character meets),
-        // minus any entertainment/character pin a showtime marker replaces.
-        const overlayPoi = (poiQ.data ?? []).filter(
-          (p) =>
-            (layers?.services && p.category === "info") ||
-            (layers?.entertainment &&
-              (p.category === "entertainment" || p.category === "character") &&
-              !hideEntertainmentPoi(p)) ||
-            (layers?.tours && p.category === "tour"),
-        );
-        // The dining feed carries both reservable table-service venues and
-        // non-bookable quick service/carts (tagged 'quick-service' — see
-        // `parks.dining`); split it across the two layers so each toggles
-        // independently instead of lumping carts in with sit-down dining.
-        const diningData = diningQ.data ?? [];
-        const layerPois =
-          layers && anyMapLayerActive(layers)
-            ? [
-                ...(layers.dining ? diningData.filter((p) => p.category !== "quick-service") : []),
-                ...(layers.quickService
-                  ? diningData.filter((p) => p.category === "quick-service")
-                  : []),
-                ...(layers.shops ? (shopsQ.data ?? []) : []),
-                ...overlayPoi,
-              ]
-            : [];
-        // Actively navigating: the overlay collapses to the destination pin (if
-        // it's a POI from a lit layer) plus restrooms — dimmed, regardless of
-        // toggles — the one thing guests actually divert for mid-walk (§5).
-        // Tapping a restroom opens its card, whose Directions button re-routes.
-        const pois = navDest
-          ? [
-              ...layerPois.filter(
-                (p) =>
-                  p.latitude != null &&
-                  p.longitude != null &&
-                  sameCoords([p.longitude, p.latitude], navDest),
-              ),
-              ...(poiQ.data ?? []).filter(
-                (p) =>
-                  isRestroomPoi(p) &&
-                  !(
-                    p.latitude != null &&
-                    p.longitude != null &&
-                    sameCoords([p.longitude, p.latitude], navDest)
-                  ),
-              ),
-            ]
-          : layerPois;
-        pois.forEach((poi, i) => {
-          if (poi.latitude == null || poi.longitude == null) return;
-          const lngLat: [number, number] = [poi.longitude, poi.latitude];
-          if (!pointInPolygon(lngLat, boundary)) return;
-          const { el, detail } = buildPoiEl(poi);
-          if (shouldFade) wireMarkerFadeIn(detail);
-          // The mid-walk restrooms read as background context, not destinations.
-          if (navDest && !sameCoords(lngLat, navDest)) el.style.opacity = "0.6";
+            continue;
+          const lngLat: [number, number] = [a.longitude, a.latitude];
+          // Actively navigating: show only the destination, hide every other ride.
+          if (navDest && !sameCoords(lngLat, navDest)) continue;
+          const { el, detail } = buildAttractionEl(a, a.id === selectedIdRef.current);
+          if (shouldFadePark) wireMarkerFadeIn(detail);
           const raise = makeRaise(el);
+          const waitLabel = waitLabelFor(a);
           const marker = new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map);
           markersRef.current.push(marker);
+          markerElsRef.current.set(a.id, detail);
           items.push({
-            id: -(i + 1),
+            id: a.id,
             point: () => map.project(lngLat),
             detail,
             raise,
             onActivate: () => {
+              const wasSelected = a.id === selectedIdRef.current;
+              onSelectRef.current?.({ id: a.id, name: a.name });
+              // Warm the ride page's data the moment its card opens, so tapping the
+              // card navigates instantly instead of blocking on the route loader's
+              // uncached `attraction` fetch (the imperative navigate in onPress
+              // never triggers the router's intent-preload).
+              void queryClient.prefetchQuery(
+                trpc.parks.attraction.queryOptions({ parkSlug: parkSlug, rideSlug: a.slug }),
+              );
               cardRef.current?.close();
               if (!containerRef.current) return;
-              // Same disc→card morph as rides, with the shared POI body — pinned
-              // above every other marker while open (dropped on close).
+              // Morph the marker's own disc into an info card in place, pinning it
+              // above every other marker for as long as it's open (dropped on close).
               raise.pinTop(true);
-              // The whole card is a button now: shops → /shop/$slug, dining →
-              // /dining/$facilityId, overlay POIs → the operator's page in a new
-              // tab. `poiPressTarget` centralizes where each kind leads.
-              const press = poiPressTarget(poi);
-              // Warm the destination page's data as the card opens (mirrors the
-              // ride card's prefetch), so pressing it navigates instantly.
-              if (press?.kind === "dining") {
-                void queryClient.prefetchQuery(
-                  trpc.dining.venue.queryOptions({ facilityId: press.facilityId }),
-                );
-                // The venue ticket's hours block. Venue-scoped since the page's
-                // redesign — it used to warm the whole catalog's schedules,
-                // which is a payload the destination no longer reads.
-                void queryClient.prefetchQuery(
-                  trpc.dining.venueSchedule.queryOptions({
-                    facilityId: press.facilityId,
-                    days: VENUE_HOURS_DAYS,
-                  }),
-                );
-              } else if (press?.kind === "shop") {
-                void queryClient.prefetchQuery(trpc.parks.shop.queryOptions({ slug: press.slug }));
-              }
               const { card, close } = openAttractionCard({
                 detail,
                 container: containerRef.current,
-                bodyHtml: poiCardBodyHtml(poi),
-                wasSelected: false,
+                bodyHtml: attractionCardBodyHtml(a, waitLabel, operatorSlug),
+                wasSelected,
                 onClose: () => raise.pinTop(false),
-                // In-app destinations fly the card on to the page's hero (and
-                // seed it) — same grammar as the ride cards; external targets
-                // just open in a new tab, with nothing to fly to.
-                onPress: press
-                  ? (nodes) => {
-                      const seedOpts = {
-                        poi,
-                        parkSlug: effectiveSlug,
-                        parkName:
-                          parksRef.current?.find((p) => p.slug === effectiveSlug)?.name ?? null,
-                      };
-                      if (press.kind === "shop") {
-                        launchHeroFlight(
-                          poiFlightSeed({ kind: "shop", id: press.slug, ...seedOpts }),
-                          nodes,
-                        );
-                        void navigate({ to: "/shop/$slug", params: { slug: press.slug } });
-                      } else if (press.kind === "dining") {
-                        launchHeroFlight(
-                          poiFlightSeed({ kind: "dining", id: press.facilityId, ...seedOpts }),
-                          nodes,
-                        );
-                        void navigate({
-                          to: "/dining/$facilityId",
-                          params: { facilityId: press.facilityId },
-                        });
-                      } else window.open(press.url, "_blank", "noopener,noreferrer");
-                    }
-                  : undefined,
+                // The whole card is a button now — tapping it opens the ride page,
+                // flying the card's photo, wait chip and title on to that page's
+                // hero (and seeding it, so there's a hero to land on right away).
+                onPress: (nodes) => {
+                  launchHeroFlight(
+                    rideFlightSeed({
+                      parkSlug,
+                      parkName: park?.name ?? null,
+                      ride: a,
+                    }),
+                    nodes,
+                  );
+                  void navigate({
+                    to: "/park/$slug/ride/$rideSlug",
+                    params: { slug: parkSlug, rideSlug: a.slug },
+                  });
+                },
               });
               cardRef.current = { close };
-              // Walk time from here (§4.1), warming the Directions cache.
+              // Walk time from here (§4.1) — the number that converts a glance
+              // into a trip, and a warm cache for the Directions tap.
               const estimate = fetchWalkEstimate(lngLat);
               if (estimate) wireCardWalkTime(card, estimate);
-              // "Directions" routes from the user's location to this POI, same as
-              // rides. Negative ids keep POIs clear of the attraction id space.
+              // "Directions" asks the stage to route from the user's location here.
               // stopPropagation so pressing it never also reads as a card press.
               card
                 .querySelector<HTMLButtonElement>("[data-directions]")
                 ?.addEventListener("click", (e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  if (poi.longitude != null && poi.latitude != null) {
+                  if (a.longitude != null && a.latitude != null) {
                     onRequestDirectionsRef.current?.({
-                      id: -(i + 1),
-                      name: poi.name,
-                      coords: [poi.longitude, poi.latitude],
+                      id: a.id,
+                      name: a.name,
+                      coords: [a.longitude, a.latitude],
                     });
                   }
                   close();
                   cardRef.current = null;
                 });
             },
-            // POIs never anchor a cluster over a ride — a nearby ride heads the
-            // group, the POI folds under its dot.
-            priority: 0,
-            kind: poiKind(poi.category),
+            priority: attractionPriority(a),
+            kind: attractionKind(a.category),
+            wait: a.status === "OPERATING" && a.standbyWait != null ? a.standbyWait : null,
           });
-        });
+        }
 
-        // Live SHOW entities as showtime markers (plan item 1.1): the card leads
-        // with the next showtime and presses to the show's detail page. Gated on
-        // the Shows chip — nearly every show is a SHOW row rather than a show-
-        // categorised ATTRACTION, so hanging these off the Live layer left Shows
-        // drawing nothing at nine of ten parks. Hidden while navigating. Show ids
-        // are offset far negative to stay clear of both the attraction id space
-        // and the POI ids above.
-        if (showsOn && !navDest) {
-          const tz =
-            parksRef.current?.find((p) => p.slug === effectiveSlug)?.timezone ?? "America/New_York";
-          (board ?? []).forEach((a, i) => {
-            if (a.entityType !== "SHOW" || a.showtimes.length === 0) return;
-            if (a.latitude == null || a.longitude == null) return;
-            const lngLat: [number, number] = [a.longitude, a.latitude];
-            if (!pointInPolygon(lngLat, boundary)) return;
-            const times = parseShowtimes(a.showtimes);
-            if (times.length === 0) return;
-            // Prefer the finder-POI photo (800x450) over the attraction's own
-            // images, falling back to the hero (also full-size) then the thumb.
-            // `buildPoiEl` derives the small disc thumb from this and reserves the
-            // full size for the card header (two-tier load), so passing the full
-            // asset here doesn't weigh the marker down.
-            const showImage =
-              poiMediaByName.get(squashName(a.name)) ??
-              a.meta?.imageHeroUrl ??
-              a.meta?.imageThumbUrl ??
-              null;
-            const showPoi: PoiItem = {
-              id: `show-${a.id}`,
-              name: a.name,
-              latitude: a.latitude,
-              longitude: a.longitude,
-              land: a.meta?.land ?? null,
-              category: "entertainment",
-              imageUrl: showImage,
-            };
-            const { el, detail } = buildPoiEl(showPoi);
-            if (shouldFade) wireMarkerFadeIn(detail);
+        // Optional POI overlay layers (dining/shops), folded into the SAME cluster
+        // as the rides so they group + collision-avoid together. Scoped to this
+        // park's boundary (the resort-wide feed clipped to it — the same
+        // containment test roam uses), which is also what keeps two framed parks
+        // from both claiming the venues between them; no boundary → plot nothing
+        // rather than dumping every WDW venue here. Negative ids keep them clear
+        // of the positive attraction/park id space the cluster + selection use.
+        const boundary = park?.boundary ?? null;
+        if (boundary) {
+          // Entertainment/character finder-POI hygiene. Disney's finder feed
+          // (park_poi) and the live board (SHOW attractions) both list the park's
+          // entertainment under loosely-agreeing names — plotting both draws two
+          // pins for one act (verified 2026-07: ~50 of 91 ent/char POIs duplicate
+          // a board SHOW; names diverge by ™/dashes ("Indiana Jones™"), spacing
+          // ("Side Show"/"Sideshow"), articles ("The Dapper Dans"), and outright
+          // renames ("Mickey's Royal Friendship Faire" → "…Magical…")). The finder
+          // is also date-blind, carrying hard-ticket holiday-party shows
+          // year-round. Policy (2026-07-22): the showtime marker wins where one
+          // renders; a POI naming a board SHOW that is dark today is hidden (no
+          // performance today = don't advertise it — forward schedules don't
+          // exist upstream, so "today" is the only signal we have); event-named
+          // POIs are hidden outright; everything else (year-round streetmosphere
+          // the live feed doesn't track) keeps its plain pin.
+          //
+          // "Where one renders" is now the Shows chip, not this layer: an act
+          // that's performing only yields its POI pin while Shows is actually
+          // drawing the showtime marker that supersedes it. With Shows off, the
+          // pin is all the map has for that act, so it stays.
+          const supersededKeys: Array<string> = [];
+          const todayShows: Array<{ lngLat: [number, number]; words: Set<string> }> = [];
+          if (layers?.entertainment && !navDest) {
+            for (const a of board ?? []) {
+              if (a.entityType !== "SHOW") continue;
+              const performing = a.showtimes.length > 0 && parseShowtimes(a.showtimes).length > 0;
+              if (!performing || showsOn) supersededKeys.push(squashName(a.name));
+              if (!performing || !showsOn) continue;
+              if (a.latitude == null || a.longitude == null) continue;
+              if (!pointInPolygon([a.longitude, a.latitude], boundary)) continue;
+              todayShows.push({ lngLat: [a.longitude, a.latitude], words: nameWords(a.name) });
+            }
+          }
+          const hideEntertainmentPoi = (p: {
+            name: string;
+            latitude: number | null;
+            longitude: number | null;
+          }): boolean => {
+            // Same act on the board (performing → superseded by the showtime
+            // marker; dark today → hidden per policy). Containment either way so
+            // articles, ™-suffixes, and "X at Y-event" wrappers still match; the
+            // ≥6-char guard keeps short names from matching inside longer ones.
+            const key = squashName(p.name);
+            if (
+              supersededKeys.some(
+                (k) =>
+                  k === key ||
+                  (key.length >= 6 && k.includes(key)) ||
+                  (k.length >= 6 && key.includes(k)),
+              )
+            )
+              return true;
+            // Hard-ticket party / holiday one-offs the finder lists year-round.
+            if (SEASONAL_POI_RE.test(p.name)) return true;
+            // Renames the name matching can't see (e.g. "Music of Mexico" is the
+            // board's "Mariachi Cobre"): pinned at the same spot as a show
+            // performing today and sharing a distinctive word — or the exact
+            // same pin.
+            if (p.latitude != null && p.longitude != null) {
+              const at: [number, number] = [p.longitude, p.latitude];
+              const words = nameWords(p.name);
+              for (const s of todayShows) {
+                const d = distanceMeters(at, s.lngLat);
+                if (d <= 20 && (d <= 3 || [...words].some((w) => s.words.has(w)))) return true;
+              }
+            }
+            return false;
+          };
+          // Finder-POI media keyed by squashed name so a showtime marker that
+          // replaces a finder pin can borrow its image (below). `attraction_meta`
+          // only keeps a 90x90 thumb, but the finder feed carries the full
+          // 800x450 card asset — usually the same image at higher res,
+          // occasionally a better one. Prefer it over the attraction's own hero
+          // so the finder's richer media wins.
+          const poiMediaByName = new Map<string, string | null>();
+          for (const p of poiQ.data ?? []) {
+            if (p.category === "entertainment" || p.category === "character") {
+              poiMediaByName.set(squashName(p.name), p.imageUrl ?? null);
+            }
+          }
+          // The park_poi feed carries all three overlay categories; pick the ones
+          // whose layer is lit (Live folds entertainment + character meets),
+          // minus any entertainment/character pin a showtime marker replaces.
+          const overlayPoi = (poiQ.data ?? []).filter(
+            (p) =>
+              (layers?.services && p.category === "info") ||
+              (layers?.entertainment &&
+                (p.category === "entertainment" || p.category === "character") &&
+                !hideEntertainmentPoi(p)) ||
+              (layers?.tours && p.category === "tour"),
+          );
+          // The dining feed carries both reservable table-service venues and
+          // non-bookable quick service/carts (tagged 'quick-service' — see
+          // `parks.dining`); split it across the two layers so each toggles
+          // independently instead of lumping carts in with sit-down dining.
+          const diningData = diningQ.data ?? [];
+          const layerPois =
+            layers && anyMapLayerActive(layers)
+              ? [
+                  ...(layers.dining
+                    ? diningData.filter((p) => p.category !== "quick-service")
+                    : []),
+                  ...(layers.quickService
+                    ? diningData.filter((p) => p.category === "quick-service")
+                    : []),
+                  ...(layers.shops ? (shopsQ.data ?? []) : []),
+                  ...overlayPoi,
+                ]
+              : [];
+          // Actively navigating: the overlay collapses to the destination pin (if
+          // it's a POI from a lit layer) plus restrooms — dimmed, regardless of
+          // toggles — the one thing guests actually divert for mid-walk (§5).
+          // Tapping a restroom opens its card, whose Directions button re-routes.
+          const pois = navDest
+            ? [
+                ...layerPois.filter(
+                  (p) =>
+                    p.latitude != null &&
+                    p.longitude != null &&
+                    sameCoords([p.longitude, p.latitude], navDest),
+                ),
+                ...(poiQ.data ?? []).filter(
+                  (p) =>
+                    isRestroomPoi(p) &&
+                    !(
+                      p.latitude != null &&
+                      p.longitude != null &&
+                      sameCoords([p.longitude, p.latitude], navDest)
+                    ),
+                ),
+              ]
+            : layerPois;
+          for (const poi of pois) {
+            if (poi.latitude == null || poi.longitude == null) continue;
+            const lngLat: [number, number] = [poi.longitude, poi.latitude];
+            if (!pointInPolygon(lngLat, boundary)) continue;
+            // Negative, and unique across every park in this rebuild.
+            const poiItemId = -++poiSeq;
+            const { el, detail } = buildPoiEl(poi);
+            if (shouldFadePark) wireMarkerFadeIn(detail);
+            // The mid-walk restrooms read as background context, not destinations.
+            if (navDest && !sameCoords(lngLat, navDest)) el.style.opacity = "0.6";
             const raise = makeRaise(el);
             const marker = new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map);
             markersRef.current.push(marker);
-            const showItemId = -100_000 - i;
             items.push({
-              id: showItemId,
+              id: poiItemId,
               point: () => map.project(lngLat),
               detail,
               raise,
               onActivate: () => {
-                void queryClient.prefetchQuery(
-                  trpc.parks.attraction.queryOptions({ parkSlug: effectiveSlug, rideSlug: a.slug }),
-                );
                 cardRef.current?.close();
                 if (!containerRef.current) return;
+                // Same disc→card morph as rides, with the shared POI body — pinned
+                // above every other marker while open (dropped on close).
                 raise.pinTop(true);
-                const now = Date.now();
-                const next = nextShowtime(times, now);
-                const nextLabel = next
-                  ? `Next ${showClock(next.iso, tz)} · ${untilLabel(
-                      Math.round((next.ms - now) / 60_000),
-                    )}`
-                  : null;
-                const sub = `${times.length} ${times.length === 1 ? "show" : "shows"} today`;
+                // The whole card is a button now: shops → /shop/$slug, dining →
+                // /dining/$facilityId, overlay POIs → the operator's page in a new
+                // tab. `poiPressTarget` centralizes where each kind leads.
+                const press = poiPressTarget(poi);
+                // Warm the destination page's data as the card opens (mirrors the
+                // ride card's prefetch), so pressing it navigates instantly.
+                if (press?.kind === "dining") {
+                  void queryClient.prefetchQuery(
+                    trpc.dining.venue.queryOptions({ facilityId: press.facilityId }),
+                  );
+                  // The venue ticket's hours block. Venue-scoped since the page's
+                  // redesign — it used to warm the whole catalog's schedules,
+                  // which is a payload the destination no longer reads.
+                  void queryClient.prefetchQuery(
+                    trpc.dining.venueSchedule.queryOptions({
+                      facilityId: press.facilityId,
+                      days: VENUE_HOURS_DAYS,
+                    }),
+                  );
+                } else if (press?.kind === "shop") {
+                  void queryClient.prefetchQuery(
+                    trpc.parks.shop.queryOptions({ slug: press.slug }),
+                  );
+                }
                 const { card, close } = openAttractionCard({
                   detail,
                   container: containerRef.current,
-                  bodyHtml: showCardBodyHtml({
-                    name: a.name,
-                    land: a.meta?.land ?? null,
-                    longitude: a.longitude,
-                    latitude: a.latitude,
-                    nextLabel,
-                    sub,
-                  }),
+                  bodyHtml: poiCardBodyHtml(poi),
                   wasSelected: false,
                   onClose: () => raise.pinTop(false),
-                  onPress: (nodes) => {
-                    launchHeroFlight(
-                      rideFlightSeed({
-                        parkSlug: effectiveSlug,
-                        parkName:
-                          parksRef.current?.find((p) => p.slug === effectiveSlug)?.name ?? null,
-                        ride: a,
-                      }),
-                      nodes,
-                    );
-                    void navigate({
-                      to: "/park/$slug/ride/$rideSlug",
-                      params: { slug: effectiveSlug, rideSlug: a.slug },
-                    });
-                  },
+                  // In-app destinations fly the card on to the page's hero (and
+                  // seed it) — same grammar as the ride cards; external targets
+                  // just open in a new tab, with nothing to fly to.
+                  onPress: press
+                    ? (nodes) => {
+                        const seedOpts = {
+                          poi,
+                          parkSlug,
+                          parkName: park?.name ?? null,
+                        };
+                        if (press.kind === "shop") {
+                          launchHeroFlight(
+                            poiFlightSeed({ kind: "shop", id: press.slug, ...seedOpts }),
+                            nodes,
+                          );
+                          void navigate({ to: "/shop/$slug", params: { slug: press.slug } });
+                        } else if (press.kind === "dining") {
+                          launchHeroFlight(
+                            poiFlightSeed({ kind: "dining", id: press.facilityId, ...seedOpts }),
+                            nodes,
+                          );
+                          void navigate({
+                            to: "/dining/$facilityId",
+                            params: { facilityId: press.facilityId },
+                          });
+                        } else window.open(press.url, "_blank", "noopener,noreferrer");
+                      }
+                    : undefined,
                 });
                 cardRef.current = { close };
+                // Walk time from here (§4.1), warming the Directions cache.
                 const estimate = fetchWalkEstimate(lngLat);
                 if (estimate) wireCardWalkTime(card, estimate);
+                // "Directions" routes from the user's location to this POI, same as
+                // rides. Negative ids keep POIs clear of the attraction id space.
+                // stopPropagation so pressing it never also reads as a card press.
                 card
                   .querySelector<HTMLButtonElement>("[data-directions]")
                   ?.addEventListener("click", (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    onRequestDirectionsRef.current?.({
-                      id: showItemId,
-                      name: a.name,
-                      coords: lngLat,
-                    });
+                    if (poi.longitude != null && poi.latitude != null) {
+                      onRequestDirectionsRef.current?.({
+                        id: poiItemId,
+                        name: poi.name,
+                        coords: [poi.longitude, poi.latitude],
+                      });
+                    }
                     close();
                     cardRef.current = null;
                   });
               },
+              // POIs never anchor a cluster over a ride — a nearby ride heads the
+              // group, the POI folds under its dot.
               priority: 0,
-              kind: poiKind("entertainment"),
+              kind: poiKind(poi.category),
             });
-          });
+          }
+
+          // Live SHOW entities as showtime markers (plan item 1.1): the card leads
+          // with the next showtime and presses to the show's detail page. Gated on
+          // the Shows chip — nearly every show is a SHOW row rather than a show-
+          // categorised ATTRACTION, so hanging these off the Live layer left Shows
+          // drawing nothing at nine of ten parks. Hidden while navigating. Show ids
+          // are offset far negative to stay clear of both the attraction id space
+          // and the POI ids above.
+          if (showsOn && !navDest) {
+            const tz = park?.timezone ?? "America/New_York";
+            for (const a of board ?? []) {
+              if (a.entityType !== "SHOW" || a.showtimes.length === 0) continue;
+              if (a.latitude == null || a.longitude == null) continue;
+              const lngLat: [number, number] = [a.longitude, a.latitude];
+              if (!pointInPolygon(lngLat, boundary)) continue;
+              const times = parseShowtimes(a.showtimes);
+              if (times.length === 0) continue;
+              // Prefer the finder-POI photo (800x450) over the attraction's own
+              // images, falling back to the hero (also full-size) then the thumb.
+              // `buildPoiEl` derives the small disc thumb from this and reserves the
+              // full size for the card header (two-tier load), so passing the full
+              // asset here doesn't weigh the marker down.
+              const showImage =
+                poiMediaByName.get(squashName(a.name)) ??
+                a.meta?.imageHeroUrl ??
+                a.meta?.imageThumbUrl ??
+                null;
+              const showPoi: PoiItem = {
+                id: `show-${a.id}`,
+                name: a.name,
+                latitude: a.latitude,
+                longitude: a.longitude,
+                land: a.meta?.land ?? null,
+                category: "entertainment",
+                imageUrl: showImage,
+              };
+              const { el, detail } = buildPoiEl(showPoi);
+              if (shouldFadePark) wireMarkerFadeIn(detail);
+              const raise = makeRaise(el);
+              const marker = new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map);
+              markersRef.current.push(marker);
+              const showItemId = -100_000 - showSeq++;
+              items.push({
+                id: showItemId,
+                point: () => map.project(lngLat),
+                detail,
+                raise,
+                onActivate: () => {
+                  void queryClient.prefetchQuery(
+                    trpc.parks.attraction.queryOptions({ parkSlug: parkSlug, rideSlug: a.slug }),
+                  );
+                  cardRef.current?.close();
+                  if (!containerRef.current) return;
+                  raise.pinTop(true);
+                  const now = Date.now();
+                  const next = nextShowtime(times, now);
+                  const nextLabel = next
+                    ? `Next ${showClock(next.iso, tz)} · ${untilLabel(
+                        Math.round((next.ms - now) / 60_000),
+                      )}`
+                    : null;
+                  const sub = `${times.length} ${times.length === 1 ? "show" : "shows"} today`;
+                  const { card, close } = openAttractionCard({
+                    detail,
+                    container: containerRef.current,
+                    bodyHtml: showCardBodyHtml({
+                      name: a.name,
+                      land: a.meta?.land ?? null,
+                      longitude: a.longitude,
+                      latitude: a.latitude,
+                      nextLabel,
+                      sub,
+                    }),
+                    wasSelected: false,
+                    onClose: () => raise.pinTop(false),
+                    onPress: (nodes) => {
+                      launchHeroFlight(
+                        rideFlightSeed({
+                          parkSlug,
+                          parkName: park?.name ?? null,
+                          ride: a,
+                        }),
+                        nodes,
+                      );
+                      void navigate({
+                        to: "/park/$slug/ride/$rideSlug",
+                        params: { slug: parkSlug, rideSlug: a.slug },
+                      });
+                    },
+                  });
+                  cardRef.current = { close };
+                  const estimate = fetchWalkEstimate(lngLat);
+                  if (estimate) wireCardWalkTime(card, estimate);
+                  card
+                    .querySelector<HTMLButtonElement>("[data-directions]")
+                    ?.addEventListener("click", (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onRequestDirectionsRef.current?.({
+                        id: showItemId,
+                        name: a.name,
+                        coords: lngLat,
+                      });
+                      close();
+                      cardRef.current = null;
+                    });
+                },
+                priority: 0,
+                kind: poiKind("entertainment"),
+              });
+            }
+          }
         }
+        if (markersRef.current.length > markersBefore) paintedNow.add(parkSlug);
       }
     }
 
-    // Remember this park context as faded, but only once we've actually built
-    // markers — so a first rebuild with an empty board doesn't consume the fade
-    // before the rides arrive.
-    if (shouldFade && markersRef.current.length > 0) fadedSlugRef.current = effectiveSlug;
+    // Remember what's painted, but only once we've actually built markers — so a
+    // first rebuild with an empty board doesn't consume the fade before the
+    // rides arrive.
+    if (markersRef.current.length > 0) paintedSlugsRef.current = paintedNow;
 
     layer.setItems(items);
     layer.refresh();
@@ -1721,9 +1805,8 @@ export function ParkMap({
       }
     };
   }, [
-    effectiveSlug,
+    parkBoards,
     overview,
-    board,
     parks,
     diningQ.data,
     shopsQ.data,
@@ -1742,38 +1825,73 @@ export function ParkMap({
     fetchWalkEstimate,
   ]);
 
-  // Free-roam focus watcher: after each pan/zoom, reveal a park's rides once the
-  // viewport is zoomed in over it, and fall back to park badges when zoomed out.
+  /**
+   * Read the camera and decide what free-roam draws: every park with anything in
+   * the frame (their rides, their POIs) once we're at ride zoom, park badges
+   * below it. `respectFlyLock` is set on a real camera settle, where a deliberate
+   * fly-to-park owns the centre park for that one move.
+   */
+  const syncRoamFromCamera = React.useCallback((respectFlyLock: boolean) => {
+    const map = mapRef.current;
+    if (!map) return;
+    const z = map.getZoom();
+    const c = map.getCenter();
+    // A deliberate fly-to-park (chip / badge tap) already picked the centre park
+    // and owns its settling move — consume the lock and leave that choice alone.
+    // The framed set is still recomputed: the fit that lands on Universal
+    // Studios also frames Islands of Adventure, and both should draw.
+    const locked = respectFlyLock && focusFlyLockRef.current;
+    if (respectFlyLock) focusFlyLockRef.current = false;
+    if (z < ROAM_RIDE_ZOOM) {
+      setRoamSlugs((prev) => (prev.length === 0 ? prev : EMPTY_SLUGS));
+      if (focusSlugRef.current != null) setFocusSlug(null);
+      return;
+    }
+    const b = map.getBounds();
+    const frame = {
+      west: b.getWest(),
+      south: b.getSouth(),
+      east: b.getEast(),
+      north: b.getNorth(),
+    };
+    const framed = (parksRef.current ?? []).filter((p) => parkInFrame(p, frame)).map((p) => p.slug);
+    // Nothing framed (a pan out over the gap between the resorts, or a list that
+    // hasn't loaded yet) keeps the last set rather than snapping to badges
+    // mid-zoom — only a real zoom-out above clears it.
+    if (framed.length > 0) setRoamSlugs((prev) => (sameSlugs(prev, framed) ? prev : framed));
+    if (locked) return;
+    // Which park the chrome talks about: the one under the crosshair, else the
+    // one it already names while that is still on screen, else whatever is framed.
+    const centred = parkAtPoint([c.lng, c.lat], parksRef.current ?? [])?.slug;
+    const held = focusSlugRef.current;
+    const next = centred ?? (held && framed.includes(held) ? held : (framed[0] ?? held ?? null));
+    if (next !== focusSlugRef.current) setFocusSlug(next);
+  }, []);
+
+  // Free-roam watcher: after each pan/zoom, reveal the rides of every park in
+  // the frame, and fall back to park badges when zoomed out.
   React.useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready || !roam) return;
     const onMoveEnd = () => {
-      const z = map.getZoom();
       const c = map.getCenter();
       // Remember the roam camera so returning to `/map` restores this exact view.
-      saveRoamCamera({ center: [c.lng, c.lat], zoom: z });
-      // A deliberate fly-to-park (chip / badge tap) already set the focus and owns
-      // this settling move — consume the lock and leave its focus alone.
-      if (focusFlyLockRef.current) {
-        focusFlyLockRef.current = false;
-        return;
-      }
-      if (z >= ROAM_RIDE_ZOOM) {
-        // Zoomed in: adopt whichever park the center sits in. If it sits in none
-        // (a pan that put it just outside an irregular boundary, or over the gap
-        // between parks) keep the current focus rather than snapping to badges —
-        // only a real zoom-out below clears it.
-        const park = parkAtPoint([c.lng, c.lat], parksRef.current ?? []);
-        if (park && park.slug !== focusSlugRef.current) setFocusSlug(park.slug);
-      } else if (focusSlugRef.current != null) {
-        setFocusSlug(null);
-      }
+      saveRoamCamera({ center: [c.lng, c.lat], zoom: map.getZoom() });
+      syncRoamFromCamera(true);
     };
     map.on("moveend", onMoveEnd);
     return () => {
       map.off("moveend", onMoveEnd);
     };
-  }, [ready, roam]);
+  }, [ready, roam, syncRoamFromCamera]);
+
+  // The park list landing after the camera has already settled — a cold load
+  // straight into a restored park-level view — leaves nothing framed, because
+  // there was nothing to frame. Re-read the camera when the list arrives.
+  React.useEffect(() => {
+    if (!ready || !roam || !parks) return;
+    syncRoamFromCamera(false);
+  }, [ready, roam, parks, syncRoamFromCamera]);
 
   // Viewport reporter. Only installed when someone is listening, and read
   // through a ref so a caller passing an inline function doesn't re-subscribe on
@@ -1825,7 +1943,7 @@ export function ParkMap({
     for (const [id, el] of markerElsRef.current) applySelected(el, id === selectedId);
     // Re-cluster so the selected marker is promoted to its own anchor.
     scheduleRefresh();
-  }, [selectedId, board, ready, scheduleRefresh]);
+  }, [selectedId, parkBoards, ready, scheduleRefresh]);
 
   // "You are here" marker — created on the first fix, moved on later updates,
   // removed when location turns off. It's a plain DOM marker (not a DeclutterItem)

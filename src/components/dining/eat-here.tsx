@@ -12,7 +12,14 @@ import { disneyResizeUrl } from "#/lib/image.ts";
 import { samePark } from "#/lib/parks.ts";
 import { cn } from "#/lib/utils.ts";
 
-/** Tiles in the grid — three rows of two. */
+/**
+ * Tiles in the grid — three rows of two, or two rows of three once the card
+ * itself is 48rem wide (`@3xl/eat`). Six is chosen to divide both ways: the
+ * card runs at ~480px in a detail page's narrow column and at the full page
+ * width on a tablet, and the grid answers to *its* box rather than to the
+ * viewport, since those two widths sit on the same side of every `md:`.
+ * Never four across — 6/4 leaves a widowed row.
+ */
 const TILES = 6;
 /** "This week" — the window the card's change flags claim. */
 const SINCE_DAYS = 7;
@@ -84,18 +91,18 @@ function EatHereSkeleton({ title, className }: { title: string; className?: stri
   return (
     <section
       className={cn(
-        "flex flex-col overflow-hidden rounded-[22px] border border-card-edge bg-card",
+        "@container/eat flex flex-col overflow-hidden rounded-[22px] border border-card-edge bg-card",
         className,
       )}
     >
-      <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-1 md:px-5 md:pt-5">
+      <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-1 @md/eat:px-5 @md/eat:pt-5">
         <h2 className="flex min-w-0 items-center gap-2 text-[19px] font-extrabold tracking-[-0.01em]">
           <UtensilsCrossedIcon className="size-4 shrink-0 text-muted-foreground" />
           {title}
         </h2>
       </div>
-      <Skeleton className="mx-4 mt-2 h-3 w-48 rounded md:mx-5" />
-      <div className="grid grid-cols-2 gap-2 p-2 md:gap-4 md:p-4">
+      <Skeleton className="mx-4 mt-2 h-3 w-48 rounded @md/eat:mx-5" />
+      <div className="grid grid-cols-2 gap-2 p-2 @md/eat:gap-4 @md/eat:p-4 @3xl/eat:grid-cols-3">
         {Array.from({ length: TILES }).map((_, i) => (
           <Skeleton key={i} className="aspect-[4/3] w-full rounded-2xl" />
         ))}
@@ -208,11 +215,11 @@ export function EatHere({
   return (
     <section
       className={cn(
-        "flex flex-col overflow-hidden rounded-[22px] border border-card-edge bg-card",
+        "@container/eat flex flex-col overflow-hidden rounded-[22px] border border-card-edge bg-card",
         className,
       )}
     >
-      <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-1 md:px-5 md:pt-5">
+      <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-1 @md/eat:px-5 @md/eat:pt-5">
         <h2 className="flex min-w-0 items-center gap-2 text-[19px] font-extrabold tracking-[-0.01em]">
           <UtensilsCrossedIcon className="size-4 shrink-0 text-muted-foreground" />
           {title}
@@ -228,13 +235,13 @@ export function EatHere({
           <ArrowRightIcon className="size-3.5 transition-transform group-hover:translate-x-0.5" />
         </Link>
       </div>
-      <p className="px-4 pb-1 text-xs text-muted-foreground md:px-5">
+      <p className="px-4 pb-1 text-xs text-muted-foreground @md/eat:px-5">
         {changedCount > 0
           ? `${changedCount} ${changedCount === 1 ? "menu" : "menus"} moved here this week`
           : "No menu here has moved this week"}
       </p>
 
-      <div className="grid grid-cols-2 gap-2 p-2 md:gap-4 md:p-4">
+      <div className="grid grid-cols-2 gap-2 p-2 @md/eat:gap-4 @md/eat:p-4 @3xl/eat:grid-cols-3">
         {tiles.map((t) => (
           <Link
             key={t.facilityId}
