@@ -19,9 +19,13 @@ import type { ParkCrowd } from "./types.ts";
  */
 export function ParkCrowdCalendar({
   crowd,
+  subject = "Park-wide",
   className,
 }: {
   crowd: ParkCrowd | undefined;
+  /** What the averages are of — the ride page hands it `parks.rideCrowd`,
+   *  which is the identical payload measured over one attraction. */
+  subject?: string;
   className?: string;
 }) {
   const days = crowd?.days ?? [];
@@ -43,7 +47,7 @@ export function ParkCrowdCalendar({
 
   return (
     <div className="grid gap-4 md:grid-cols-[2fr_3fr] md:gap-6">
-      <DetailCard title="Busiest days" description="Park-wide average standby · today outlined">
+      <DetailCard title="Busiest days" description={`${subject} average standby · today outlined`}>
         <DayHeatGrid days={points} today={crowd?.date ?? null} unit={minutes} />
       </DetailCard>
       <DetailCard

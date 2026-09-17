@@ -522,6 +522,141 @@ export const parksRouter = {
   }),
 
   /**
+   * `crowd`, over one ride instead of the whole park: today's hour-by-hour
+   * standby measured up to now, this weekday's typical shape for the hours
+   * still ahead, and thirty-five days of daily averages.
+   *
+   * Deliberately the *same output shape* as `parks.crowd` — the ride page draws
+   * it with the park page's own `TodayCurve` and `ParkCrowdCalendar`, and one
+   * shape means one pair of charts in the app rather than two that drift.
+   *
+   * The window comes from the **park's** posted hours, not the ride's: a ride
+   * publishes its own windows only when they differ from the park's, and the
+   * overnight feeds keep re-posting a stale wait long after closing — so an
+   * ungated average learns that Hagrid's is usually 5 minutes at 4 AM.
+   */
+  rideCrowd: publicProcedure
+    .input(z.object({ attractionId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const id = input.attractionId;
+      const park = sql`(SELECT park_id FROM attractions WHERE id = ${id})`;
+      const tz = sql`(
+        SELECT p.timezone FROM attractions a JOIN parks p ON p.id = a.park_id WHERE a.id = ${id}
+      )`;
+      const pastSched = sql`
+        SELECT DISTINCT ON (service_date, opening_time) opening_time, closing_time
+        FROM park_schedule
+        WHERE park_id = ${park}
+          AND type IN ${OPEN_SCHEDULE_TYPES}
+          AND closing_time IS NOT NULL
+        ORDER BY service_date, opening_time, snapshot_date DESC`;
+      const [meta, hours, days] = await Promise.all([
+        db.execute<{ timezone: string; local_date: string }>(sql`
+          SELECT p.timezone, (now() AT TIME ZONE p.timezone)::date::text AS local_date
+          FROM attractions a JOIN parks p ON p.id = a.park_id
+          WHERE a.id = ${id}
+        `),
+        db.execute<{
+          local_hour: number;
+          actual: number | null;
+          typical: number | null;
+          is_now: boolean;
+          lo: string;
+          hi: string;
+        }>(sql`
+          WITH sched AS (
+            SELECT DISTINCT ON (opening_time) opening_time, closing_time
+            FROM park_schedule
+            WHERE park_id = ${park}
+              AND service_date = (now() AT TIME ZONE ${tz})::date
+              AND type IN ${OPEN_SCHEDULE_TYPES}
+              AND closing_time IS NOT NULL
+            ORDER BY opening_time, snapshot_date DESC
+          ),
+          win AS (SELECT min(opening_time) AS lo, max(closing_time) AS hi FROM sched),
+          spine AS (
+            SELECT generate_series(
+              time_bucket('1 hour'::interval, (SELECT lo FROM win)),
+              time_bucket('1 hour'::interval, (SELECT hi FROM win) - INTERVAL '1 minute'),
+              '1 hour'::interval
+            ) AS bucket
+          ),
+          obs AS (
+            SELECT time_bucket('1 hour'::interval, observed_at) AS bucket,
+                   avg(wait_min)::int AS avg_wait
+            FROM queue_obs
+            WHERE attraction_id = ${id}
+              AND queue_type = ${QueueType.STANDBY}
+              AND wait_min IS NOT NULL
+              AND observed_at >= (SELECT lo FROM win)
+              AND observed_at <  (SELECT hi FROM win)
+            GROUP BY 1
+          ),
+          past_sched AS (${pastSched}),
+          typ AS (
+            SELECT (EXTRACT(hour FROM bucket AT TIME ZONE ${tz}))::int AS local_hour,
+                   round(avg(avg_wait))::int AS avg_wait
+            FROM queue_hourly qh
+            WHERE qh.attraction_id = ${id}
+              AND qh.queue_type = ${QueueType.STANDBY}
+              AND qh.avg_wait IS NOT NULL
+              AND qh.bucket >= now() - INTERVAL '56 days'
+              AND qh.bucket < (SELECT lo FROM win)
+              AND EXTRACT(dow FROM qh.bucket AT TIME ZONE ${tz})
+                = EXTRACT(dow FROM (now() AT TIME ZONE ${tz})::date)
+              AND EXISTS (
+                SELECT 1 FROM past_sched w
+                WHERE qh.bucket >= w.opening_time AND qh.bucket < w.closing_time
+              )
+            GROUP BY 1
+          )
+          SELECT (EXTRACT(hour FROM s.bucket AT TIME ZONE ${tz}))::int AS local_hour,
+                 o.avg_wait AS actual,
+                 t.avg_wait AS typical,
+                 (s.bucket = time_bucket('1 hour'::interval, now())) AS is_now,
+                 (SELECT lo FROM win)::text AS lo,
+                 (SELECT hi FROM win)::text AS hi
+          FROM spine s
+          LEFT JOIN obs o ON o.bucket = s.bucket
+          LEFT JOIN typ t ON t.local_hour = (EXTRACT(hour FROM s.bucket AT TIME ZONE ${tz}))::int
+          ORDER BY s.bucket
+        `),
+        db.execute<{ d: string; avg_wait: number }>(sql`
+          WITH past_sched AS (${pastSched})
+          SELECT (qh.bucket AT TIME ZONE ${tz})::date::text AS d,
+                 round(avg(qh.avg_wait))::int AS avg_wait
+          FROM queue_hourly qh
+          WHERE qh.attraction_id = ${id}
+            AND qh.queue_type = ${QueueType.STANDBY}
+            AND qh.avg_wait IS NOT NULL
+            AND qh.bucket >= now() - INTERVAL '35 days'
+            AND EXISTS (
+              SELECT 1 FROM past_sched w
+              WHERE qh.bucket >= w.opening_time AND qh.bucket < w.closing_time
+            )
+          GROUP BY 1
+          ORDER BY 1
+        `),
+      ]);
+
+      const first = hours.rows[0];
+      return {
+        timezone: meta.rows[0]?.timezone ?? "America/New_York",
+        date: meta.rows[0]?.local_date ?? null,
+        open: first?.lo ?? null,
+        close: first?.hi ?? null,
+        hours: hours.rows.map((r) => ({
+          hour: Number(r.local_hour),
+          actual: r.actual == null ? null : Number(r.actual),
+          typical: r.typical == null ? null : Number(r.typical),
+          now: Boolean(r.is_now),
+        })),
+        /** This ride's average standby per park-local day, oldest first. */
+        days: days.rows.map((r) => ({ date: r.d, avgWait: Number(r.avg_wait) })),
+      };
+    }),
+
+  /**
    * Current board for a park: per-attraction latest status (carry-forward) +
    * latest STANDBY wait + latest LL (paid return) + latest return-time state.
    */
@@ -1797,16 +1932,17 @@ export const parksRouter = {
               : input.hours <= 24 * 30
                 ? "6 hours"
                 : "1 day";
-      const result = await db.execute<{
-        bucket: string;
-        avg_wait: number | null;
-        max_wait: number | null;
-        min_wait: number | null;
-        avg_price: number | null;
-        sold_out_samples: number;
-        samples: number;
-        avail_state: number | null;
-      }>(sql`
+      const [result, spine] = await Promise.all([
+        db.execute<{
+          bucket: string;
+          avg_wait: number | null;
+          max_wait: number | null;
+          min_wait: number | null;
+          avg_price: number | null;
+          sold_out_samples: number;
+          samples: number;
+          avail_state: number | null;
+        }>(sql`
         SELECT time_bucket(${bucket}::interval, observed_at) AS bucket,
                avg(wait_min)::int    AS avg_wait,
                max(wait_min)         AS max_wait,
@@ -1841,17 +1977,82 @@ export const parksRouter = {
           AND observed_at >= now() - (${input.hours} * INTERVAL '1 hour')
         GROUP BY bucket
         ORDER BY bucket
-      `);
-      return result.rows.map((r) => ({
-        bucket: r.bucket,
-        avgWait: r.avg_wait,
-        maxWait: r.max_wait,
-        minWait: r.min_wait,
-        avgPrice: r.avg_price,
-        soldOutSamples: Number(r.sold_out_samples),
-        samples: Number(r.samples),
-        availState: r.avail_state == null ? null : Number(r.avail_state),
-      }));
+      `),
+        // Continuous bucket spine carrying this ride's park calendar, so the
+        // trend chart can flatten a closed stretch to zero instead of bridging
+        // a dashed line across it at the last live value — the treatment the
+        // board's sparklines already use (see `boardSeries`, whose spine this
+        // mirrors, and `indicativeSeries` on the client).
+        //
+        // A bucket counts as closed only when it falls *inside* the overall
+        // span of known operating windows but outside every one of them.
+        // Buckets before the earliest / after the latest window we hold, and
+        // parks with no schedule at all, stay `closed = false` and degrade to
+        // the old bridged-gap drawing rather than claiming a closure we can't
+        // evidence.
+        db.execute<{ bucket: string; closed: boolean }>(sql`
+          WITH park AS (
+            SELECT park_id AS id FROM attractions WHERE id = ${input.attractionId}
+          ),
+          spine AS (
+            SELECT generate_series(
+              time_bucket(${bucket}::interval, now() - (${input.hours} * INTERVAL '1 hour')),
+              time_bucket(${bucket}::interval, now()),
+              ${bucket}::interval
+            ) AS bucket
+          ),
+          -- Latest daily snapshot's view of each operating window.
+          sched AS (
+            SELECT DISTINCT ON (service_date, opening_time) opening_time, closing_time
+            FROM park_schedule
+            WHERE park_id = (SELECT id FROM park)
+              AND type IN ${OPEN_SCHEDULE_TYPES}
+              AND closing_time IS NOT NULL
+            ORDER BY service_date, opening_time, snapshot_date DESC
+          ),
+          span AS (SELECT min(opening_time) AS lo, max(closing_time) AS hi FROM sched)
+          SELECT s.bucket,
+                 (
+                   (SELECT lo FROM span) IS NOT NULL
+                   AND s.bucket >= (SELECT lo FROM span)
+                   AND s.bucket <  (SELECT hi FROM span)
+                   AND NOT EXISTS (
+                     SELECT 1 FROM sched w
+                     WHERE s.bucket >= w.opening_time AND s.bucket < w.closing_time
+                   )
+                 ) AS closed
+          FROM spine s
+          ORDER BY s.bucket
+        `),
+      ]);
+
+      // The spine is the row set; the observations are laid over it. A bucket
+      // nobody polled is therefore a real row with null waits (an explicit gap
+      // or closure) rather than an absent one the client has to infer — which
+      // is what `fillGrid` used to do on both consumers, blind to the calendar.
+      const byBucket = new Map(result.rows.map((r) => [new Date(r.bucket).getTime(), r]));
+      const rows = spine.rows.map((s) => ({ t: new Date(s.bucket).getTime(), closed: s.closed }));
+      // An observation outside the spine (a bucket at either edge, rounded the
+      // other way) still belongs in the series.
+      for (const [t] of byBucket) {
+        if (!rows.some((r) => r.t === t)) rows.push({ t, closed: false });
+      }
+      rows.sort((a, b) => a.t - b.t);
+
+      return rows.map(({ t, closed }) => {
+        const r = byBucket.get(t);
+        return {
+          bucket: new Date(t).toISOString(),
+          avgWait: r?.avg_wait ?? null,
+          maxWait: r?.max_wait ?? null,
+          minWait: r?.min_wait ?? null,
+          avgPrice: r?.avg_price ?? null,
+          soldOutSamples: Number(r?.sold_out_samples ?? 0),
+          samples: Number(r?.samples ?? 0),
+          availState: r?.avail_state == null ? null : Number(r.avail_state),
+          closed,
+        };
+      });
     }),
 
   /**

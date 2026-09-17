@@ -27,6 +27,7 @@ import {
 import { Switch } from "#/components/ui/switch.tsx";
 import { useAchievementTrack } from "#/hooks/use-achievement-track.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
+import { cn } from "#/lib/utils.ts";
 
 /** The search dims an alert watches — same shape the stays search sends. */
 export interface StayAlertDims {
@@ -58,6 +59,10 @@ type ScopeChoice = "resort" | "tier" | "area" | "any";
  * users get a sign-in prompt; logged-in users pick a scope (this resort, its
  * tier, its area, or any resort), a rule (a room opens, or price drops), and an
  * optional price ceiling on the "room opens" rule. `create` upserts in place.
+ *
+ * `variant="key"` is the resort detail page's own call to action: the same
+ * popover, hung off a labelled key instead of a bell floating over a photo.
+ * The board's cards keep the bell, which is why the icon stays the default.
  */
 export function StayAlertButton({
   resortId,
@@ -66,6 +71,10 @@ export function StayAlertButton({
   area,
   dims,
   loggedIn,
+  variant = "icon",
+  keyVariant = "outline",
+  label = "Alert me",
+  className,
 }: {
   resortId: string;
   resortName: string;
@@ -73,6 +82,11 @@ export function StayAlertButton({
   area?: string | null;
   dims: StayAlertDims;
   loggedIn: boolean;
+  variant?: "icon" | "key";
+  /** The key's own chrome — yellow when this is the page's primary action. */
+  keyVariant?: "yellow" | "outline";
+  label?: string;
+  className?: string;
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -128,22 +142,44 @@ export function StayAlertButton({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        render={
-          <Button
-            variant="secondary"
-            size="icon"
-            className="bg-background/85 size-9 shadow-sm backdrop-blur-sm md:size-7"
-            aria-label={`Alert me about ${resortName}`}
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-          />
-        }
-      >
-        <BellIcon className="size-4" />
-      </PopoverTrigger>
+      {variant === "key" ? (
+        <PopoverTrigger
+          render={
+            <Button
+              variant={keyVariant}
+              size="lg"
+              className={cn("font-bold", className)}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+            />
+          }
+        >
+          <BellIcon className="size-4" />
+          {label}
+        </PopoverTrigger>
+      ) : (
+        <PopoverTrigger
+          render={
+            <Button
+              variant="secondary"
+              size="icon"
+              className={cn(
+                "bg-background/85 size-9 shadow-sm backdrop-blur-sm md:size-7",
+                className,
+              )}
+              aria-label={`Alert me about ${resortName}`}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+            />
+          }
+        >
+          <BellIcon className="size-4" />
+        </PopoverTrigger>
+      )}
       <PopoverContent
         align="end"
         collisionPadding={12}

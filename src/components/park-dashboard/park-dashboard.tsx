@@ -29,7 +29,6 @@ import { PaperTrail } from "#/components/records/paper-trail.tsx";
 import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
 import { ChartErrorBoundary } from "#/components/chart-error-boundary.tsx";
 import { Button } from "#/components/ui/button.tsx";
-import { useParkClock } from "#/hooks/use-park-clock.ts";
 import { lazyWithReload } from "#/lib/lazy-with-reload.tsx";
 import { useHydrated } from "#/lib/use-hydrated.ts";
 
@@ -159,7 +158,6 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
   // The page's headline numbers, shared by the ticket and the bands.
   const stats = React.useMemo(() => parkStats(board), [board]);
   const hoursToday = useParkHoursToday(activeSlug ?? null);
-  const clock = useParkClock(timezone);
 
   // Set when this page was opened by tapping a park badge on the overview map:
   // the badge's own name and photo, plus whether its flown clones (disc face →
@@ -422,22 +420,17 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
           />
 
           <div className="contents md:col-start-2 md:row-span-2 md:row-start-1 md:flex md:flex-col md:gap-4 md:pt-4">
-            <BandHeading
-              kicker={clock ? `Now · ${clock}` : "Now"}
-              title="Where everyone is standing"
-              controls={
-                <Button variant="outline" className="h-10 font-bold" render={<Link to="/map" />}>
-                  <MapIcon />
-                  Open full map
-                </Button>
-              }
-            />
-
-            {/* The map, bare. It was in a mint panel with a "Live map" heading;
-              a map of the park under a heading that says "Where everyone is
-              standing" needs neither, and the frame was costing it 40-odd px of
-              height on every side. `MapSlot` is a shared-layout slot: the
-              persistent map morphs in from wherever it was last mounted. */}
+            {/* The map, bare — no panel, no band heading, no control row
+              (2026-09-17, Josh). The mint panel was costing it 40-odd px of
+              height on every side; "Where everyone is standing" named a map of
+              the park standing right under it, which is the one thing a map
+              does not need said; and the desktop's way into the full map — the
+              last thing that row carried — now rides inside the map's own
+              top-right corner (`FullMapButton`, traveling in the map portal)
+              instead of spending a line of page height with dead space beside
+              it. (The phone's way in is the floating bar.) `MapSlot` is a
+              shared-layout slot: the persistent map morphs in from wherever it
+              was last mounted. */}
             <MapSlot
               // No wheel zoom here: this map is a panel in a long scrolling
               // page, so a wheel over it is almost always someone scrolling

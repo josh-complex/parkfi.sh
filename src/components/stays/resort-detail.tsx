@@ -7,16 +7,28 @@ import { differenceInCalendarDays, format } from "date-fns";
 import { type DateRange } from "react-day-picker";
 import { CalendarIcon, ExternalLinkIcon } from "lucide-react";
 
-import { DetailHero, HERO_PAGE_PADDING } from "#/components/detail-hero.tsx";
-import { PAGE_WIDTH } from "#/components/page-container.tsx";
+import { ACTION_BAR_PAGE_PAD, DetailActionBar } from "#/components/detail/action-bar.tsx";
+import { Band, BandHeading } from "#/components/detail/band.tsx";
+import { TintPanel, WashPanel } from "#/components/detail/panels.tsx";
+import {
+  TICKET_DEFAULT_CREASE,
+  Ticket,
+  TicketBlock,
+  TicketChip,
+  TicketRow,
+  type TicketFact,
+} from "#/components/detail/ticket.tsx";
+import { DetailHero, HERO_PAGE_PADDING, HERO_OVERLAY_HEADLINE } from "#/components/detail-hero.tsx";
+import { EAT_HERE_CATALOG_LIMIT, EatHere } from "#/components/dining/eat-here.tsx";
 import { LocationMap } from "#/components/maps/location-map.tsx";
-import { ResortDiningShelf } from "#/components/dining/resort-dining-shelf.tsx";
+import { PAGE_WIDTH } from "#/components/page-container.tsx";
 import { heroFlightKey } from "#/components/park-map/card-flight.ts";
 import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
 import { ResortPriceChart } from "#/components/stays/resort-price-chart.tsx";
+import { ResortRateCalendar } from "#/components/stays/resort-rate-calendar.tsx";
 import { StayAlertButton } from "#/components/stays/stay-alert-button.tsx";
-import { reasonLabel, TIER_LABEL, TIER_META } from "#/components/stays/stays-filters.ts";
-import { Button, buttonVariants } from "#/components/ui/button.tsx";
+import { areaLabel, reasonLabel, TIER_LABEL, TIER_META } from "#/components/stays/stays-filters.ts";
+import { Button } from "#/components/ui/button.tsx";
 import { Calendar } from "#/components/ui/calendar.tsx";
 import { Label } from "#/components/ui/label.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "#/components/ui/popover.tsx";
@@ -72,6 +84,14 @@ const KID_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 /** Disney requires an age per child; default to the common rack bucket. */
 const DEFAULT_CHILD_AGE = 10;
 
+/**
+ * Parks named on the ticket's lower half. Three is what the stub's width and
+ * the resort's geography both support: past the third nearest park the figures
+ * stop separating (every WDW resort is 3–7 miles from the far side of the
+ * property) and the block turns into a table nobody reads.
+ */
+const TICKET_PARKS = 3;
+
 interface SearchState {
   range: DateRange;
   adults: number;
@@ -83,7 +103,7 @@ interface SearchState {
 type CatalogResort = NonNullable<ReturnType<typeof resortBySlug>>;
 
 /**
- * A sensible default stay so the card opens with a live quote instead of an
+ * A sensible default stay so the page opens with a live quote instead of an
  * empty form: the upcoming Friday, two nights, two adults. Computed lazily on
  * the client (see the seeding effect) so SSR and the browser can't disagree on
  * "today" and trip a hydration mismatch.
@@ -108,23 +128,38 @@ function childAgesFor(children: number): Array<number> {
   return Array.from({ length: children }, () => DEFAULT_CHILD_AGE);
 }
 
+/** The store's own name, for the ticket's line of place. */
+const STORE_NAME: Record<string, string> = {
+  wdw: "Walt Disney World",
+  dlr: "Disneyland Resort",
+};
+
 /**
- * Inline availability search for a single resort. Mirrors the simple, compact
- * control style of the dining detail page (plain field controls — the fancy
- * "core search" pill is reserved for the `/stays` and `/dining` boards). Reuses
- * the `stays.availability` procedure (which returns every resort), filtering the
- * response to this resort's id, and shows its nightly rate / sold-out status plus
- * an "alert me" bell for the committed search.
+ * The page's job block: pick dates and a party, see this resort's nightly rate,
+ * book it or have us watch it.
+ *
+ * Structurally the venue page's "Grab a table" panel over a different booking
+ * system — controls on one row, the answer under them, the yellow key last and
+ * desktop-only (the phone's lives in the floating action bar, so the page
+ * carries exactly one of them at any width).
  */
-function ResortAvailability({
+function CheckRatesPanel({
   resort,
   committed,
   onCommit,
+  onQuote,
+  bookHref,
+  className,
 }: {
   resort: CatalogResort;
   /** The committed search (null until the parent's default lands after mount). */
   committed: SearchState | null;
   onCommit: (s: SearchState) => void;
+  /** Reports the quoted nightly rate up, so the hero's headline chip and this
+   *  panel's own figure can never disagree about the number. */
+  onQuote: (pricePerNight: number | null) => void;
+  bookHref: string;
+  className?: string;
 }) {
   const trpc = useTRPC();
   const isMobile = useIsMobile();
@@ -184,71 +219,77 @@ function ResortAvailability({
 
   const offer = availabilityQ.data?.offers.find((o) => o.id === resort.id);
   const fresh = availabilityQ.data ? !availabilityQ.data.cached : false;
+  const quoted = offer?.available ? (offer.pricePerNight ?? null) : null;
+
+  // Publish the quote to the page, so the ticket's headline fact and this panel
+  // never disagree about the number. An effect rather than a render-time call:
+  // this is a write into the parent's state.
+  React.useEffect(() => {
+    onQuote(quoted);
+  }, [quoted, onQuote]);
+
+  const alertDims = {
+    checkInDate: committed?.range.from ? iso(committed.range.from) : "",
+    checkOutDate: committed?.range.to ? iso(committed.range.to) : "",
+    adults: committed?.adults ?? adults,
+    children: committed?.children ?? children,
+    childAges: childAgesFor(committed?.children ?? children),
+    accessible: committed?.accessible ?? accessible,
+    floridaResident: committed?.floridaResident ?? floridaResident,
+  };
+
+  const meta = !committed
+    ? null
+    : availabilityQ.isLoading
+      ? "Checking…"
+      : offer?.available
+        ? `${nights} night${nights === 1 ? "" : "s"} · ${partyLabel(committed.adults, committed.children)}`
+        : reasonLabel(offer?.reasonCode ?? null);
 
   return (
-    <section className="flex flex-col gap-4 rounded-2xl border bg-card p-4 sm:p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold tracking-tight">Check availability &amp; rates</h2>
-        <StayAlertButton
-          resortId={resort.id}
-          resortName={resort.name}
-          tier={resort.tier}
-          area={resort.area}
-          dims={{
-            checkInDate: committed?.range.from ? iso(committed.range.from) : "",
-            checkOutDate: committed?.range.to ? iso(committed.range.to) : "",
-            adults: committed?.adults ?? adults,
-            children: committed?.children ?? children,
-            childAges: childAgesFor(committed?.children ?? children),
-            accessible: committed?.accessible ?? accessible,
-            floridaResident: committed?.floridaResident ?? floridaResident,
-          }}
-          loggedIn={!!session?.user}
-        />
-      </div>
-
-      {/* Simple field controls: dates + adults + kids + search. On phones this is
-          a 2-col grid (date + Check rates span the full width); md+ is an inline row. */}
-      <div className="grid grid-cols-2 items-end gap-3 md:flex md:flex-wrap">
-        <div className="col-span-2 flex flex-col gap-1.5">
-          <Label className="text-xs font-medium text-muted-foreground">When</Label>
-          <Popover open={datesOpen} onOpenChange={setDatesOpen}>
-            <PopoverTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="outline"
-                  data-empty={!range?.from}
-                  className="h-9 w-full justify-start gap-2 font-normal data-[empty=true]:text-muted-foreground md:w-52"
-                />
-              }
-            >
-              <CalendarIcon className="size-4" />
-              {rangeLabel(range)}
-            </PopoverTrigger>
-            <PopoverContent align="center" collisionPadding={12} className="w-auto p-2">
-              <Calendar
-                mode="range"
-                selected={range}
-                onSelect={(r) => {
-                  setRange(r);
-                  if (r?.from && r.to && differenceInCalendarDays(r.to, r.from) >= 1) {
-                    setDatesOpen(false);
-                  }
-                }}
-                numberOfMonths={isMobile ? 1 : 2}
-                disabled={{ before: today }}
-                startMonth={today}
-                showOutsideDays
+    <WashPanel title="Check rates" meta={meta} className={className}>
+      {/* Dates take their own row — a range label plus two party selects plus a
+          key does not fit a phone, and letting them wrap left the key stranded
+          on a line of its own anyway. */}
+      <div className="flex flex-col gap-2">
+        <Popover open={datesOpen} onOpenChange={setDatesOpen}>
+          <PopoverTrigger
+            render={
+              <Button
+                type="button"
+                variant="outline"
+                data-empty={!range?.from}
+                className="h-11 w-full justify-start gap-2 text-[15px] font-semibold data-[empty=true]:text-muted-foreground"
               />
-            </PopoverContent>
-          </Popover>
-        </div>
+            }
+          >
+            <CalendarIcon className="size-4" />
+            {rangeLabel(range)}
+          </PopoverTrigger>
+          <PopoverContent align="center" collisionPadding={12} className="w-auto p-2">
+            <Calendar
+              mode="range"
+              selected={range}
+              onSelect={(r) => {
+                setRange(r);
+                if (r?.from && r.to && differenceInCalendarDays(r.to, r.from) >= 1) {
+                  setDatesOpen(false);
+                }
+              }}
+              numberOfMonths={isMobile ? 1 : 2}
+              disabled={{ before: today }}
+              startMonth={today}
+              showOutsideDays
+            />
+          </PopoverContent>
+        </Popover>
 
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-xs font-medium text-muted-foreground">Adults</Label>
+        <div className="flex gap-2">
           <Select value={String(adults)} onValueChange={(v) => v && setAdults(Number(v))}>
-            <SelectTrigger className="w-full md:w-28" aria-label="Adults">
+            <SelectTrigger
+              className="min-w-0 flex-1 rounded-4xl text-[15px] font-semibold data-[size=default]:h-11"
+              aria-label="Adults"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -259,12 +300,11 @@ function ResortAvailability({
               ))}
             </SelectContent>
           </Select>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-xs font-medium text-muted-foreground">Kids</Label>
           <Select value={String(children)} onValueChange={(v) => v && setChildren(Number(v))}>
-            <SelectTrigger className="w-full md:w-28" aria-label="Kids">
+            <SelectTrigger
+              className="min-w-0 flex-1 rounded-4xl text-[15px] font-semibold data-[size=default]:h-11"
+              aria-label="Kids"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -275,14 +315,47 @@ function ResortAvailability({
               ))}
             </SelectContent>
           </Select>
+          <Button type="button" onClick={submit} className="h-11 shrink-0 px-5 font-bold">
+            Check
+          </Button>
         </div>
-
-        <Button type="button" onClick={submit} className="col-span-2 h-9 w-full md:w-auto">
-          Check rates
-        </Button>
       </div>
 
-      {/* Rate-shaping toggles, mirroring the /stays board. */}
+      {/* The answer. */}
+      {committed &&
+        (availabilityQ.isLoading ? (
+          <Skeleton className="h-[4.25rem] w-full rounded-2xl bg-wash-bar/60" />
+        ) : availabilityQ.isError ? (
+          <p className="text-sm text-wash-muted">
+            We couldn&apos;t pull live rates just now — please try again.
+          </p>
+        ) : offer?.available && offer.pricePerNight != null ? (
+          <div className="flex flex-wrap items-end justify-between gap-3 rounded-2xl bg-background/70 px-4 py-3">
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-3xl font-extrabold tracking-tight tabular-nums text-wash-fg">
+                  ${offer.pricePerNight.toLocaleString()}
+                </span>
+                <span className="text-sm text-wash-muted">/ night</span>
+              </div>
+              {nights > 0 && (
+                <span className="text-sm text-wash-muted tabular-nums">
+                  ${(offer.pricePerNight * nights).toLocaleString()} total · {nights} night
+                  {nights === 1 ? "" : "s"}
+                </span>
+              )}
+            </div>
+            <FreshnessChip fresh={fresh} />
+          </div>
+        ) : (
+          <p className="text-sm text-wash-muted">
+            {reasonLabel(offer?.reasonCode ?? null)} for these dates. Set an alert and we&apos;ll
+            email you when a room opens.
+          </p>
+        ))}
+
+      {/* Rate-shaping toggles. They re-commit on change, so the quote above
+          moves with them rather than waiting on the Check key. */}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
         <div className="flex items-center gap-2">
           <Switch
@@ -314,54 +387,37 @@ function ResortAvailability({
         </div>
       </div>
 
-      {/* Result for this resort. */}
-      {committed && (
-        <div className="border-t pt-4">
-          {availabilityQ.isLoading ? (
-            <div className="flex flex-col gap-1.5">
-              <Skeleton className="h-9 w-40" />
-              <Skeleton className="h-4 w-52" />
-            </div>
-          ) : availabilityQ.isError ? (
-            <p className="text-sm text-muted-foreground">
-              We couldn&apos;t pull live rates just now — please try again.
-            </p>
-          ) : offer?.available && offer.pricePerNight != null ? (
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <div className="flex flex-col gap-0.5">
-                <div className="flex items-baseline gap-1.5">
-                  <span className="text-3xl font-bold tracking-tight tabular-nums">
-                    ${offer.pricePerNight.toLocaleString()}
-                  </span>
-                  <span className="text-sm text-muted-foreground">/ night</span>
-                </div>
-                {nights > 0 && (
-                  <span className="text-sm text-muted-foreground tabular-nums">
-                    ${(offer.pricePerNight * nights).toLocaleString()} total · {nights} night
-                    {nights === 1 ? "" : "s"}
-                  </span>
-                )}
-              </div>
-              <FreshnessChip fresh={fresh} />
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              {reasonLabel(offer?.reasonCode ?? null)} for these dates. Set an alert above and
-              we&apos;ll email you when a room opens.
-            </p>
-          )}
-        </div>
-      )}
-    </section>
+      {/* Desktop's keys. The phone's are in the floating action bar. */}
+      <div className="hidden md:flex md:flex-wrap md:gap-2">
+        <Button
+          variant="yellow"
+          size="lg"
+          className="font-bold"
+          render={<a href={bookHref} target="_blank" rel="noreferrer" />}
+        >
+          Book on Disney
+          <ExternalLinkIcon />
+        </Button>
+        <StayAlertButton
+          resortId={resort.id}
+          resortName={resort.name}
+          tier={resort.tier}
+          area={resort.area}
+          dims={alertDims}
+          loggedIn={!!session?.user}
+          variant="key"
+        />
+      </div>
+    </WashPanel>
   );
 }
 
 /** A small "how current is this quote?" indicator beside the price. */
 function FreshnessChip({ fresh }: { fresh: boolean }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs text-muted-foreground">
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-wash-edge px-2.5 py-1 text-xs text-wash-muted">
       <span
-        className={cn("size-1.5 rounded-full", fresh ? "bg-emerald-500" : "bg-muted-foreground/40")}
+        className={cn("size-1.5 rounded-full", fresh ? "bg-emerald-500" : "bg-wash-bar-strong")}
       />
       {fresh ? "Live rate" : "Recently checked"}
     </span>
@@ -369,13 +425,67 @@ function FreshnessChip({ fresh }: { fresh: boolean }) {
 }
 
 /**
- * Standalone resort hotel detail page. Stays data is resort-level only (no
- * room/view granularity), so the page pairs the catalog identity (image, tier,
- * area, blurb) with an inline availability search scoped to this resort, a price
- * alert, and an approximate location map.
+ * Standalone resort hotel detail page, on the ticket-stub system
+ * (docs/plans/dining-redesign §4.4): a torn photo hero, the ticket carrying the
+ * name, three facts and the walk to each park, then the page's job — what a
+ * stay costs — in the wash panel, this resort's kitchens beside it, and the
+ * rates we have tracked in the "Know" band at the foot.
+ *
+ * Stays data is resort-level only (no room or view granularity — see the memory
+ * note `stays-data-resort-level-only`), which is why every figure on the page is
+ * a nightly rate for a party rather than a room type.
  */
 export function ResortDetail({ slug }: { slug: string }) {
   const resort = resortBySlug(slug);
+  const { data: session } = authClient.useSession();
+
+  // The committed search, shared by the wash panel, the hero's headline chip and
+  // the band's two charts — one tuple, so nothing on the page can be quoting a
+  // different stay from anything else. Seeded with a sensible default on the
+  // client only (SSR and the browser would otherwise disagree about "today"),
+  // so the page opens with a live quote and a trend rather than a blank form.
+  const [search, setSearch] = React.useState<SearchState | null>(null);
+  React.useEffect(() => {
+    setSearch((prev) => prev ?? defaultStaySearch());
+  }, []);
+
+  // The quoted nightly rate, reported up by the panel so the hero can print it
+  // as the page's headline number — the standby wait's slot on a ride page.
+  // `useCallback`, because the panel publishes it from an effect.
+  const [quote, setQuote] = React.useState<number | null>(null);
+  const onQuote = React.useCallback((price: number | null) => setQuote(price), []);
+
+  // The phone layout hangs the ticket's crease on the hero's bottom edge, so
+  // both boxes need the stub's top-half height — it varies with how many lines
+  // the resort's name takes ("Disney's Animal Kingdom Lodge — Kidani Village"
+  // is three). The ticket measures it; the page publishes it as `--crease`.
+  const [crease, setCrease] = React.useState(TICKET_DEFAULT_CREASE);
+
+  const coords = resort ? resortCoords(resort.slug) : null;
+  const nearby = React.useMemo(() => (coords ? landmarkDistances(coords) : []), [coords]);
+  const parkMarkers = React.useMemo(
+    () => nearby.map((l) => ({ latitude: l.lat, longitude: l.lng, label: l.short })),
+    [nearby],
+  );
+
+  // Does this resort have kitchens of its own? `EatHere` self-hides when it has
+  // nothing, which would leave the wide column empty rather than absent — so
+  // the page asks the identical query (same key, so it costs no second round
+  // trip) and drops the column with it. Some catalog entries genuinely have
+  // none: a DVC tower's venues are listed under its host resort's name.
+  const trpc = useTRPC();
+  const diningQ = useQuery({
+    ...trpc.dining.byPark.queryOptions({
+      parkName: resort?.name ?? "",
+      limit: EAT_HERE_CATALOG_LIMIT,
+    }),
+    enabled: !!resort,
+  });
+  // True until the query lands (which is also while `EatHere` draws its own
+  // skeleton), so the page doesn't open one-column and snap to two. Tested on
+  // the data rather than `isLoading`, which is false on the first client render
+  // — see `EatHere`'s own guard for why.
+  const hasWide = !diningQ.data || diningQ.data.length > 0;
 
   if (!resort) {
     return (
@@ -393,21 +503,9 @@ export function ResortDetail({ slug }: { slug: string }) {
   }
 
   const blurb = TIER_META.find((t) => t.key === resort.tier)?.blurb ?? null;
-  const coords = resortCoords(resort.slug);
-
-  // Committed search shared by the availability card and the price-trend chart.
-  // Seeded with a sensible default on the client only (SSR/client `new Date()`
-  // would otherwise disagree), so the page opens with a live quote + trend.
-  const [search, setSearch] = React.useState<SearchState | null>(null);
-  React.useEffect(() => {
-    setSearch((prev) => prev ?? defaultStaySearch());
-  }, []);
-
-  const nearby = React.useMemo(() => (coords ? landmarkDistances(coords) : []), [coords]);
-  const parkMarkers = React.useMemo(
-    () => nearby.map((l) => ({ latitude: l.lat, longitude: l.lng, label: l.short })),
-    [nearby],
-  );
+  const area = resort.area ? areaLabel(resort.area) : null;
+  const placeLine = [STORE_NAME[resort.store], area].filter(Boolean).join(" · ");
+  const parks = nearby.filter((l) => l.kind === "park").slice(0, TICKET_PARKS);
 
   const historyParams =
     search?.range.from && search.range.to
@@ -426,90 +524,256 @@ export function ResortDetail({ slug }: { slug: string }) {
     ? `${rangeLabel(search.range)} · ${partyLabel(search.adults, search.children)}`
     : "";
 
+  // ── Ticket contents ────────────────────────────────────────────────────────
+  // Three facts that never move, on purpose. The nightly rate is deliberately
+  // *not* among them: it is the hero's headline number (as the standby wait is
+  // on a ride), it arrives a beat after the page from a client-side search, and
+  // a fact cell appearing late would reflow the other two under the reader's
+  // eye every time they changed the dates. Everything here is catalog data, so
+  // the stub is complete in the SSR'd markup (plan §4.9).
+  const facts: Array<TicketFact> = [{ label: "Tier", value: TIER_LABEL[resort.tier] }];
+  const fillers: Array<TicketFact | null> = [
+    area ? { label: "Area", value: area } : null,
+    parks[0] ? { label: "Nearest park", value: parks[0].short, hint: parks[0].name } : null,
+    { label: "Books at", value: STORE_NAME[resort.store] ?? "Disney" },
+  ];
+  for (const f of fillers) {
+    if (facts.length >= 3) break;
+    if (f && !facts.some((existing) => existing.label === f.label)) facts.push(f);
+  }
+
+  const bookHref = resort.detailUrl;
+  const alertDims = {
+    checkInDate: search?.range.from ? iso(search.range.from) : "",
+    checkOutDate: search?.range.to ? iso(search.range.to) : "",
+    adults: search?.adults ?? 2,
+    children: search?.children ?? 0,
+    childAges: childAgesFor(search?.children ?? 0),
+    accessible: search?.accessible ?? false,
+    floridaResident: search?.floridaResident ?? false,
+  };
+
   return (
-    <div className={cn(PAGE_WIDTH, "flex flex-col gap-6", HERO_PAGE_PADDING)}>
-      {/* Cast-member-only; renders nothing for everyone else, so it adds no gap. */}
-      <RemovalRequestDialog
-        entityType="resort"
-        entityId={resort.slug}
-        entityName={resort.name}
-        className="hidden self-end md:inline-flex"
+    <div
+      style={{ "--crease": `${crease}px` } as React.CSSProperties}
+      className={cn(PAGE_WIDTH, "flex flex-col", HERO_PAGE_PADDING, ACTION_BAR_PAGE_PAD)}
+    >
+      {/* The hero. No flight lands here — resorts have no map marker — but the
+          shared shell keeps the treatment (and the `data-hero` contract, should
+          resort markers ever land) identical across every detail page. The tier
+          and area badges it used to wear are on the stub now; the only overlay
+          left is the page's one live number, which is what a night here costs
+          for the stay currently in the panel below. */}
+      <DetailHero
+        heroKey={heroFlightKey("resort", resort.slug)}
+        name={resort.name}
+        subtitle={placeLine}
+        image={resort.image ?? null}
+        thumbhash={resort.imageThumbhash}
+        flying={false}
+        entrance={false}
+        tear
+        crease="always"
+        titleless
+        underNav
+        overlays={({ chipFx }) =>
+          quote != null ? (
+            <div
+              style={chipFx(0).style}
+              className={cn(
+                "absolute flex items-baseline gap-1.5 rounded-2xl bg-black/75 px-3.5 py-2 text-white shadow-lg backdrop-blur-sm",
+                HERO_OVERLAY_HEADLINE,
+                chipFx(0).className,
+              )}
+            >
+              <span className="text-3xl font-bold leading-none tabular-nums sm:text-4xl">
+                ${quote.toLocaleString()}
+              </span>
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-white/70">
+                / night
+              </span>
+            </div>
+          ) : null
+        }
       />
 
-      <header className="flex flex-col gap-4">
-        {/* Identity hero, matching the ride/dining/shop pages: the resort photo
-            (or a neutral gradient), name + tier/area overlaid. No flight lands
-            here — resorts have no map marker — but the shared shell keeps the
-            treatment (and the `data-hero` contract, should resort markers ever
-            land) identical across every detail page. The tier/area badges the
-            old header wore now ride the subtitle line; only the blurb stays
-            below, since the hero can't carry a paragraph. */}
-        <DetailHero
+      {/* Three children on a two-column grid, placed explicitly — the venue
+          page's arrangement, over a hotel's material: the ticket and the rest of
+          the narrow column take rows 1 and 2 of column 1, and the wide column
+          spans both rows of column 2, so the food rides up beside the ticket
+          into what would otherwise be dead space under the hero.
+
+          The phone order is ticket → what it costs → what it is → where it is →
+          what to eat, carried by two `order`s that dissolve at `md`. */}
+      <div
+        className={cn(
+          "flex flex-col gap-5",
+          // A resort with no kitchens listed under its own name (a DVC tower's
+          // venues sit under its host resort) has nothing for the wide column,
+          // and an empty 1fr beside a 1,100px column is worse than no grid —
+          // so the page simply stays the single phone column. The placement
+          // classes below are inert in a flex container, and the `contents`
+          // wrappers dissolve into it exactly as they do on a phone.
+          hasWide
+            ? "md:grid md:grid-cols-[minmax(0,30rem)_minmax(0,1fr)] md:grid-rows-[auto_1fr] md:items-start md:gap-x-6 md:gap-y-5 xl:grid-cols-[minmax(0,34rem)_minmax(0,1fr)]"
+            : "md:max-w-[34rem]",
+        )}
+      >
+        <Ticket
+          onCreaseHeight={setCrease}
+          // Pulled up by its own top half at every width, so the crease lands on
+          // the hero's bottom edge (the hero is `crease="always"`), and nudged
+          // past the column's left edge on a desktop so the stub reads as laid
+          // *on* the page rather than ruled into the grid.
+          className="mt-[calc(var(--crease)*-1)] md:col-start-1 md:row-start-1 md:-ml-3 lg:-mx-2.5"
           heroKey={heroFlightKey("resort", resort.slug)}
-          name={resort.name}
-          subtitle={[TIER_LABEL[resort.tier], resort.area].filter(Boolean).join(" · ")}
-          image={resort.image ?? null}
-          thumbhash={resort.imageThumbhash}
-          flying={false}
-          entrance={false}
-        />
-        {blurb && <p className="text-muted-foreground">{blurb}</p>}
-      </header>
-
-      <ResortAvailability resort={resort} committed={search} onCommit={setSearch} />
-
-      <ResortDiningShelf resortName={resort.name} />
-
-      {coords && (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-semibold tracking-tight">Location</h2>
-          <LocationMap
-            latitude={coords[0]}
-            longitude={coords[1]}
-            label={resort.name}
-            markers={parkMarkers}
-            caption={`Approximate location${resort.area ? ` · ${resort.area}` : ""}`}
-            className="h-48 w-full overflow-hidden rounded-2xl border sm:h-72"
-          />
-          {nearby.some((l) => l.kind === "park") && (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-medium text-muted-foreground">Distance to parks</span>
-              {nearby
-                .filter((l) => l.kind === "park")
-                .map((l) => (
-                  <span
-                    key={l.short}
-                    className="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-xs"
-                  >
-                    <span className="font-medium">{l.short}</span>
-                    <span className="text-muted-foreground tabular-nums">
-                      {l.miles.toFixed(1)} mi
-                    </span>
-                  </span>
+          title={resort.name}
+          subtitle={
+            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              {placeLine && <span>{placeLine}</span>}
+              <TicketChip accent>{TIER_LABEL[resort.tier]}</TicketChip>
+            </span>
+          }
+          facts={facts}
+          // No keys: the one place this page can send anybody is Disney's own
+          // resort page, and the wash panel's yellow key already goes there. A
+          // second key to the same URL is not a second option.
+          // The stub's lower half: how far this hotel is from the gates. It is a
+          // fact about the place — the same kind as its tier — so it rides on
+          // the ticket, exactly as the park's hours and the ride's windows do.
+          //
+          // "Distance", never "walk": these are straight-line miles between two
+          // points, and almost every WDW resort reaches its parks by bus, boat
+          // or Skyliner. The meta line says so rather than leaving the reader to
+          // infer it from a figure that looks walkable.
+          footer={
+            parks.length > 0 ? (
+              <TicketBlock title="Distance to the parks" meta="Straight-line" gap="tight">
+                {parks.map((l) => (
+                  <TicketRow key={l.short} lead={`${l.miles.toFixed(1)} mi`}>
+                    {l.short}
+                  </TicketRow>
                 ))}
+              </TicketBlock>
+            ) : null
+          }
+        />
+
+        {/* THE FOOD. The wide column, spanning both of the grid's rows so it runs
+            up beside the ticket — the venue page's own arrangement, over a
+            hotel's material. It carries no band heading, unlike the venue and
+            ride pages: the card brings its own, and the two stacked read as a
+            heading about a heading. Last on a phone (`order-3`). */}
+        {hasWide && (
+          <div className="order-3 md:col-start-2 md:row-span-2 md:row-start-1 md:pt-4">
+            <EatHere parkName={resort.name} title="Eat without leaving" />
+          </div>
+        )}
+
+        {/* The rest of the narrow column, under the ticket. */}
+        <div className="contents md:col-start-1 md:row-start-2 md:flex md:flex-col md:gap-5">
+          {/* The page's job, directly under the ticket at every width. */}
+          <CheckRatesPanel
+            resort={resort}
+            committed={search}
+            onCommit={setSearch}
+            onQuote={onQuote}
+            bookHref={bookHref}
+          />
+
+          <div className="order-2 flex flex-col gap-5 md:contents">
+            {/* What this tier *is*, rather than what it costs this weekend. */}
+            {blurb && (
+              <p className="text-[15px] leading-[1.45] text-pretty text-muted-foreground md:text-base md:leading-[1.55]">
+                {blurb}
+              </p>
+            )}
+
+            {/* The exit block: where it sits on the property. Every WDW resort
+                has coordinates; the guard is for a catalog entry we haven't
+                placed yet. */}
+            {coords && (
+              <TintPanel tone="peach" pad="tight" title={area ? `Find it near ${area}` : "Find it"}>
+                <LocationMap
+                  latitude={coords[0]}
+                  longitude={coords[1]}
+                  label={resort.name}
+                  markers={parkMarkers}
+                  caption={`Approximate location${resort.area ? ` · ${resort.area}` : ""}`}
+                  className="h-48 w-full overflow-hidden rounded-[18px] sm:h-56 md:h-[15.5rem]"
+                />
+              </TintPanel>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" className="font-bold" render={<Link to="/stays" />}>
+                Compare nearby resorts
+              </Button>
             </div>
-          )}
-        </section>
-      )}
 
-      {historyParams && (
-        <ResortPriceChart params={historyParams} enabled nightsLabel={nightsLabel} />
-      )}
-
-      <div className="flex flex-wrap items-center gap-3 text-sm">
-        <Link to="/stays" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
-          Compare nearby resorts
-        </Link>
-        <a
-          href={resort.detailUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1.5 text-primary hover:underline"
-        >
-          View on the official site
-          <ExternalLinkIcon className="size-3.5" />
-        </a>
+            {/* Cast-member-only; renders nothing for everyone else. */}
+            <RemovalRequestDialog
+              entityType="resort"
+              entityId={resort.slug}
+              entityName={resort.name}
+              className="w-fit"
+            />
+          </div>
+        </div>
       </div>
+
+      {/* ── KNOW: what we've watched this resort charge ──
+
+          The trend always draws — with its own "we haven't tracked these dates
+          yet, set an alert" state when it has nothing, which is a useful thing
+          to say. The calendar withholds itself instead: a grid of six rows of
+          hairlines answers nothing the trend's sentence hasn't already. */}
+      <Band className="mt-10 md:mt-14">
+        <BandHeading
+          kicker="Know"
+          title="What it has been costing"
+          meta="Nightly rates we've recorded, for the party above"
+        />
+        {historyParams && (
+          <ResortPriceChart params={historyParams} enabled nightsLabel={nightsLabel} />
+        )}
+        {search && (
+          <ResortRateCalendar
+            resortId={resort.id}
+            store={resort.store}
+            adults={search.adults}
+            children={search.children}
+            childAges={childAgesFor(search.children)}
+            accessible={search.accessible}
+            floridaResident={search.floridaResident}
+            partyLabel={partyLabel(search.adults, search.children)}
+          />
+        )}
+      </Band>
+
+      {/* The phone's one-line answer to "what do I do here". */}
+      <DetailActionBar>
+        <Button
+          variant="yellow"
+          size="lg"
+          className="h-12 min-w-0 flex-1 text-[15px] font-bold"
+          render={<a href={bookHref} target="_blank" rel="noreferrer" />}
+        >
+          Book on Disney
+          <ExternalLinkIcon />
+        </Button>
+        <StayAlertButton
+          resortId={resort.id}
+          resortName={resort.name}
+          tier={resort.tier}
+          area={resort.area}
+          dims={alertDims}
+          loggedIn={!!session?.user}
+          variant="key"
+          label="Alert"
+          className="h-12 shrink-0 text-[15px]"
+        />
+      </DetailActionBar>
     </div>
   );
 }

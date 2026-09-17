@@ -8,6 +8,7 @@ import {
   InfoIcon,
   LoaderCircleIcon,
   LocateFixedIcon,
+  MapIcon,
   MinusIcon,
   PlusIcon,
   PopcornIcon,
@@ -257,6 +258,29 @@ export function ParkDetailButton({ slug }: { slug: string }) {
     >
       <span>Park info</span>
       <ArrowUpRightIcon className="size-4 shrink-0 text-muted-foreground" />
+    </Link>
+  );
+}
+
+/**
+ * Way out of an *embedded* map into the full `/map` route — a 3D pill in the
+ * map's own top-right corner, traveling in the portal with the map. It lives
+ * here rather than in the park page's layout because the row it used to sit in
+ * (right-aligned above the frame) was a whole line of page height spent on one
+ * button, with the space beside it empty; the map's top-right corner is free
+ * chrome real estate, next to nothing.
+ *
+ * Desktop only: the phone's route into the full map is the floating bottom bar,
+ * and repeating it here would just cover the map.
+ */
+export function FullMapButton() {
+  return (
+    <Link
+      to="/map"
+      className="btn-3d-outline border-3d shadow-3d pointer-events-auto absolute top-3 right-3 z-10 hidden shrink-0 select-none items-center gap-1.5 rounded-full bg-background/95 px-4 py-2 text-sm font-medium text-foreground backdrop-blur transition-[transform,box-shadow] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active md:flex dark:border-[color-mix(in_oklch,var(--border),white_25%)]"
+    >
+      <MapIcon className="size-4 shrink-0 text-muted-foreground" />
+      <span>Open full map</span>
     </Link>
   );
 }

@@ -33,7 +33,7 @@ import {
   DetailHero,
   HERO_BLEED,
   HERO_CREASE_ALIGNED,
-  HERO_OVERLAY_TOP_UNDER_NAV,
+  HERO_OVERLAY_HEADLINE,
   HERO_PAGE_PADDING,
   HERO_UNDER_NAV,
 } from "#/components/detail-hero.tsx";
@@ -101,7 +101,6 @@ import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useIsNative } from "#/hooks/use-is-native.ts";
 import { useHydrated } from "#/lib/use-hydrated.ts";
 import { useIsMobile } from "#/hooks/use-mobile.ts";
-import { useParkClock } from "#/hooks/use-park-clock.ts";
 import { RemovalRequestDialog } from "#/components/removal-request-dialog.tsx";
 import { resortSlugByName } from "#/components/stays/resort-detail.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
@@ -279,8 +278,8 @@ function DiningHero({
             style={chipFx(0).style}
             title={walkupDetail || undefined}
             className={cn(
-              "absolute left-4 flex items-center gap-2 rounded-2xl bg-black/75 px-3.5 py-2 text-white shadow-lg backdrop-blur-sm md:left-5",
-              HERO_OVERLAY_TOP_UNDER_NAV,
+              "absolute flex items-center gap-2 rounded-2xl bg-black/75 px-3.5 py-2 text-white shadow-lg backdrop-blur-sm",
+              HERO_OVERLAY_HEADLINE,
               chipFx(0).className,
             )}
           >
@@ -855,6 +854,7 @@ function MenuPanel({
   cover,
   dishes,
   itemCount,
+  meta,
   onOpen,
 }: {
   loading: boolean;
@@ -862,13 +862,16 @@ function MenuPanel({
   cover: MenuCover | null;
   dishes: Array<MenuItemData>;
   itemCount: number;
+  /** Which menu is on show and how much of it there is — "Lunch · 42 dishes". */
+  meta?: React.ReactNode;
   onOpen: () => void;
 }) {
   return (
-    /* Title-less: the column's own band heading carries "What\'s cookin\'" and
-       the meal period, so a second heading a line below it would only restate
-       them. The mint field opens straight onto the food. */
-    <TintPanel tone="mint">
+    /* The heading lives here now (2026-09-17, Josh). It used to sit above the
+       panel as the column's band heading, which put a kicker and a 26px title
+       over a block that then opened with its own field — two headings deep
+       before the first dish. One heading, on the thing it names. */
+    <TintPanel tone="mint" title={COPY.menu} meta={meta}>
       {loading ? (
         <div className="flex flex-col gap-2" aria-hidden>
           {Array.from({ length: TEASER_DISHES }, (_, i) => (
@@ -1158,10 +1161,6 @@ export function DiningVenueDetail({
         : null,
     [parksQ.data, venue?.parkResort],
   );
-
-  // The clock the wide column is stamped with. Orlando, both resorts — the same
-  // timezone every other dining surface assumes (see `parkNowMinutes`).
-  const clock = useParkClock("America/New_York");
 
   const r = useReservations({
     facilityId,
@@ -1476,10 +1475,10 @@ export function DiningVenueDetail({
   // three columns of dense rows, and readers browsing one want the room.
   const [menuWide, setMenuWide] = React.useState(false);
 
-  // The wide column's heading line: which menu is on show, and how much of it
+  // The menu panel's heading line: which menu is on show, and how much of it
   // there is. It reads beside the title on a desktop and drops on a phone,
   // where both facts are a tap away inside the sheet.
-  const menuBandMeta = hasMenu
+  const menuMeta = hasMenu
     ? [
         teaser?.period,
         `${menuItemCount.toLocaleString()} ${menuItemCount === 1 ? "dish" : "dishes"}`,
@@ -1598,7 +1597,7 @@ export function DiningVenueDetail({
           {venueQ.isLoading && !flight ? (
             /* Nothing to name the ticket with yet (no map-card seed): hold its
                box so the blocks below don't jump when the venue lands. */
-            <Skeleton className="mt-[calc(var(--crease)*-1)] h-52 rounded-[22px] md:col-start-1 md:row-start-1" />
+            <Skeleton className="mt-[calc(var(--crease)*-1)] h-52 rounded-none md:col-start-1 md:row-start-1" />
           ) : (
             <Ticket
               onCreaseHeight={setCrease}
@@ -1693,11 +1692,8 @@ export function DiningVenueDetail({
           <div className="contents md:col-start-2 md:row-span-2 md:row-start-1 md:flex md:flex-col md:gap-4 md:pt-4">
             {venue && (state.menuQ.isLoading || hasMenu || !hasJobPanel) && (
               <div className="order-1 flex flex-col gap-4 md:contents">
-                <BandHeading
-                  kicker={clock ? `Now · ${clock}` : "Now"}
-                  title={COPY.menu}
-                  meta={menuBandMeta}
-                />
+                {/* No band heading over it (2026-09-17, Josh): one heading per
+                    block, and it belongs to the panel — see `MenuPanel`. */}
                 <div id="menu" className="scroll-mt-16">
                   <MenuPanel
                     loading={state.menuQ.isLoading}
@@ -1705,6 +1701,7 @@ export function DiningVenueDetail({
                     cover={menuCover}
                     dishes={teaserDishes}
                     itemCount={menuItemCount}
+                    meta={menuMeta}
                     onOpen={() => setMenuOpen(true)}
                   />
                 </div>

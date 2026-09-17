@@ -3,13 +3,7 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "#/components/ui/card.tsx";
+import { DetailCard } from "#/components/detail/panels.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { QueueState } from "#/server/parks/codes.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
@@ -51,12 +45,16 @@ function classifyState(state: number | null): AvailState {
   }
 }
 
+// The page's own wait ramp rather than raw Tailwind greens and reds: cool is
+// the colour a good number is drawn in everywhere else on these pages (the
+// quietest weekday's bar, a short wait's pill), and hot is the bad end of the
+// same scale. A closed/unread bucket is the track showing through.
 const STATE_STYLE: Record<AvailState, { fill: string; label: string }> = {
-  available: { fill: "bg-emerald-500 dark:bg-emerald-400", label: "Available" },
-  limited: { fill: "bg-amber-500 dark:bg-amber-400", label: "Limited or changing" },
-  "sold-out": { fill: "bg-rose-500 dark:bg-rose-400", label: "Sold out" },
-  paused: { fill: "bg-slate-400 dark:bg-slate-500", label: "Paused" },
-  none: { fill: "bg-muted", label: "No data" },
+  available: { fill: "bg-wait-cool", label: "Available" },
+  limited: { fill: "bg-wait-warm", label: "Limited or changing" },
+  "sold-out": { fill: "bg-wait-hot", label: "Sold out" },
+  paused: { fill: "bg-heat-none", label: "Paused" },
+  none: { fill: "bg-transparent", label: "No reading" },
 };
 
 // The three states worth a legend swatch — "paused" is rare and "none" reads as
@@ -84,9 +82,45 @@ function fillGrid(data: Array<Bucket>): Array<Bucket> {
   return grid;
 }
 
+/** A stretch the line spent in one state: where it starts, how many buckets it
+ *  ran for, and what it was doing. */
+interface Run {
+  key: string;
+  state: AvailState;
+  count: number;
+  from: string;
+  /** Exclusive — the start of the next run, or one bucket past the last. */
+  to: string;
+}
+
+/**
+ * Collapse the bucket grid into contiguous same-state runs.
+ *
+ * The strip used to draw one div per bucket with a hairline between them, which
+ * at 96 buckets read as a barcode: a stretch the line sat open all afternoon
+ * came out as forty separate green ticks, so the eye counted stripes instead of
+ * reading spans, and the one amber bucket that actually mattered was the same
+ * size as its neighbours. Runs make the shape of the day the thing you see.
+ */
+function toRuns(grid: Array<Bucket>): Array<Run> {
+  const runs: Array<Run> = [];
+  for (const b of grid) {
+    const state = classifyState(b.availState);
+    const last = runs[runs.length - 1];
+    const end = new Date(new Date(b.bucket).getTime() + BUCKET_MS).toISOString();
+    if (last && last.state === state) {
+      last.count += 1;
+      last.to = end;
+    } else {
+      runs.push({ key: b.bucket, state, count: 1, from: b.bucket, to: end });
+    }
+  }
+  return runs;
+}
+
 /**
  * The ride page's Lightning Lane / Express availability timeline: a 24-hour strip
- * of coloured ticks (available / limited / sold out) for one attraction's paid
+ * of coloured spans (available / limited / sold out) for one attraction's paid
  * line. Rendered only for rides that actually offer the line — the caller gates
  * on `paidLineInfo(...).has`.
  */
@@ -111,6 +145,19 @@ export function LightningLaneAvailability({
   const grid = React.useMemo(
     () => fillGrid((q.data ?? []).map((b) => ({ bucket: b.bucket, availState: b.availState }))),
     [q.data],
+  );
+
+  const runs = React.useMemo(() => toRuns(grid), [grid]);
+
+  /** A bucket edge as a park-local clock time, for the spans' tooltips. */
+  const clock = React.useCallback(
+    (iso: string) =>
+      new Date(iso).toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+        timeZone: timeZone ?? "America/New_York",
+      }),
+    [timeZone],
   );
 
   // A few evenly-spaced clock labels under the strip. Buckets are evenly spaced
@@ -152,36 +199,34 @@ export function LightningLaneAvailability({
   if (!q.isLoading && observed <= 1 && hasLive) return null;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{product} availability</CardTitle>
-        <CardDescription>Last 24 hours · availability over time</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        {q.isLoading ? (
-          <Skeleton className="h-9 w-full rounded-md" />
-        ) : !hasLive ? (
-          <p className="py-4 text-center text-sm text-muted-foreground">
-            No {product} availability recorded in the last 24 hours yet.
-          </p>
-        ) : (
-          <>
-            <div className="flex h-9 w-full gap-px overflow-hidden rounded-md">
-              {grid.map((b) => {
-                const cls = classifyState(b.availState);
-                const time = new Date(b.bucket).toLocaleTimeString("en-US", {
-                  hour: "numeric",
-                  minute: "2-digit",
-                  timeZone: timeZone ?? "America/New_York",
-                });
-                return (
-                  <div
-                    key={b.bucket}
-                    className={cn("h-full flex-1", STATE_STYLE[cls].fill)}
-                    title={`${time} · ${STATE_STYLE[cls].label}`}
-                  />
-                );
-              })}
+    <DetailCard
+      title={`${product} availability`}
+      description="Last 24 hours · how the line has run"
+    >
+      {q.isLoading ? (
+        <Skeleton className="h-7 w-full rounded-full" />
+      ) : !hasLive ? (
+        <p className="py-2 text-sm text-muted-foreground">
+          No {product} availability recorded in the last 24 hours yet.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            {/* One track, spans painted onto it. The track's own fill is what a
+                stretch with no reading shows as, so "the line wasn't running"
+                is the absence of colour rather than a fourth colour. */}
+            <div className="flex h-7 w-full overflow-hidden rounded-full bg-muted ring-1 ring-card-edge ring-inset">
+              {runs.map((run) => (
+                <div
+                  key={run.key}
+                  // Width by bucket count. Every span has zero content, so the
+                  // grow factors split the whole track between them — the
+                  // strip stays proportional at any card width.
+                  style={{ flexGrow: run.count }}
+                  className={cn("h-full", STATE_STYLE[run.state].fill)}
+                  title={`${clock(run.from)} – ${clock(run.to)} · ${STATE_STYLE[run.state].label}`}
+                />
+              ))}
             </div>
             {ticks.length > 0 && (
               <div className="flex justify-between text-[11px] tabular-nums text-muted-foreground">
@@ -190,17 +235,18 @@ export function LightningLaneAvailability({
                 ))}
               </div>
             )}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
-              {LEGEND.map((s) => (
-                <span key={s} className="flex items-center gap-1.5">
-                  <span className={cn("size-2.5 rounded-[3px]", STATE_STYLE[s].fill)} />
-                  {STATE_STYLE[s].label}
-                </span>
-              ))}
-            </div>
-          </>
-        )}
-      </CardContent>
-    </Card>
+          </div>
+          {/* The house legend — same swatch and type as the calendar's ramp. */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] font-semibold text-muted-foreground">
+            {LEGEND.map((st) => (
+              <span key={st} className="flex items-center gap-1.5">
+                <span className={cn("size-2.5 rounded-[3px]", STATE_STYLE[st].fill)} />
+                {STATE_STYLE[st].label}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </DetailCard>
   );
 }

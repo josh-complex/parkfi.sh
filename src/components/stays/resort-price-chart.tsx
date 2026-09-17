@@ -12,13 +12,7 @@ import { scaleLinear, scaleTime } from "@visx/scale";
 import { Bar, Circle, Line, LinePath } from "@visx/shape";
 import { TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "#/components/ui/card.tsx";
+import { DetailCard } from "#/components/detail/panels.tsx";
 import { ChartErrorBoundary } from "#/components/chart-error-boundary.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import {
@@ -244,37 +238,33 @@ export function ResortPriceChart({
   }, [points]);
 
   return (
-    <Card className="flex flex-col overflow-hidden">
-      <CardHeader>
-        <CardTitle className="text-base">Price trend</CardTitle>
-        <CardDescription className="truncate">Tracked nightly rate · {nightsLabel}</CardDescription>
-      </CardHeader>
-      <CardContent className="flex min-h-0 flex-1 flex-col gap-3 px-2 pb-4 sm:px-4">
-        <ChartErrorBoundary
-          label="Price trend"
-          fallback={<Empty>Trend unavailable right now.</Empty>}
-        >
-          {!enabled ? (
-            <Empty>Search dates above to see this resort&rsquo;s rate trend.</Empty>
-          ) : historyQ.isLoading ? (
-            <Skeleton className="h-[212px] w-full" />
-          ) : points.length < 2 || !stats ? (
-            <Empty>
-              {points.length === 1 && stats
-                ? `We just started tracking these dates at ${usd(stats.current)}/night. The trend fills in as we re-check — set an alert above to catch a drop.`
-                : "We don't have a rate history for these dates yet. Set an alert above and we'll watch them for you."}
-            </Empty>
-          ) : (
-            <>
-              <PriceSummary stats={stats} />
-              <ChartFrame height={PLOT_H + 24}>
-                {({ width }) => <PricePlot width={width} points={points} avg={stats.avg} />}
-              </ChartFrame>
-            </>
-          )}
-        </ChartErrorBoundary>
-      </CardContent>
-    </Card>
+    // A `DetailCard`, not the app's `Card`: the 3D shelf belongs on keys, and a
+    // chart is read rather than pressed (plan deviation D1).
+    <DetailCard title="Price trend" description={`Tracked nightly rate · ${nightsLabel}`}>
+      <ChartErrorBoundary
+        label="Price trend"
+        fallback={<Empty>Trend unavailable right now.</Empty>}
+      >
+        {!enabled ? (
+          <Empty>Search dates above to see this resort&rsquo;s rate trend.</Empty>
+        ) : historyQ.isLoading ? (
+          <Skeleton className="h-[212px] w-full" />
+        ) : points.length < 2 || !stats ? (
+          <Empty>
+            {points.length === 1 && stats
+              ? `We just started tracking these dates at ${usd(stats.current)}/night. The trend fills in as we re-check — set an alert above to catch a drop.`
+              : "We don't have a rate history for these dates yet. Set an alert above and we'll watch them for you."}
+          </Empty>
+        ) : (
+          <>
+            <PriceSummary stats={stats} />
+            <ChartFrame height={PLOT_H + 24}>
+              {({ width }) => <PricePlot width={width} points={points} avg={stats.avg} />}
+            </ChartFrame>
+          </>
+        )}
+      </ChartErrorBoundary>
+    </DetailCard>
   );
 }
 

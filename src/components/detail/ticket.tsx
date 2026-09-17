@@ -7,7 +7,17 @@ import { useRender } from "@base-ui/react/use-render";
 
 import { cn } from "#/lib/utils.ts";
 
-/** The notch radius, in px. Shared by the mask and the dashed cut line's inset. */
+/**
+ * The notch radius, in px. Shared by every die-cut — the crease's semicircles
+ * and the corners' quarter circles — and by the dashed tear lines' inset,
+ * which has to clear them.
+ *
+ * One radius for all of them because they are all the same cut: a roll ticket
+ * is nicked at each end of its tear line, so the notch that lands mid-edge on
+ * the fold lands on the corner point at the edges this stub was torn along.
+ * That is also why the face is squared off (see the face's classes below) —
+ * a quarter circle only reads as a nick against a right angle.
+ */
 const NOTCH = 18;
 
 /**
@@ -28,10 +38,12 @@ export const TICKET_DEFAULT_CREASE = 104;
 const NOTCH_AA = 0.5;
 
 /**
- * Die-cut semicircles at either side of the crease, as one mask over the whole
- * ticket: two radial gradients intersected, so each notch is a real hole in the
- * element (the wrapper's drop-shadows then trace the masked outline, so the
- * shelf bends around the notches instead of running straight across them).
+ * Every die-cut in the stub, as one mask over the whole ticket: semicircles at
+ * either side of the crease, quarter circles at the four corners, six radial
+ * gradients intersected, so each one is a real hole in the element (the
+ * wrapper's drop-shadows then trace the masked outline, so the shelf bends
+ * around the cuts instead of running straight across them). On a phone the top
+ * pair is cut over the hero photo, which shows through them.
  *
  * One masked element rather than a masked half per side of the crease: two
  * masked boxes meeting on the same line leave a hairline seam, and their two
@@ -45,9 +57,14 @@ const NOTCH_AA = 0.5;
  * that alias the two, so the longhands come after the shorthands.
  */
 const NOTCH_MASK = (() => {
-  const hole = (x: string) =>
-    `radial-gradient(circle at ${x} var(--ticket-crease), transparent calc(${NOTCH}px - var(--ticket-aa)), #000 calc(${NOTCH}px + var(--ticket-aa)))`;
-  const mask = `${hole("0")}, ${hole("100%")}`;
+  const hole = (x: string, y: string, r: number) =>
+    `radial-gradient(circle at ${x} ${y}, transparent calc(${r}px - var(--ticket-aa)), #000 calc(${r}px + var(--ticket-aa)))`;
+  const pair = (y: string, r: number) => [hole("0", y, r), hole("100%", y, r)];
+  const mask = [
+    ...pair("var(--ticket-crease)", NOTCH),
+    ...pair("0", NOTCH),
+    ...pair("100%", NOTCH),
+  ].join(", ");
   return {
     WebkitMask: mask,
     mask,
@@ -55,6 +72,15 @@ const NOTCH_MASK = (() => {
     maskComposite: "intersect",
   } as CSSProperties;
 })();
+
+/**
+ * A tear line: a dashed rule running between the two die-cuts that mark its
+ * ends, held clear of them by the notch radius. Positioned by the caller — the
+ * crease straddles the boundary between the stub's two halves, and the edge
+ * perforations run on the edges themselves, which is where the corner cuts are
+ * centred and so where the tear went.
+ */
+const PERF = "pointer-events-none absolute inset-x-5 border-t-2 border-dashed";
 
 export interface TicketFact {
   label: string;
@@ -179,6 +205,10 @@ export function Ticket({
 
   return (
     <div
+      // Tagged for the hero it overlaps: the gallery dots sit on that hero's
+      // bottom edge and have to clear this stub's right edge (see `--dots-left`
+      // in `DetailHero`).
+      data-ticket
       className={cn("relative z-10 text-ink-on-yellow", className)}
       style={
         {
@@ -193,7 +223,11 @@ export function Ticket({
       }
     >
       <div
-        className="flex flex-col rounded-[22px] md:rounded-3xl"
+        // Square, not rounded: the corner cuts are quarter circles centred on
+        // the corner points, and a radius smaller than the cut is swallowed by
+        // it while a radius larger than it leaves a hooked sliver hanging over
+        // the hole. A torn ticket has square corners and a nick in each anyway.
+        className="flex flex-col"
         style={{
           ...NOTCH_MASK,
           // Lighter at the top, ramping to full brand yellow as it reaches the
@@ -205,7 +239,14 @@ export function Ticket({
             "linear-gradient(to bottom, var(--ticket-top), var(--brand-yellow) var(--ticket-crease), var(--ticket-bottom) var(--ticket-crease))",
         }}
       >
-        <div ref={topRef} className="flex flex-col gap-1 px-5 pb-4 pt-5 md:px-6 md:pb-5 md:pt-6">
+        <div
+          ref={topRef}
+          className="relative flex flex-col gap-1 px-5 pb-4 pt-5 md:px-6 md:pb-5 md:pt-6"
+        >
+          {/* The torn top edge: fainter than the crease, because it is where
+              this ticket left the strip rather than the fold it is meant to be
+              torn along next. */}
+          <span aria-hidden className={cn(PERF, "top-0 border-ink-on-yellow/22")} />
           <p
             data-hero-title={heroKey ? "" : undefined}
             data-hero-for={heroKey}
@@ -232,12 +273,11 @@ export function Ticket({
           </p>
         </div>
         <div className="relative flex flex-col gap-3.5 px-5 pb-[18px] pt-4 md:px-6 md:pb-[22px] md:pt-5">
-          {/* The perforation: a dashed rule straddling the crease (hence the
-              -1px), held clear of the notches at either end. */}
-          <span
-            aria-hidden
-            className="absolute inset-x-5 -top-px border-t-2 border-dashed border-ink-on-yellow/35"
-          />
+          {/* The crease: a dashed rule straddling the fold (hence the -1px),
+              held clear of the notches at either end. */}
+          <span aria-hidden className={cn(PERF, "-top-px border-ink-on-yellow/35")} />
+          {/* And the torn bottom edge, matching the top one. */}
+          <span aria-hidden className={cn(PERF, "bottom-0 border-ink-on-yellow/22")} />
           {/* Content-proportional, not equal thirds. Every cell starts at its
               own content width (`basis-auto`) and then takes a share of the
               leftover weighted by how long its value is (`factWeight`), so the

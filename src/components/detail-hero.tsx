@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import type { CSSProperties, ReactNode } from "react";
 
 import { HeroTear } from "#/components/detail/hero-tear.tsx";
@@ -109,6 +110,13 @@ export const HERO_UNDER_NAV = [
   "lg:h-[calc(35rem_+_var(--floating-nav-height)_+_var(--site-header-height))]",
 ].join(" ");
 
+/**
+ * The gap the gallery dots keep from the ticket stub's edge when the photo's
+ * own centre isn't clear of it — the same 1rem they keep from the hero's
+ * bottom edge.
+ */
+const DOTS_GAP = 16;
+
 /** Top-pinned hero overlays, dropped clear of the floating search pill. */
 export const HERO_OVERLAY_TOP = "top-[calc(var(--safe-top)_+_var(--app-header-h))] md:top-4";
 
@@ -117,6 +125,24 @@ export const HERO_OVERLAY_TOP = "top-[calc(var(--safe-top)_+_var(--app-header-h)
 export const HERO_OVERLAY_TOP_UNDER_NAV = [
   "top-[calc(var(--safe-top)_+_var(--app-header-h))]",
   "md:top-[calc(var(--site-header-height)_+_var(--floating-nav-height)_+_0.5rem)]",
+].join(" ");
+
+/**
+ * The headline blob — a ride's standby, a venue's walk-up list, a resort's
+ * nightly rate. Top-left on a phone, clear of the floating header; **bottom-
+ * right from `md`** (2026-09-17, Josh). On desktop the top-left corner is where
+ * the eye lands first, and spending it on a number the page states again a few
+ * hundred pixels down (in the ticket, and in the job block's own heading) meant
+ * the photo opened on a restatement. Bottom-right it reads as a caption on the
+ * picture instead: last thing seen, nothing blocked. The corner is free on
+ * every ticket page — the stub overlaps bottom-*left*, and the gallery dots are
+ * centred.
+ */
+export const HERO_OVERLAY_HEADLINE = [
+  "left-4 top-[calc(var(--safe-top)_+_var(--app-header-h))]",
+  // `*-auto` has to come after the phone values: these are one class list, and
+  // the merge resolves `md:top-*` / `md:left-*` last-wins.
+  "md:top-auto md:bottom-4 md:left-auto md:right-5",
 ].join(" ");
 
 /** What the hero hands its `overlays` render prop — the entrance stagger and
@@ -250,6 +276,54 @@ export function DetailHero({
     enabled: gallerable && !flying,
   });
   /**
+   * Where the dots sit along a crease-aligned hero's bottom edge, in px from
+   * its left edge: the photo's own centre when the pill clears the stub
+   * overlapping the bottom-left corner, and one `DOTS_GAP` to the right of the
+   * stub when it doesn't — which is what happens as the window narrows and the
+   * left column's stub grows towards the middle of the photo.
+   *
+   * Measured rather than derived: the pill's width is a function of how many
+   * slides this entity has, and the stub's of a grid track, a pair of negative
+   * margins and the breakpoint. Published as `--dots-left` and read by a `md:`
+   * class, so the phone — which hangs its dots a whole crease above a stub that
+   * spans the full width — never sees it, and so the server and the first
+   * client render agree (there is no variable until a layout effect sets one).
+   */
+  const heroRef = React.useRef<HTMLDivElement>(null);
+  const [dotsLeft, setDotsLeft] = React.useState<string>();
+  React.useLayoutEffect(() => {
+    const hero = heroRef.current;
+    if (!hero || !gallerable || crease !== "always") return;
+    const pill = hero.querySelector<HTMLElement>("[data-hero-dots]");
+    if (!pill) return;
+    const measure = () => {
+      // Looked up live: the stub mounts with the page's query, which may land
+      // after the slides that made this hero gallerable in the first place.
+      const ticket = document.querySelector<HTMLElement>("[data-ticket]");
+      if (!ticket) return;
+      const h = hero.getBoundingClientRect();
+      const t = ticket.getBoundingClientRect();
+      const w = pill.getBoundingClientRect().width;
+      setDotsLeft(`${Math.max(h.width / 2, t.right - h.left + DOTS_GAP + w / 2)}px`);
+    };
+    measure();
+    // The hero's box covers the stub's too — they share a page container, so
+    // nothing resizes one without resizing the other — and the hero's *height*
+    // rides `--crease`, which is how a stub mounting late gets measured.
+    const ro = new ResizeObserver(measure);
+    ro.observe(hero);
+    ro.observe(pill);
+    // Plus the window, for the breakpoints that move the stub's column without
+    // moving the hero: past the container's max width the photo stops growing,
+    // but `xl` still widens the left track from 30rem to 34rem under it.
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [gallerable, crease, gallery.total]);
+
+  /**
    * The indicator row, wherever this hero has room for it: centred on the free
    * bottom edge of a ticket hero, or stacked above the title on a hero that
    * draws its own (where the title block is bottom-anchored, so the dots grow
@@ -279,7 +353,9 @@ export function DetailHero({
   };
   return (
     <div
+      ref={heroRef}
       data-hero={heroKey}
+      style={dotsLeft ? ({ "--dots-left": dotsLeft } as CSSProperties) : undefined}
       {...(gallerable ? swipe.handlers : null)}
       className={cn(
         "relative isolate overflow-hidden md:shadow-sm",
@@ -402,7 +478,7 @@ export function DetailHero({
             // middle of the photo, pointing at nothing (2026-09-16, Josh). A
             // scalloped desktop still clears its fixed -48px overlap instead.
             crease === "always"
-              ? "bottom-[calc(var(--crease,6.5rem)_+_0.5rem)] md:bottom-4"
+              ? "bottom-[calc(var(--crease,6.5rem)_+_0.5rem)] md:bottom-4 md:left-[var(--dots-left,50%)]"
               : crease === "phone"
                 ? "bottom-[calc(var(--crease,6.5rem)_+_0.5rem)] md:bottom-16"
                 : "bottom-4 md:bottom-16",

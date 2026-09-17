@@ -4,6 +4,7 @@ import { config } from "#/server/parks/config.ts";
 import {
   buildPartyKey,
   fetchResortAvailability,
+  readCheapestCheckInDays,
   readStayObs,
   readStayPriceHistory,
   upsertStayQuery,
@@ -82,5 +83,39 @@ export const staysRouter = {
       const partyKey = buildPartyKey(input);
       const points = await readStayPriceHistory(input.resortId, input, partyKey);
       return { points };
+    }),
+
+  /**
+   * The cheapest check-in date to start a stay at one resort, for each of the
+   * next `days` days, at one party — the resort page's rate calendar.
+   *
+   * Dateless by design: `priceHistory` answers "how has *this* stay moved", and
+   * this answers "which day should the stay start". So it takes the party dims
+   * without the dates, and `buildPartyKey` (which never reads them) is handed a
+   * pair of placeholders rather than the input growing two ignored fields that
+   * a caller would reasonably expect to matter.
+   *
+   * It reports only what the sweep has actually priced — see
+   * `readCheapestCheckInDays` for why a missing date is neither cheap nor
+   * expensive, and why the card must not draw it as though it were.
+   */
+  cheapestDays: publicProcedure
+    .input(
+      z.object({
+        resortId: z.string().min(1),
+        store: stayDims.store,
+        adults: stayDims.adults,
+        children: stayDims.children,
+        childAges: stayDims.childAges,
+        accessible: stayDims.accessible,
+        floridaResident: stayDims.floridaResident,
+        postalCode: stayDims.postalCode,
+        days: z.number().int().min(7).max(90).default(60),
+      }),
+    )
+    .query(async ({ input }) => {
+      const partyKey = buildPartyKey({ ...input, checkInDate: "", checkOutDate: "" });
+      const days = await readCheapestCheckInDays(input.resortId, partyKey, input.days);
+      return { days };
     }),
 } satisfies TRPCRouterRecord;

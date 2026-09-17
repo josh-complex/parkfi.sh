@@ -345,35 +345,63 @@ export function WeekdayBars({
   const balanced = counts.length > 0 && Math.min(...counts) === Math.max(...counts);
 
   return (
-    <div className={cn("flex flex-col gap-3", className)}>
-      <div className="flex items-end gap-2">
-        {means.map((m, i) => (
-          <div key={WEEKDAY_SHORT[i]} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
-            {/* The definite height the bar's percentage is measured against.
-                The figure rides *inside* it, directly on top of its own bar —
-                in a row of its own above the box every figure sat at the same
-                altitude, leaving a short Thursday's "10" floating a hundred
-                pixels clear of the bar it belongs to. */}
-            <div className="flex h-32 w-full flex-col justify-end gap-1">
-              <span className="text-center text-[11px] font-bold tabular-nums">{m ?? "—"}</span>
-              <div
-                title={`${WEEKDAY_LONG[i]} · ${m == null ? "not recorded" : unit(m)}`}
-                style={{ height: `${m == null ? 3 : Math.max(6, Math.round((m / peak) * 82))}%` }}
-                className={cn(
-                  "w-full rounded-t-[5px]",
-                  m == null
-                    ? "bg-heat-none"
-                    : m === bestValue
-                      ? "bg-wait-cool"
-                      : "bg-wash-bar-strong dark:bg-wash-bar-strong",
-                )}
-              />
+    // Fills whatever height it is given (2026-09-17, Josh). These bars always
+    // sit beside a five-or-six-week `DayHeatGrid`, which is half again as tall,
+    // and a fixed 8rem plot left the taller card's height showing as a hand's
+    // width of empty card under the weekday letters. `flex-1` over a `min-h`
+    // floor: it grows into a stretched grid row and holds the old height
+    // wherever nothing stretches it.
+    <div className={cn("flex min-h-0 flex-1 flex-col gap-3", className)}>
+      <div className="flex min-h-0 flex-1 items-stretch gap-2">
+        {means.map((m, i) => {
+          // Percentages of the track, which is why the bar and its figure are
+          // both positioned against it rather than stacked in a flex column: a
+          // percentage height resolves against a definite box, and a flexed
+          // one only becomes definite after layout. Absolute positioning
+          // measures the padding box either way.
+          const pct = m == null ? 3 : Math.max(6, Math.round((m / peak) * 100));
+          return (
+            <div
+              key={WEEKDAY_SHORT[i]}
+              className="flex min-w-0 flex-1 flex-col items-center gap-1.5"
+            >
+              <div className="relative min-h-32 w-full flex-1">
+                {/* The plot area, held clear of the track's top edge by exactly
+                    the row the figures need. The busiest weekday then fills it
+                    end to end and every other bar is a true fraction of it —
+                    capping the bars at 82% instead left a hand's width of dead
+                    air above the tallest one on a card this size. */}
+                <div className="absolute inset-x-0 top-[18px] bottom-0">
+                  <div
+                    title={`${WEEKDAY_LONG[i]} · ${m == null ? "not recorded" : unit(m)}`}
+                    style={{ height: `${pct}%` }}
+                    className={cn(
+                      "absolute inset-x-0 bottom-0 rounded-t-[5px]",
+                      m == null
+                        ? "bg-heat-none"
+                        : m === bestValue
+                          ? "bg-wait-cool"
+                          : "bg-wash-bar-strong dark:bg-wash-bar-strong",
+                    )}
+                  />
+                  {/* The figure rides directly on top of its own bar — in a row
+                      of its own above the box every figure sat at the same
+                      altitude, leaving a short Thursday's "10" floating a
+                      hundred pixels clear of the bar it belongs to. */}
+                  <span
+                    style={{ bottom: `calc(${pct}% + 2px)` }}
+                    className="absolute inset-x-0 text-center text-[11px] font-bold tabular-nums"
+                  >
+                    {m ?? "—"}
+                  </span>
+                </div>
+              </div>
+              <span className="text-[10px] font-bold tracking-[0.04em] text-muted-foreground uppercase">
+                {WEEKDAY_SHORT[i]!.slice(0, 1)}
+              </span>
             </div>
-            <span className="text-[10px] font-bold tracking-[0.04em] text-muted-foreground uppercase">
-              {WEEKDAY_SHORT[i]!.slice(0, 1)}
-            </span>
-          </div>
-        ))}
+          );
+        })}
       </div>
       {caption && balanced && bestIndex !== worstIndex && (
         <p className="text-xs text-muted-foreground">

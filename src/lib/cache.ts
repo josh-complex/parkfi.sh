@@ -70,6 +70,9 @@ export const CACHEABLE_TRPC_PATHS: ReadonlyMap<string, string> = new Map([
   // Today's park-wide hourly curve: its last bar moves with the live board, so
   // it keeps the board's freshness class rather than the slow-data one.
   ["parks.crowd", CACHE.TRPC_LIVE],
+  // The same curve over one ride, for the ride page's wash panel — same
+  // freshness class, for the same reason (its last bar moves with the board).
+  ["parks.rideCrowd", CACHE.TRPC_LIVE],
   // Pedestrian routing — long TTL, quantized endpoints (see CACHE.ROUTE).
   ["routing.route", CACHE.ROUTE],
   // Catalog / menu / hours / availability — slow-moving, longer edge TTL.
@@ -90,6 +93,12 @@ export const CACHEABLE_TRPC_PATHS: ReadonlyMap<string, string> = new Map([
   ["parks.poi", CACHE.TRPC_DATA],
   ["stays.catalog", CACHE.TRPC_DATA],
   ["stays.availability", CACHE.TRPC_DATA],
+  // The resort page's rate calendar: pure reads of observations the sweep has
+  // already written, identical for every visitor asking about the same resort
+  // and party. `stays.priceHistory` is deliberately *not* here — it is the
+  // panel the alert bell sits beside, and a five-minute edge TTL on it would
+  // hide the tick a user just triggered by searching.
+  ["stays.cheapestDays", CACHE.TRPC_DATA],
   // The park page's AHEAD band: per-date crowd index and per-date ticket price
   // for one park. Both are pure public reads that change at most daily (the
   // forecast on a nightly retrain, prices on the tickets cron), and every

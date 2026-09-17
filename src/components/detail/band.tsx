@@ -69,7 +69,20 @@ export function BandHeading({
   );
 }
 
-/** A band: its heading and its content, spaced as one block. */
-export function Band({ className, children }: { className?: string; children: ReactNode }) {
-  return <section className={cn("flex flex-col gap-4", className)}>{children}</section>;
+/** A band: its heading and its content, spaced as one block. `id` makes it a
+ *  scroll target — the ride page's "Wait history" key jumps to its Know band. */
+export function Band({
+  id,
+  className,
+  children,
+}: {
+  id?: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section id={id} className={cn("flex flex-col gap-4", className)}>
+      {children}
+    </section>
+  );
 }

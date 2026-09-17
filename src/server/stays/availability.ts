@@ -8,7 +8,7 @@
  * Calling it server-side (rather than from the browser) sidesteps CORS and lets
  * us keep the `personalizationId` and Florida-resident postal trick in one place.
  */
-import { and, asc, eq, max } from "drizzle-orm";
+import { and, asc, eq, max, sql } from "drizzle-orm";
 
 import { db } from "#/db/index.ts";
 import { stayObs, stayQuery } from "#/db/schema.ts";
@@ -34,6 +34,15 @@ const PERSONALIZATION_ID = "6deb8ea6-0081-44ad-96ee-e8bfd0959bc6";
  * code, so passing an in-state ZIP surfaces those rates. Default omits it.
  */
 const FLORIDA_POSTAL_CODE = "32830"; // Lake Buena Vista, FL (WDW)
+
+/**
+ * The clock a check-in date is "today" against. Both stores are read from
+ * Eastern on purpose: a check-in date is a Disney booking date, not a viewer's
+ * date, and the UTC `current_date` rolls over at 8 PM Eastern — which is what
+ * dropped today's row from the dining board for four hours a night (see
+ * `PARK_TODAY`).
+ */
+const STAY_TZ = "America/New_York";
 
 export interface ResortSearchParams {
   /** Which Disney store to price against — WDW (default) or Disneyland Resort. */
@@ -389,6 +398,75 @@ export async function readStayPriceHistory(
     observedAt: r.observedAt.getTime(),
     pricePerNight: r.pricePerNight,
     available: r.available,
+  }));
+}
+
+export interface CheapestDay {
+  /** Park-local check-in date, `YYYY-MM-DD`. */
+  date: string;
+  /** Lowest nightly rate observed for a stay starting that day, or null when
+   *  every stay we hold for it was unavailable. */
+  pricePerNight: number | null;
+  /** True when at least one stay starting that day was bookable at its last
+   *  observation — distinguishing "sold out" from "never checked". */
+  available: boolean;
+}
+
+/**
+ * The lowest nightly rate we have seen for each of the next `days` check-in
+ * dates, at one party key.
+ *
+ * ## What this can and cannot say
+ *
+ * `stay_obs` is not a price calendar. It records what the sweep has actually
+ * looked at: a seeded warm set (the next weekends × small parties), plus the
+ * tuples people have searched or set alerts on. So a date with no row has *not*
+ * been priced — it is not cheap, and it is not expensive. The three states are
+ * kept distinct all the way to the cell: a price, a zero (checked, sold out),
+ * and null (never checked), which is why the grid draws the last as a hairline
+ * rather than as a pale swatch that reads like a bargain.
+ *
+ * Nightly rate, not stay total, is the unit for exactly this reason: the rows
+ * behind one check-in date can be two-, three- and four-night stays, and only
+ * the per-night figure is comparable across them.
+ *
+ * The party key is required rather than averaged over: a six-person rate and a
+ * two-adult rate are different rooms, and folding them together would make the
+ * calendar's cheapest day a property of who else happened to search it.
+ */
+export async function readCheapestCheckInDays(
+  resortId: string,
+  partyKey: string,
+  days: number,
+): Promise<Array<CheapestDay>> {
+  const rows = await db.execute<{
+    d: string;
+    price: number | null;
+    any_available: boolean;
+  }>(sql`
+    WITH latest AS (
+      SELECT DISTINCT ON (check_in, check_out)
+             check_in, price_per_night, available
+      FROM stay_obs
+      WHERE resort_id = ${resortId}
+        AND party_key = ${partyKey}
+        AND check_in >= (now() AT TIME ZONE ${STAY_TZ})::date
+        AND check_in <  (now() AT TIME ZONE ${STAY_TZ})::date + ${days}::int
+      ORDER BY check_in, check_out, observed_at DESC
+    )
+    SELECT check_in::text AS d,
+           min(price_per_night) FILTER (
+             WHERE available AND price_per_night IS NOT NULL
+           ) AS price,
+           bool_or(available) AS any_available
+    FROM latest
+    GROUP BY 1
+    ORDER BY 1
+  `);
+  return rows.rows.map((r) => ({
+    date: r.d,
+    pricePerNight: r.price == null ? null : Number(r.price),
+    available: Boolean(r.any_available),
   }));
 }
 

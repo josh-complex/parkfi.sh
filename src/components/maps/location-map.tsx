@@ -11,6 +11,7 @@ import {
   maptilerFallbackRasterTileUrl,
   maptilerStyleUrl,
 } from "#/components/maps/maptiler-style.ts";
+import { silenceMissingStyleImages } from "#/components/maps/style-images.ts";
 import { hasWebGl } from "#/components/park-map/webgl.ts";
 import { cn } from "#/lib/utils.ts";
 
@@ -108,6 +109,7 @@ export function LocationMap({
           // reads as a static image rather than an interactive map.
           interactive: false,
         });
+        silenceMissingStyleImages(map);
 
         for (const m of markers ?? []) {
           const dotEl = document.createElement("div");

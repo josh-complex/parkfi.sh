@@ -49,6 +49,8 @@ type HistoryBucket = {
   minWait: number | null;
   maxWait: number | null;
   samples: number;
+  /** The park calendar says shut for this bucket — see `parks.history`. */
+  closed?: boolean;
 };
 const bisectTrend = bisector<HistoryBucket, Date>((d) => new Date(d.bucket)).left;
 
@@ -171,10 +173,15 @@ function WaitTrendChart({
   // Fill entirely-missing buckets so a collection gap is an explicit hole the
   // indicative-series treatment can bridge, not a silent straight-line jump.
   const grid = React.useMemo(() => fillGrid(data, BUCKET_MS[hours]), [data, hours]);
+  // Closed buckets ride at the floor — a park that is shut has a zero wait, and
+  // bridging the line across the night at whatever it last read painted a
+  // 40-minute queue onto a closed ride (2026-09-17, Josh). Only the buckets the
+  // calendar can vouch for get that treatment; a plain hole in the data is
+  // still interpolated, because a ride we failed to poll was not at zero.
   const { values, kinds, hasLive } = React.useMemo(
     () =>
       indicativeSeries(
-        grid.map((d) => ({ value: d.avgWait })),
+        grid.map((d) => ({ value: d.avgWait, closed: d.closed })),
         0,
       ),
     [grid],
@@ -243,11 +250,15 @@ function WaitTrendChart({
                 fromOpacity={0.4}
                 toOpacity={0.02}
               />
+              {/* The board sparklines hatch their non-live stretches in the
+                  series' own colour (`currentColor` there); this one matched a
+                  grey that read as a rendering artifact rather than as part of
+                  the chart. Same ink, same meaning, both sizes. */}
               <PatternLines
                 id="ride-trend-hatch"
                 height={6}
                 width={6}
-                stroke="color-mix(in srgb, var(--muted-foreground) 20%, transparent)"
+                stroke={`color-mix(in srgb, ${PRIMARY} 25%, transparent)`}
                 strokeWidth={1}
                 orientation={["diagonal"]}
               />
@@ -395,7 +406,9 @@ function WaitTrendChart({
                     })}
                   </span>
                   {d.avgWait == null ? (
-                    <span className="text-muted-foreground">No live reading</span>
+                    <span className="text-muted-foreground">
+                      {d.closed ? "Park closed" : "No live reading"}
+                    </span>
                   ) : (
                     <>
                       <span className="text-foreground">
@@ -705,13 +718,10 @@ export function RideAnalytics({
   const tz = q.data?.timezone ?? timezone;
 
   return (
+    // No heading of its own: the page's "Know" band already says what these
+    // are, and a second title inside it read as a nested page (the park page's
+    // analytics grid dropped its own for the same reason).
     <section className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-lg font-semibold tracking-tight">Wait analysis</h2>
-        <p className="text-sm text-muted-foreground">
-          How this ride&rsquo;s standby wait has moved across its recent history.
-        </p>
-      </div>
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="lg:col-span-2">
           <WaitTrendCard attractionId={attractionId} timeZone={tz} />

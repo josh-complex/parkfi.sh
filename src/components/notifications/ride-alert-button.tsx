@@ -39,17 +39,28 @@ const DEFAULT_DELTA = 15;
  * A bell toggle for tracking a single ride's wait time. Logged-out users see a
  * sign-in prompt; logged-in users get a small form to pick the rule (drop below
  * a target, or change by an amount) — `create` upserts, so it edits in place.
+ *
+ * `variant="key"` is the ride page's own call to action: the same popover, hung
+ * off a full-width key instead of a 28px bell. Board rows keep the bell, which
+ * is why the icon stays the default.
  */
 export function RideAlertButton({
   attractionId,
   attractionName,
   alert,
   loggedIn,
+  variant = "icon",
+  keyVariant = "yellow",
+  className,
 }: {
   attractionId: number;
   attractionName: string;
   alert?: RideAlertEntry;
   loggedIn: boolean;
+  variant?: "icon" | "key";
+  /** The key's own chrome — yellow when this is the page's primary action. */
+  keyVariant?: "yellow" | "outline";
+  className?: string;
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -123,19 +134,35 @@ export function RideAlertButton({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        render={
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            aria-label={tracked ? `Edit alert for ${attractionName}` : `Track ${attractionName}`}
-            onClick={(e) => e.stopPropagation()}
-          />
-        }
-      >
-        <Icon className={cn("size-4", tracked && "fill-current text-primary")} />
-      </PopoverTrigger>
+      {variant === "key" ? (
+        <PopoverTrigger
+          render={
+            <Button
+              variant={keyVariant}
+              size="lg"
+              className={cn("font-bold", className)}
+              onClick={(e) => e.stopPropagation()}
+            />
+          }
+        >
+          <Icon className={cn("size-4", tracked && "fill-current")} />
+          {tracked ? "Edit your alert" : "Alert me when it drops"}
+        </PopoverTrigger>
+      ) : (
+        <PopoverTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn("h-7 w-7", className)}
+              aria-label={tracked ? `Edit alert for ${attractionName}` : `Track ${attractionName}`}
+              onClick={(e) => e.stopPropagation()}
+            />
+          }
+        >
+          <Icon className={cn("size-4", tracked && "fill-current text-primary")} />
+        </PopoverTrigger>
+      )}
       <PopoverContent align="end" className="w-72" onClick={(e) => e.stopPropagation()}>
         {!loggedIn ? (
           <div className="space-y-3">

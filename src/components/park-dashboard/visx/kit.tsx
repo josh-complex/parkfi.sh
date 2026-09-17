@@ -28,13 +28,19 @@ export const PRIMARY = "var(--primary)";
  * at phone widths. Callers opt in: `tickLabelProps({...}, MOBILE_TICK)`. */
 export const MOBILE_TICK = 12;
 
+/** Tick-label numerals. `font-variant-numeric` is not an SVG attribute React
+ * knows, so it has to ride in `style` — passed as a prop it warns ("React does
+ * not recognize the `fontVariantNumeric` prop") and lands as a dead lowercase
+ * attribute. Hoisted so the object identity stays stable across renders. */
+const TABULAR: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
+
 /** Standard SVG text props for axis tick labels. `fontSize` defaults to 11 so
  * desktop is untouched; pass `MOBILE_TICK` (12) on narrow screens. */
 export const tickLabelProps = (extra?: Record<string, unknown>, fontSize = 11) =>
   ({
     fill: AXIS_INK,
     fontSize,
-    fontVariantNumeric: "tabular-nums",
+    style: TABULAR,
     ...extra,
   }) as const;
 

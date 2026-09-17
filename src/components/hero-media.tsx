@@ -290,6 +290,9 @@ export function HeroSlideDots({
   if (total < 2) return null;
   return (
     <div
+      // Tagged so the hero can measure the pill's width: where it lands on a
+      // ticket page depends on how wide it is (see `--dots-left`).
+      data-hero-dots
       style={style}
       className={cn(
         "flex items-center gap-1.5 rounded-full bg-black/30 px-2 py-1.5 backdrop-blur-sm",

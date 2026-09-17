@@ -1,5 +1,7 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 import { hourLabel } from "#/components/detail/hour-bars.tsx";
 import { WashPanel } from "#/components/detail/panels.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
@@ -99,10 +101,14 @@ function segments(points: Array<Point>): Array<{ projected: boolean; points: Arr
 }
 
 /**
- * "The rest of today" — the park's own hour-by-hour average, measured up to now
- * and this weekday's typical shape from here on, with the two things a guest
- * does with that: when the lines let up, and whether today is worse than the
- * day usually is.
+ * "The rest of today" — the hour-by-hour average, measured up to now and this
+ * weekday's typical shape from here on, with the two things a guest does with
+ * that: when the lines let up, and whether today is worse than the day usually
+ * is.
+ *
+ * Drawn from `parks.crowd` on the park page and `parks.rideCrowd` on the ride
+ * page — one payload shape, one chart. Only the words change (`subject`), and
+ * the ride page hangs its own keys under it (`children`).
  *
  * Drawn as plain SVG rather than visx: it is one line on a grid, it costs
  * nothing, and it renders on the server — this is the band the page is about,
@@ -111,10 +117,20 @@ function segments(points: Array<Point>): Array<{ projected: boolean; points: Arr
 export function TodayCurve({
   crowd,
   loading,
+  title = "The rest of today",
+  subject = "this park",
+  children,
   className,
 }: {
   crowd: ParkCrowd | undefined;
   loading: boolean;
+  /** The panel's heading. The ride page asks a narrower question of it. */
+  title?: string;
+  /** What the closing line is about — "this park", "this ride". */
+  subject?: string;
+  /** The page's keys, under the caption. Desktop's primary call to action
+   *  lives inside the job block (the phone's is in the floating bar). */
+  children?: ReactNode;
   className?: string;
 }) {
   const weekday = weekdayName(crowd?.date);
@@ -129,7 +145,7 @@ export function TodayCurve({
 
   if (loading) {
     return (
-      <WashPanel title="The rest of today" className={className}>
+      <WashPanel title={title} className={className}>
         <Skeleton className="h-48 w-full rounded-2xl bg-wash-bar/60" />
       </WashPanel>
     );
@@ -161,7 +177,7 @@ export function TodayCurve({
 
   return (
     <WashPanel
-      title="The rest of today"
+      title={title}
       meta={`Peaks ${hourLabel(peak.hour)} · ${peak.value} min`}
       className={className}
     >
@@ -262,9 +278,11 @@ export function TodayCurve({
       )}
 
       <p className="text-[11.5px] leading-relaxed text-wash-muted">
-        Solid is what we measured today. Dashed is what this park usually does at that hour on a{" "}
+        Solid is what we measured today. Dashed is what {subject} usually does at that hour on a{" "}
         {weekday ?? "day like this"}, averaged over the last eight weeks.
       </p>
+
+      {children}
     </WashPanel>
   );
 }

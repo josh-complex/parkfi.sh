@@ -809,7 +809,12 @@ const CAPSULE_SETTLE_MS = 1000;
  * (`/park/x/ride/y`), which opens on a wash panel rather than on artwork — and
  * a dining venue (`/dining/<facilityId>`) but not its menu-item child.
  */
-const UNDER_NAV_PAGES = [/^\/park\/[^/]+\/?$/, /^\/dining\/[^/]+\/?$/];
+const UNDER_NAV_PAGES = [
+  /^\/park\/[^/]+\/?$/,
+  /^\/park\/[^/]+\/ride\/[^/]+\/?$/,
+  /^\/dining\/[^/]+\/?$/,
+  /^\/resort\/[^/]+\/?$/,
+];
 
 /** The masthead's metallic bar — Disney's dark-red gradient, in brand blue. */
 const STRIPE_GRADIENT =

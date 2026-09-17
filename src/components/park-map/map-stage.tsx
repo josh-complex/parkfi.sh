@@ -27,6 +27,7 @@ import { distanceMeters, pointInPolygon } from "#/server/living/geofence.ts";
 
 import {
   BottomMapCluster,
+  FullMapButton,
   LocateButton,
   MapAttribution,
   MapToggleChips,
@@ -822,6 +823,11 @@ export function MapStageProvider({
                 />
               )}
             </React.Suspense>
+            {/* Embedded map (the park page's overview card): its top-right
+                corner carries the way into the full `/map` route. `!roam` is
+                exactly "this map is a panel in a page", the only place that
+                shortcut means anything — on `/map` you're already there. */}
+            {attached && engine && !roam && !navigating && <FullMapButton />}
             {/* Top-left cluster (roam, once a park is focused): the park-details
                 shortcut sits directly below the search bar, with the map-layer
                 toggle chips beneath it. The chip row scrolls horizontally if it

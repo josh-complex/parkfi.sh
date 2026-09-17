@@ -16,8 +16,13 @@ import { cn } from "#/lib/utils.ts";
 const TILES = 6;
 /** "This week" — the window the card's change flags claim. */
 const SINCE_DAYS = 7;
-/** Enough of the park's catalog to fill the grid after the changed venues. */
-const CATALOG_LIMIT = 24;
+/**
+ * Enough of the park's catalog to fill the grid after the changed venues.
+ * Exported so a page that must know *whether* this card will render anything
+ * can ask the identical query and hit the same cache entry — the resort page
+ * withholds its whole wide column when a resort has no kitchens of its own.
+ */
+export const EAT_HERE_CATALOG_LIMIT = 24;
 
 interface Counts {
   addedCount: number;
@@ -141,7 +146,7 @@ export function EatHere({
     trpc.dining.recentlyUpdated.queryOptions({ sinceDays: SINCE_DAYS, limit: 50 }),
   );
   const catalogQ = useQuery({
-    ...trpc.dining.byPark.queryOptions({ parkName: parkName ?? "", limit: CATALOG_LIMIT }),
+    ...trpc.dining.byPark.queryOptions({ parkName: parkName ?? "", limit: EAT_HERE_CATALOG_LIMIT }),
     enabled: !!parkName,
   });
 

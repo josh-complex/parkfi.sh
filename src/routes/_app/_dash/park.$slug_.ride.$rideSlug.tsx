@@ -38,6 +38,15 @@ export const Route = createFileRoute("/_app/_dash/park/$slug_/ride/$rideSlug")({
       return;
     }
     const ride = await context.queryClient.ensureQueryData(options);
+    // The wash panel is the page's job block, and it draws this — so ship it in
+    // the SSR'd markup rather than letting a grey slab sit under the ticket
+    // until the client fetch lands (the venue page's hours prefetch, over a
+    // ride's day). Not awaited: the page renders without it.
+    if (ride?.id) {
+      void context.queryClient.prefetchQuery(
+        context.trpc.parks.rideCrowd.queryOptions({ attractionId: ride.id }),
+      );
+    }
     return {
       name: ride?.name ?? null,
       parkName: ride?.park.name ?? null,
@@ -74,7 +83,7 @@ function RidePage() {
   const { data: ride } = useQuery(trpc.parks.attraction.queryOptions({ parkSlug: slug, rideSlug }));
 
   return (
-    <div>
+    <>
       {ride && (
         <>
           <JsonLd
@@ -98,7 +107,12 @@ function RidePage() {
           />
         </>
       )}
-      <RideDetail parkSlug={slug} rideSlug={rideSlug} />
-    </div>
+      {/* `flex-1`, as the venue page's wrapper is: the hero runs up behind the
+          desktop nav capsule, so the page body owns the column from the top of
+          the viewport down. */}
+      <div className="flex flex-1 flex-col">
+        <RideDetail parkSlug={slug} rideSlug={rideSlug} />
+      </div>
+    </>
   );
 }

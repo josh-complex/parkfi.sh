@@ -7,6 +7,7 @@ import maplibregl from "maplibre-gl";
 import { useTheme } from "next-themes";
 
 import { maptilerDarkStyleUrl, maptilerStyleUrl } from "#/components/maps/maptiler-style.ts";
+import { silenceMissingStyleImages } from "#/components/maps/style-images.ts";
 import {
   anyMapLayerActive,
   rideMatchesFilter,
@@ -700,6 +701,7 @@ export function ParkMap({
       });
       return;
     }
+    silenceMissingStyleImages(map);
     // No native NavigationControl — our own 3D zoom buttons (in the stage) drive
     // zoom via the MapHandle below, so the map's controls match the app.
     layerRef.current = new MarkerCluster(
