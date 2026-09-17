@@ -106,7 +106,7 @@ function ParkCard({
       onClick={() => onToggle(park.slug)}
       style={{ height: CARD_HEIGHT }}
       className={cn(
-        "border-3d shadow-3d relative top-0 flex w-full min-w-0 shrink-0 flex-col overflow-hidden rounded-[18px] bg-neutral-800 p-2.5 text-left text-white transition-[box-shadow,top,border-color] duration-150 ease-out",
+        "border-3d shadow-3d relative top-0 flex w-full min-w-0 shrink-0 flex-col overflow-hidden rounded-[18px] bg-neutral-800 p-2.5 text-left text-white transition-[box-shadow,top,border-color,border-top-width,margin-top] duration-150 ease-out",
         // A key rises off its shelf on hover and sinks into it when pressed —
         // the same `top` + shelf pair `buttonVariants` uses. Swapping only the
         // shadow made the card look like it grew *downward* on hover, which is

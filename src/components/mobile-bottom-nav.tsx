@@ -25,7 +25,7 @@ import { cn } from "#/lib/utils.ts";
  * (notably the fullscreen `/map`) without consuming layout.
  */
 const SEG_BASE =
-  "relative top-0 -ml-px flex flex-1 flex-col items-center justify-center gap-1 border-3d btn-3d-outline shadow-3d bg-background dark:bg-background px-2 py-2.5 text-sm font-medium transition-[top,box-shadow,background-color,color,border-radius] duration-150 ease-out first:ml-0 active:top-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)] [&>svg]:size-5 " +
+  "relative top-0 -ml-px flex flex-1 flex-col items-center justify-center gap-1 border-3d btn-3d-outline shadow-3d bg-background dark:bg-background px-2 py-2.5 text-sm font-medium transition-[top,box-shadow,background-color,color,border-radius,border-top-width,margin-top] duration-150 ease-out first:ml-0 active:top-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)] [&>svg]:size-5 " +
   // The selected/pressed key sits 3px lower, so its neighbors curve down toward
   // it on the side they share. Sibling selectors (`:has(+ …)` for the segment
   // before the key, `… + &` for the one after) keep this stateless, and cover
@@ -154,7 +154,7 @@ function PlayButton() {
       tabIndex={tucked ? -1 : undefined}
       aria-label="Play — Kingdom Hearts"
       className={cn(
-        "absolute bottom-[calc(100%+0.375rem)] left-1/2 z-10 flex -translate-x-1/2 select-none items-center gap-1.5 rounded-full border-3d px-4 py-2 text-sm font-semibold shadow-3d transition-[transform,opacity,box-shadow,background-color,color] duration-200 ease-out active:translate-y-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)] [&>svg]:size-4",
+        "absolute bottom-[calc(100%+0.375rem)] left-1/2 z-10 flex -translate-x-1/2 select-none items-center gap-1.5 rounded-full border-3d px-4 py-2 text-sm font-semibold shadow-3d transition-[transform,opacity,box-shadow,background-color,color,border-top-width,margin-top] duration-200 ease-out active:translate-y-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)] [&>svg]:size-4",
         playMode
           ? "btn-3d-primary bg-primary text-primary-foreground"
           : "btn-3d-outline bg-background text-foreground",

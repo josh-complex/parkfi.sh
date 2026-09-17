@@ -51,7 +51,7 @@ import {
 // border inward, landing 2px narrower than the other two bottom-right
 // controls despite all three wrapping the same 40px content.
 const MAP_CTRL_3D =
-  "btn-3d-outline border-3d shadow-3d pointer-events-auto flex items-center justify-center bg-background/95 text-foreground backdrop-blur transition-[transform,box-shadow,background-color,color] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)]";
+  "btn-3d-outline border-3d shadow-3d pointer-events-auto flex items-center justify-center bg-background/95 text-foreground backdrop-blur transition-[transform,box-shadow,background-color,color,border-top-width,margin-top] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)]";
 
 // Height the floating bottom clusters keep above the bottom-nav island on
 // mobile — the single source of truth for both the left and right stacks so
@@ -254,7 +254,7 @@ export function ParkDetailButton({ slug }: { slug: string }) {
     <Link
       to="/park/$slug"
       params={{ slug }}
-      className="btn-3d-outline border-3d shadow-3d pointer-events-auto flex shrink-0 select-none items-center gap-1.5 rounded-full bg-background/95 px-4 py-2 text-sm font-medium text-foreground backdrop-blur transition-[transform,box-shadow] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)]"
+      className="btn-3d-outline border-3d shadow-3d pointer-events-auto flex shrink-0 select-none items-center gap-1.5 rounded-full bg-background/95 px-4 py-2 text-sm font-medium text-foreground backdrop-blur transition-[transform,box-shadow,border-top-width,margin-top] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)]"
     >
       <span>Park info</span>
       <ArrowUpRightIcon className="size-4 shrink-0 text-muted-foreground" />
@@ -277,7 +277,7 @@ export function FullMapButton() {
   return (
     <Link
       to="/map"
-      className="btn-3d-outline border-3d shadow-3d pointer-events-auto absolute top-3 right-3 z-10 hidden shrink-0 select-none items-center gap-1.5 rounded-full bg-background/95 px-4 py-2 text-sm font-medium text-foreground backdrop-blur transition-[transform,box-shadow] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active md:flex dark:border-[color-mix(in_oklch,var(--border),white_25%)]"
+      className="btn-3d-outline border-3d shadow-3d pointer-events-auto absolute top-3 right-3 z-10 hidden shrink-0 select-none items-center gap-1.5 rounded-full bg-background/95 px-4 py-2 text-sm font-medium text-foreground backdrop-blur transition-[transform,box-shadow,border-top-width,margin-top] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active md:flex dark:border-[color-mix(in_oklch,var(--border),white_25%)]"
     >
       <MapIcon className="size-4 shrink-0 text-muted-foreground" />
       <span>Open full map</span>
@@ -312,7 +312,7 @@ export function ParkChipScroller({
           key={p.slug}
           type="button"
           onClick={() => onZoom(p.slug)}
-          className="btn-3d-outline border-3d shadow-3d flex shrink-0 select-none items-center whitespace-nowrap rounded-full bg-background/95 px-4 py-2 text-sm font-medium text-foreground backdrop-blur transition-[transform,box-shadow] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)]"
+          className="btn-3d-outline border-3d shadow-3d flex shrink-0 select-none items-center whitespace-nowrap rounded-full bg-background/95 px-4 py-2 text-sm font-medium text-foreground backdrop-blur transition-[transform,box-shadow,border-top-width,margin-top] duration-150 ease-out active:translate-y-[3px] active:shadow-3d-active dark:border-[color-mix(in_oklch,var(--border),white_25%)]"
         >
           {formatParkName(p.name)}
         </button>
@@ -451,7 +451,7 @@ export function MapToggleChips({ available }: { available?: ReadonlySet<MapToggl
                 : undefined
             }
             className={cn(
-              "btn-3d-outline border-3d flex shrink-0 select-none items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium backdrop-blur transition-[transform,box-shadow,background-color,color] duration-150 ease-out dark:border-[color-mix(in_oklch,var(--border),white_25%)]",
+              "btn-3d-outline border-3d flex shrink-0 select-none items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium backdrop-blur transition-[transform,box-shadow,background-color,color,border-top-width,margin-top] duration-150 ease-out dark:border-[color-mix(in_oklch,var(--border),white_25%)]",
               active
                 ? // Selected: hold the pressed-in state — the filled pill sits
                   // translated down into its shelf with the shadow collapsed, so it

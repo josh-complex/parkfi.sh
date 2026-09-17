@@ -704,7 +704,7 @@ export function availableMapToggles(input: {
  */
 export function directionsButtonHtml(lng: number | null, lat: number | null): string {
   if (lng == null || lat == null) return "";
-  return `<button type="button" data-directions data-lng="${lng}" data-lat="${lat}" class="relative top-0 inline-flex shrink-0 items-center justify-center rounded-full border-3d shadow-3d min-h-8 px-3.5 py-1 text-[12px] font-semibold leading-tight whitespace-nowrap text-white outline-none select-none bg-blue-600 hover:bg-blue-500 [--btn-3d:var(--color-blue-800)] [--btn-glare:oklch(1_0_0_/_0.28)] transition-[box-shadow,top,background-color] duration-150 ease-out hover:-top-px hover:shadow-3d-hover active:top-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active">Directions</button>`;
+  return `<button type="button" data-directions data-lng="${lng}" data-lat="${lat}" class="relative top-0 inline-flex shrink-0 items-center justify-center rounded-full border-3d shadow-3d min-h-8 px-3.5 py-1 text-[12px] font-semibold leading-tight whitespace-nowrap text-white outline-none select-none bg-blue-600 hover:bg-blue-500 [--btn-3d:var(--color-blue-800)] [--btn-glare:oklch(1_0_0_/_0.28)] transition-[box-shadow,top,background-color,border-top-width,margin-top] duration-150 ease-out hover:-top-px hover:shadow-3d-hover active:top-[3px] active:[--btn-glare:var(--btn-3d)] active:shadow-3d-active">Directions</button>`;
 }
 
 /**

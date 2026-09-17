@@ -58,7 +58,7 @@ export const coreSegWidth = "w-40 lg:w-48 xl:w-52";
  */
 export function coreSegClass(pos: SegPos, active: boolean) {
   return cn(
-    "group relative top-0 flex min-w-0 flex-col justify-center gap-0.5 border-3d shadow-3d bg-background px-5 py-2.5 text-left align-top text-sm whitespace-nowrap outline-none after:absolute after:inset-x-0 after:top-0 after:-bottom-1 after:rounded-[inherit] after:content-[''] transition-[box-shadow,top,background-color,border-color,color] duration-150 ease-out",
+    "group relative top-0 flex min-w-0 flex-col justify-center gap-0.5 border-3d shadow-3d bg-background px-5 py-2.5 text-left align-top text-sm whitespace-nowrap outline-none after:absolute after:inset-x-0 after:top-0 after:-bottom-1 after:rounded-[inherit] after:content-[''] transition-[box-shadow,top,background-color,border-color,color,border-top-width,margin-top] duration-150 ease-out",
     coreSegWidth,
     "btn-3d-outline dark:border-[color-mix(in_oklch,var(--border),white_25%)] dark:bg-input/30",
     "hover:-top-px hover:z-10 hover:bg-muted hover:shadow-3d-hover",

@@ -600,6 +600,16 @@ html.native [data-slot="app-shell"] {
   box-shadow:
     0 0 0 0 var(--btn-3d),
     inset 0 1px 0 0 var(--btn-glare);
+  /* The shelf doesn't vanish when a key goes down, it moves: the 3px ledge that
+     was under the key becomes the thick top wall of the recess the key is now
+     sitting in. Same 3px, same `--btn-3d` colour, other side of the piece —
+     which is why a pressed key reads as *in* the bar rather than merely darker.
+     The `-2px` margin hands back exactly the two pixels the border grew, so the
+     face, the baseline and the bottom edge all stay where they were and only
+     the top wall thickens; the key's footprint is unchanged and its neighbours
+     don't shuffle. */
+  border-top-width: 3px;
+  margin-top: -2px;
 }
 
 @utility border-3d {
