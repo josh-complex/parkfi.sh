@@ -196,6 +196,17 @@ describe("canEmbedMedia", () => {
     expect(canEmbedMedia("/og/ride/magic-kingdom/space-mountain/card.jpg?v=291")).toBe(true);
   });
 
+  it("accepts a published hero loop — the animated card has to survive this gate", () => {
+    // Rides with a cinemagraph spend their card slot on an animated WebP, which
+    // is the only format that actually moves in a preview (video in a gallery
+    // renders a poster frame with play controls). Sweeping `webp` into the
+    // denylist alongside the video formats would silently turn every one of
+    // those cards back into a plain link.
+    expect(canEmbedMedia("https://assets.parkfi.sh/hero-loops/haunted-mansion-9f2c1a04.webp")).toBe(
+      true,
+    );
+  });
+
   it("accepts extensionless CDN urls — Discord sniffs the content type", () => {
     // Disney's `/resize/mwImage/...` segments and R2 keys don't always end in an
     // extension; an allowlist here silently killed galleries across the site.

@@ -48,6 +48,7 @@
     "backfill:dining-events": "bun scripts/backfill-dining-menu-events.ts",
     "backfill:news-images": "bun scripts/backfill-news-images.ts",
     "backfill:thumbhashes": "bun scripts/backfill-thumbhashes.ts",
+    "build:hero-loops": "bun scripts/build-hero-loops.ts",
     "living:seed-worlds": "bun scripts/seed-worlds.ts",
     "living:seed-companions": "bun scripts/seed-companions.ts",
     "living:smoke": "bun scripts/living-smoke.ts",

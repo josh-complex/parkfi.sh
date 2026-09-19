@@ -65,3 +65,36 @@ export async function putJson(
     return false;
   }
 }
+
+/**
+ * Upload raw bytes at `key` — the binary sibling of {@link putJson}, for
+ * artifacts we generate rather than serve from the origin (the ride hero loops
+ * a component embed shows in place of its card, see `scripts/build-hero-loops.ts`).
+ *
+ * Defaults to an immutable year, because these keys are content-addressed: the
+ * hash is in the filename, so a changed source publishes a new key rather than
+ * mutating one Discord may already have cached.
+ */
+export async function putBytes(
+  key: string,
+  body: Uint8Array,
+  contentType: string,
+  cacheControl = "public, max-age=31536000, immutable",
+): Promise<boolean> {
+  if (!isR2Configured()) return false;
+  try {
+    await getClient().send(
+      new PutObjectCommand({
+        Bucket: process.env.R2_BUCKET,
+        Key: key,
+        Body: body,
+        ContentType: contentType,
+        CacheControl: cacheControl,
+      }),
+    );
+    return true;
+  } catch (err) {
+    console.error(`[edge/r2] put ${key} failed`, err);
+    return false;
+  }
+}

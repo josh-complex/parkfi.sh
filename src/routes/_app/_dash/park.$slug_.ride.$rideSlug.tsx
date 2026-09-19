@@ -1,11 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { isServer, useQuery } from "@tanstack/react-query";
 
+import { paidLineInfo } from "#/components/park-dashboard/lightning-lane.ts";
 import { RideDetail } from "#/components/park-dashboard/ride-detail.tsx";
 import { RIDE_CURVE_STEP } from "#/components/park-dashboard/today-curve.tsx";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { discordComponentEmbed, linkButton, linkPreview } from "#/lib/discord-embed.ts";
+import { heroLoopUrl } from "#/lib/hero-loops.ts";
 import {
   attractionJsonLd,
   breadcrumbJsonLd,
@@ -13,6 +15,18 @@ import {
   seo,
   truncateMeta,
 } from "#/lib/seo.ts";
+
+/**
+ * Status in plain words for embed copy. Mirrors the hero pill's wording in
+ * `ride-detail.tsx`, minus "Status unknown" — a shared link shouldn't lead with
+ * a shrug, so an unknown status just drops out of the line.
+ */
+const EMBED_STATUS_LABEL: Record<string, string> = {
+  OPERATING: "Open",
+  DOWN: "Temporarily down",
+  REFURBISHMENT: "Refurbishment",
+  CLOSED: "Closed",
+};
 
 /** "space-mountain" -> "Space Mountain" for a readable, indexable title. */
 function titleizeSlug(slug: string): string {
@@ -56,6 +70,12 @@ export const Route = createFileRoute("/_app/_dash/park/$slug_/ride/$rideSlug")({
       standbyWait: ride?.standbyWait ?? null,
       description: ride?.meta?.description ?? null,
       land: ride?.meta?.land ?? null,
+      // Facts the generated card would have carried. Rides with a hero loop
+      // spend their card slot on the loop instead, so the embed's copy has to
+      // say them in words — see the `loop` branch in `head()`.
+      status: ride?.status ?? null,
+      height: ride?.meta?.heightRequirement ?? null,
+      lineProduct: ride ? (paidLineInfo(ride, ride.park.operatorSlug).product ?? null) : null,
       // Ride stills for the Discord component embed's photo grid. `head()`
       // can't reach into the query cache, so carry them through the loader.
       // Videos are dropped: a component embed can't play one.
@@ -76,6 +96,17 @@ export const Route = createFileRoute("/_app/_dash/park/$slug_/ride/$rideSlug")({
     // Official copy (plan item 2.3) beats the template blurb when we have it.
     const about = loaderData?.description ? ` ${truncateMeta(loaderData.description)}` : "";
     const path = `/park/${params.slug}/ride/${params.rideSlug}`;
+    // The published hero loop, if this ride has one. Keyed on the slug alone so
+    // it resolves before loader data lands.
+    const loop = heroLoopUrl(params.rideSlug);
+    // What the generated card draws, as words — bold on the wait because it's
+    // the figure people share the link for.
+    const meta = [
+      wait != null ? `**${wait} min** standby now` : null,
+      loaderData?.status ? EMBED_STATUS_LABEL[loaderData.status] : null,
+      loaderData?.lineProduct,
+      loaderData?.height,
+    ].filter(Boolean);
     return {
       ...seo({
         title: `${name} Wait Times${isUniversal ? "" : " & Lightning Lane"} — ${parkName} — ParkFi`,
@@ -87,18 +118,31 @@ export const Route = createFileRoute("/_app/_dash/park/$slug_/ride/$rideSlug")({
       }),
       // Discord component embed — see `lib/discord-embed.ts`. Purely additive:
       // the OG tags above still render whenever Discord rejects or ignores it.
-      // No wait number in the copy on purpose — Discord caches a preview for
-      // ~30 minutes keyed on the shared URL, so there's no version trick (the
-      // way `og:image` has one) to keep a figure honest. The generated card
-      // carries the live chips and re-renders when the cache turns over.
+      //
+      // Rides with a published hero loop (15 of them) spend the card slot on
+      // the loop rather than the generated card: video in a gallery never
+      // autoplays, but animated WebP does, and a moving card is worth more than
+      // a static one. The facts the card would have drawn move into the copy,
+      // and the photo grid is dropped — a loop runs 1-2.5 MB against the same
+      // 10s budget Discord measures the whole preview in, so it can't share the
+      // embed with three more images.
+      //
+      // Either way the figures are as fresh as the fetch: Discord caches a
+      // preview ~30 minutes keyed on the shared URL, so a number here goes
+      // stale exactly as fast as one drawn into the card ever did.
       scripts: discordComponentEmbed(
         linkPreview({
           title: name,
           url: path,
           subtitle: [loaderData?.land, parkName].filter(Boolean).join(" · "),
-          body: `${lineLabel} status, standby history, and wait alerts.`,
-          card: `/og/ride/${params.slug}/${params.rideSlug}/card.jpg?v=${liveCardVersion()}`,
-          photos: loaderData?.photos,
+          body: loop
+            ? [meta.join(" · "), `${lineLabel} status, standby history, and wait alerts.`]
+                .filter(Boolean)
+                .join("\n")
+            : `${lineLabel} status, standby history, and wait alerts.`,
+          card:
+            loop ?? `/og/ride/${params.slug}/${params.rideSlug}/card.jpg?v=${liveCardVersion()}`,
+          photos: loop ? [] : loaderData?.photos,
           buttons: [
             linkButton(`All ${parkName} waits`, `/park/${params.slug}`),
             linkButton("Live map", "/map"),
