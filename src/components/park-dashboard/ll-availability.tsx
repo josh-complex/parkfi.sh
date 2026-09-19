@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 
+import { ChartLegend, ChartSentence, LegendKey } from "#/components/detail/chart-kit.tsx";
 import { DetailCard } from "#/components/detail/panels.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { QueueState } from "#/server/parks/codes.ts";
@@ -49,12 +50,12 @@ function classifyState(state: number | null): AvailState {
 // the colour a good number is drawn in everywhere else on these pages (the
 // quietest weekday's bar, a short wait's pill), and hot is the bad end of the
 // same scale. A closed/unread bucket is the track showing through.
-const STATE_STYLE: Record<AvailState, { fill: string; label: string }> = {
-  available: { fill: "bg-wait-cool", label: "Available" },
-  limited: { fill: "bg-wait-warm", label: "Limited or changing" },
-  "sold-out": { fill: "bg-wait-hot", label: "Sold out" },
-  paused: { fill: "bg-heat-none", label: "Paused" },
-  none: { fill: "bg-transparent", label: "No reading" },
+const STATE_STYLE: Record<AvailState, { fill: string; swatch: string; label: string }> = {
+  available: { fill: "bg-wait-cool", swatch: "cool", label: "Available" },
+  limited: { fill: "bg-wait-warm", swatch: "warm", label: "Limited or changing" },
+  "sold-out": { fill: "bg-wait-hot", swatch: "hot", label: "Sold out" },
+  paused: { fill: "bg-heat-none", swatch: "zero", label: "Paused" },
+  none: { fill: "bg-transparent", swatch: "none", label: "No reading" },
 };
 
 // The three states worth a legend swatch — "paused" is rare and "none" reads as
@@ -118,11 +119,20 @@ function toRuns(grid: Array<Bucket>): Array<Run> {
   return runs;
 }
 
+/** "2 h 15 min" for a count of quarter-hours. */
+function span(buckets: number): string {
+  const mins = buckets * 15;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h === 0) return `${m} min`;
+  return m === 0 ? `${h} h` : `${h} h ${m} min`;
+}
+
 /**
  * The ride page's Lightning Lane / Express availability timeline: a 24-hour strip
  * of coloured spans (available / limited / sold out) for one attraction's paid
- * line. Rendered only for rides that actually offer the line — the caller gates
- * on `paidLineInfo(...).has`.
+ * line, the span you point at spoken above it. Rendered only for rides that
+ * actually offer the line — the caller gates on `paidLineInfo(...).has`.
  */
 export function LightningLaneAvailability({
   attractionId,
@@ -141,6 +151,7 @@ export function LightningLaneAvailability({
     ...trpc.parks.history.queryOptions({ attractionId, queueType, hours: 24 }),
     enabled: attractionId > 0,
   });
+  const [sel, setSel] = React.useState<string | null>(null);
 
   const grid = React.useMemo(
     () => fillGrid((q.data ?? []).map((b) => ({ bucket: b.bucket, availState: b.availState }))),
@@ -149,7 +160,7 @@ export function LightningLaneAvailability({
 
   const runs = React.useMemo(() => toRuns(grid), [grid]);
 
-  /** A bucket edge as a park-local clock time, for the spans' tooltips. */
+  /** A bucket edge as a park-local clock time. */
   const clock = React.useCallback(
     (iso: string) =>
       new Date(iso).toLocaleTimeString("en-US", {
@@ -198,6 +209,24 @@ export function LightningLaneAvailability({
   }, [grid]);
   if (!q.isLoading && observed <= 1 && hasLive) return null;
 
+  // The standing totals: how much of the day the line was open, and shut.
+  const totals = runs.reduce(
+    (acc, r) => {
+      acc[r.state] += r.count;
+      return acc;
+    },
+    { available: 0, limited: 0, "sold-out": 0, paused: 0, none: 0 } as Record<AvailState, number>,
+  );
+  const active = sel ? (runs.find((r) => r.key === sel) ?? null) : null;
+  const headline = active
+    ? `${clock(active.from)} – ${clock(active.to)} · ${STATE_STYLE[active.state].label}`
+    : totals.available > 0
+      ? `Available for ${span(totals.available)} of the last 24 hours`
+      : `Sold out for ${span(totals["sold-out"])} of the last 24 hours`;
+  const subline = active
+    ? `${span(active.count)} in this state.`
+    : `${totals["sold-out"] > 0 ? `Sold out for ${span(totals["sold-out"])}` : "Never sold out"}${totals.limited > 0 ? ` · limited or changing for ${span(totals.limited)}` : ""}. Tap a span for its times.`;
+
   return (
     <DetailCard
       title={`${product} availability`}
@@ -210,41 +239,60 @@ export function LightningLaneAvailability({
           No {product} availability recorded in the last 24 hours yet.
         </p>
       ) : (
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-3.5">
+          <ChartSentence headline={headline} subline={subline} size="sm" />
+          <div className="flex flex-col gap-1.5" onMouseLeave={() => setSel(null)}>
             {/* One track, spans painted onto it. The track's own fill is what a
                 stretch with no reading shows as, so "the line wasn't running"
                 is the absence of colour rather than a fourth colour. */}
             <div className="flex h-7 w-full overflow-hidden rounded-full bg-muted ring-1 ring-card-edge ring-inset">
-              {runs.map((run) => (
-                <div
-                  key={run.key}
-                  // Width by bucket count. Every span has zero content, so the
-                  // grow factors split the whole track between them — the
-                  // strip stays proportional at any card width.
-                  style={{ flexGrow: run.count }}
-                  className={cn("h-full", STATE_STYLE[run.state].fill)}
-                  title={`${clock(run.from)} – ${clock(run.to)} · ${STATE_STYLE[run.state].label}`}
-                />
-              ))}
+              {runs.map((run) =>
+                run.state === "none" ? (
+                  <span
+                    key={run.key}
+                    style={{ flexGrow: run.count }}
+                    className="h-full"
+                    aria-hidden
+                  />
+                ) : (
+                  <button
+                    key={run.key}
+                    type="button"
+                    // Width by bucket count. Every span has zero content, so the
+                    // grow factors split the whole track between them — the
+                    // strip stays proportional at any card width.
+                    style={{ flexGrow: run.count }}
+                    aria-label={`${clock(run.from)} to ${clock(run.to)}: ${STATE_STYLE[run.state].label}`}
+                    aria-pressed={sel === run.key}
+                    onMouseEnter={() => setSel(run.key)}
+                    onFocus={() => setSel(run.key)}
+                    onBlur={() => setSel(null)}
+                    onClick={() => setSel(run.key)}
+                    className={cn(
+                      "h-full min-w-0 cursor-pointer outline-none transition-[box-shadow,opacity]",
+                      STATE_STYLE[run.state].fill,
+                      sel != null && sel !== run.key && "opacity-55",
+                      sel === run.key && "ring-[3px] ring-wash-fg/50 ring-inset",
+                    )}
+                  />
+                ),
+              )}
             </div>
             {ticks.length > 0 && (
-              <div className="flex justify-between text-[11px] tabular-nums text-muted-foreground">
+              <div className="flex justify-between text-[10px] font-bold text-wash-muted">
                 {ticks.map((t, i) => (
                   <span key={i}>{t}</span>
                 ))}
               </div>
             )}
           </div>
-          {/* The house legend — same swatch and type as the calendar's ramp. */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] font-semibold text-muted-foreground">
+          <ChartLegend>
             {LEGEND.map((st) => (
-              <span key={st} className="flex items-center gap-1.5">
-                <span className={cn("size-2.5 rounded-[3px]", STATE_STYLE[st].fill)} />
+              <LegendKey key={st} swatch={STATE_STYLE[st].swatch}>
                 {STATE_STYLE[st].label}
-              </span>
+              </LegendKey>
             ))}
-          </div>
+          </ChartLegend>
         </div>
       )}
     </DetailCard>

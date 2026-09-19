@@ -1187,6 +1187,15 @@ export const diningRouter = {
           WHERE service_date >= ${PARK_TODAY}
             AND service_date < ${PARK_TODAY} + ${input.days}::int
             AND party_size = ${input.partySize}
+            -- Freshness bound, and the reason this query is fast at all:
+            -- dining_obs is a hypertable chunked by observed_at (one chunk per
+            -- day, ~19 GB across the lot), and without a bound on that column
+            -- the planner walks every chunk for the service_date range —
+            -- which is what pushed this past Cloudflare's 100-second origin
+            -- limit (524s on the home page). The sweep runs every ~10 minutes
+            -- and the alert evaluator already treats anything older than 24h
+            -- as stale, so nothing this drops was worth showing.
+            AND observed_at >= now() - INTERVAL '24 hours'
             ${facilityFilter}
           GROUP BY facility_id, service_date, party_size
         ),
@@ -1203,6 +1212,9 @@ export const diningRouter = {
             AND lt.service_date = d.service_date
             AND lt.party_size = d.party_size
             AND lt.observed_at = d.observed_at
+          -- Same bound on the second scan: the join on lt.observed_at can't
+          -- drive chunk exclusion, so restate it as a constant predicate.
+          WHERE d.observed_at >= now() - INTERVAL '24 hours'
           GROUP BY d.facility_id, d.service_date, lt.observed_at
         )
         SELECT r.facility_id, r.name, r.source,

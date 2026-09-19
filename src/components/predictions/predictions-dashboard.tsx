@@ -2,19 +2,19 @@
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { max as d3max } from "d3-array";
-import { AxisBottom, AxisLeft } from "@visx/axis";
-import { curveMonotoneX } from "@visx/curve";
-import { localPoint } from "@visx/event";
-import { LinearGradient } from "@visx/gradient";
-import { GridRows } from "@visx/grid";
-import { Group } from "@visx/group";
-import { scaleLinear } from "@visx/scale";
-import { Area, Bar, Circle, Line, LinePath } from "@visx/shape";
 import { ChevronDownIcon } from "lucide-react";
 
 import { Band, BandHeading } from "#/components/detail/band.tsx";
+import {
+  ChartLegend,
+  ChartSentence,
+  LegendKey,
+  bestRun,
+  deltaClause,
+  deltaTone,
+} from "#/components/detail/chart-kit.tsx";
 import { WashPanel } from "#/components/detail/panels.tsx";
+import { TrendChart, type TrendPoint } from "#/components/detail/trend-chart.tsx";
 import { PageBody, PageMasthead } from "#/components/site-chrome/page-masthead.tsx";
 import {
   Collapsible,
@@ -32,15 +32,6 @@ import {
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { cn } from "#/lib/utils.ts";
-
-import {
-  AXIS_INK,
-  ChartFrame,
-  GRID_INK,
-  PRIMARY,
-  TooltipCard,
-  tickLabelProps,
-} from "#/components/park-dashboard/visx/kit.tsx";
 
 /** Tomorrow as a YYYY-MM-DD string (the default crowd-forecast date). */
 function tomorrowIso(): string {
@@ -261,175 +252,91 @@ function TechnicalDetails({
 }
 
 type CurvePoint = {
+  /** Epoch ms of the forecast slot. */
+  t: number;
   label: string;
   predictedWait: number | null;
   band: [number, number] | null;
-  i: number;
 };
 
-/** visx forecast curve: the likely range (p10–p90) shaded under the expected line. */
+/**
+ * Tomorrow's curve, in the day chart's language: every reading is expected
+ * rather than measured, so the whole line is dashed over its likely-range
+ * band, and the quietest stretch of the day gets the sweet-spot bracket.
+ * Pointing at an hour speaks it above and compares it with that stretch.
+ */
 function ForecastCurveChart({ points }: { points: Array<CurvePoint> }) {
-  const tip = useChartTooltipLocal();
-  const margin = { top: 10, right: 12, bottom: 24, left: 34 };
+  const [sel, setSel] = React.useState<number | null>(null);
+  const series = React.useMemo<Array<TrendPoint>>(
+    () =>
+      points.map((p) => ({
+        t: p.t,
+        value: p.predictedWait,
+        lo: p.band?.[0] ?? null,
+        hi: p.band?.[1] ?? null,
+        projected: true,
+      })),
+    [points],
+  );
+  const values = points.map((p) => p.predictedWait);
+  const window = bestRun(values, "min", 4);
+  const peakIdx = values.reduce<number>(
+    (b, v, i) => (v != null && (values[b] == null || v > (values[b] as number)) ? i : b),
+    0,
+  );
+  const peak = points[peakIdx]!;
+  const ticks = points
+    .filter((_, i) => i % Math.max(1, Math.ceil(points.length / 6)) === 0)
+    .map((p) => p.t);
+
+  const active = sel != null ? points[sel]! : null;
+  let headline: string;
+  let subline: string;
+  let tone: "good" | "bad" | "neutral" = "neutral";
+  if (active && active.predictedWait != null) {
+    headline = `${active.label} should run about ${Math.round(active.predictedWait)} min`;
+    subline = `${active.band ? `Likely ${Math.round(active.band[0])}–${Math.round(active.band[1])} min. ` : ""}${
+      window && sel! >= window.lo && sel! <= window.hi
+        ? "In the quietest stretch of the day."
+        : window
+          ? deltaClause(active.predictedWait, window.value, minutes, "the quietest stretch", {
+              more: "longer than",
+              less: "shorter than",
+            })
+          : ""
+    }`;
+    tone = window ? deltaTone(active.predictedWait, window.value) : "neutral";
+    if (window && sel! >= window.lo && sel! <= window.hi) tone = "good";
+  } else {
+    headline = `Expect a peak around ${peak.label} · ~${Math.round(peak.predictedWait ?? 0)} min`;
+    subline = window
+      ? `Quietest stretch: ${points[window.lo]!.label} – ${points[window.hi]!.label}. Tap the line for an hour.`
+      : "Tap the line for an hour.";
+  }
 
   return (
-    <ChartFrame height={256}>
-      {({ width, height }) => {
-        const innerW = Math.max(0, width - margin.left - margin.right);
-        const innerH = Math.max(0, height - margin.top - margin.bottom);
-        const n = points.length;
-        const x = scaleLinear({ domain: [0, Math.max(1, n - 1)], range: [0, innerW] });
-        const yMax = d3max(points, (p) => Math.max(p.predictedWait ?? 0, p.band?.[1] ?? 0)) ?? 0;
-        const y = scaleLinear({ domain: [0, yMax * 1.1 || 1], range: [innerH, 0], nice: true });
-
-        const line = points.filter((p) => p.predictedWait != null);
-        const band = points.filter((p) => p.band != null);
-
-        // A few evenly-spaced index ticks, labelled by their hour string.
-        const step = Math.max(1, Math.ceil(n / 6));
-        const tickVals = points.filter((_, i) => i % step === 0).map((p) => p.i);
-
-        const onMove = (e: React.MouseEvent | React.TouchEvent) => {
-          const pt = localPoint(e);
-          if (!pt) return;
-          const idx = Math.max(0, Math.min(n - 1, Math.round(x.invert(pt.x - margin.left))));
-          const d = points[idx];
-          if (d) tip.show(d, margin.left + x(d.i), margin.top + y(d.predictedWait ?? 0));
-        };
-
-        return (
-          <div className="relative h-full w-full">
-            <svg width={width} height={height}>
-              <LinearGradient
-                id="forecast-band"
-                from={PRIMARY}
-                to={PRIMARY}
-                fromOpacity={0.22}
-                toOpacity={0.06}
-              />
-              <Group left={margin.left} top={margin.top}>
-                <GridRows
-                  scale={y}
-                  width={innerW}
-                  stroke={GRID_INK}
-                  strokeOpacity={0.5}
-                  numTicks={4}
-                />
-                {band.length > 1 && (
-                  <Area<CurvePoint>
-                    data={band}
-                    x={(d) => x(d.i)}
-                    y0={(d) => y(d.band![0])}
-                    y1={(d) => y(d.band![1])}
-                    curve={curveMonotoneX}
-                    fill="url(#forecast-band)"
-                  />
-                )}
-                <LinePath<CurvePoint>
-                  data={line}
-                  x={(d) => x(d.i)}
-                  y={(d) => y(d.predictedWait ?? 0)}
-                  curve={curveMonotoneX}
-                  stroke={PRIMARY}
-                  strokeWidth={2}
-                />
-                {tip.data && (
-                  <g pointerEvents="none">
-                    <Line
-                      from={{ x: x(tip.data.i), y: 0 }}
-                      to={{ x: x(tip.data.i), y: innerH }}
-                      stroke={AXIS_INK}
-                      strokeWidth={1}
-                      strokeDasharray="3 3"
-                      strokeOpacity={0.6}
-                    />
-                    <Circle
-                      cx={x(tip.data.i)}
-                      cy={y(tip.data.predictedWait ?? 0)}
-                      r={3.5}
-                      fill={PRIMARY}
-                      stroke="var(--background)"
-                      strokeWidth={1.5}
-                    />
-                  </g>
-                )}
-                <AxisBottom
-                  top={innerH}
-                  scale={x}
-                  stroke={GRID_INK}
-                  hideTicks
-                  tickValues={tickVals}
-                  tickFormat={(v) => points[Math.round(v as number)]?.label ?? ""}
-                  tickLabelProps={() => tickLabelProps({ textAnchor: "middle", dy: "0.25em" })}
-                />
-                <AxisLeft
-                  scale={y}
-                  numTicks={4}
-                  hideTicks
-                  hideAxisLine
-                  tickLabelProps={() =>
-                    tickLabelProps({ textAnchor: "end", dx: "-0.25em", dy: "0.3em" })
-                  }
-                />
-                <Bar
-                  width={innerW}
-                  height={innerH}
-                  fill="transparent"
-                  onMouseMove={onMove}
-                  onTouchMove={onMove}
-                  onMouseLeave={tip.hide}
-                />
-              </Group>
-            </svg>
-            {tip.data && (
-              <div
-                className="pointer-events-none absolute top-0"
-                style={{
-                  left: tip.left,
-                  // Size to content (capped), not to the space left of the container edge.
-                  // Without this, an `absolute` box with only `left` set shrink-to-fits the
-                  // remaining width, so the card narrows the further right the pointer is.
-                  width: "max-content",
-                  maxWidth: "16rem",
-                  transform: `translateX(${tip.left > width / 2 ? "calc(-100% - 10px)" : "10px"})`,
-                }}
-              >
-                <TooltipCard>
-                  <div className="font-medium text-foreground">{tip.data.label}</div>
-                  <div className="text-foreground">
-                    <span className="font-mono font-medium tabular-nums">
-                      ~{Math.round(tip.data.predictedWait ?? 0)}
-                    </span>{" "}
-                    <span className="text-muted-foreground">min expected</span>
-                  </div>
-                  {tip.data.band && (
-                    <div className="text-muted-foreground">
-                      likely {Math.round(tip.data.band[0])}–{Math.round(tip.data.band[1])} min
-                    </div>
-                  )}
-                </TooltipCard>
-              </div>
-            )}
-          </div>
-        );
-      }}
-    </ChartFrame>
+    <div className="flex flex-col gap-3">
+      <ChartSentence headline={headline} subline={subline} tone={tone} />
+      <TrendChart
+        points={series}
+        selected={sel}
+        onSelect={setSel}
+        format={minutes}
+        tickValues={ticks}
+        tickFormat={(d) => d.toLocaleTimeString([], { hour: "numeric" })}
+        bracket={window ? { lo: window.lo, hi: window.hi, label: "Sweet spot" } : null}
+        height={{ base: 180, md: 240 }}
+      />
+      <ChartLegend>
+        <LegendKey swatch="typical">Expected wait</LegendKey>
+        <LegendKey swatch="band">Likely range</LegendKey>
+        {window && <LegendKey swatch="best">Quietest stretch</LegendKey>}
+      </ChartLegend>
+    </div>
   );
 }
 
-/** Tiny local tooltip state for the inline forecast chart. */
-function useChartTooltipLocal() {
-  const [state, setState] = React.useState<{ data: CurvePoint; left: number; top: number } | null>(
-    null,
-  );
-  return {
-    data: state?.data ?? null,
-    left: state?.left ?? 0,
-    top: state?.top ?? 0,
-    show: (data: CurvePoint, left: number, top: number) => setState({ data, left, top }),
-    hide: () => setState(null),
-  };
-}
+const minutes = (v: number) => `${Math.round(v)} min`;
 
 const CROWD_LABELS = ["Ghost town", "Light", "Moderate", "Busy", "Packed"];
 function crowdLabel(index: number): string {
@@ -466,11 +373,11 @@ function ParkCurve() {
     enabled: !!activeSlug,
   });
 
-  const points: Array<CurvePoint> = (curveQ.data?.points ?? []).map((p, i) => ({
+  const points: Array<CurvePoint> = (curveQ.data?.points ?? []).map((p) => ({
+    t: new Date(p.targetTs).getTime(),
     label: new Date(p.targetTs).toLocaleTimeString([], { hour: "numeric" }),
     predictedWait: p.predictedWait,
     band: p.lower != null && p.upper != null ? [p.lower, p.upper] : null,
-    i,
   }));
   const crowd = curveQ.data?.crowd;
 
@@ -532,7 +439,7 @@ function ParkCurve() {
           <>
             <ForecastCurveChart points={points} />
             <p className="text-xs text-wash-muted">
-              The line is the expected average wait across the park's rides; the shaded area is the
+              The dashed line is the expected average wait across the park's rides; the band is the
               range waits will most likely fall in.
             </p>
           </>

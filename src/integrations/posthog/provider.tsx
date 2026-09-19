@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "@tanstack/react-router";
 
 import { authClient } from "#/lib/auth-client.ts";
+import { flushRecoverableErrors } from "#/lib/hydration-errors.ts";
 
 import { CfImagesFlagSync } from "./feature-flags.ts";
 
@@ -131,6 +132,9 @@ export default function PostHogProvider({ children }: PostHogProviderProps) {
   useEffect(() => {
     boot();
     setReady(true);
+    // Hydration mismatches fire before this boot (they *are* the hydration), so
+    // `client.tsx` parks them; now that the client exists, send them on.
+    flushRecoverableErrors();
   }, []);
   return (
     <BasePostHogProvider client={posthog}>

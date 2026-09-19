@@ -35,7 +35,7 @@ const EXPECTED_TRPC_CODES = new Set([
   "TOO_MANY_REQUESTS",
 ]);
 
-function trpcErrorCode(error: unknown): string | undefined {
+export function trpcErrorCode(error: unknown): string | undefined {
   if (error instanceof TRPCClientError) {
     const code = (error.data as { code?: string } | null | undefined)?.code;
     return typeof code === "string" ? code : undefined;

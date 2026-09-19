@@ -1,8 +1,20 @@
 "use client";
 
+import * as React from "react";
 import type { ReactNode } from "react";
 
 import { cn } from "#/lib/utils.ts";
+
+import {
+  ChartLegend,
+  ChartSentence,
+  ColumnChart,
+  HEAT_BG,
+  HeatRampKey,
+  LegendKey,
+  deltaClause,
+  deltaTone,
+} from "./chart-kit.tsx";
 
 /** One day in a day-scale series. */
 export interface DayPoint {
@@ -126,8 +138,6 @@ export function weekdayCounts(days: Array<DayPoint>): Array<number> {
   return weekdayBuckets(days).map((xs) => xs.length);
 }
 
-const HEAT_BG = ["bg-heat-1", "bg-heat-2", "bg-heat-3", "bg-heat-4", "bg-heat-5"] as const;
-
 /**
  * The spread the five heat steps need before they're allowed to mean anything.
  *
@@ -171,9 +181,36 @@ export function heatRamped(lo: number, hi: number): boolean {
 }
 
 /**
+ * The words the calendar and the weekday bars build their sentences from.
+ * Every series has its own idiom — a wait is "longer", a rate "costs more", a
+ * table count "has more" — so the chart asks for the verbs rather than guess.
+ */
+export interface SeriesWords {
+  /** "Quietest day" / "Cheapest check-in" / "Most open" — leads the idle line. */
+  best: string;
+  /** "Busiest" / "Priciest" / "Fewest openings". */
+  worst: string;
+  /** Comparative pair for the pointed-at value against the reference:
+   *  ["longer than", "shorter than"], ["more than", "less than"]. */
+  more?: string;
+  less?: string;
+  /** "usually run about" — how a weekday's mean is spoken. */
+  usually?: string;
+}
+
+const DEFAULT_WORDS: Required<SeriesWords> = {
+  best: "Lowest",
+  worst: "Highest",
+  more: "more than",
+  less: "less than",
+  usually: "usually average",
+};
+
+/**
  * A calendar of one value per day — five-odd weeks of it, one cell per date,
  * today ringed. No numbers in the cells: they're illegible at this size, so
- * every cell carries its figure in its tooltip instead.
+ * the cell you point at is spoken in the sentence above the grid instead, and
+ * compared with the average day.
  *
  * Four states, because "we never looked", "we looked and there was nothing" and
  * "this square isn't a day in the series at all" are three different claims:
@@ -190,6 +227,8 @@ export function DayHeatGrid({
   align = "end",
   weeks = 5,
   unit,
+  good = "min",
+  words,
   zeroLabel,
   todayLabel,
   className,
@@ -201,19 +240,24 @@ export function DayHeatGrid({
    *  the first (a forecast). Either way the grid is whole weeks, Sunday-first. */
   align?: "end" | "start";
   weeks?: number;
-  /** A value in words, for the tooltips and the legend's ends ("36 times"). */
+  /** A value in words, for the sentence and the legend's ends ("36 times"). */
   unit: (value: number) => string;
+  /** Which end of the range is the good news — fewest minutes, most tables. */
+  good?: "min" | "max";
+  words?: SeriesWords;
   /** What a zero means here. Omit when zero can't occur in this series. */
   zeroLabel?: string;
   /**
-   * Tooltip for the `today` cell when the series deliberately holds no value
-   * for it. A forward-looking series starts *tomorrow* — today is a part-day
-   * and not comparable to a whole one — but the cell is still drawn and ringed,
-   * and "not recorded" would be a lie about why it's blank.
+   * What to say of the `today` cell when the series deliberately holds no
+   * value for it. A forward-looking series starts *tomorrow* — today is a
+   * part-day and not comparable to a whole one — but the cell is still drawn
+   * and ringed, and "not recorded" would be a lie about why it's blank.
    */
   todayLabel?: string;
   className?: string;
 }) {
+  const w = { ...DEFAULT_WORDS, ...words };
+  const [sel, setSel] = React.useState<string | null>(null);
   const cells = calendarCells(days, align, weeks);
   if (cells.length === 0) return null;
 
@@ -222,67 +266,113 @@ export function DayHeatGrid({
   const lo = Math.min(...positives);
   const hi = Math.max(...positives);
   const ramped = heatRamped(lo, hi);
+  const avg = Math.round(positives.reduce((a, b) => a + b, 0) / positives.length);
+  const drawn = cells.filter((c) => !c.pad && c.value != null && c.value > 0);
+  const best = drawn.reduce<DayCell | null>(
+    (b, c) => (!b || (good === "min" ? c.value! < b.value! : c.value! > b.value!) ? c : b),
+    null,
+  );
+  const worst = drawn.reduce<DayCell | null>(
+    (b, c) => (!b || (good === "min" ? c.value! > b.value! : c.value! < b.value!) ? c : b),
+    null,
+  );
+
+  const active = sel ? (cells.find((c) => c.iso === sel) ?? null) : null;
+  let headline: string;
+  let subline: string;
+  let tone: "good" | "bad" | "neutral" = "neutral";
+  if (active) {
+    headline =
+      active.value == null
+        ? `${active.label} · ${(active.iso === today ? todayLabel : null) ?? "not recorded"}`
+        : active.value === 0
+          ? `${active.label} · ${zeroLabel ?? unit(0)}`
+          : `${active.label} · ${unit(active.value)}`;
+    subline =
+      active.value != null && active.value > 0
+        ? deltaClause(active.value, avg, unit, "the average day", { more: w.more, less: w.less })
+        : active.iso === today
+          ? "Today is ringed."
+          : "Nothing recorded for this day.";
+    tone =
+      active.value != null && active.value > 0 ? deltaTone(active.value, avg, good) : "neutral";
+  } else if (best && worst && best.iso !== worst.iso) {
+    headline = `${w.best}: ${best.label} · ${unit(best.value!)}`;
+    subline = `${w.worst} was ${worst.label} · ${unit(worst.value!)}. Tap a day to compare.`;
+  } else {
+    headline = ramped ? `${unit(lo)} to ${unit(hi)} across the window` : `${unit(lo)} every day`;
+    subline = "Tap a day for its figure.";
+  }
 
   return (
-    <div className={cn("flex flex-col gap-2", className)}>
-      <div className="grid grid-cols-7 gap-1.5">
-        {WEEKDAY_SHORT.map((w) => (
+    <div className={cn("flex flex-col gap-3", className)}>
+      <ChartSentence headline={headline} subline={subline} tone={tone} size="sm" />
+      <div className="grid grid-cols-7 gap-1.5" onMouseLeave={() => setSel(null)}>
+        {WEEKDAY_SHORT.map((wd) => (
           <span
-            key={w}
-            className="text-center text-[10px] font-bold tracking-[0.06em] text-muted-foreground uppercase"
+            key={wd}
+            className="text-center text-[10px] font-bold tracking-[0.06em] text-wash-muted uppercase"
           >
-            {w.slice(0, 1)}
+            {wd.slice(0, 1)}
           </span>
         ))}
-        {cells.map((c) =>
-          // Padding is drawn as the hole it is — no fill, no border, no tooltip.
-          c.pad && c.iso !== today ? (
-            <div key={c.iso} className="aspect-square" aria-hidden />
-          ) : (
-            <div
+        {cells.map((c) => {
+          // Padding is drawn as the hole it is — no fill, no border, no button.
+          if (c.pad && c.iso !== today)
+            return <div key={c.iso} className="aspect-square" aria-hidden />;
+          const hot = sel === c.iso;
+          const isBest = best != null && c.iso === best.iso && best.iso !== worst?.iso;
+          return (
+            <button
               key={c.iso}
-              title={
+              type="button"
+              aria-label={
                 c.value == null
-                  ? `${c.label} · ${(c.iso === today ? todayLabel : null) ?? "not recorded"}`
+                  ? `${c.label}: ${(c.iso === today ? todayLabel : null) ?? "not recorded"}`
                   : c.value === 0
-                    ? `${c.label} · ${zeroLabel ?? unit(0)}`
-                    : `${c.label} · ${unit(c.value)}`
+                    ? `${c.label}: ${zeroLabel ?? unit(0)}`
+                    : `${c.label}: ${unit(c.value)}`
               }
+              aria-pressed={hot}
+              onMouseEnter={() => setSel(c.iso)}
+              onFocus={() => setSel(c.iso)}
+              onBlur={() => setSel(null)}
+              onClick={() => setSel(c.iso)}
               className={cn(
-                "aspect-square rounded-[6px]",
+                "relative aspect-square cursor-pointer rounded-[6px] outline-none transition-[box-shadow]",
                 c.value == null
                   ? "border border-dashed border-card-edge"
                   : c.value === 0
                     ? "bg-heat-none"
                     : heatClass(c.value, lo, hi),
                 c.iso === today && "ring-2 ring-brand-yellow ring-offset-2 ring-offset-card",
+                hot && "ring-[3px] ring-wash-fg/50 ring-offset-2 ring-offset-card",
               )}
-            />
-          ),
-        )}
+            >
+              {/* The good answer, marked: a mint dot in the corner of the
+                  cheapest / quietest / most-open day. */}
+              {isBest && (
+                <span
+                  aria-hidden
+                  className="absolute top-1 right-1 size-2 rounded-full bg-mint-fg ring-2 ring-card"
+                />
+              )}
+            </button>
+          );
+        })}
       </div>
-      <div className="flex flex-wrap items-center justify-end gap-x-1.5 gap-y-1 text-[10px] font-semibold text-muted-foreground">
-        {zeroLabel && (
-          <>
-            <span className="size-2.5 rounded-[3px] bg-heat-none" />
-            <span className="mr-1">{zeroLabel}</span>
-          </>
-        )}
+      <ChartLegend>
+        {zeroLabel && <LegendKey swatch="zero">{zeroLabel}</LegendKey>}
         {ramped ? (
-          <>
-            <span>{unit(lo)}</span>
-            {HEAT_BG.map((bg) => (
-              <span key={bg} className={cn("size-2.5 rounded-[3px]", bg)} />
-            ))}
-            <span>{unit(hi)}</span>
-          </>
+          <HeatRampKey from={unit(lo)} to={unit(hi)} />
         ) : (
-          <>
-            <span className={cn("size-2.5 rounded-[3px]", HEAT_BG[2])} />
-            <span>{lo === hi ? unit(lo) : `${lo}–${unit(hi)}`} every open day</span>
-          </>
+          <LegendKey swatch={HEAT_BG[2]}>
+            {lo === hi ? unit(lo) : `${lo}–${unit(hi)}`} every open day
+          </LegendKey>
         )}
-      </div>
+        {best && worst && best.iso !== worst.iso && <LegendKey swatch="best">{w.best}</LegendKey>}
+        {today && <LegendKey swatch="now">Today</LegendKey>}
+      </ChartLegend>
     </div>
   );
 }
@@ -299,38 +389,37 @@ export interface WeekdayStats {
 }
 
 /**
- * The same window folded onto the seven weekdays, so someone choosing a day can
- * see which one this place actually rewards. The good end is picked out in
- * green — it's the answer to the question the card is asking.
- *
- * Feed it whole weeks. Seven bars drawn from an uneven window aren't a weekday
- * comparison at all: with a forward series, availability drifts up with lead
- * time, so a weekday holding one far-out sample outranks one holding two near
- * ones on nothing but the slice boundary. The bars still draw — the shape is
- * honest enough — but the `caption`'s best/worst *claim* is withheld unless
- * every covered weekday was measured the same number of times.
- *
- * The bars live inside a fixed-height box on purpose: a percentage height
- * resolves against nothing in an auto-height flex column, which is how the
- * venue page shipped this chart as seven numbers floating over seven labels
- * with no bars at all between them.
+ * Seven weekday columns from their means — the bars under `WeekdayBars`, for
+ * a caller that already holds per-weekday figures (the ride page's 30-day
+ * rollup) rather than a run of days. The good end is mint; today's column
+ * wears the yellow "Today" pill; the column you point at is spoken above.
  */
-export function WeekdayBars({
-  days,
+export function WeekdayColumns({
+  means,
   good = "min",
   unit,
+  words,
+  today,
+  claim = true,
   caption,
+  heightClass = "min-h-32 flex-1",
   className,
 }: {
-  days: Array<DayPoint>;
-  /** Which end of the range is the good news — fewest minutes, most tables. */
+  means: Array<number | null>;
   good?: "min" | "max";
   unit: (value: number) => string;
-  /** A closing line, given the stats the bars were drawn from. */
+  words?: SeriesWords;
+  /** Today's weekday, 0 = Sunday, to pin the "Today" pill on. */
+  today?: number | null;
+  /** Whether the best/worst *claim* may be made — false when the weekdays
+   *  weren't measured evenly (see `WeekdayBars`). */
+  claim?: boolean;
   caption?: (stats: WeekdayStats) => ReactNode;
+  heightClass?: string;
   className?: string;
 }) {
-  const means = weekdayMeans(days);
+  const w = { ...DEFAULT_WORDS, ...words };
+  const [sel, setSel] = React.useState<number | null>(null);
   const present = means.filter((m): m is number => m != null);
   if (present.length === 0) return null;
   const peak = Math.max(...present);
@@ -339,71 +428,59 @@ export function WeekdayBars({
   const worstValue = good === "min" ? peak : trough;
   const bestIndex = means.indexOf(bestValue);
   const worstIndex = means.indexOf(worstValue);
-  // Every weekday we drew must rest on the same number of days, or the ranking
-  // is an artifact of where the window was cut rather than of the weekday.
-  const counts = weekdayCounts(days).filter((n) => n > 0);
-  const balanced = counts.length > 0 && Math.min(...counts) === Math.max(...counts);
+  const ranked = claim && bestIndex !== worstIndex;
+
+  const active = sel != null ? means[sel] : null;
+  let headline: string;
+  let subline: string;
+  let tone: "good" | "bad" | "neutral" = "neutral";
+  if (sel != null && active != null) {
+    headline = `${WEEKDAY_LONG[sel]}s ${w.usually} ${unit(active)}`;
+    subline =
+      ranked && sel !== bestIndex
+        ? deltaClause(active, bestValue, unit, `${WEEKDAY_LONG[bestIndex]}s, the best day`, {
+            more: w.more,
+            less: w.less,
+          })
+        : ranked
+          ? `The best day of the week here.`
+          : `Tap another weekday to compare.`;
+    tone = ranked && sel !== bestIndex ? deltaTone(active, bestValue, good) : "good";
+    if (!ranked) tone = "neutral";
+  } else if (sel != null) {
+    headline = `${WEEKDAY_LONG[sel]}s · not recorded`;
+    subline = "The window never covered one.";
+  } else if (ranked) {
+    headline = `${w.best}: ${WEEKDAY_LONG[bestIndex]}s · ${unit(bestValue)}`;
+    subline = `${w.worst}: ${WEEKDAY_LONG[worstIndex]}s · ${unit(worstValue)}. Tap a bar to compare.`;
+  } else {
+    headline = `${unit(trough)} to ${unit(peak)} across the week`;
+    subline = "Tap a bar for its weekday.";
+  }
 
   return (
-    // Fills whatever height it is given (2026-09-17, Josh). These bars always
-    // sit beside a five-or-six-week `DayHeatGrid`, which is half again as tall,
-    // and a fixed 8rem plot left the taller card's height showing as a hand's
-    // width of empty card under the weekday letters. `flex-1` over a `min-h`
-    // floor: it grows into a stretched grid row and holds the old height
-    // wherever nothing stretches it.
     <div className={cn("flex min-h-0 flex-1 flex-col gap-3", className)}>
-      <div className="flex min-h-0 flex-1 items-stretch gap-2">
-        {means.map((m, i) => {
-          // Percentages of the track, which is why the bar and its figure are
-          // both positioned against it rather than stacked in a flex column: a
-          // percentage height resolves against a definite box, and a flexed
-          // one only becomes definite after layout. Absolute positioning
-          // measures the padding box either way.
-          const pct = m == null ? 3 : Math.max(6, Math.round((m / peak) * 100));
-          return (
-            <div
-              key={WEEKDAY_SHORT[i]}
-              className="flex min-w-0 flex-1 flex-col items-center gap-1.5"
-            >
-              <div className="relative min-h-32 w-full flex-1">
-                {/* The plot area, held clear of the track's top edge by exactly
-                    the row the figures need. The busiest weekday then fills it
-                    end to end and every other bar is a true fraction of it —
-                    capping the bars at 82% instead left a hand's width of dead
-                    air above the tallest one on a card this size. */}
-                <div className="absolute inset-x-0 top-[18px] bottom-0">
-                  <div
-                    title={`${WEEKDAY_LONG[i]} · ${m == null ? "not recorded" : unit(m)}`}
-                    style={{ height: `${pct}%` }}
-                    className={cn(
-                      "absolute inset-x-0 bottom-0 rounded-t-[5px]",
-                      m == null
-                        ? "bg-heat-none"
-                        : m === bestValue
-                          ? "bg-wait-cool"
-                          : "bg-wash-bar-strong dark:bg-wash-bar-strong",
-                    )}
-                  />
-                  {/* The figure rides directly on top of its own bar — in a row
-                      of its own above the box every figure sat at the same
-                      altitude, leaving a short Thursday's "10" floating a
-                      hundred pixels clear of the bar it belongs to. */}
-                  <span
-                    style={{ bottom: `calc(${pct}% + 2px)` }}
-                    className="absolute inset-x-0 text-center text-[11px] font-bold tabular-nums"
-                  >
-                    {m ?? "—"}
-                  </span>
-                </div>
-              </div>
-              <span className="text-[10px] font-bold tracking-[0.04em] text-muted-foreground uppercase">
-                {WEEKDAY_SHORT[i]!.slice(0, 1)}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-      {caption && balanced && bestIndex !== worstIndex && (
+      <ChartSentence headline={headline} subline={subline} tone={tone} size="sm" />
+      <ColumnChart
+        columns={means.map((m, i) => ({
+          key: WEEKDAY_SHORT[i]!,
+          value: m,
+          label: WEEKDAY_SHORT[i]!.slice(0, 1),
+          name: `${WEEKDAY_LONG[i]}: ${m == null ? "not recorded" : unit(m)}`,
+          tone: ranked && i === bestIndex ? "best" : "measured",
+        }))}
+        selected={sel}
+        onSelect={setSel}
+        anchor={today != null && today >= 0 ? { index: today, label: "Today" } : null}
+        heightClass={heightClass}
+        className="min-h-0 flex-1"
+      />
+      <ChartLegend>
+        <LegendKey swatch="measured">Weekday average</LegendKey>
+        {ranked && <LegendKey swatch="best">{w.best}</LegendKey>}
+        {today != null && today >= 0 && <LegendKey swatch="now">Today</LegendKey>}
+      </ChartLegend>
+      {caption && ranked && (
         <p className="text-xs text-muted-foreground">
           {caption({
             means,
@@ -415,5 +492,57 @@ export function WeekdayBars({
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * The same window folded onto the seven weekdays, so someone choosing a day can
+ * see which one this place actually rewards. The good end is picked out in
+ * mint — it's the answer to the question the card is asking.
+ *
+ * Feed it whole weeks. Seven bars drawn from an uneven window aren't a weekday
+ * comparison at all: with a forward series, availability drifts up with lead
+ * time, so a weekday holding one far-out sample outranks one holding two near
+ * ones on nothing but the slice boundary. The bars still draw — the shape is
+ * honest enough — but the best/worst *claim* (in the sentence, the mint bar
+ * and the `caption`) is withheld unless every covered weekday was measured
+ * the same number of times.
+ */
+export function WeekdayBars({
+  days,
+  good = "min",
+  unit,
+  words,
+  today,
+  caption,
+  className,
+}: {
+  days: Array<DayPoint>;
+  /** Which end of the range is the good news — fewest minutes, most tables. */
+  good?: "min" | "max";
+  unit: (value: number) => string;
+  words?: SeriesWords;
+  /** Today's park-local `YYYY-MM-DD`, to pin the "Today" pill on its weekday. */
+  today?: string | null;
+  /** A closing line, given the stats the bars were drawn from. */
+  caption?: (stats: WeekdayStats) => ReactNode;
+  className?: string;
+}) {
+  const means = weekdayMeans(days);
+  // Every weekday we drew must rest on the same number of days, or the ranking
+  // is an artifact of where the window was cut rather than of the weekday.
+  const counts = weekdayCounts(days).filter((n) => n > 0);
+  const balanced = counts.length > 0 && Math.min(...counts) === Math.max(...counts);
+  return (
+    <WeekdayColumns
+      means={means}
+      good={good}
+      unit={unit}
+      words={words}
+      today={today ? day(today).getDay() : null}
+      claim={balanced}
+      caption={caption}
+      className={className}
+    />
   );
 }

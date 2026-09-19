@@ -123,11 +123,28 @@ export function disneyResizeUrl<T extends string | null | undefined>(url: T, wid
   return url.replace(DISNEY_RESIZE_RE, `/resize/mwImage/1/${width}/${height}/75/`) as T;
 }
 
+/**
+ * Hosts that refuse Cloudflare's image resizer. Their images load fine in a
+ * browser (any referer, any user agent), but the edge's own fetch comes back
+ * 403 (`cf-resized: err=9408`), so every transform of theirs fails and the
+ * tile falls back to the grey placeholder. Serve these straight from the
+ * source instead. `<Image>` also recovers at runtime when a transform 403s
+ * (see its `cfFailedSrc`), so this list is an optimisation — it skips the
+ * doomed request — not the only line of defence.
+ */
+const RESIZER_BLOCKED_HOSTS = new Set(["r2-media.wdwnt.com", "allears.net", "www.allears.net"]);
+
 /** True when `url` is a remote http(s) source we can hand to the edge. Skips
- *  local/static assets (`/img/…`, already optimized), `data:` URIs, and
- *  already-transformed `/cdn-cgi/` URLs. */
+ *  local/static assets (`/img/…`, already optimized), `data:` URIs,
+ *  already-transformed `/cdn-cgi/` URLs, and sources on a host known to
+ *  refuse the resizer (see {@link RESIZER_BLOCKED_HOSTS}). */
 function isTransformable(url: string): boolean {
-  return /^https?:\/\//.test(url) && !url.includes("/cdn-cgi/image/");
+  if (!/^https?:\/\//.test(url) || url.includes("/cdn-cgi/image/")) return false;
+  const host = url
+    .slice(url.indexOf("//") + 2)
+    .split(/[/?#]/, 1)[0]
+    ?.toLowerCase();
+  return host !== undefined && !RESIZER_BLOCKED_HOSTS.has(host);
 }
 
 /**

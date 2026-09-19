@@ -2,33 +2,25 @@
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { max as d3max } from "d3-array";
-import { AxisLeft } from "@visx/axis";
-import { GridRows } from "@visx/grid";
-import { Group } from "@visx/group";
-import { scaleBand, scaleLinear } from "@visx/scale";
-import { Bar, Line } from "@visx/shape";
 
+import {
+  ChartLegend,
+  ChartSentence,
+  ColumnChart,
+  LegendKey,
+  HeatRampKey,
+  bestRun,
+  clockLabel,
+  heatBg,
+  heatStepOf,
+  hourLabel,
+  useParkClock,
+} from "#/components/detail/chart-kit.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { cn } from "#/lib/utils.ts";
 
-import {
-  AnalyticsCard,
-  AXIS_INK,
-  ChartEmpty,
-  ChartFrame,
-  CHART_H,
-  clientXY,
-  GRID_INK,
-  hourLabel,
-  PRIMARY,
-  tickLabelProps,
-  truncate,
-  useChartTooltip,
-} from "./visx/kit.tsx";
-
-const CHART_H_RESPONSIVE = { base: 180, md: CHART_H };
+import { AnalyticsCard, ChartEmpty, CHART_H, truncate } from "./visx/kit.tsx";
 
 /**
  * Lightning Lane / Virtual Line **drop** charts.
@@ -38,142 +30,96 @@ const CHART_H_RESPONSIVE = { base: 180, md: CHART_H };
  * `parks.llDrops` procedure for the rollup and `research/lightning-lane-drop-alerts.md`
  * for why each form was chosen.
  *
- * Colour note: this file deliberately skips the ride charts' green->red
- * `intensityColor` ramp. Every measure here is plain magnitude — a count of
- * drops — so the bars take a single hue (`--primary`). A value ramp would
- * double-encode bar length as lightness, spending the only free channel on
- * information the bar already carries.
+ * Every measure here is a plain count of drops, so the bars take the one wash
+ * hue and the good answer — the hour with the most drops — is mint. The hour
+ * you're standing in wears the yellow "Now" pill; a median is a reference
+ * rather than a place, so it takes the wash-ink pill instead.
  */
 
 type HourDatum = { hour: number; drops: number };
 
+const drops = (n: number) => `${n} ${n === 1 ? "drop" : "drops"}`;
+
 /** Drops by hour of day — "what time should I be watching?" */
-function DropsByHourChart({ data }: { data: Array<HourDatum> }) {
-  const tip = useChartTooltip<HourDatum>();
+function DropsByHour({ data, nowHour }: { data: Array<HourDatum>; nowHour: number | null }) {
+  const [sel, setSel] = React.useState<number | null>(null);
   if (data.length === 0) return <ChartEmpty label="No drops recorded yet." height={CHART_H} />;
 
-  // Show a continuous clock spine so quiet hours read as real gaps, not as
-  // missing categories. Trim to the range that actually saw activity.
+  // A continuous clock spine so quiet hours read as real gaps, not as missing
+  // categories. Trimmed to the range that actually saw activity.
   const lo = Math.min(...data.map((d) => d.hour));
   const hi = Math.max(...data.map((d) => d.hour));
   const byHour = new Map(data.map((d) => [d.hour, d.drops]));
-  const spine: Array<HourDatum> = Array.from({ length: hi - lo + 1 }, (_, i) => ({
-    hour: lo + i,
-    drops: byHour.get(lo + i) ?? 0,
-  }));
-  const margin = { top: 10, right: 8, bottom: 22, left: 30 };
-  const max = d3max(spine, (d) => d.drops) ?? 0;
+  const hours = Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
+  const values = hours.map((h) => byHour.get(h) ?? 0);
+  const max = Math.max(...values);
+  const total = values.reduce((a, b) => a + b, 0);
+  // The hours worth watching: the busiest, widened to neighbours within a
+  // fifth of it.
+  const window = bestRun(values, "max", Math.max(1, Math.round(max * 0.2)));
+  const peakIdx = values.indexOf(max);
+  const nowIdx = nowHour != null && nowHour >= lo && nowHour <= hi ? nowHour - lo : -1;
+
+  let headline: string;
+  let subline: string;
+  if (sel != null && sel !== nowIdx) {
+    const v = values[sel]!;
+    headline = `${hourLabel(hours[sel]!)} · ${drops(v)} in 30 days`;
+    subline =
+      v === 0
+        ? "Nothing has come back at this hour."
+        : sel === peakIdx
+          ? "The busiest hour for drops."
+          : `${Math.round((v / total) * 100)}% of the month's drops · ${max - v} fewer than ${hourLabel(hours[peakIdx]!)}, the best hour.`;
+  } else if (nowIdx >= 0) {
+    const v = values[nowIdx]!;
+    headline =
+      v === 0 ? "This hour rarely sees a drop" : `This hour has seen ${drops(v)} in 30 days`;
+    subline = window
+      ? `Best odds: ${hourLabel(hours[window.lo]!)} – ${clockLabel((hours[window.hi]! + 1) * 60)}. Tap an hour to compare.`
+      : "Tap an hour to compare.";
+  } else {
+    headline = `Most drops land around ${hourLabel(hours[peakIdx]!)} · ${drops(max)}`;
+    subline = window
+      ? `Best odds: ${hourLabel(hours[window.lo]!)} – ${clockLabel((hours[window.hi]! + 1) * 60)}. Tap an hour for its count.`
+      : "Tap an hour for its count.";
+  }
 
   return (
-    <ChartFrame height={CHART_H_RESPONSIVE}>
-      {({ width, height }) => {
-        const narrow = width < 480;
-        const innerW = Math.max(0, width - margin.left - margin.right);
-        const innerH = Math.max(0, height - margin.top - margin.bottom);
-        const x = scaleBand({
-          domain: spine.map((d) => d.hour),
-          range: [0, innerW],
-          padding: 0.22,
-        });
-        const y = scaleLinear({ domain: [0, max * 1.1 || 1], range: [innerH, 0], nice: true });
-        const bw = x.bandwidth();
-        const everyNth = Math.max(1, Math.ceil((spine.length * 26) / Math.max(1, innerW)));
-
-        return (
-          <div className="relative h-full w-full">
-            <svg width={width} height={height}>
-              <Group left={margin.left} top={margin.top}>
-                <GridRows
-                  scale={y}
-                  width={innerW}
-                  stroke={GRID_INK}
-                  strokeOpacity={0.5}
-                  numTicks={4}
-                />
-                {spine.map((d, i) => {
-                  const bx = x(d.hour) ?? 0;
-                  const by = y(d.drops);
-                  return (
-                    <Group key={d.hour}>
-                      <Bar
-                        x={bx}
-                        y={0}
-                        width={bw}
-                        height={innerH}
-                        fill="transparent"
-                        onMouseMove={(e) => tip.show(d, clientXY(e))}
-                        onTouchStart={(e) => tip.show(d, clientXY(e))}
-                        onMouseLeave={tip.hide}
-                      />
-                      <Bar
-                        x={bx}
-                        y={by}
-                        width={bw}
-                        height={Math.max(0, innerH - by)}
-                        rx={3}
-                        fill={PRIMARY}
-                        onMouseMove={(e) => tip.show(d, clientXY(e))}
-                        onTouchStart={(e) => tip.show(d, clientXY(e))}
-                        onMouseLeave={tip.hide}
-                      />
-                      {i % everyNth === 0 && (
-                        <text
-                          x={bx + bw / 2}
-                          y={innerH + 14}
-                          textAnchor="middle"
-                          fontSize={narrow ? 11 : 10}
-                          fill={AXIS_INK}
-                        >
-                          {hourLabel(d.hour)}
-                        </text>
-                      )}
-                    </Group>
-                  );
-                })}
-                <AxisLeft
-                  scale={y}
-                  numTicks={4}
-                  hideTicks
-                  hideAxisLine
-                  tickLabelProps={() =>
-                    tickLabelProps(
-                      { textAnchor: "end", dx: "-0.25em", dy: "0.3em" },
-                      narrow ? 12 : 11,
-                    )
-                  }
-                />
-              </Group>
-            </svg>
-            <tip.Tooltip>
-              {(d) => (
-                <div className="flex w-full flex-col gap-0.5">
-                  <span className="font-medium text-foreground">{hourLabel(d.hour)}</span>
-                  <span className="text-foreground">
-                    <span className="font-mono font-medium tabular-nums">{d.drops}</span>{" "}
-                    <span className="text-muted-foreground">
-                      {d.drops === 1 ? "drop" : "drops"} in 30 days
-                    </span>
-                  </span>
-                </div>
-              )}
-            </tip.Tooltip>
-          </div>
-        );
-      }}
-    </ChartFrame>
+    <div className="flex flex-col gap-3">
+      <ChartSentence headline={headline} subline={subline} size="sm" />
+      <ColumnChart
+        columns={hours.map((h, i) => ({
+          key: h,
+          value: values[i]!,
+          label: hourLabel(h),
+          name: `${hourLabel(h)}: ${drops(values[i]!)} in 30 days`,
+          tone:
+            i === nowIdx ? "now" : window && i >= window.lo && i <= window.hi ? "best" : "measured",
+        }))}
+        max={Math.max(1, max)}
+        selected={sel}
+        onSelect={setSel}
+        anchor={nowIdx >= 0 ? { index: nowIdx, label: `Now · ${values[nowIdx]}` } : null}
+        bracket={window ? { lo: window.lo, hi: window.hi, label: "Best odds" } : null}
+        labelKeep={(_c, i) => hours[i]! % 3 === 0 || i === 0 || i === hours.length - 1}
+        heightClass="h-36 md:h-44"
+      />
+      <ChartLegend>
+        <LegendKey swatch="measured">Drops</LegendKey>
+        {window && <LegendKey swatch="best">Best odds</LegendKey>}
+        {nowIdx >= 0 && <LegendKey swatch="now">This hour</LegendKey>}
+      </ChartLegend>
+    </div>
   );
 }
 
 /**
  * Shared one-hue histogram for the two distribution cards. Both plot "how many
- * drops fell in this bucket" over an ordered numeric axis with a pooled tail and
- * a dashed median rule, so they share an implementation rather than two
- * near-identical copies.
- *
- * Magnitude only — a single hue, never a value ramp, since bar length already
- * carries the count.
+ * drops fell in this bucket" over an ordered numeric axis with a pooled tail
+ * and the median pinned, so they share an implementation.
  */
-function DistributionChart<T extends { drops: number }>({
+function Distribution<T extends { drops: number }>({
   data,
   valueOf,
   cap,
@@ -182,6 +128,7 @@ function DistributionChart<T extends { drops: number }>({
   formatTick,
   formatMedian,
   describe,
+  idle,
   emptyLabel,
 }: {
   data: Array<T>;
@@ -189,145 +136,81 @@ function DistributionChart<T extends { drops: number }>({
   valueOf: (d: T) => number;
   /** Buckets at or above this pool the tail; labelled with a trailing "+". */
   cap: number;
-  /** Median in the same unit as `valueOf`, for the annotation rule. */
+  /** Median in the same unit as `valueOf`, for the pinned mark. */
   median: number;
   /** Label every nth bucket, measured in `valueOf` units. */
   tickEvery: number;
   formatTick: (v: number, capped: boolean) => string;
   formatMedian: (v: number) => string;
-  /** Tooltip headline for one bucket. */
+  /** How one bucket is named in the sentence. */
   describe: (v: number, capped: boolean) => string;
+  /** The sentence with nothing pointed at. */
+  idle: { headline: string; subline: string };
   emptyLabel: string;
 }) {
-  const tip = useChartTooltip<T>();
+  const [sel, setSel] = React.useState<number | null>(null);
   if (data.length === 0) return <ChartEmpty label={emptyLabel} height={CHART_H} />;
 
-  const margin = { top: 18, right: 8, bottom: 22, left: 30 };
-  const max = d3max(data, (d) => d.drops) ?? 0;
+  const total = data.reduce((s, d) => s + d.drops, 0);
+  const max = Math.max(...data.map((d) => d.drops));
+  const medianTarget = Math.min(median, cap);
+  // The bucket the median falls in: the last one at or under it.
+  let medianIdx = -1;
+  data.forEach((d, i) => {
+    if (valueOf(d) <= medianTarget) medianIdx = i;
+  });
+
+  let headline: string;
+  let subline: string;
+  if (sel != null) {
+    const d = data[sel]!;
+    const v = valueOf(d);
+    headline = `${describe(v, v >= cap)} · ${drops(d.drops)}`;
+    subline =
+      d.drops === 0
+        ? "None of the month's drops landed here."
+        : `${Math.round((d.drops / total) * 100)}% of the month's drops.${sel === medianIdx ? " The median lands here." : ""}`;
+  } else {
+    headline = idle.headline;
+    subline = idle.subline;
+  }
 
   return (
-    <ChartFrame height={CHART_H_RESPONSIVE}>
-      {({ width, height }) => {
-        const narrow = width < 480;
-        const innerW = Math.max(0, width - margin.left - margin.right);
-        const innerH = Math.max(0, height - margin.top - margin.bottom);
-        const x = scaleBand({
-          domain: data.map((d) => valueOf(d)),
-          range: [0, innerW],
-          padding: 0.18,
-        });
-        const y = scaleLinear({ domain: [0, max * 1.1 || 1], range: [innerH, 0], nice: true });
-        const bw = x.bandwidth();
-        const medX = x(Math.min(median, cap));
-
-        return (
-          <div className="relative h-full w-full">
-            <svg width={width} height={height}>
-              <Group left={margin.left} top={margin.top}>
-                <GridRows
-                  scale={y}
-                  width={innerW}
-                  stroke={GRID_INK}
-                  strokeOpacity={0.5}
-                  numTicks={4}
-                />
-                {data.map((d) => {
-                  const v = valueOf(d);
-                  const bx = x(v) ?? 0;
-                  const by = y(d.drops);
-                  return (
-                    <Group key={v}>
-                      <Bar
-                        x={bx}
-                        y={0}
-                        width={bw}
-                        height={innerH}
-                        fill="transparent"
-                        onMouseMove={(e) => tip.show(d, clientXY(e))}
-                        onTouchStart={(e) => tip.show(d, clientXY(e))}
-                        onMouseLeave={tip.hide}
-                      />
-                      <Bar
-                        x={bx}
-                        y={by}
-                        width={bw}
-                        height={Math.max(0, innerH - by)}
-                        rx={2}
-                        fill={PRIMARY}
-                        onMouseMove={(e) => tip.show(d, clientXY(e))}
-                        onTouchStart={(e) => tip.show(d, clientXY(e))}
-                        onMouseLeave={tip.hide}
-                      />
-                      {(Math.abs(v % tickEvery) < 1e-9 || v >= cap) && (
-                        <text
-                          x={bx + bw / 2}
-                          y={innerH + 14}
-                          textAnchor="middle"
-                          fontSize={narrow ? 11 : 10}
-                          fill={AXIS_INK}
-                        >
-                          {formatTick(v, v >= cap)}
-                        </text>
-                      )}
-                    </Group>
-                  );
-                })}
-                {medX != null && median > 0 && (
-                  <Group>
-                    <Line
-                      from={{ x: medX + bw / 2, y: -6 }}
-                      to={{ x: medX + bw / 2, y: innerH }}
-                      stroke={AXIS_INK}
-                      strokeWidth={1}
-                      strokeDasharray="3 2"
-                    />
-                    <text
-                      x={medX + bw / 2 + 4}
-                      y={-9}
-                      fontSize={10}
-                      fill={AXIS_INK}
-                      className="tabular-nums"
-                    >
-                      median {formatMedian(median)}
-                    </text>
-                  </Group>
-                )}
-                <AxisLeft
-                  scale={y}
-                  numTicks={4}
-                  hideTicks
-                  hideAxisLine
-                  tickLabelProps={() =>
-                    tickLabelProps(
-                      { textAnchor: "end", dx: "-0.25em", dy: "0.3em" },
-                      narrow ? 12 : 11,
-                    )
-                  }
-                />
-              </Group>
-            </svg>
-            <tip.Tooltip>
-              {(d) => {
-                const v = valueOf(d);
-                return (
-                  <div className="flex w-full flex-col gap-0.5">
-                    <span className="font-medium text-foreground">{describe(v, v >= cap)}</span>
-                    <span className="text-foreground">
-                      <span className="font-mono font-medium tabular-nums">{d.drops}</span>{" "}
-                      <span className="text-muted-foreground">
-                        {d.drops === 1 ? "drop" : "drops"}
-                      </span>
-                    </span>
-                  </div>
-                );
-              }}
-            </tip.Tooltip>
-          </div>
-        );
-      }}
-    </ChartFrame>
+    <div className="flex flex-col gap-3">
+      <ChartSentence headline={headline} subline={subline} size="sm" />
+      <ColumnChart
+        columns={data.map((d) => {
+          const v = valueOf(d);
+          return {
+            key: v,
+            value: d.drops,
+            label: formatTick(v, v >= cap),
+            name: `${describe(v, v >= cap)}: ${drops(d.drops)}`,
+            tone: "measured" as const,
+          };
+        })}
+        max={Math.max(1, max)}
+        selected={sel}
+        onSelect={setSel}
+        anchor={
+          medianIdx >= 0 && median > 0
+            ? { index: medianIdx, label: `Median · ${formatMedian(median)}`, tone: "mark" }
+            : null
+        }
+        labelKeep={(c) => {
+          const v = Number(c.key);
+          return Math.abs(v % tickEvery) < 1e-9 || v >= cap;
+        }}
+        heightClass="h-36 md:h-44"
+      />
+      <ChartLegend>
+        <LegendKey swatch="measured">Drops</LegendKey>
+        {medianIdx >= 0 && median > 0 && <LegendKey swatch="mark">Median</LegendKey>}
+      </ChartLegend>
+    </div>
   );
 }
+
 /**
  * Per-ride drop analysis for the attraction detail page. Rendered only for rides
  * that actually offer the paid/virtual line — the caller gates on
@@ -337,11 +220,14 @@ export function LightningLaneDrops({
   attractionId,
   queueType,
   product,
+  timeZone,
 }: {
   attractionId: number;
   queueType: number;
   /** Operator label for the paid line — "Lightning Lane" or "Virtual Line". */
   product: string;
+  /** The park's timezone, to pin "Now" on the hour chart. */
+  timeZone?: string | null;
 }) {
   const trpc = useTRPC();
   const q = useQuery({
@@ -351,6 +237,7 @@ export function LightningLaneDrops({
     }),
     enabled: attractionId > 0,
   });
+  const clock = useParkClock(timeZone);
 
   // See the note in `ParkAnalytics` — `isLoading` is false on the first render.
   if (!q.data) {
@@ -387,15 +274,17 @@ export function LightningLaneDrops({
       <div className="grid gap-4 lg:grid-cols-2">
         <AnalyticsCard
           title="When drops happen"
-          description="Drops by hour of day (park local) · 30 days"
+          description="Drops by hour of day, park local · 30 days"
+          meta={`${s.drops.toLocaleString()} ${s.drops === 1 ? "drop" : "drops"}`}
         >
-          <DropsByHourChart data={q.data?.byHour ?? []} />
+          <DropsByHour data={q.data?.byHour ?? []} nowHour={clock?.hour ?? null} />
         </AnalyticsCard>
         <AnalyticsCard
           title="How long it stays bookable"
           description="Minutes open before selling out again · 30 days"
+          meta={`Median ${s.medianOpenMins} min`}
         >
-          <DistributionChart
+          <Distribution
             data={q.data?.openLen ?? []}
             valueOf={(d) => d.mins}
             cap={45}
@@ -403,7 +292,11 @@ export function LightningLaneDrops({
             tickEvery={10}
             formatTick={(v, capped) => (capped ? "45+" : String(v))}
             formatMedian={(v) => `${v}m`}
-            describe={(v, capped) => (capped ? "45 min or longer" : `${v} min`)}
+            describe={(v, capped) => (capped ? "Open 45 min or longer" : `Open ${v} min`)}
+            idle={{
+              headline: `Typically bookable for ${s.medianOpenMins} min`,
+              subline: "Half of drops sell out again sooner, half later. Tap a bar for its share.",
+            }}
             emptyLabel="No drops recorded yet."
           />
         </AnalyticsCard>
@@ -411,8 +304,9 @@ export function LightningLaneDrops({
           <AnalyticsCard
             title="How soon you'd ride"
             description="Wait between catching a drop and the return time it offers · 30 days"
+            meta={`Median ${s.medianLeadHours}h`}
           >
-            <DistributionChart
+            <Distribution
               data={q.data?.leadTime ?? []}
               valueOf={(d) => d.hours}
               cap={12}
@@ -425,8 +319,16 @@ export function LightningLaneDrops({
                   ? "12 hours or more ahead"
                   : v === 0
                     ? "Return straight away"
-                    : `${v} ${v === 1 ? "hour" : "hours"} ahead`
+                    : `Return ${v} ${v === 1 ? "hour" : "hours"} ahead`
               }
+              idle={{
+                headline:
+                  s.medianLeadHours === 0
+                    ? "Most drops let you ride straight away"
+                    : `A caught drop typically returns ${s.medianLeadHours}h later`,
+                subline:
+                  "How far ahead the return window it hands you sits. Tap a bar for its share.",
+              }}
               emptyLabel="No return windows recorded yet."
             />
           </AnalyticsCard>
@@ -437,18 +339,20 @@ export function LightningLaneDrops({
 }
 
 /**
- * Park-wide ride x hour drop grid for the park analytics tab. Uses a single-hue
- * sequential ramp (magnitude, not identity) built from `--primary` at varying
- * alpha, so it tracks the theme and needs no second palette.
+ * Park-wide ride x hour drop grid for the park analytics tab: the busiest
+ * droppers first, each hour shaded on the house heat ramp, the cell you point
+ * at spoken above.
  */
 export function ParkLlDropsHeatmap({
   data,
+  nowHour,
 }: {
   data: Array<{ name: string; hour: number; drops: number }>;
+  nowHour?: number | null;
 }) {
-  const tip = useChartTooltip<{ name: string; hour: number; drops: number }>();
+  const [sel, setSel] = React.useState<string | null>(null);
 
-  const { rides, hours, byKey, max } = React.useMemo(() => {
+  const { rides, totals, hours, byKey, max } = React.useMemo(() => {
     const totals = new Map<string, number>();
     let lo = 23;
     let hi = 0;
@@ -464,7 +368,7 @@ export function ParkLlDropsHeatmap({
     // Busiest droppers first — that's the ordering a guest scans for.
     const ordered = [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n);
     const hs = hi >= lo ? Array.from({ length: hi - lo + 1 }, (_, i) => lo + i) : [];
-    return { rides: ordered.slice(0, 12), hours: hs, byKey: map, max: mx };
+    return { rides: ordered.slice(0, 12), totals, hours: hs, byKey: map, max: mx };
   }, [data]);
 
   if (rides.length === 0 || hours.length === 0)
@@ -472,61 +376,77 @@ export function ParkLlDropsHeatmap({
       <ChartEmpty label="No Lightning Lane drops recorded in this park yet." height={CHART_H} />
     );
 
+  const top = rides[0]!;
+  let headline: string;
+  let subline: string;
+  if (sel) {
+    const [name, h] = sel.split("|") as [string, string];
+    const v = byKey.get(sel) ?? 0;
+    headline = `${name} at ${hourLabel(Number(h))} · ${drops(v)}`;
+    subline = `${drops(totals.get(name) ?? 0)} across the month for this ride.`;
+  } else {
+    headline = `${top} drops most · ${drops(totals.get(top) ?? 0)} in 30 days`;
+    subline = "Busiest droppers first. Tap a cell for a ride's hour.";
+  }
+
+  const grid = { gridTemplateColumns: `minmax(0, 7rem) repeat(${hours.length}, minmax(0, 1fr))` };
+
   return (
-    <div className="relative w-full overflow-x-auto">
-      <div className="min-w-[520px]">
-        <div className="flex flex-col gap-[2px]">
-          {rides.map((name) => (
-            <div key={name} className="flex items-center gap-[2px]">
-              <span className="w-[104px] shrink-0 truncate pr-1 text-right text-[11px] text-muted-foreground">
-                {truncate(name, 18)}
-              </span>
-              {hours.map((h) => {
-                const drops = byKey.get(`${name}|${h}`) ?? 0;
-                const t = max > 0 ? drops / max : 0;
-                return (
-                  <div
-                    key={h}
-                    className="h-5 flex-1 rounded-[3px]"
-                    style={{
-                      background:
-                        drops === 0
-                          ? "color-mix(in oklab, var(--muted) 70%, transparent)"
-                          : `color-mix(in oklab, ${PRIMARY} ${Math.round(18 + t * 82)}%, transparent)`,
-                    }}
-                    onMouseMove={(e) => tip.show({ name, hour: h, drops }, clientXY(e))}
-                    onTouchStart={(e) => tip.show({ name, hour: h, drops }, clientXY(e))}
-                    onMouseLeave={tip.hide}
-                  />
-                );
-              })}
-            </div>
-          ))}
-          <div className="flex items-center gap-[2px]">
-            <span className="w-[104px] shrink-0" />
-            {hours.map((h) => (
-              <span
-                key={h}
-                className="flex-1 text-center text-[10px] tabular-nums text-muted-foreground"
-              >
-                {h % 3 === 0 ? hourLabel(h) : ""}
-              </span>
-            ))}
+    <div className="flex flex-col gap-3">
+      <ChartSentence headline={headline} subline={subline} size="sm" />
+      <div className="flex flex-col gap-[3px]" onMouseLeave={() => setSel(null)}>
+        {rides.map((name) => (
+          <div key={name} className="grid items-center gap-[3px]" style={grid}>
+            <span
+              className="truncate pr-1.5 text-right text-[10.5px] leading-none font-bold text-wash-muted"
+              title={name}
+            >
+              {truncate(name, 20)}
+            </span>
+            {hours.map((h) => {
+              const key = `${name}|${h}`;
+              const v = byKey.get(key) ?? 0;
+              const hot = sel === key;
+              return (
+                <button
+                  key={h}
+                  type="button"
+                  aria-label={`${name} at ${hourLabel(h)}: ${drops(v)}`}
+                  aria-pressed={hot}
+                  onMouseEnter={() => setSel(key)}
+                  onFocus={() => setSel(key)}
+                  onBlur={() => setSel(null)}
+                  onClick={() => setSel(key)}
+                  className={cn(
+                    "h-4 min-w-0 cursor-pointer rounded-[3px] outline-none transition-[box-shadow] md:h-5",
+                    v === 0 ? "bg-wash-bar/35" : heatBg(heatStepOf(v, 1, max)),
+                    h === nowHour && "ring-2 ring-brand-yellow ring-inset",
+                    hot && "ring-[3px] ring-wash-fg/50 ring-inset",
+                  )}
+                />
+              );
+            })}
           </div>
+        ))}
+        <div className="grid gap-[3px]" style={grid} aria-hidden>
+          <span />
+          {hours.map((h) => (
+            <span
+              key={h}
+              className={cn(
+                "min-w-0 text-center text-[10px] leading-[14px] font-bold whitespace-nowrap",
+                h === nowHour ? "text-wash-fg" : "text-wash-muted",
+              )}
+            >
+              {h % 3 === 0 ? hourLabel(h).replace(" ", " ") : ""}
+            </span>
+          ))}
         </div>
       </div>
-      <tip.Tooltip>
-        {(c) => (
-          <div className="flex w-full flex-col gap-0.5">
-            <span className="font-medium text-foreground">{c.name}</span>
-            <span className="text-muted-foreground">
-              {hourLabel(c.hour)} ·{" "}
-              <span className="font-mono tabular-nums text-foreground">{c.drops}</span>{" "}
-              {c.drops === 1 ? "drop" : "drops"}
-            </span>
-          </div>
-        )}
-      </tip.Tooltip>
+      <ChartLegend>
+        <HeatRampKey from="1" to={drops(max)} />
+        {nowHour != null && <LegendKey swatch="now">This hour</LegendKey>}
+      </ChartLegend>
     </div>
   );
 }

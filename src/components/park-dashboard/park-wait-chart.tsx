@@ -4,18 +4,17 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { bisector, extent } from "d3-array";
-import { AxisBottom, AxisRight } from "@visx/axis";
+import { AxisBottom } from "@visx/axis";
 import { Brush } from "@visx/brush";
 import { curveMonotoneX } from "@visx/curve";
 import { localPoint } from "@visx/event";
-import { GridRows } from "@visx/grid";
 import { Group } from "@visx/group";
 import { PatternLines } from "@visx/pattern";
 import { scaleLinear, scaleTime } from "@visx/scale";
 import { Bar, Circle, Line, LinePath } from "@visx/shape";
 import { MinusIcon, TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 
-import { Card, CardContent, CardHeader } from "#/components/ui/card.tsx";
+import { Pill, floatAtFraction } from "#/components/detail/chart-kit.tsx";
 import { ConstructionState } from "#/components/ui/anim-icons/construction.tsx";
 import { Empty, EmptyDescription, EmptyTitle } from "#/components/ui/empty.tsx";
 import {
@@ -32,15 +31,16 @@ import { cn } from "#/lib/utils.ts";
 import { isSingleRiderName, isUniversal, paidLineProduct } from "./lightning-lane.ts";
 import { rideColor } from "./ride-colors.ts";
 import { indicativeSeries, strokeRuns } from "./visx/indicative.ts";
-import {
-  AXIS_INK,
-  chartMargin,
-  GRID_INK,
-  MOBILE_TICK,
-  PRIMARY,
-  TooltipCard,
-  tickLabelProps,
-} from "./visx/kit.tsx";
+import { chartMargin, MOBILE_TICK, tickLabelProps } from "./visx/kit.tsx";
+
+/** The whole-park line's ink — the wash blue every other chart on the page
+ *  draws its measured series in. The per-ride lines keep their own hues:
+ *  those are identities, and a dozen of them can't share one. */
+const PARK_INK = "var(--wash-bar-strong)";
+const CURSOR_INK = "var(--wash-fg)";
+const YELLOW = "var(--brand-yellow)";
+/** How near the last reading must be to the clock to be called "now". */
+const NOW_SLACK_MS = 25 * 60_000;
 
 type Metric = "wait" | "price" | "count";
 
@@ -76,8 +76,9 @@ const MAX_TOOLTIP_RIDES = 7;
 const PLOT_H = 152;
 const BRUSH_H = 34;
 const BRUSH_GAP = 14;
-// left/right come from `chartMargin(width)`; top/bottom are fixed here.
-const MARGIN = { top: 8, bottom: 20 };
+// left/right come from `chartMargin(width)`; top/bottom are fixed here. The
+// top holds the "Now" pill's row over the plot.
+const MARGIN = { top: 26, bottom: 20 };
 // Below this width the brush is dropped — precise pinch-brushing is a desktop
 // affordance, and the 24h/7d/30d presets cover ranging on a phone.
 const BRUSH_MIN_W = 480;
@@ -126,9 +127,9 @@ function RideLegend({
             aria-pressed={on}
             title={r.name}
             className={cn(
-              "flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted/50",
-              wrap ? "w-auto max-w-[14rem] border bg-background/40" : "w-full",
-              on ? "text-foreground" : "text-muted-foreground",
+              "flex items-center gap-2 rounded-full px-2.5 py-1 text-left text-[11.5px] font-semibold transition-colors hover:bg-wash/70",
+              wrap ? "w-auto max-w-[14rem] border border-wash-edge bg-card" : "w-full",
+              on ? "text-foreground" : "text-wash-muted",
             )}
           >
             <span
@@ -396,6 +397,21 @@ function WaitPlot({
 
   const avgVal = hover ? hover.row[AVG_KEY] : null;
 
+  // The latest live reading of the whole-park line, if it's fresh enough to be
+  // "now" — the yellow mark every chart on these pages pins to the clock.
+  const now = React.useMemo(() => {
+    for (let i = visibleRows.length - 1; i >= 0; i--) {
+      const r = visibleRows[i]!;
+      const v = r[AVG_KEY];
+      if (r.status === "open" && typeof v === "number") {
+        if (Date.now() - r.t > NOW_SLACK_MS + (hours <= 24 ? 15 : 60) * 60_000) return null;
+        return { left: x(new Date(r.t)), value: v, t: r.t };
+      }
+    }
+    return null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleRows, hours, innerW]);
+
   return (
     <div className="relative w-full" style={{ height: svgH }}>
       <svg width={width} height={svgH} className="overflow-visible">
@@ -403,7 +419,7 @@ function WaitPlot({
           id="wait-closed-hatch"
           height={6}
           width={6}
-          stroke="color-mix(in srgb, var(--muted-foreground) 20%, transparent)"
+          stroke={`color-mix(in srgb, ${PARK_INK} 28%, transparent)`}
           strokeWidth={1}
           orientation={["diagonal"]}
         />
@@ -411,13 +427,12 @@ function WaitPlot({
           id="wait-brush-pattern"
           height={8}
           width={8}
-          stroke="color-mix(in srgb, var(--primary) 45%, transparent)"
+          stroke={`color-mix(in srgb, ${PARK_INK} 45%, transparent)`}
           strokeWidth={1}
           orientation={["diagonal"]}
         />
         {/* ── main plot ── */}
         <Group left={margin.left} top={margin.top}>
-          <GridRows scale={y} width={innerW} stroke={GRID_INK} strokeOpacity={0.5} numTicks={4} />
           {closedBands.map((b) => {
             const x0 = x(new Date(b.x0));
             const x1 = x(new Date(b.x1));
@@ -456,29 +471,53 @@ function WaitPlot({
             x={(d) => x(new Date(d.t))}
             y={(d) => y(d.v)}
             curve={curveMonotoneX}
-            stroke={PRIMARY}
+            stroke={PARK_INK}
             strokeWidth={2.75}
             strokeDasharray={mode === "count" ? undefined : "5 4"}
+            strokeLinecap="round"
           />
+          {/* where the park is right now: the latest live reading, in yellow
+              on a dotted drop line from its pill */}
+          {now && (
+            <g pointerEvents="none">
+              <Line
+                from={{ x: now.left, y: -margin.top }}
+                to={{ x: now.left, y: y(now.value) }}
+                stroke={YELLOW}
+                strokeWidth={2}
+                strokeDasharray="1 4"
+                strokeLinecap="round"
+              />
+              <Circle
+                cx={now.left}
+                cy={y(now.value)}
+                r={5.5}
+                fill={YELLOW}
+                stroke="var(--card)"
+                strokeWidth={2}
+              />
+            </g>
+          )}
           {/* hover cursor + dots */}
           {hover && (
             <g pointerEvents="none">
               <Line
                 from={{ x: hover.left, y: 0 }}
                 to={{ x: hover.left, y: PLOT_H }}
-                stroke={AXIS_INK}
-                strokeWidth={1}
-                strokeDasharray="3 3"
+                stroke={CURSOR_INK}
+                strokeWidth={1.5}
+                strokeDasharray="1 4"
                 strokeOpacity={0.6}
+                strokeLinecap="round"
               />
               {typeof avgVal === "number" && hover.row.status !== "closed" && (
                 <Circle
                   cx={hover.left}
                   cy={y(avgVal)}
-                  r={4}
-                  fill={PRIMARY}
-                  stroke="var(--background)"
-                  strokeWidth={1.5}
+                  r={5}
+                  fill={CURSOR_INK}
+                  stroke="var(--card)"
+                  strokeWidth={2}
                 />
               )}
               {hover.row.status !== "closed" &&
@@ -499,24 +538,11 @@ function WaitPlot({
                 })}
             </g>
           )}
-          <AxisRight
-            left={innerW}
-            scale={y}
-            numTicks={4}
-            hideTicks
-            hideAxisLine
-            tickFormat={(v) =>
-              mode === "price" ? `$${v}` : mode === "count" ? `${Math.round(Number(v))}` : `${v}`
-            }
-            tickLabelProps={() =>
-              tickLabelProps({ textAnchor: "end", dx: "2.2em", dy: "0.3em" }, tick)
-            }
-          />
           <AxisBottom
             top={PLOT_H}
             scale={x}
             numTicks={narrow ? 4 : Math.max(2, Math.floor(innerW / 80))}
-            stroke={GRID_INK}
+            hideAxisLine
             hideTicks
             tickFormat={(v) =>
               hours <= 24
@@ -531,7 +557,17 @@ function WaitPlot({
                     timeZone: tz,
                   })
             }
-            tickLabelProps={() => tickLabelProps({ textAnchor: "middle", dy: "0.25em" }, tick)}
+            tickLabelProps={() =>
+              tickLabelProps(
+                {
+                  textAnchor: "middle",
+                  dy: "0.25em",
+                  fill: "var(--wash-muted)",
+                  fontWeight: 700,
+                },
+                tick - 1,
+              )
+            }
           />
           <Bar
             width={innerW}
@@ -546,7 +582,7 @@ function WaitPlot({
         {/* ── brush context strip (desktop only) ── */}
         {showBrush && (
           <Group left={margin.left} top={margin.top + PLOT_H + BRUSH_GAP}>
-            <rect width={innerW} height={BRUSH_H} rx={6} fill="var(--muted)" fillOpacity={0.4} />
+            <rect width={innerW} height={BRUSH_H} rx={8} fill="var(--wash)" />
             {enabledRides.map((r) => (
               <LinePath
                 key={r.id}
@@ -564,7 +600,7 @@ function WaitPlot({
               x={(d) => brushX(new Date(d.t))}
               y={(d) => brushY(d.v)}
               curve={curveMonotoneX}
-              stroke={PRIMARY}
+              stroke={PARK_INK}
               strokeWidth={1.5}
               strokeOpacity={0.85}
             />
@@ -584,7 +620,7 @@ function WaitPlot({
               brushDirection="horizontal"
               selectedBoxStyle={{
                 fill: "url(#wait-brush-pattern)",
-                stroke: PRIMARY,
+                stroke: CURSOR_INK,
                 strokeWidth: 1,
               }}
               useWindowMoveEvents
@@ -600,6 +636,20 @@ function WaitPlot({
           </Group>
         )}
       </svg>
+
+      {/* the "Now" pill, on its row above the plot */}
+      {now && (
+        <Pill
+          tone="now"
+          style={floatAtFraction(innerW > 0 ? now.left / innerW : 0).style}
+          className={cn(
+            "pointer-events-none absolute top-0",
+            floatAtFraction(innerW > 0 ? now.left / innerW : 0).className,
+          )}
+        >
+          Now · {valueFormatter(now.value)}
+        </Pill>
+      )}
 
       {/* tooltip */}
       {hover && tipRows && (
@@ -620,8 +670,8 @@ function WaitPlot({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             transition={{ type: "spring", stiffness: 460, damping: 26, mass: 0.6 }}
           >
-            <TooltipCard className="min-w-36">
-              <div className="mb-1 font-medium text-foreground">{labelFor(hover.row.t)}</div>
+            <div className="min-w-36 rounded-2xl border border-wash-edge bg-card px-3 py-2 text-xs shadow-[0_2px_10px_-2px_rgb(0_0_0/0.12)]">
+              <div className="mb-1 font-bold text-foreground">{labelFor(hover.row.t)}</div>
               {tipRows.closed ? (
                 <span className="flex items-center gap-1.5 text-muted-foreground">
                   <span className="size-2 shrink-0 rounded-[2px] bg-muted-foreground/40" />
@@ -634,11 +684,11 @@ function WaitPlot({
                       <span className="flex items-center gap-1.5 text-muted-foreground">
                         <span
                           className="size-2 shrink-0 rounded-[2px]"
-                          style={{ backgroundColor: PRIMARY }}
+                          style={{ backgroundColor: PARK_INK }}
                         />
                         {mode === "count" ? "Lightning Lanes" : "Park average"}
                       </span>
-                      <span className="font-mono font-medium tabular-nums text-foreground">
+                      <span className="font-extrabold tabular-nums text-foreground">
                         {valueFormatter(avgVal)}
                       </span>
                     </div>
@@ -652,7 +702,7 @@ function WaitPlot({
                         />
                         {chartLabels[String(i.id)] ?? i.id}
                       </span>
-                      <span className="font-mono font-medium tabular-nums text-foreground">
+                      <span className="font-extrabold tabular-nums text-foreground">
                         {valueFormatter(i.value)}
                       </span>
                     </div>
@@ -662,7 +712,7 @@ function WaitPlot({
                   )}
                 </div>
               )}
-            </TooltipCard>
+            </div>
           </motion.div>
         </div>
       )}
@@ -871,12 +921,17 @@ export function ParkWaitChart({
   const hasData = chartData.length > 0 && rides.length > 0;
 
   return (
-    <Card className={cn("@container/card flex flex-col", className)}>
+    <div
+      className={cn(
+        "@container/card flex flex-col gap-4 rounded-[22px] border border-card-edge bg-card p-4 md:p-5",
+        className,
+      )}
+    >
       {/* A single compact toolbar row: metric select pinned left, time-range
           select pinned right. Both selects (rather than a title + wrapping
           controls) keep the chrome to one line so the plot + legend get the
           vertical room back. */}
-      <CardHeader className="flex flex-row items-center justify-between gap-2">
+      <div className="flex flex-row items-center justify-between gap-2">
         <Select
           value={queueType}
           onValueChange={(v) => v && setQueueType(v)}
@@ -909,8 +964,8 @@ export function ParkWaitChart({
             ))}
           </SelectContent>
         </Select>
-      </CardHeader>
-      <CardContent className="flex min-h-0 flex-1 flex-col px-2 pt-4 sm:px-6 sm:pt-6">
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col">
         {!parkSlug ? (
           <Empty className="h-[394px]">
             <EmptyTitle>No park selected</EmptyTitle>
@@ -966,13 +1021,13 @@ export function ParkWaitChart({
             >
               {/* Header sits above the scroll area so the mask fade only affects
                   the scrolling chips beneath it. */}
-              <div className="text-muted-foreground flex items-center justify-between gap-2 px-1.5 py-2 text-xs font-medium">
+              <div className="flex items-center justify-between gap-2 px-1.5 py-2 text-[11.5px] font-semibold text-wash-muted">
                 <span>Rides ({rides.length})</span>
                 <button
                   type="button"
                   onClick={toggleAll}
                   aria-pressed={allEnabled}
-                  className="text-primary rounded px-1 py-0.5 font-medium transition-colors hover:underline"
+                  className="rounded px-1 py-0.5 font-bold text-wash-fg transition-colors hover:underline"
                 >
                   {allEnabled ? "Clear all" : "Select all"}
                 </button>
@@ -1004,8 +1059,8 @@ export function ParkWaitChart({
             </div>
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 

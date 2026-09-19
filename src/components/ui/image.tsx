@@ -190,6 +190,12 @@ export function Image({
   const [fadedSrc, setFadedSrc] = useState<string | null>(null);
   const [instantSrc, setInstantSrc] = useState<string | null>(null);
   const [erroredSrc, setErroredSrc] = useState<string | null>(null);
+  // `cfFailedSrc` — the edge transform of this source failed (a host that
+  // refuses Cloudflare's resizer answers 403, see `RESIZER_BLOCKED_HOSTS`), so
+  // this render fetches the untouched origin URL instead of giving up on the
+  // photo. Keyed on `src` like the other load states.
+  const [cfFailedSrc, setCfFailedSrc] = useState<string | null>(null);
+  const useCf = cfImages && cfFailedSrc !== src;
   // `armed` — enables the transition after the first paint. Instant images skip
   // the transition on their initial (resting) render so they don't animate into
   // place; arming it a frame later lets a later change — notably a caller's
@@ -206,8 +212,12 @@ export function Image({
     if (!img || !src) return;
     if (img.complete && img.currentSrc) {
       if (img.naturalWidth > 0) setInstantSrc(src);
+      else if (useCf) setCfFailedSrc(src);
       else setErroredSrc(src);
     }
+    // `useCf` is deliberately not a dependency: this reconciles the DOM once per
+    // source; the origin retry it may trigger is then observed by `onError`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src]);
 
   const instant = instantSrc === src;
@@ -231,7 +241,7 @@ export function Image({
   // matches what the <img> fetches). `resolveImageUrls` no-ops on local/`data:`
   // sources and when CF is off.
   const { src: resolvedSrc, srcSet: resolvedSrcSet } = src
-    ? resolveImageUrls(src, { cf: cfImages, sizes, quality, widths, aspect, boxWidth, dataSaver })
+    ? resolveImageUrls(src, { cf: useCf, sizes, quality, widths, aspect, boxWidth, dataSaver })
     : { src, srcSet: undefined };
 
   // Scroll-preload: warm a lazy tile ~600px before it enters view, at low
@@ -305,6 +315,13 @@ export function Image({
         onLoad?.(e);
       }}
       onError={(e) => {
+        // A transform that fails is not proof the photo is gone — the resizer
+        // may have been refused by the source host. Fall back to the origin URL
+        // once; only a failure of *that* counts as a broken image.
+        if (useCf) {
+          setCfFailedSrc(src);
+          return;
+        }
         setErroredSrc(src);
         onError?.(e);
       }}

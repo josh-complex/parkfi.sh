@@ -18,6 +18,15 @@ import {
 import { ACTION_BAR_PAGE_PAD, DetailActionBar } from "#/components/detail/action-bar.tsx";
 import { Band, BandHeading } from "#/components/detail/band.tsx";
 import { DayHeatGrid, WeekdayBars } from "#/components/detail/day-series.tsx";
+
+/** How a count of bookable times is spoken in the Know band's sentences. */
+const OPENING_WORDS = {
+  best: "Most open",
+  worst: "Fewest openings",
+  more: "more than",
+  less: "fewer than",
+  usually: "usually open",
+} as const;
 import { MoreKey, PunchDay, TimeKey } from "#/components/detail/keys.tsx";
 import { DetailCard, FactTile, TintPanel, WashPanel } from "#/components/detail/panels.tsx";
 import { RightSheet } from "#/components/detail/right-sheet.tsx";
@@ -1080,18 +1089,22 @@ function PlanAhead({ r, facilityId }: { r: Reservations; facilityId: string }) {
             align="start"
             weeks={6}
             unit={times}
+            good="max"
+            words={OPENING_WORDS}
             zeroLabel="Fully booked"
             todayLabel="today — see the times above"
           />
         </DetailCard>
         <DetailCard
           title="Openings by weekday"
-          description={`Average bookable times per weekday · next ${weekdayDays.length} days · best in green`}
+          description={`Average bookable times per weekday · next ${weekdayDays.length} days · best in mint`}
         >
           <WeekdayBars
             days={weekdayDays}
             good="max"
             unit={times}
+            words={OPENING_WORDS}
+            today={r.todayIso}
             caption={({ best, worst }) => `${best}s open the most times; ${worst}s the fewest.`}
           />
         </DetailCard>

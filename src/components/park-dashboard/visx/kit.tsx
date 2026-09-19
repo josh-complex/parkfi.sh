@@ -253,7 +253,7 @@ export function useChartTooltip<T>() {
 export function ChartEmpty({ label, height = 220 }: { label: string; height?: number }) {
   return (
     <div
-      className="flex items-center justify-center px-6 text-center text-sm text-muted-foreground"
+      className="flex items-center justify-center rounded-2xl bg-wash/50 px-6 text-center text-sm text-wash-muted"
       style={{ height }}
     >
       {label}
@@ -324,24 +324,42 @@ export function intensityColor(t: number): string {
 export function AnalyticsCard({
   title,
   description,
+  meta,
   action,
+  className,
   children,
 }: {
   title: string;
   description: string;
+  /** Right-hand standing fact in the header — "Peaks 4 PM · 50 min" — in the
+   *  wash panel's meta voice. */
+  meta?: React.ReactNode;
+  /** Right-hand control (a segmented switch). Takes the slot over `meta`. */
   action?: React.ReactNode;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="@container/analytics flex flex-col overflow-hidden rounded-[22px] border border-card-edge bg-card">
-      <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-3 sm:px-5 sm:pt-5">
-        <div className="min-w-0 flex-col gap-0.5">
-          <p className="text-[15px] font-bold tracking-[-0.01em]">{title}</p>
-          <p className="truncate text-xs text-muted-foreground">{description}</p>
+    <div
+      className={cn(
+        "@container/analytics flex flex-col gap-3.5 rounded-[22px] border border-card-edge bg-card p-4 md:gap-4 md:p-5",
+        className,
+      )}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <p className="text-[17px] font-extrabold tracking-[-0.01em]">{title}</p>
+          <p className="text-[12.5px] text-muted-foreground">{description}</p>
         </div>
-        {action ? <div className="shrink-0 self-center">{action}</div> : null}
+        {action ? (
+          <div className="shrink-0">{action}</div>
+        ) : meta ? (
+          <span className="shrink-0 text-right text-[13px] font-semibold text-balance text-wash-muted">
+            {meta}
+          </span>
+        ) : null}
       </div>
-      <div className="flex min-h-0 flex-1 flex-col px-2 pb-4 sm:px-4">
+      <div className="flex min-h-0 flex-1 flex-col">
         <ChartErrorBoundary label={title} fallback={<ChartEmpty label="Chart unavailable." />}>
           {children}
         </ChartErrorBoundary>

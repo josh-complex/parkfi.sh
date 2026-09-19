@@ -52,3 +52,24 @@ describe("cfImageUrl gravity", () => {
     for (const rung of srcSet!.split(", ")) expect(rung).toContain("gravity=right");
   });
 });
+
+describe("resizer-blocked hosts", () => {
+  it("serves wdwnt and allears images straight from the source", () => {
+    for (const url of [
+      "https://r2-media.wdwnt.com/2026/09/recap-8-31-26.jpg",
+      "https://allears.net/wp-content/uploads/2026/09/photo.jpg",
+      "https://WWW.allears.net/wp-content/uploads/2026/09/photo.jpg?w=1",
+    ]) {
+      expect(cfImageUrl(url, { width: 448 })).toBe(url);
+      expect(resolveImageUrls(url, { cf: true, sizes: "100vw" })).toEqual({
+        src: url,
+        srcSet: undefined,
+      });
+    }
+  });
+
+  it("still transforms every other remote host", () => {
+    const url = "https://media.blogmickey.com/2026/09/photo.jpg";
+    expect(cfImageUrl(url, { width: 448 })).toContain("/cdn-cgi/image/");
+  });
+});

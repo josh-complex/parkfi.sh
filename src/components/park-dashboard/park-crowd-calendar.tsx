@@ -7,6 +7,15 @@ import { cn } from "#/lib/utils.ts";
 
 import type { ParkCrowd } from "./types.ts";
 
+/** How a standby wait is spoken in the pair's sentences. */
+export const WAIT_WORDS = {
+  best: "Quietest day",
+  worst: "Busiest",
+  more: "longer than",
+  less: "shorter than",
+  usually: "usually run about",
+} as const;
+
 /**
  * The park page's crowd-calendar section (plan §4.3): how busy the park has
  * been day by day, and which weekday it rewards. Both read one payload — the
@@ -47,14 +56,26 @@ export function ParkCrowdCalendar({
 
   return (
     <div className="grid gap-4 md:grid-cols-[2fr_3fr] md:gap-6">
-      <DetailCard title="Busiest days" description={`${subject} average standby · today outlined`}>
-        <DayHeatGrid days={points} today={crowd?.date ?? null} unit={minutes} />
+      <DetailCard title="Busiest days" description={`${subject} average standby · today ringed`}>
+        <DayHeatGrid
+          days={points}
+          today={crowd?.date ?? null}
+          unit={minutes}
+          good="min"
+          words={WAIT_WORDS}
+        />
       </DetailCard>
       <DetailCard
         title="By day of week"
-        description="Average standby per weekday · 5 weeks · quietest in green"
+        description="Average standby per weekday · 5 weeks · quietest in mint"
       >
-        <WeekdayBars days={points} good="min" unit={minutes} />
+        <WeekdayBars
+          days={points}
+          good="min"
+          unit={minutes}
+          words={WAIT_WORDS}
+          today={crowd?.date ?? null}
+        />
       </DetailCard>
     </div>
   );

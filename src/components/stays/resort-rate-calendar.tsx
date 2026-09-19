@@ -22,6 +22,15 @@ const MIN_PRICED_DAYS = 7;
 
 const usd = (value: number) => `$${Math.round(value).toLocaleString()}`;
 
+/** How a nightly rate is spoken in the pair's sentences. */
+const RATE_WORDS = {
+  best: "Cheapest check-in",
+  worst: "Priciest",
+  more: "more than",
+  less: "less than",
+  usually: "usually cost about",
+} as const;
+
 /**
  * Which check-in date to start a stay on, and which weekday this resort
  * rewards — the resort page's "Know" band, over rates instead of waits.
@@ -108,16 +117,25 @@ export function ResortRateCalendar({
         title="Cheapest check-in days"
         description={`Lowest nightly rate we've seen · ${partyLabel} · palest is cheapest`}
       >
-        <DayHeatGrid days={days} align="start" weeks={GRID_WEEKS} unit={usd} zeroLabel="Sold out" />
+        <DayHeatGrid
+          days={days}
+          align="start"
+          weeks={GRID_WEEKS}
+          unit={usd}
+          good="min"
+          words={RATE_WORDS}
+          zeroLabel="Sold out"
+        />
       </DetailCard>
       <DetailCard
         title="By day of week"
-        description={`Average nightly rate per check-in weekday · next ${weekdayDays.length} priced days · cheapest in green`}
+        description={`Average nightly rate per check-in weekday · next ${weekdayDays.length} priced days · cheapest in mint`}
       >
         <WeekdayBars
           days={weekdayDays}
           good="min"
           unit={usd}
+          words={RATE_WORDS}
           caption={({ best, worst }) =>
             `Checking in on a ${best} costs least; a ${worst} costs most.`
           }

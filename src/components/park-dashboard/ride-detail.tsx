@@ -994,6 +994,7 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
               attractionId={ride.id}
               queueType={llQueueType}
               product={lineProduct}
+              timeZone={ride.park.timezone}
             />
           )}
         </Band>

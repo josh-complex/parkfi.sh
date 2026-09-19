@@ -1,4 +1,4 @@
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute, notFound } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Clock } from "lucide-react";
 import { useEffect } from "react";
@@ -8,6 +8,7 @@ import { SiteHeaderDesktop } from "#/components/site-chrome/site-header-desktop.
 import { PostCard } from "#/components/blog/post-card.tsx";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
+import { trpcErrorCode } from "#/integrations/tanstack-query/root-provider.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { discordComponentEmbed, linkButton, linkPreview } from "#/lib/discord-embed.ts";
 import { articleJsonLd, breadcrumbJsonLd, seo } from "#/lib/seo.ts";
@@ -15,9 +16,17 @@ import { articleJsonLd, breadcrumbJsonLd, seo } from "#/lib/seo.ts";
 export const Route = createFileRoute("/blog/$slug")({
   component: BlogPost,
   loader: async ({ context, params }) => {
-    const post = await context.queryClient.ensureQueryData(
-      context.trpc.blog.bySlug.queryOptions({ slug: params.slug }),
-    );
+    const options = context.trpc.blog.bySlug.queryOptions({ slug: params.slug });
+    // An unknown slug used to surface as the route error page — a 500 on the
+    // server, the "something went wrong" pane on the client — for what is an
+    // ordinary missing URL (crawlers probe `/blog/xmlrpc.php` daily). Map the
+    // router's NOT_FOUND onto the app's 404 signpost; anything else is still a
+    // real failure and keeps propagating to `defaultOnCatch`. Awaited on both
+    // sides, as before, so `head()` has the post title on in-app navigation.
+    const post = await context.queryClient.ensureQueryData(options).catch((error: unknown) => {
+      if (trpcErrorCode(error) === "NOT_FOUND") throw notFound();
+      throw error;
+    });
     void context.queryClient.prefetchQuery(
       context.trpc.blog.related.queryOptions({ slug: params.slug, limit: 3 }),
     );

@@ -3,6 +3,13 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 
+import {
+  ChartLegend,
+  ChartSentence,
+  HeatRampKey,
+  LegendKey,
+  heatBg,
+} from "#/components/detail/chart-kit.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
 import { todayInTz } from "#/lib/park-hours.ts";
@@ -13,7 +20,7 @@ const WEEKS = 5;
 /** The horizon the card's one-line answer covers. */
 const SOON_DAYS = 14;
 
-const HEAT_BG = ["bg-heat-1", "bg-heat-2", "bg-heat-3", "bg-heat-4", "bg-heat-5"] as const;
+const CROWD_LABELS = ["Ghost town", "Light", "Moderate", "Busy", "Packed"] as const;
 
 /** `YYYY-MM-DD` at local midnight — never `Date.parse("2026-09-13")`, which is
  *  UTC and lands a day early west of Greenwich. */
@@ -33,7 +40,7 @@ function heatStep(index: number): number {
 /**
  * "Crowd calendar" — the five weeks ahead, each day shaded by its crowd index,
  * with the one thing a guest choosing a date actually wants: the quietest day
- * in the fortnight to come.
+ * in the fortnight to come. Pointing at a day speaks its index above the grid.
  *
  * Forward-looking on purpose. The history version of this grid (five weeks
  * *past*, in `ParkCrowdCalendar`) belongs to the page's reference band; this one
@@ -43,7 +50,7 @@ function heatStep(index: number): number {
  * Indexes are `forecast.parkCalendar`: measured for days already run, the ML
  * prediction for the next couple of days, and the day-of-week/holiday heuristic
  * beyond that — the last flagged `crowdIsEstimate`, which is why an estimated
- * day says so in its tooltip rather than pretending to be a measurement.
+ * day says so rather than pretending to be a measurement.
  */
 export function CrowdAhead({
   parkSlug,
@@ -57,6 +64,7 @@ export function CrowdAhead({
   const trpc = useTRPC();
   const tz = timezone ?? "America/New_York";
   const today = todayInTz(tz);
+  const [sel, setSel] = React.useState<string | null>(null);
 
   // The grid runs from the Sunday of this week so every column is one weekday.
   const { startIso, endIso, cells } = React.useMemo(() => {
@@ -87,10 +95,10 @@ export function CrowdAhead({
   // isFetching`, which is false on a server that never fetches *and* on the
   // client's very first render before the fetch starts — so an `isLoading`
   // guard renders nothing at exactly the moment the space needs reserving, and
-  // the card pops in at full height later. This card is ~517px tall; that pop
+  // the card pops in at full height later. This card is ~560px tall; that pop
   // moved everything under it.
   if (!parkSlug || !q.data) {
-    return <Skeleton className={cn("h-[517px] w-full rounded-[22px]", className)} />;
+    return <Skeleton className={cn("h-[560px] w-full rounded-[22px]", className)} />;
   }
 
   const byDate = new Map((q.data?.days ?? []).map((d) => [d.date, d]));
@@ -113,6 +121,50 @@ export function CrowdAhead({
     (best, c) => (!best || c.index < best.index ? c : best),
     null,
   );
+  const busiest = soon.reduce<(typeof soon)[number] | null>(
+    (best, c) => (!best || c.index > best.index ? c : best),
+    null,
+  );
+
+  const active = sel ? (cells.find((c) => c.iso === sel) ?? null) : null;
+  const activeDay = active ? byDate.get(active.iso) : null;
+  let headline: string;
+  let subline: string;
+  let tone: "good" | "bad" | "neutral" = "neutral";
+  if (active) {
+    const index = activeDay?.crowdIndex ?? null;
+    if (index == null) {
+      headline = `${active.label} · no forecast yet`;
+      subline = "Check back after tonight's run.";
+    } else {
+      headline = `${active.iso === today ? "Today" : active.label} · crowd ${index} of 10 · ${CROWD_LABELS[heatStep(index) - 1]}`;
+      subline =
+        active.iso < today
+          ? "Already behind us — what we measured."
+          : activeDay?.crowdIsEstimate
+            ? "An estimate from the weekday and the calendar; the model firms it up closer in."
+            : "From the forecast model.";
+      tone =
+        active.iso >= today && quietest && active.iso === quietest.iso
+          ? "good"
+          : active.iso >= today && busiest && active.iso === busiest.iso
+            ? "bad"
+            : "neutral";
+    }
+  } else if (quietest) {
+    headline = `Quietest in the next fortnight: ${day(quietest.iso).toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    })} · crowd ${quietest.index} of 10`;
+    subline =
+      busiest && busiest.iso !== quietest.iso
+        ? `Busiest: ${day(busiest.iso).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} · ${busiest.index} of 10. Tap a day for its crowd.`
+        : "Tap a day for its crowd.";
+  } else {
+    headline = "Five weeks ahead";
+    subline = "Tap a day for its crowd.";
+  }
 
   return (
     <div
@@ -126,11 +178,13 @@ export function CrowdAhead({
         <span className="shrink-0 text-xs text-muted-foreground">Five weeks ahead</span>
       </div>
 
-      <div className="grid grid-cols-7 gap-1.5">
+      <ChartSentence headline={headline} subline={subline} tone={tone} size="sm" />
+
+      <div className="grid grid-cols-7 gap-1.5" onMouseLeave={() => setSel(null)}>
         {["S", "M", "T", "W", "T", "F", "S"].map((w, i) => (
           <span
             key={`${w}-${i}`}
-            className="text-center text-[10px] font-bold tracking-[0.06em] text-muted-foreground uppercase"
+            className="text-center text-[10px] font-bold tracking-[0.06em] text-wash-muted uppercase"
           >
             {w}
           </span>
@@ -138,47 +192,47 @@ export function CrowdAhead({
         {cells.map((c) => {
           const d = byDate.get(c.iso);
           const index = d?.crowdIndex ?? null;
+          const hot = sel === c.iso;
+          const isQuietest = quietest != null && c.iso === quietest.iso;
           return (
-            <div
+            <button
               key={c.iso}
-              title={
+              type="button"
+              aria-label={
                 index == null
-                  ? `${c.label} · no forecast`
-                  : `${c.label} · crowd ${index}/10${d?.crowdIsEstimate ? " (estimated)" : ""}`
+                  ? `${c.label}: no forecast`
+                  : `${c.label}: crowd ${index} of 10${d?.crowdIsEstimate ? " (estimated)" : ""}`
               }
+              aria-pressed={hot}
+              onMouseEnter={() => setSel(c.iso)}
+              onFocus={() => setSel(c.iso)}
+              onBlur={() => setSel(null)}
+              onClick={() => setSel(c.iso)}
               className={cn(
-                "aspect-square rounded-[6px]",
-                index == null ? "bg-muted" : HEAT_BG[heatStep(index) - 1],
+                "relative aspect-square cursor-pointer rounded-[6px] outline-none transition-[box-shadow]",
+                index == null ? "bg-muted" : heatBg(heatStep(index)),
                 // A day already behind us is context, not a choice.
                 c.iso < today && "opacity-40",
                 c.iso === today && "ring-2 ring-brand-yellow ring-offset-1 ring-offset-card",
+                hot && "ring-[3px] ring-wash-fg/50 ring-offset-1 ring-offset-card",
               )}
-            />
+            >
+              {isQuietest && (
+                <span
+                  aria-hidden
+                  className="absolute top-1 right-1 size-2 rounded-full bg-mint-fg ring-2 ring-card"
+                />
+              )}
+            </button>
           );
         })}
       </div>
 
-      <div className="flex items-center justify-end gap-1.5 text-[10px] font-semibold text-muted-foreground">
-        <span>Quiet</span>
-        {HEAT_BG.map((bg) => (
-          <span key={bg} className={cn("size-2.5 rounded-[3px]", bg)} />
-        ))}
-        <span>Packed</span>
-      </div>
-
-      {quietest && (
-        <p className="text-[12.5px] leading-snug text-foreground/80">
-          Quietest in the next fortnight:{" "}
-          <strong>
-            {day(quietest.iso).toLocaleDateString("en-US", {
-              weekday: "short",
-              month: "short",
-              day: "numeric",
-            })}
-          </strong>{" "}
-          — crowd {quietest.index} of 10.
-        </p>
-      )}
+      <ChartLegend>
+        <HeatRampKey from="Quiet" to="Packed" />
+        {quietest && <LegendKey swatch="best">Quietest ahead</LegendKey>}
+        <LegendKey swatch="now">Today</LegendKey>
+      </ChartLegend>
     </div>
   );
 }

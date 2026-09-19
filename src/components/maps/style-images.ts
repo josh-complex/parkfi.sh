@@ -15,12 +15,19 @@ import type { Map as MapLibreMap } from "maplibre-gl";
  * Registering a 1×1 transparent image for whatever the sprite is missing is the
  * documented escape hatch: the icon renders as nothing (exactly what it renders
  * as today) and the warning never fires. Attach this *before* the style loads.
+ *
+ * The placeholder is registered as an SDF: the layers that ask for these names
+ * (the POI layers, the junction layer) all paint with `icon-color`, which only
+ * works on SDF icons, and 484 of the sprite's 486 icons are SDF. A plain RGBA
+ * placeholder in the same symbol bucket trips MapLibre's "Cannot mix SDF and
+ * non-SDF icons in one buffer" warning on every style load. A fully
+ * transparent SDF (alpha 0 = far outside the glyph) still draws nothing.
  */
 export function silenceMissingStyleImages(map: MapLibreMap): void {
   map.on("styleimagemissing", (e: { id: string }) => {
     // `setStyle` (theme swap) wipes added images, so this re-fires per style —
     // the guard keeps `addImage` from throwing on a duplicate id.
     if (map.hasImage(e.id)) return;
-    map.addImage(e.id, { width: 1, height: 1, data: new Uint8Array(4) });
+    map.addImage(e.id, { width: 1, height: 1, data: new Uint8Array(4) }, { sdf: true });
   });
 }
