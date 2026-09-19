@@ -172,24 +172,38 @@ export function SectionHeading({
 export function DetailCard({
   title,
   description,
+  action,
+  tone = "default",
   children,
   className,
 }: {
-  title: string;
-  description?: string;
-  children: ReactNode;
+  title: ReactNode;
+  description?: ReactNode;
+  /** Right-hand slot in the header row — a key, a switch, a status chip. The
+   *  settings pages lean on it; the chart cards don't pass one. */
+  action?: ReactNode;
+  /** `"destructive"` for the one card on a page that deletes something: a red
+   *  hairline and a red title, no red field (the field is the page's). */
+  tone?: "default" | "destructive";
+  children?: ReactNode;
   className?: string;
 }) {
   return (
     <div
       className={cn(
-        "flex flex-col gap-3.5 rounded-[22px] border border-card-edge bg-card p-5",
+        "flex flex-col gap-3.5 rounded-[22px] border bg-card p-5",
+        tone === "destructive" ? "border-destructive/45" : "border-card-edge",
         className,
       )}
     >
-      <div className="flex flex-col gap-0.5">
-        <p className="text-[15px] font-bold">{title}</p>
-        {description && <p className="text-xs text-muted-foreground">{description}</p>}
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <p className={cn("text-[15px] font-bold", tone === "destructive" && "text-destructive")}>
+            {title}
+          </p>
+          {description && <p className="text-xs text-muted-foreground">{description}</p>}
+        </div>
+        {action && <div className="shrink-0">{action}</div>}
       </div>
       {children}
     </div>

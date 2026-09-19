@@ -55,7 +55,7 @@ import { ParkCrowdCalendar } from "./park-crowd-calendar.tsx";
 import { RideAnalytics } from "./ride-analytics.tsx";
 import { rideTagGroups } from "./ride-tags.ts";
 import { ShowtimesCard } from "./showtimes-card.tsx";
-import { TodayCurve } from "./today-curve.tsx";
+import { PARK_CURVE_STEP, RIDE_CURVE_STEP, TodayCurve } from "./today-curve.tsx";
 
 /** Hero status pill: plain words + a colour dot, legible over any photo. */
 const STATUS_LABEL: Record<string, string> = {
@@ -293,7 +293,7 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
   // averages for the crowd calendar — the park page's payload, scoped to one
   // attraction, so both pages draw the same two charts.
   const crowdQ = useQuery({
-    ...trpc.parks.rideCrowd.queryOptions({ attractionId: ride?.id ?? 0 }),
+    ...trpc.parks.rideCrowd.queryOptions({ attractionId: ride?.id ?? 0, step: RIDE_CURVE_STEP }),
     enabled: !!ride?.id,
   });
 
@@ -577,7 +577,9 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
   // a park with no posted schedule today, or a ride we have barely watched —
   // and the wide column would then open on a heading over nothing.
   const hasCurve =
-    (crowdQ.data?.hours ?? []).filter((h) => h.actual != null || h.typical != null).length >= 3;
+    (crowdQ.data?.hours ?? []).filter((h) => h.actual != null || h.typical != null).length *
+      RIDE_CURVE_STEP >=
+    180;
 
   // The page's one primary key, printed twice in two places that are never both
   // visible: inside the job block on a desktop, in the floating bar on a phone.
@@ -826,6 +828,7 @@ export function RideDetail({ parkSlug, rideSlug }: { parkSlug: string; rideSlug:
                 loading={!crowdQ.data}
                 title="When to ride"
                 subject="this ride"
+                mobileStep={PARK_CURVE_STEP}
               >
                 {desktopKeys}
               </TodayCurve>

@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { JsonLd } from "#/components/seo/json-ld.tsx";
 import { ResortDetail, resortBySlug } from "#/components/stays/resort-detail.tsx";
+import { discordComponentEmbed, linkButton, linkPreview } from "#/lib/discord-embed.ts";
 import { breadcrumbJsonLd, resortJsonLd, seo } from "#/lib/seo.ts";
 
 export const Route = createFileRoute("/_app/resort/$slug")({
@@ -10,14 +11,32 @@ export const Route = createFileRoute("/_app/resort/$slug")({
     const resort = resortBySlug(params.slug);
     const name = resort?.name ?? "Disney Resort";
     const inArea = resort?.area ? ` in the ${resort.area}` : "";
-    return seo({
-      title: `${name} — Availability & Rates — ParkFi`,
-      description: `Live nightly availability and rates for ${name}${inArea} at Walt Disney World. Track openings and set price alerts on ParkFi.`,
-      path: `/resort/${params.slug}`,
-      image: `/og/resort/${params.slug}/card.jpg`,
-      imageWidth: 1200,
-      imageHeight: 630,
-    });
+    const path = `/resort/${params.slug}`;
+    // "deluxe" -> "Deluxe" for the subtext line.
+    const tier = resort?.tier ? resort.tier.charAt(0).toUpperCase() + resort.tier.slice(1) : null;
+    return {
+      ...seo({
+        title: `${name} — Availability & Rates — ParkFi`,
+        description: `Live nightly availability and rates for ${name}${inArea} at Walt Disney World. Track openings and set price alerts on ParkFi.`,
+        path,
+        image: `/og/resort/${params.slug}/card.jpg`,
+        imageWidth: 1200,
+        imageHeight: 630,
+      }),
+      scripts: discordComponentEmbed(
+        linkPreview({
+          title: name,
+          url: path,
+          subtitle: [tier, resort?.area].filter(Boolean).join(" · "),
+          body: "Live nightly availability, rate history, and openings alerts.",
+          card: `/og/resort/${params.slug}/card.jpg`,
+          buttons: [
+            linkButton("All resorts", "/stays"),
+            linkButton("Stay alerts", "/stays/alerts"),
+          ],
+        }),
+      ),
+    };
   },
 });
 

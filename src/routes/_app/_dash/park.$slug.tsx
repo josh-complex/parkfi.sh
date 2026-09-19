@@ -4,6 +4,7 @@ import { isServer, useQuery } from "@tanstack/react-query";
 import { ParkDashboard } from "#/components/park-dashboard/park-dashboard.tsx";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
+import { discordComponentEmbed, linkButton, linkPreview } from "#/lib/discord-embed.ts";
 import { load } from "#/lib/loader.ts";
 import { amusementParkJsonLd, breadcrumbJsonLd, liveCardVersion, seo } from "#/lib/seo.ts";
 
@@ -43,21 +44,48 @@ export const Route = createFileRoute("/_app/_dash/park/$slug")({
     // Server: block on the board so it ships in the HTML. Client: `undefined`,
     // resolves instantly — the board streams in behind the skeleton.
     await boardPromise;
-    return { name: park?.name ?? null, operatorSlug: park?.operatorSlug ?? null };
+    return {
+      name: park?.name ?? null,
+      operatorSlug: park?.operatorSlug ?? null,
+      resortName: park?.resortName ?? null,
+      // Park stills for the Discord component embed's photo grid. Videos are
+      // dropped — a component embed can't play one.
+      photos: (park?.heroMedia ?? [])
+        .filter((slide) => slide.kind === "image")
+        .map((slide) => slide.url),
+    };
   },
   head: ({ params, loaderData }) => {
     const name = loaderData?.name ?? titleizeSlug(params.slug);
     // Universal parks have no Lightning Lane — only a free Virtual Line.
     const isUniversal = loaderData?.operatorSlug === "universal";
     const lineLabel = isUniversal ? "Virtual Line" : "Lightning Lane";
-    return seo({
-      title: `${name} Wait Times & Live Map — ParkFi`,
-      description: `Live wait times, ride status, and ${lineLabel} availability for ${name}. Plan your day with real-time queue data on ParkFi.`,
-      path: `/park/${params.slug}`,
-      image: `/og/park/${params.slug}/card.jpg?v=${liveCardVersion()}`,
-      imageWidth: 1200,
-      imageHeight: 630,
-    });
+    const path = `/park/${params.slug}`;
+    return {
+      ...seo({
+        title: `${name} Wait Times & Live Map — ParkFi`,
+        description: `Live wait times, ride status, and ${lineLabel} availability for ${name}. Plan your day with real-time queue data on ParkFi.`,
+        path,
+        image: `/og/park/${params.slug}/card.jpg?v=${liveCardVersion()}`,
+        imageWidth: 1200,
+        imageHeight: 630,
+      }),
+      scripts: discordComponentEmbed(
+        linkPreview({
+          title: name,
+          url: path,
+          subtitle: loaderData?.resortName,
+          body: `Live waits for every ride, ${lineLabel} availability, park hours, and a live map.`,
+          card: `/og/park/${params.slug}/card.jpg?v=${liveCardVersion()}`,
+          photos: loaderData?.photos,
+          buttons: [
+            linkButton("Live map", "/map"),
+            linkButton("Dining", "/dining"),
+            linkButton("Tickets", "/tickets"),
+          ],
+        }),
+      ),
+    };
   },
 });
 

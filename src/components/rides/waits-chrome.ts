@@ -19,7 +19,8 @@
  *
  * The toolbar measures itself onto `--waits-bar-height` (`useToolbarHeight` in
  * `cross-park-waits.tsx`), which is how a rule here can say "below the toolbar"
- * without knowing how tall it is; the `var()` fallback only covers the frames
+ * without knowing how tall it is; the `var()` fallback (a 44px key in 12px of
+ * air, plus the bar's own rim — the masthead's measure) only covers the frames
  * before the first measurement.
  *
  * Written out in full rather than composed from parts: Tailwind reads class
@@ -32,12 +33,12 @@ export const TOOLBAR_STICKY = "sticky top-[calc(var(--site-header-height)+0.5rem
 
 /** A column that sticks under the toolbar — the filter rail, the map pane. */
 export const UNDER_TOOLBAR_TOP =
-  "top-[calc(var(--site-header-height)+var(--waits-bar-height,4rem)+1.75rem)]";
+  "top-[calc(var(--site-header-height)+var(--waits-bar-height,4.5rem)+1.75rem)]";
 
 /** That column's height: whatever the viewport has left under the toolbar. A
  *  `max-h` for the rail, which is as tall as its own contents, and a hard `h`
  *  for the map pane, which has no contents of its own to be sized by. */
 export const UNDER_TOOLBAR_MAX_HEIGHT =
-  "max-h-[calc(100svh-var(--site-header-height)-var(--waits-bar-height,4rem)-2.75rem)]";
+  "max-h-[calc(100svh-var(--site-header-height)-var(--waits-bar-height,4.5rem)-2.75rem)]";
 export const UNDER_TOOLBAR_HEIGHT =
-  "h-[calc(100svh-var(--site-header-height)-var(--waits-bar-height,4rem)-2.75rem)]";
+  "h-[calc(100svh-var(--site-header-height)-var(--waits-bar-height,4.5rem)-2.75rem)]";

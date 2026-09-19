@@ -289,6 +289,26 @@ html.native [data-slot="app-shell"] {
   --heat-4: #4f7fd0;
   --heat-5: #8fb3f0;
   --card-edge: #24407a;
+  /* The stub's lower half, dark. The top half keeps its brand yellow in both
+     themes — that is the ticket's identity — and the ink printed below the
+     perforation keeps its black, so this is the *only* thing that moves: the
+     field itself, from a near-white cream to an aged parchment.
+
+     Two ditches on either side of this number. Left at `#fff6e4` it was a full
+     sheet of near-white carrying the facts, the keys and a week of opening
+     hours, and on a navy page it was comfortably the brightest object on
+     screen — brighter than the brand yellow above it, which is the one thing on
+     the stub that is *supposed* to be loud. Taken the other way, down to a warm
+     near-black, it stopped being paper at all: it landed within a few points of
+     the `--peach` panels this page stacks under the ticket, so the stub read as
+     one more dark card with a yellow cap rather than as a torn ticket, and
+     every mark on it had to be re-inked to stay legible.
+
+     So: the same lightness as the yellow it hangs off — L* 80 against the
+     yellow's 79, close enough that neither half outshouts the other. The stub
+     stays a piece of paper, black ink still clears 11:1 on it, and nothing
+     printed on it has to change. */
+  --ticket-bottom: #dcc498;
 }
 
 /**
@@ -738,6 +758,64 @@ html.native [data-slot="app-shell"] {
     background-image:
       linear-gradient(to bottom, rgb(0 0 0 / 0.04), rgb(0 0 0 / 0.26)),
       linear-gradient(90deg, #0d2550 0%, #1b4488 22%, #4a82dd 50%, #1b4488 78%, #0d2550 100%);
+  }
+}
+
+/**
+ * The Waits band's own field. Desktop is `band-masthead` exactly — the metallic
+ * ramp run tall, under the same darkening pass — and the phone is a different
+ * picture for a different shape.
+ *
+ * A horizontal ramp is drawn for a *wide* element: the bright stop sits at the
+ * centre of a bar that is mostly width, and the dark ends are what give it its
+ * metal. Run the same ramp down a 390px column that is four times taller than
+ * it is wide and the geometry stops meaning anything — the bright stop becomes
+ * a vertical stripe up the middle of the screen with a dark gutter down each
+ * edge, which reads as a seam, not as light. The phone gets a radial pinned to
+ * the top centre instead: the field is lit from where the masthead is and falls
+ * away in every direction, which is the same idea the desktop bar expresses and
+ * the right one for a portrait box.
+ *
+ * Both sets of stops are the linear ramp's *pre-darkened*, because a radial
+ * can't take the flat `to bottom` black pass over it — that pass is what would
+ * otherwise put a 26% black veil across the page background the dark theme is
+ * trying to meet (below). Same brightnesses, one layer.
+ *
+ * Dark theme lands the last stop on `--background` rather than on the ramp's
+ * own floor, so the band doesn't *end* — the field simply becomes the page
+ * under the movers and there is no edge to see. (`#0c1a35`, written as the
+ * token: the point is that it equals whatever the page is.) The light theme
+ * can't do that — the band is dark in both themes and the page is white — so it
+ * keeps the ramp's near-black floor and closes on its own edge.
+ */
+@utility band-waits {
+  background-image:
+    linear-gradient(to bottom, rgb(0 0 0 / 0.2), rgb(0 0 0 / 0.45)),
+    linear-gradient(90deg, #08152e 0%, #14346b 22%, #3f74cf 50%, #14346b 78%, #08152e 100%);
+  &:is(.dark *) {
+    background-image:
+      linear-gradient(to bottom, rgb(0 0 0 / 0.04), rgb(0 0 0 / 0.26)),
+      linear-gradient(90deg, #0d2550 0%, #1b4488 22%, #4a82dd 50%, #1b4488 78%, #0d2550 100%);
+  }
+
+  /* Phone. `48rem` is the `md:` breakpoint the band's own layout classes use. */
+  @media (width < 48rem) {
+    background-image: radial-gradient(
+      125% 62% at 50% 0%,
+      #325da6 0%,
+      #1c3f76 34%,
+      #0e254d 64%,
+      #040c19 100%
+    );
+    &:is(.dark *) {
+      background-image: radial-gradient(
+        125% 62% at 50% 0%,
+        #477dd4 0%,
+        #23538f 34%,
+        #173a74 62%,
+        var(--background) 100%
+      );
+    }
   }
 }
 

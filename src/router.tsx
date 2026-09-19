@@ -4,6 +4,7 @@ import { routeTree } from "./routeTree.gen";
 import type { ReactNode } from "react";
 import { setupRouterSsrQueryIntegration } from "@tanstack/react-router-ssr-query";
 import TanstackQueryProvider, { getContext } from "./integrations/tanstack-query/root-provider";
+import { NotFound } from "./components/not-found";
 import { RouteErrorFallback } from "./components/route-error-fallback";
 import { RouteSkeleton } from "./components/skeletons";
 import { reportError } from "./lib/report-error";
@@ -38,6 +39,10 @@ export function getRouter() {
       reportError(error, { source: "render", severity: "critical", toast: false });
     },
     defaultErrorComponent: RouteErrorFallback,
+
+    // An unmatched URL used to fall through to TanStack's built-in "Not Found"
+    // string on an otherwise blank page. It gets the app's own signpost now.
+    defaultNotFoundComponent: NotFound,
 
     Wrap: (props: { children: ReactNode }) => {
       return (

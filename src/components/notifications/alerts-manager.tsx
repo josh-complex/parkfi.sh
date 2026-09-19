@@ -106,13 +106,13 @@ export function AlertsManager() {
   const listQ = useQuery({ ...trpc.rideAlerts.list.queryOptions(), enabled: loggedIn });
 
   if (isPending) {
-    return <Skeleton className="h-24 w-full rounded-lg" />;
+    return <Skeleton className="h-24 w-full rounded-2xl" />;
   }
 
   if (!loggedIn) {
     return (
-      <div className="rounded-lg border bg-card text-card-foreground p-6 text-center">
-        <p className="text-sm font-medium">Sign in to track rides</p>
+      <div className="rounded-2xl bg-muted/50 p-6 text-center">
+        <p className="text-sm font-semibold">Sign in to track rides</p>
         <p className="text-muted-foreground mt-1 text-xs">
           Get a push notification when a ride’s wait drops or changes.
         </p>
@@ -124,14 +124,14 @@ export function AlertsManager() {
   }
 
   if (listQ.isLoading) {
-    return <Skeleton className="h-24 w-full rounded-lg" />;
+    return <Skeleton className="h-24 w-full rounded-2xl" />;
   }
 
   const parks = listQ.data?.parks ?? [];
   if (parks.length === 0) {
     return (
-      <div className="rounded-lg border bg-card text-card-foreground p-6 text-center">
-        <p className="text-sm font-medium">No ride alerts yet</p>
+      <div className="rounded-2xl bg-muted/50 p-6 text-center">
+        <p className="text-sm font-semibold">No ride alerts yet</p>
         <p className="text-muted-foreground mt-1 text-xs">
           Open a park and tap the bell on any ride to start tracking its wait time.
         </p>
@@ -142,11 +142,8 @@ export function AlertsManager() {
   return (
     <div className="space-y-4">
       {parks.map((park) => (
-        <div
-          key={park.parkId}
-          className="overflow-hidden rounded-lg border bg-card text-card-foreground"
-        >
-          <div className="bg-muted/40 flex items-center justify-between px-4 py-2.5">
+        <div key={park.parkId} className="overflow-hidden rounded-2xl bg-muted/50">
+          <div className="flex items-center justify-between px-4 py-2.5">
             <Link
               to="/park/$slug"
               params={{ slug: park.parkSlug }}
@@ -159,7 +156,7 @@ export function AlertsManager() {
               {park.used}/{park.limit}
             </Badge>
           </div>
-          <div className="divide-y">
+          <div className="divide-y divide-background/70">
             {park.alerts.map((alert) => (
               <AlertRow key={alert.id} alert={alert} />
             ))}

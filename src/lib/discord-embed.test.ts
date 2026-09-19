@@ -6,43 +6,45 @@ import {
   container,
   discordComponentEmbed,
   linkButton,
-  section,
-  separator,
+  linkPreview,
   text,
-  thumbnail,
 } from "./discord-embed.ts";
 
-/** The shape the ride route emits, so the test moves when that layout does. */
-function rideEmbed(opts: { name: string; parkName: string; image?: string; wait?: number }) {
-  const path = "/park/magic-kingdom/ride/space-mountain";
-  return container([
-    canEmbedMedia(opts.image)
-      ? section(
-          [text(`## [${opts.name}](https://parkfi.sh${path})\n${opts.parkName}`)],
-          thumbnail(opts.image, opts.name),
-        )
-      : text(`## [${opts.name}](https://parkfi.sh${path})\n${opts.parkName}`),
-    text(opts.wait != null ? `**${opts.wait} min** standby at last check` : "Live standby wait"),
-    separator(),
-    actionRow(
-      linkButton(`All ${opts.parkName} waits`, "/park/magic-kingdom"),
-      linkButton("Crowd forecast", "/predictions"),
-    ),
-  ]);
+/** Parse the emitted script back into the payload Discord would receive. */
+function payloadOf(root: Parameters<typeof discordComponentEmbed>[0]) {
+  const [script] = discordComponentEmbed(root);
+  if (!script) return null;
+  return JSON.parse(script.children) as {
+    component: { type: number; accent_color?: number; components: Array<Record<string, unknown>> };
+  };
+}
+
+const RIDE_CARD = "/og/ride/epcot/cosmic-rewind/card.jpg?v=291";
+
+function ridePreview(photos?: Array<string>) {
+  return linkPreview({
+    title: "Guardians of the Galaxy: Cosmic Rewind",
+    url: "/park/epcot/ride/guardians-of-the-galaxy-cosmic-rewind",
+    subtitle: "World Discovery · EPCOT",
+    body: "Lightning Lane status, standby history, and wait alerts.",
+    card: RIDE_CARD,
+    photos,
+    buttons: [linkButton("All EPCOT waits", "/park/epcot")],
+  });
 }
 
 describe("discordComponentEmbed", () => {
   it("emits the crawler's exact script id and type", () => {
-    const [script] = discordComponentEmbed(rideEmbed({ name: "Space Mountain", parkName: "MK" }));
+    const [script] = discordComponentEmbed(ridePreview());
     expect(script?.id).toBe("discord:component-embed");
     expect(script?.type).toBe("application/json");
   });
 
-  it("wraps the container in the documented `component` key", () => {
-    const [script] = discordComponentEmbed(rideEmbed({ name: "Space Mountain", parkName: "MK" }));
-    const payload = JSON.parse(script!.children) as { component: { type: number } };
+  it("wraps a single accent-colored container in the documented `component` key", () => {
+    const payload = payloadOf(ridePreview())!;
     expect(Object.keys(payload)).toEqual(["component"]);
     expect(payload.component.type).toBe(17);
+    expect(payload.component.accent_color).toBe(0x1c468e);
   });
 
   it("escapes `<` so a description can't close the script tag early", () => {
@@ -66,51 +68,12 @@ describe("discordComponentEmbed", () => {
   });
 
   it("only uses link-style buttons — anything else voids the payload in Discord", () => {
-    const [script] = discordComponentEmbed(
-      container([actionRow(linkButton("Waits", "/park/epcot"))]),
-    );
-    const payload = JSON.parse(script!.children) as {
-      component: {
-        components: Array<{ components: Array<{ style: number; custom_id?: string }> }>;
-      };
+    const payload = payloadOf(container([actionRow(linkButton("Waits", "/park/epcot"))]))!;
+    const row = payload.component.components[0] as {
+      components: Array<{ style: number; custom_id?: string }>;
     };
-    const button = payload.component.components[0]?.components[0];
-    expect(button?.style).toBe(5);
-    expect(button).not.toHaveProperty("custom_id");
-  });
-
-  it("drops the thumbnail rather than the card when the image isn't embeddable", () => {
-    // A source with no image extension can't be verified as a format Discord
-    // decodes, so the section degrades to a plain text display.
-    const withBad = rideEmbed({
-      name: "Test Track",
-      parkName: "EPCOT",
-      image: "https://cdn.x/i?id=9",
-    });
-    expect(withBad.components[0]?.type).toBe(10);
-
-    const withGood = rideEmbed({
-      name: "Test Track",
-      parkName: "EPCOT",
-      image: "https://cdn.x/a.jpg",
-    });
-    expect(withGood.components[0]?.type).toBe(9);
-    // Both still produce a card.
-    expect(discordComponentEmbed(withBad)).toHaveLength(1);
-    expect(discordComponentEmbed(withGood)).toHaveLength(1);
-  });
-
-  it("stays inside the 3,000-byte budget for a realistic ride", () => {
-    const [script] = discordComponentEmbed(
-      rideEmbed({
-        name: "Guardians of the Galaxy: Cosmic Rewind",
-        parkName: "EPCOT",
-        image:
-          "https://cdn1.parksmedia.wdprapps.disney.com/media/attractions/cosmic-rewind-hero.jpg",
-        wait: 95,
-      }),
-    );
-    expect(new TextEncoder().encode(script!.children).length).toBeLessThan(3000);
+    expect(row.components[0]?.style).toBe(5);
+    expect(row.components[0]).not.toHaveProperty("custom_id");
   });
 
   it("drops the script — falling back to the OG card — on an invalid payload", () => {
@@ -122,6 +85,101 @@ describe("discordComponentEmbed", () => {
       discordComponentEmbed(container(Array.from({ length: 41 }, (_, i) => text(`line ${i}`)))),
     ).toEqual([]);
   });
+
+  it("stays inside the 3,000-byte budget for a realistic page", () => {
+    const [script] = discordComponentEmbed(
+      ridePreview([
+        "https://cdn1.parksmedia.wdprapps.disney.com/media/attractions/cosmic-rewind-1.jpg",
+        "https://cdn1.parksmedia.wdprapps.disney.com/media/attractions/cosmic-rewind-2.jpg",
+        "https://cdn1.parksmedia.wdprapps.disney.com/media/attractions/cosmic-rewind-3.jpg",
+      ]),
+    );
+    expect(new TextEncoder().encode(script!.children).length).toBeLessThan(3000);
+  });
+});
+
+describe("linkPreview", () => {
+  it("puts the generated card in a full-bleed gallery, never a thumbnail", () => {
+    // A thumbnail crops the 1200x630 card into an illegible square — the whole
+    // reason the first cut looked worse than the plain Open Graph preview.
+    const payload = payloadOf(ridePreview())!;
+    const types = payload.component.components.map((c) => c.type);
+    expect(types).not.toContain(11); // thumbnail
+    expect(types).not.toContain(9); // section (only exists to hold an accessory)
+    const galleries = payload.component.components.filter((c) => c.type === 12) as Array<{
+      items: Array<{ media: { url: string } }>;
+    }>;
+    expect(galleries).toHaveLength(1);
+    expect(galleries[0]?.items).toHaveLength(1);
+    expect(galleries[0]?.items[0]?.media.url).toBe(`https://parkfi.sh${RIDE_CARD}`);
+  });
+
+  it("renders the heading as a link with the subtitle as subtext", () => {
+    const payload = payloadOf(ridePreview())!;
+    const heading = payload.component.components[0] as { type: number; content: string };
+    expect(heading.type).toBe(10);
+    expect(heading.content).toBe(
+      "### [Guardians of the Galaxy: Cosmic Rewind](https://parkfi.sh/park/epcot/ride/guardians-of-the-galaxy-cosmic-rewind)\n-# World Discovery · EPCOT",
+    );
+  });
+
+  it("drops a lone extra photo but grids two or more", () => {
+    const one = payloadOf(ridePreview(["https://cdn.x/a.jpg"]))!;
+    expect(one.component.components.filter((c) => c.type === 12)).toHaveLength(1);
+
+    const two = payloadOf(ridePreview(["https://cdn.x/a.jpg", "https://cdn.x/b.jpg"]))!;
+    const galleries = two.component.components.filter((c) => c.type === 12) as Array<{
+      items: Array<unknown>;
+    }>;
+    expect(galleries).toHaveLength(2);
+    expect(galleries[1]?.items).toHaveLength(2);
+  });
+
+  it("never repeats the lead card inside the photo grid", () => {
+    // Pin pages pass their whole image set as `photos` and the primary as `card`.
+    const primary = "https://pins.parkfi.sh/pins/ref/a.webp";
+    const payload = payloadOf(
+      linkPreview({
+        title: "Figment Pin",
+        url: "/pins/abc",
+        card: primary,
+        photos: [primary, "https://pins.parkfi.sh/pins/ref/b.webp"],
+      }),
+    )!;
+    const galleries = payload.component.components.filter((c) => c.type === 12);
+    // Only one other photo survives deduping, so no grid — and no duplicate.
+    expect(galleries).toHaveLength(1);
+    expect(JSON.stringify(payload).match(/ref\/a\.webp/g)).toHaveLength(1);
+  });
+
+  it("caps the photo grid at three, holding the whole embed to four images", () => {
+    // Discord measures every image inside the page's 10s budget and a component
+    // embed can't declare dimensions to skip that, so the margin matters.
+    const payload = payloadOf(
+      ridePreview(Array.from({ length: 9 }, (_, i) => `https://cdn.x/${i}.jpg`)),
+    )!;
+    const galleries = payload.component.components.filter((c) => c.type === 12) as Array<{
+      items: Array<unknown>;
+    }>;
+    expect(galleries[1]?.items).toHaveLength(3);
+    const total = galleries.reduce((n, g) => n + g.items.length, 0);
+    expect(total).toBeLessThanOrEqual(4);
+  });
+
+  it("escapes a `]` in the title so the heading link survives", () => {
+    const payload = payloadOf(
+      linkPreview({ title: "Mickey Waffles [GF]", url: "/dining/x/item/waffles" }),
+    )!;
+    const heading = payload.component.components[0] as { content: string };
+    expect(heading.content).toContain("\\[GF\\]");
+  });
+
+  it("omits the separator and row when a page has no buttons", () => {
+    const payload = payloadOf(linkPreview({ title: "Shop", url: "/shop/x" }))!;
+    const types = payload.component.components.map((c) => c.type);
+    expect(types).not.toContain(14);
+    expect(types).not.toContain(1);
+  });
 });
 
 describe("canEmbedMedia", () => {
@@ -131,17 +189,30 @@ describe("canEmbedMedia", () => {
     }
   });
 
-  it("accepts our own live OG cards, query string and all", () => {
+  it("accepts our own live OG cards, absolute or root-relative", () => {
     expect(
       canEmbedMedia("https://parkfi.sh/og/ride/magic-kingdom/space-mountain/card.jpg?v=291"),
+    ).toBe(true);
+    expect(canEmbedMedia("/og/ride/magic-kingdom/space-mountain/card.jpg?v=291")).toBe(true);
+  });
+
+  it("accepts extensionless CDN urls — Discord sniffs the content type", () => {
+    // Disney's `/resize/mwImage/...` segments and R2 keys don't always end in an
+    // extension; an allowlist here silently killed galleries across the site.
+    expect(
+      canEmbedMedia("https://cdn1.parksmedia.wdprapps.disney.com/resize/mwImage/1/1600/900"),
     ).toBe(true);
   });
 
   it("rejects what would silently void an embed", () => {
     expect(canEmbedMedia(null)).toBe(false);
-    expect(canEmbedMedia("/relative/a.jpg")).toBe(false);
+    expect(canEmbedMedia(undefined)).toBe(false);
+    expect(canEmbedMedia("images/card.png")).toBe(false); // not root-relative
+    expect(canEmbedMedia("//cdn.x/a.jpg")).toBe(false); // protocol-relative
+    expect(canEmbedMedia("data:image/png;base64,iVBOR")).toBe(false);
     expect(canEmbedMedia("https://parkfi.sh/a.svg")).toBe(false);
     expect(canEmbedMedia("https://parkfi.sh/clip.mp4")).toBe(false);
+    expect(canEmbedMedia("https://parkfi.sh/clip.mov")).toBe(false);
     expect(canEmbedMedia(`https://parkfi.sh/${"a".repeat(2100)}.jpg`)).toBe(false);
   });
 });

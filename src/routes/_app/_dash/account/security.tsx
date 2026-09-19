@@ -19,14 +19,7 @@ import { seo } from "#/lib/seo.ts";
 import { ConfirmButton } from "#/components/account/confirm-button.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "#/components/ui/card.tsx";
+import { DetailCard } from "#/components/detail/panels.tsx";
 import { Input } from "#/components/ui/input.tsx";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "#/components/ui/input-otp.tsx";
 import { Label } from "#/components/ui/label.tsx";
@@ -77,64 +70,56 @@ function ChangePasswordCard({ hasPassword }: { hasPassword: boolean }) {
 
   if (!hasPassword) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Set a password</CardTitle>
-          <CardDescription>
-            You signed up with a social provider. Add a password to enable email sign-in.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <SetPasswordForm />
-        </CardContent>
-      </Card>
+      <DetailCard
+        title="Set a password"
+        description="You signed up with a social provider. Add a password to enable email sign-in."
+      >
+        <SetPasswordForm />
+      </DetailCard>
     );
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Change password</CardTitle>
-        <CardDescription>Use a strong, unique password you don't use elsewhere</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-3 max-w-xs">
-          <div className="space-y-1.5">
-            <Label>Current password</Label>
-            <Input
-              type="password"
-              value={current}
-              onChange={(e) => setCurrent(e.target.value)}
-              autoComplete="current-password"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>New password</Label>
-            <Input
-              type="password"
-              value={next}
-              onChange={(e) => setNext(e.target.value)}
-              autoComplete="new-password"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Confirm new password</Label>
-            <Input
-              type="password"
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              autoComplete="new-password"
-            />
-          </div>
-          <Button
-            onClick={() => void handleChange()}
-            disabled={saving || !current || !next || !confirm}
-          >
-            {saving ? "Saving…" : "Update password"}
-          </Button>
+    <DetailCard
+      title="Change password"
+      description="Use a strong, unique password you don't use elsewhere"
+    >
+      <div className="space-y-3 max-w-xs">
+        <div className="space-y-1.5">
+          <Label>Current password</Label>
+          <Input
+            type="password"
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+            autoComplete="current-password"
+          />
         </div>
-      </CardContent>
-    </Card>
+        <div className="space-y-1.5">
+          <Label>New password</Label>
+          <Input
+            type="password"
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+            autoComplete="new-password"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Confirm new password</Label>
+          <Input
+            type="password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            autoComplete="new-password"
+          />
+        </div>
+        <Button
+          onClick={() => void handleChange()}
+          disabled={saving || !current || !next || !confirm}
+        >
+          {saving ? "Saving…" : "Update password"}
+        </Button>
+      </div>
+    </DetailCard>
   );
 }
 
@@ -268,48 +253,44 @@ function TwoFactorCard({ enabled, onToggle }: { enabled: boolean; onToggle: () =
   // Post-enable: show backup codes
   if (phase.phase === "done") {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+      <DetailCard
+        title={
+          <span className="flex items-center gap-2">
             <ShieldCheckIcon className="size-4 text-green-500" />
             Two-factor authentication enabled
             <Badge variant="secondary" className="text-green-600 bg-green-100 dark:bg-green-900/30">
               Active
             </Badge>
-          </CardTitle>
-          <CardDescription>
-            Save these backup codes somewhere safe — each one can only be used once.
-          </CardDescription>
-        </CardHeader>
+          </span>
+        }
+        description="Save these backup codes somewhere safe — each one can only be used once."
+      >
         {phase.backupCodes.length > 0 && (
-          <CardContent>
-            <div className="grid grid-cols-2 gap-1.5 font-mono text-sm bg-muted rounded-2xl p-4 select-all">
-              {phase.backupCodes.map((c) => (
-                <span key={c}>{c}</span>
-              ))}
-            </div>
-          </CardContent>
+          <div className="grid grid-cols-2 gap-1.5 font-mono text-sm bg-muted rounded-2xl p-4 select-all">
+            {phase.backupCodes.map((c) => (
+              <span key={c}>{c}</span>
+            ))}
+          </div>
         )}
-        <CardContent>
-          <Button variant="outline" size="sm" onClick={() => setPhase({ phase: "idle" })}>
-            Done
-          </Button>
-        </CardContent>
-      </Card>
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-fit"
+          onClick={() => setPhase({ phase: "idle" })}
+        >
+          Done
+        </Button>
+      </DetailCard>
     );
   }
 
   if (!enabled) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Two-factor authentication</CardTitle>
-          <CardDescription>
-            Add a second layer of security using an authenticator app
-          </CardDescription>
-        </CardHeader>
-
-        <CardContent>
+      <DetailCard
+        title="Two-factor authentication"
+        description="Add a second layer of security using an authenticator app"
+      >
+        <div>
           {phase.phase === "idle" && (
             <Button size="sm" onClick={() => setPhase({ phase: "passwordPrompt" })}>
               Enable 2FA
@@ -408,27 +389,27 @@ function TwoFactorCard({ enabled, onToggle }: { enabled: boolean; onToggle: () =
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </DetailCard>
     );
   }
 
   // 2FA enabled — management
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+    <DetailCard
+      title={
+        <span className="flex items-center gap-2">
           <ShieldCheckIcon className="size-4 text-green-500" />
           Two-factor authentication
           <Badge variant="secondary" className="text-green-600 bg-green-100 dark:bg-green-900/30">
             Active
           </Badge>
-        </CardTitle>
-        <CardDescription>Your account is protected with an authenticator app</CardDescription>
-      </CardHeader>
-
+        </span>
+      }
+      description="Your account is protected with an authenticator app"
+    >
       {newCodes.length > 0 && (
-        <CardContent>
+        <div>
           <p className="text-xs font-medium text-muted-foreground mb-2">
             New backup codes — save these now:
           </p>
@@ -437,45 +418,43 @@ function TwoFactorCard({ enabled, onToggle }: { enabled: boolean; onToggle: () =
               <span key={c}>{c}</span>
             ))}
           </div>
-        </CardContent>
+        </div>
       )}
 
-      <CardContent>
-        <div className="space-y-4">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void handleRegenerate()}
-            disabled={regenerating || !password}
-          >
-            <RefreshCwIcon />
-            {regenerating ? "Generating…" : "Regenerate backup codes"}
-          </Button>
+      <div className="space-y-4">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => void handleRegenerate()}
+          disabled={regenerating || !password}
+        >
+          <RefreshCwIcon />
+          {regenerating ? "Generating…" : "Regenerate backup codes"}
+        </Button>
 
-          <Separator />
+        <Separator />
 
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">Enter your password to disable 2FA:</p>
-            <div className="flex gap-2 flex-wrap">
-              <Input
-                type="password"
-                placeholder="Your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="max-w-xs"
-                autoComplete="current-password"
-              />
-              <ConfirmButton
-                label="Disable 2FA"
-                confirmLabel="Yes, disable"
-                disabled={!password}
-                onConfirm={() => void handleDisable()}
-              />
-            </div>
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">Enter your password to disable 2FA:</p>
+          <div className="flex gap-2 flex-wrap">
+            <Input
+              type="password"
+              placeholder="Your password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="max-w-xs"
+              autoComplete="current-password"
+            />
+            <ConfirmButton
+              label="Disable 2FA"
+              confirmLabel="Yes, disable"
+              disabled={!password}
+              onConfirm={() => void handleDisable()}
+            />
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </DetailCard>
   );
 }
 
@@ -539,53 +518,47 @@ function PasskeysCard() {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Passkeys</CardTitle>
-        <CardDescription>Sign in with Face ID, Touch ID, or a hardware key</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <PasskeysSkeleton />
-        ) : passkeys.length === 0 ? (
-          <p className="text-sm text-muted-foreground mb-4">
-            No passkeys registered yet. Add one to enable passwordless sign-in.
-          </p>
-        ) : (
-          <ul className="space-y-1 mb-4">
-            {passkeys.map((pk) => (
-              <li
-                key={pk.id}
-                className="flex items-center justify-between rounded-2xl bg-muted/50 px-3 py-2.5"
-              >
-                <div className="flex items-center gap-2.5">
-                  <KeyRoundIcon className="size-4 text-muted-foreground shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium">{pk.name ?? "Passkey"}</p>
-                    <p className="text-xs text-muted-foreground capitalize">
-                      {pk.deviceType === "multiDevice" ? "Synced across devices" : "Single-device"}{" "}
-                      · Added {formatDate(pk.createdAt)}
-                    </p>
-                  </div>
+    <DetailCard title="Passkeys" description="Sign in with Face ID, Touch ID, or a hardware key">
+      {isLoading ? (
+        <PasskeysSkeleton />
+      ) : passkeys.length === 0 ? (
+        <p className="text-sm text-muted-foreground mb-4">
+          No passkeys registered yet. Add one to enable passwordless sign-in.
+        </p>
+      ) : (
+        <ul className="space-y-1 mb-4">
+          {passkeys.map((pk) => (
+            <li
+              key={pk.id}
+              className="flex items-center justify-between rounded-2xl bg-muted/50 px-3 py-2.5"
+            >
+              <div className="flex items-center gap-2.5">
+                <KeyRoundIcon className="size-4 text-muted-foreground shrink-0" />
+                <div>
+                  <p className="text-sm font-medium">{pk.name ?? "Passkey"}</p>
+                  <p className="text-xs text-muted-foreground capitalize">
+                    {pk.deviceType === "multiDevice" ? "Synced across devices" : "Single-device"} ·
+                    Added {formatDate(pk.createdAt)}
+                  </p>
                 </div>
-                <ConfirmButton
-                  label=""
-                  confirmLabel="Remove"
-                  size="icon"
-                  variant="outline"
-                  icon={<TrashIcon className="size-3.5" />}
-                  onConfirm={() => handleDelete(pk.id)}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-        <Button size="sm" onClick={() => void handleAdd()} disabled={adding}>
-          <PlusIcon />
-          {adding ? "Registering…" : "Add passkey"}
-        </Button>
-      </CardContent>
-    </Card>
+              </div>
+              <ConfirmButton
+                label=""
+                confirmLabel="Remove"
+                size="icon"
+                variant="outline"
+                icon={<TrashIcon className="size-3.5" />}
+                onConfirm={() => handleDelete(pk.id)}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+      <Button size="sm" onClick={() => void handleAdd()} disabled={adding}>
+        <PlusIcon />
+        {adding ? "Registering…" : "Add passkey"}
+      </Button>
+    </DetailCard>
   );
 }
 
@@ -688,75 +661,73 @@ function SessionsCard() {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Active sessions</CardTitle>
-        <CardDescription>Devices and browsers currently signed in to your account</CardDescription>
-        {!isLoading && others.length > 0 && (
-          <CardAction>
-            <ConfirmButton
-              label="Revoke all others"
-              confirmLabel="Yes, revoke"
-              icon={<LogOutIcon />}
-              variant="outline"
-              onConfirm={() => void handleRevokeAll()}
-            />
-          </CardAction>
-        )}
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <SessionsSkeleton />
-        ) : sessions.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No active sessions found.</p>
-        ) : (
-          <ul className="space-y-1">
-            {(sessions as SessionItem[]).map((s) => {
-              const isCurrent = s.token === currentToken;
-              const { browser, os, icon: DeviceIcon } = parseUserAgent(s.userAgent);
-              return (
-                <li
-                  key={s.id}
-                  className="flex items-center justify-between rounded-2xl bg-muted/50 px-3 py-2.5"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="size-8 rounded-xl bg-background border flex items-center justify-center shrink-0">
-                      <DeviceIcon className="size-4 text-muted-foreground" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <p className="text-sm font-medium">
-                          {browser} on {os}
-                        </p>
-                        {isCurrent && (
-                          <Badge variant="secondary" className="text-xs h-4 px-1.5">
-                            This device
-                          </Badge>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {s.ipAddress ? `${s.ipAddress} · ` : ""}
-                        Signed in {formatDate(s.createdAt)} · Expires {formatDate(s.expiresAt)}
-                      </p>
-                    </div>
+    <DetailCard
+      title="Active sessions"
+      description="Devices and browsers currently signed in to your account"
+      action={
+        !isLoading &&
+        others.length > 0 && (
+          <ConfirmButton
+            label="Revoke all others"
+            confirmLabel="Yes, revoke"
+            icon={<LogOutIcon />}
+            variant="outline"
+            onConfirm={() => void handleRevokeAll()}
+          />
+        )
+      }
+    >
+      {isLoading ? (
+        <SessionsSkeleton />
+      ) : sessions.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No active sessions found.</p>
+      ) : (
+        <ul className="space-y-1">
+          {(sessions as SessionItem[]).map((s) => {
+            const isCurrent = s.token === currentToken;
+            const { browser, os, icon: DeviceIcon } = parseUserAgent(s.userAgent);
+            return (
+              <li
+                key={s.id}
+                className="flex items-center justify-between rounded-2xl bg-muted/50 px-3 py-2.5"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="size-8 rounded-xl bg-background border flex items-center justify-center shrink-0">
+                    <DeviceIcon className="size-4 text-muted-foreground" />
                   </div>
-                  {!isCurrent && (
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="size-7 text-muted-foreground hover:text-destructive shrink-0"
-                      onClick={() => void handleRevoke(s.token)}
-                    >
-                      <LogOutIcon className="size-3.5" />
-                    </Button>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-medium">
+                        {browser} on {os}
+                      </p>
+                      {isCurrent && (
+                        <Badge variant="secondary" className="text-xs h-4 px-1.5">
+                          This device
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {s.ipAddress ? `${s.ipAddress} · ` : ""}
+                      Signed in {formatDate(s.createdAt)} · Expires {formatDate(s.expiresAt)}
+                    </p>
+                  </div>
+                </div>
+                {!isCurrent && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="size-7 text-muted-foreground hover:text-destructive shrink-0"
+                    onClick={() => void handleRevoke(s.token)}
+                  >
+                    <LogOutIcon className="size-3.5" />
+                  </Button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </DetailCard>
   );
 }
 
@@ -780,7 +751,7 @@ function SecurityPage() {
   const hasPassword = accounts.some((a) => a.providerId === "credential");
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-5">
       <ChangePasswordCard hasPassword={hasPassword} />
       {/* 2FA enrollment requires confirming a password, so it's only usable once
           the user has set one — hide it for social-only accounts. */}

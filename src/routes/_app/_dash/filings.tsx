@@ -130,11 +130,11 @@ function FilingsPage() {
   const empty = jobsView ? jobs.length === 0 : records.length === 0;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-6 max-md:text-sidebar-foreground">
+    <div className="mx-auto max-w-6xl space-y-6 p-6">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Filings</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground max-md:text-sidebar-foreground/80">
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
             Permits, trademarks, patents and airspace studies for the parks, straight from
             government databases, grouped by the job they belong to and linked to the rides and
             places they concern. A permit is a request, not an announcement.
@@ -161,7 +161,7 @@ function FilingsPage() {
             className="lg:sticky lg:top-3 lg:z-10 lg:rounded-2xl lg:border lg:bg-background/95 lg:p-3 lg:backdrop-blur"
           />
 
-          <div className="flex items-center justify-between text-xs text-muted-foreground max-md:text-sidebar-foreground/70">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>
               {jobsView ? "Grouped by job" : "Every record"}
               {summaryQ.data ? ` · ${summaryQ.data.total.toLocaleString()} records on file` : ""}
@@ -203,7 +203,7 @@ function FilingsPage() {
               {jobGroups.map((g, i) => (
                 <section key={g.label || i} className="space-y-3">
                   {g.label && (
-                    <h2 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase max-md:text-sidebar-foreground/70">
+                    <h2 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                       {g.label}
                     </h2>
                   )}
@@ -217,7 +217,7 @@ function FilingsPage() {
             <div className="space-y-6">
               {recordGroups.map((g) => (
                 <section key={g.day} className="space-y-3">
-                  <h2 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase max-md:text-sidebar-foreground/70">
+                  <h2 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                     {fmtDayLong(`${g.day}T12:00:00-05:00`)}
                   </h2>
                   {g.items.map((item) => (
@@ -240,7 +240,7 @@ function FilingsPage() {
             </div>
           )}
 
-          <p className="text-xs text-muted-foreground max-md:text-sidebar-foreground/70">
+          <p className="text-xs text-muted-foreground">
             Records are public filings republished with their government citation. We describe what
             was filed; we don’t infer a project’s purpose beyond the filing text.
           </p>

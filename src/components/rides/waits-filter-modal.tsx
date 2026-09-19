@@ -61,8 +61,14 @@ export function WaitsFilterModal({
         render={
           <Button
             variant="outline"
-            size="sm"
-            className={cn("min-h-10", activeCount > 0 && "border-foreground", className)}
+            size="lg"
+            // The masthead's 44px key at its 18px radius — the toolbar this
+            // sits in is the nav bar continued, and wears the same measure.
+            className={cn(
+              "h-11 shrink-0 rounded-[18px]",
+              activeCount > 0 && "border-foreground",
+              className,
+            )}
           />
         }
       >

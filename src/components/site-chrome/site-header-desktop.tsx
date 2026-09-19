@@ -1179,9 +1179,20 @@ export function SiteHeaderDesktop({
   const navInk = darkField && !engaged ? "dark" : undefined;
   // The actions keys go ghost while the capsule is at rest over a dark field:
   // no fill, no rim, no shelf — just the glyph, the way a `ghost` button reads.
-  // One lever covers the rim and the shelf, since `border-3d` and `shadow-3d`
-  // both draw their colour from `--btn-3d`; the button declares it on itself,
-  // so the override has to reach the button rather than sit on the group.
+  //
+  // Three levers, not one. `--btn-3d` is the obvious one — `border-3d` and
+  // `shadow-3d` both draw their colour from it — but on its own it left both
+  // halves of the chrome standing:
+  //
+  // - the rim, because `outline`'s own `dark:border-[color-mix(…)]` names a
+  //   colour directly, and `navInk` puts the very `dark` class on the group
+  //   that switches it on. A `.dark &` selector outranks this group's `&
+  //   button`, so the border has to be taken with `!`.
+  // - the shelf's *ambient* shadow (`0 4px 10px -2px`), which is a fixed black
+  //   in `shadow-3d` rather than a `--btn-3d` layer, so nothing about the
+  //   variable reaches it. `shadow-none` clears the whole stack; the hover and
+  //   focus shadows are variant-compounded and outrank it, and in any case
+  //   pointing at a key means the capsule is engaged and this is all gone.
   //
   // They take the dark tokens along with the words, which is a reversal of how
   // this started: the cluster was meant to hold the page's own theme so it
@@ -1189,7 +1200,9 @@ export function SiteHeaderDesktop({
   // though, and a transparent chip with near-black glyphs on navy is just an
   // invisible one. Engaged, the capsule's white ground comes back and so does
   // the cluster the rest of the site knows.
-  const navKeys = navInk && "[&_button]:bg-transparent [&_button]:[--btn-3d:transparent]";
+  const navKeys =
+    navInk &&
+    "[&_button]:bg-transparent [&_button]:[--btn-3d:transparent] [&_button]:border-transparent! [&_button]:shadow-none";
   // strict:false so this resolves everywhere; the slug only exists under
   // `/park/$slug` (and its ride child), where it lights the parks menu.
   const { slug: activeSlug } = useParams({ strict: false }) as { slug?: string };

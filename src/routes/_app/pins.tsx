@@ -7,6 +7,7 @@ import { ScanLineIcon, SearchIcon } from "lucide-react";
 
 import { MaintenanceGate } from "#/components/maintenance-gate.tsx";
 import { PageContainer } from "#/components/page-container.tsx";
+import { PageMasthead } from "#/components/site-chrome/page-masthead.tsx";
 import { PinCard, type PinCardData } from "#/components/pins/pin-card.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Empty, EmptyDescription, EmptyTitle } from "#/components/ui/empty.tsx";
@@ -106,30 +107,28 @@ function PinsPage() {
 
   return (
     <MaintenanceGate feature="pins" title="Pins is under maintenance">
+      <PageMasthead
+        kicker="Pin trading"
+        title="Pin catalog"
+        description="Every Disney trading pin we know of — what it is, what it goes for, and who has one to trade."
+        actions={
+          <>
+            <Button variant="yellow" size="sm" render={<Link to="/pins/scan" />}>
+              <ScanLineIcon />
+              Scan a pin
+            </Button>
+            <Button variant="ticket" size="sm" render={<Link to="/pins/collection" />}>
+              My collection
+            </Button>
+            <Button variant="ticket" size="sm" render={<Link to="/pins/trades" />}>
+              Trades
+            </Button>
+          </>
+        }
+      />
       <div className="flex flex-1 flex-col">
         <div className="@container/main flex flex-1 flex-col gap-2">
-          <PageContainer className="space-y-5 py-8">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h1 className="text-xl font-semibold">Pin catalog</h1>
-                <p className="text-muted-foreground text-sm">
-                  Browse Disney trading pins, track your collection, and find trades.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button variant="outline" size="sm" render={<Link to="/pins/collection" />}>
-                  My collection
-                </Button>
-                <Button variant="outline" size="sm" render={<Link to="/pins/trades" />}>
-                  Trades
-                </Button>
-                <Button size="sm" render={<Link to="/pins/scan" />}>
-                  <ScanLineIcon />
-                  Scan a pin
-                </Button>
-              </div>
-            </div>
-
+          <PageContainer className="space-y-5 py-7">
             <div className="flex flex-wrap items-center gap-2">
               <div className="relative min-w-56 flex-1">
                 <SearchIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />

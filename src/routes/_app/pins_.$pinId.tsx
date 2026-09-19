@@ -10,6 +10,7 @@ import { Button } from "#/components/ui/button.tsx";
 import { Empty, EmptyDescription, EmptyTitle } from "#/components/ui/empty.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
+import { discordComponentEmbed, linkButton, linkPreview } from "#/lib/discord-embed.ts";
 import { seo } from "#/lib/seo.ts";
 import { cn } from "#/lib/utils.ts";
 
@@ -39,18 +40,44 @@ export const Route = createFileRoute("/_app/pins_/$pinId")({
       series: pin.series ?? null,
       year: pin.year ?? null,
       image: pin.images.find((i) => i.isPrimary)?.url ?? pin.images[0]?.url ?? null,
+      // The one page with a genuine multi-photo set — reference shots go in the
+      // Discord component embed's photo grid.
+      images: pin.images.map((i) => i.url),
+      availableForTrade: pin.availableForTrade,
+      wantedBy: pin.wantedBy,
     };
   },
   head: ({ params, loaderData }) => {
     const name = loaderData?.name ?? "Pin Details";
     const series = loaderData?.series ? ` from the ${loaderData.series} series` : "";
     const year = loaderData?.year ? ` (${loaderData.year})` : "";
-    return seo({
-      title: `${name} — Disney Pin Value & Trading — ParkFi`,
-      description: `${name}${year}${series} — estimated value, reference photos, and live trade availability on ParkFi.`,
-      path: `/pins/${params.pinId}`,
-      image: loaderData?.image ?? undefined,
-    });
+    const path = `/pins/${params.pinId}`;
+    const trade = [
+      loaderData?.availableForTrade ? `${loaderData.availableForTrade} up for trade` : null,
+      loaderData?.wantedBy ? `wanted by ${loaderData.wantedBy}` : null,
+    ].filter(Boolean);
+    return {
+      ...seo({
+        title: `${name} — Disney Pin Value & Trading — ParkFi`,
+        description: `${name}${year}${series} — estimated value, reference photos, and live trade availability on ParkFi.`,
+        path,
+        image: loaderData?.image ?? undefined,
+      }),
+      scripts: discordComponentEmbed(
+        linkPreview({
+          title: name,
+          url: path,
+          subtitle: [loaderData?.series, loaderData?.year].filter(Boolean).join(" · "),
+          body:
+            trade.length > 0
+              ? `${trade.join(" · ")} on ParkFi.`
+              : "Estimated value, reference photos, and live trade availability.",
+          card: loaderData?.image,
+          photos: loaderData?.images,
+          buttons: [linkButton("Pin catalog", "/pins"), linkButton("Identify a pin", "/pins/scan")],
+        }),
+      ),
+    };
   },
 });
 

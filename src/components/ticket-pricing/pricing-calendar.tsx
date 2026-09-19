@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { Card, CardDescription, CardHeader, CardTitle } from "#/components/ui/card.tsx";
+import { PageMasthead } from "#/components/site-chrome/page-masthead.tsx";
 import {
   CoreSearchOption,
   CoreSearchSegment,
@@ -80,24 +80,22 @@ export function PricingCalendar() {
 
   return (
     <div className="flex flex-col gap-4 md:gap-6 md:py-6">
-      <div className="hidden flex-col gap-1 px-4 md:flex lg:px-6">
-        <h2 className="text-xl font-semibold tracking-tight">Ticket Pricing</h2>
-        <p className="text-muted-foreground text-sm">
-          Cheapest {productLabel.toLowerCase()} by date — find the cheapest day to go.
-          {lastUpdatedAt && (
-            <span className="ml-2 text-xs">
-              Updated{" "}
-              {(() => {
+      <PageMasthead
+        className="hidden md:block"
+        kicker={
+          lastUpdatedAt
+            ? `Swept ${(() => {
                 const diff = Date.now() - new Date(lastUpdatedAt).getTime();
                 const min = Math.floor(diff / 60_000);
                 if (min < 1) return "just now";
                 if (min < 60) return `${min}m ago`;
                 return `${Math.floor(min / 60)}h ago`;
-              })()}
-            </span>
-          )}
-        </p>
-      </div>
+              })()}`
+            : "Gate prices"
+        }
+        title="Ticket pricing"
+        description={`Cheapest ${productLabel.toLowerCase()} by date, straight from the parks' own calendars — so you can pick the day, not just the park.`}
+      />
 
       {/* Mobile: per-park shelves of price/weather/crowd tiles — the whole mobile
           experience. Desktop keeps the picker + summary + calendar below. */}
@@ -205,61 +203,51 @@ export function PricingCalendar() {
         </div>
       </div>
 
-      <div className="hidden grid-cols-1 gap-4 px-4 *:data-[slot=card]:bg-linear-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs md:grid lg:px-6 @xl/main:grid-cols-3 dark:*:data-[slot=card]:bg-card">
-        <Card className="@container/card">
-          <CardHeader>
-            <CardDescription>Cheapest day</CardDescription>
-            <CardTitle className="text-xl font-semibold tabular-nums @sm/card:text-2xl">
-              {stats ? dollars(stats.min) : "—"}
-            </CardTitle>
-            <CardDescription>
-              {stats?.cheapest
-                ? new Date(`${stats.cheapest.date}T00:00:00`).toLocaleDateString("en-US", {
-                    weekday: "short",
-                    month: "long",
-                    day: "numeric",
-                  })
-                : "No pricing yet"}
-            </CardDescription>
-          </CardHeader>
-        </Card>
-        <Card className="@container/card">
-          <CardHeader>
-            <CardDescription>Price range</CardDescription>
-            <CardTitle className="text-xl font-semibold tabular-nums @sm/card:text-2xl">
-              {stats ? `${dollars(stats.min)}–${dollars(stats.max)}` : "—"}
-            </CardTitle>
-            <CardDescription>
-              {productLabel} over the next {DAYS} days
-            </CardDescription>
-          </CardHeader>
-        </Card>
-        <Card className="@container/card">
-          <CardHeader>
-            <CardDescription>Today</CardDescription>
-            <CardTitle className="text-xl font-semibold tabular-nums @sm/card:text-2xl">
-              {priceMap.get(localIso(today))
-                ? dollars(priceMap.get(localIso(today))!.priceCents)
-                : "—"}
-            </CardTitle>
-            <CardDescription className="flex flex-wrap items-center gap-2">
+      {/* The three headline numbers. Flat, borderless-hairline tiles — the app's
+          3D card chrome is reserved for things that navigate or act. */}
+      <div className="hidden grid-cols-1 gap-4 px-4 md:grid lg:px-6 @xl/main:grid-cols-3">
+        <PriceStat
+          label="Cheapest day"
+          value={stats ? dollars(stats.min) : "—"}
+          note={
+            stats?.cheapest
+              ? new Date(`${stats.cheapest.date}T00:00:00`).toLocaleDateString("en-US", {
+                  weekday: "short",
+                  month: "long",
+                  day: "numeric",
+                })
+              : "No pricing yet"
+          }
+        />
+        <PriceStat
+          label="Price range"
+          value={stats ? `${dollars(stats.min)}–${dollars(stats.max)}` : "—"}
+          note={`${productLabel} over the next ${DAYS} days`}
+        />
+        <PriceStat
+          label="Today"
+          value={
+            priceMap.get(localIso(today)) ? dollars(priceMap.get(localIso(today))!.priceCents) : "—"
+          }
+          note={
+            <span className="flex flex-wrap items-center gap-2">
               {productLabel} for today
               {data.blockedDates.has(localIso(today)) && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide leading-none text-red-600 dark:bg-red-900/50 dark:text-red-300">
+                <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] leading-none font-bold tracking-wide text-red-600 uppercase dark:bg-red-900/50 dark:text-red-300">
                   <span className="inline-block size-1.5 rounded-full bg-red-500" />
                   AP blocked
                 </span>
               )}
-            </CardDescription>
-          </CardHeader>
-        </Card>
+            </span>
+          }
+        />
       </div>
 
       <div className="hidden px-4 md:block lg:px-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>{resortLabel}</CardTitle>
-            <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <div className="flex flex-col gap-4 rounded-[26px] border border-card-edge bg-card p-5">
+          <div className="flex flex-col gap-1">
+            <p className="text-lg font-extrabold tracking-[-0.01em]">{resortLabel}</p>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
               <span>
                 {productLabel} · cheapest in <span className="text-primary">color</span>, sold-out
                 struck through
@@ -291,9 +279,9 @@ export function PricingCalendar() {
                   })}
                 </span>
               )}
-            </CardDescription>
-          </CardHeader>
-          <div className="px-2 pb-4 sm:px-6">
+            </div>
+          </div>
+          <div className="-mx-1 sm:mx-0">
             <PriceCalendarGrid
               resort={resort}
               park={park}
@@ -302,7 +290,7 @@ export function PricingCalendar() {
               enabled={!isMobile}
             />
           </div>
-        </Card>
+        </div>
       </div>
 
       <TicketsMobileControls
@@ -311,6 +299,31 @@ export function PricingCalendar() {
         onParkHopper={setParkHopper}
         onAgeGroup={setAgeGroup}
       />
+    </div>
+  );
+}
+
+/**
+ * One headline price on the tickets board. Flat by design (detail-system rule:
+ * the 3D shelf is for keys), with the number set in the band voice so it reads
+ * at a glance from across the page.
+ */
+function PriceStat({
+  label,
+  value,
+  note,
+}: {
+  label: string;
+  value: string;
+  note: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1 rounded-[22px] border border-card-edge bg-card p-5">
+      <span className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+        {label}
+      </span>
+      <span className="text-2xl font-extrabold tracking-[-0.02em] tabular-nums">{value}</span>
+      <div className="text-xs text-muted-foreground">{note}</div>
     </div>
   );
 }

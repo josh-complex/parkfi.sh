@@ -16,13 +16,7 @@ import { seo } from "#/lib/seo.ts";
 import { ConfirmButton } from "#/components/account/confirm-button.tsx";
 import { Avatar, AvatarFallback, AvatarImage } from "#/components/ui/avatar.tsx";
 import { Button } from "#/components/ui/button.tsx";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "#/components/ui/card.tsx";
+import { DetailCard } from "#/components/detail/panels.tsx";
 import { Input } from "#/components/ui/input.tsx";
 import { toast } from "sonner";
 import { usePrevious } from "@dnd-kit/utilities";
@@ -140,148 +134,125 @@ function ProfilePage() {
   const lastSrc = usePrevious(displaySrc);
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-5">
       {/* Avatar */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Avatar</CardTitle>
-          <CardDescription>Your bot avatar or a custom photo</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-5">
-            {/* Avatar with spinner overlay and cancel badge */}
-            <div className="relative shrink-0">
-              <Avatar className="size-20 rounded-full after:hidden border border-border shadow-[0_3px_0_0_color-mix(in_oklch,var(--border),var(--border)),inset_0_1px_0_0_oklch(1_0_0/0.55)]">
-                <AvatarImage src={displaySrc} alt="Your avatar" />
-                <AvatarFallback className="rounded-full text-2xl">
-                  <Avatar className="size-20 rounded-full after:hidden border border-border shadow-[0_3px_0_0_color-mix(in_oklch,var(--border),var(--border)),inset_0_1px_0_0_oklch(1_0_0/0.55)]">
-                    <AvatarImage src={lastSrc} alt="Your avatar" />
-                    <AvatarFallback className="rounded-full text-2xl">
-                      {userInitials(user.name, user.email)}
-                    </AvatarFallback>
-                  </Avatar>
-                </AvatarFallback>
-              </Avatar>
-              {confirmSaving && (
-                <div className="absolute inset-0 rounded-full bg-background/70 flex items-center justify-center">
-                  <LoaderCircleIcon className="size-5 animate-spin text-foreground" />
-                </div>
-              )}
-              {pending && !confirmSaving && (
-                <button
-                  onClick={() => setPending(null)}
-                  className="absolute -top-1 -right-1 size-5 rounded-full bg-muted border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-                  aria-label="Cancel"
-                >
-                  <XIcon className="size-3" />
-                </button>
-              )}
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <Button
-                size="sm"
-                variant={pending ? "default" : "outline"}
-                onClick={pending ? () => void handleConfirm() : generateBot}
-                disabled={confirmSaving}
+      <DetailCard title="Avatar" description="Your bot avatar or a custom photo">
+        <div className="flex items-center gap-5">
+          {/* Avatar with spinner overlay and cancel badge */}
+          <div className="relative shrink-0">
+            <Avatar className="size-20 rounded-full after:hidden border border-border shadow-[0_3px_0_0_color-mix(in_oklch,var(--border),var(--border)),inset_0_1px_0_0_oklch(1_0_0/0.55)]">
+              <AvatarImage src={displaySrc} alt="Your avatar" />
+              <AvatarFallback className="rounded-full text-2xl">
+                <Avatar className="size-20 rounded-full after:hidden border border-border shadow-[0_3px_0_0_color-mix(in_oklch,var(--border),var(--border)),inset_0_1px_0_0_oklch(1_0_0/0.55)]">
+                  <AvatarImage src={lastSrc} alt="Your avatar" />
+                  <AvatarFallback className="rounded-full text-2xl">
+                    {userInitials(user.name, user.email)}
+                  </AvatarFallback>
+                </Avatar>
+              </AvatarFallback>
+            </Avatar>
+            {confirmSaving && (
+              <div className="absolute inset-0 rounded-full bg-background/70 flex items-center justify-center">
+                <LoaderCircleIcon className="size-5 animate-spin text-foreground" />
+              </div>
+            )}
+            {pending && !confirmSaving && (
+              <button
+                onClick={() => setPending(null)}
+                className="absolute -top-1 -right-1 size-5 rounded-full bg-muted border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                aria-label="Cancel"
               >
-                {pending ? (
-                  <>
-                    <CheckIcon /> Save
-                  </>
-                ) : (
-                  <>
-                    <RefreshCwIcon /> Randomize bot
-                  </>
-                )}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={
-                  pending?.type === "bot" ? generateBot : () => fileInputRef.current?.click()
-                }
-                disabled={confirmSaving}
-              >
-                {pending?.type === "bot" ? (
-                  <>
-                    <RefreshCwIcon /> Try another
-                  </>
-                ) : (
-                  <>
-                    <UploadIcon /> Upload photo
-                  </>
-                )}
-              </Button>
-            </div>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleUploadAvatar}
-            />
+                <XIcon className="size-3" />
+              </button>
+            )}
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Display name */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Display name</CardTitle>
-          <CardDescription>Shown in the sidebar and notifications</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-2">
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Your name"
-              className="max-w-xs"
-            />
+          <div className="flex flex-col gap-2">
             <Button
-              onClick={() => void handleSaveName()}
-              disabled={saving || name === (user.name ?? "")}
+              size="sm"
+              variant={pending ? "default" : "outline"}
+              onClick={pending ? () => void handleConfirm() : generateBot}
+              disabled={confirmSaving}
             >
-              {saving ? "Saving…" : "Save"}
+              {pending ? (
+                <>
+                  <CheckIcon /> Save
+                </>
+              ) : (
+                <>
+                  <RefreshCwIcon /> Randomize bot
+                </>
+              )}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={pending?.type === "bot" ? generateBot : () => fileInputRef.current?.click()}
+              disabled={confirmSaving}
+            >
+              {pending?.type === "bot" ? (
+                <>
+                  <RefreshCwIcon /> Try another
+                </>
+              ) : (
+                <>
+                  <UploadIcon /> Upload photo
+                </>
+              )}
             </Button>
           </div>
-        </CardContent>
-      </Card>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleUploadAvatar}
+          />
+        </div>
+      </DetailCard>
+
+      {/* Display name */}
+      <DetailCard title="Display name" description="Shown on your profile and in notifications">
+        <div className="flex gap-2">
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Your name"
+            className="max-w-xs"
+          />
+          <Button
+            onClick={() => void handleSaveName()}
+            disabled={saving || name === (user.name ?? "")}
+          >
+            {saving ? "Saving…" : "Save"}
+          </Button>
+        </div>
+      </DetailCard>
 
       {/* Email */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Email address</CardTitle>
-          <CardDescription>Your sign-in address</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm">{user.email}</p>
-        </CardContent>
-      </Card>
+      <DetailCard title="Email address" description="Your sign-in address">
+        <p className="text-sm font-medium">{user.email}</p>
+      </DetailCard>
 
       {/* Danger zone */}
-      <Card className="border-destructive! dark:border-destructive! [--btn-3d:var(--destructive)]">
-        <CardHeader>
-          <CardTitle className="text-destructive">Delete account</CardTitle>
-          <CardDescription>
-            Permanently delete your account and all data. This cannot be undone.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ConfirmButton
-            label="Delete account"
-            confirmLabel="Yes, delete"
-            icon={<TrashIcon />}
-            onConfirm={async () => {
-              const { error } = await authClient.deleteUser({ callbackURL: "/login" });
-              if (error) toast.error(error.message ?? "Failed to delete account");
-              else await navigate({ to: "/login" });
-            }}
-          />
-        </CardContent>
-      </Card>
+      <DetailCard
+        tone="destructive"
+        title="Delete account"
+        description="Permanently delete your account and all data. This cannot be undone."
+        className="[--btn-3d:var(--destructive)]"
+      >
+        <ConfirmButton
+          label="Delete account"
+          confirmLabel="Yes, delete"
+          icon={<TrashIcon />}
+          onConfirm={async () => {
+            const { error } = await authClient.deleteUser({ callbackURL: "/login" });
+            if (error) toast.error(error.message ?? "Failed to delete account");
+            else await navigate({ to: "/login" });
+          }}
+        />
+      </DetailCard>
     </div>
   );
 }

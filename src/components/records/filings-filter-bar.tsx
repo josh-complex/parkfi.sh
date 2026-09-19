@@ -92,7 +92,7 @@ function Chip({
         "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
         active
           ? "border-primary bg-primary text-primary-foreground"
-          : "bg-card text-foreground hover:bg-accent max-md:border-sidebar-foreground/30",
+          : "bg-card text-foreground hover:bg-accent",
       )}
     >
       {children}

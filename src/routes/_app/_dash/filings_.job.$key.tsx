@@ -65,7 +65,7 @@ function JobPage() {
   const back = (
     <Link
       to="/filings"
-      className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline max-md:text-sidebar-foreground/80"
+      className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"
     >
       <ArrowLeftIcon className="size-4" aria-hidden />
       All filings
@@ -83,7 +83,7 @@ function JobPage() {
   }
   if (q.isError || !q.data) {
     return (
-      <div className="mx-auto max-w-3xl space-y-4 p-6 max-md:text-sidebar-foreground">
+      <div className="mx-auto max-w-3xl space-y-4 p-6">
         {back}
         <h1 className="text-2xl font-semibold tracking-tight">Job not found</h1>
         <p className="text-sm text-muted-foreground">
@@ -116,7 +116,7 @@ function JobPage() {
   ];
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-6 max-md:text-sidebar-foreground">
+    <div className="mx-auto max-w-3xl space-y-6 p-6">
       {back}
 
       <div>
@@ -126,7 +126,7 @@ function JobPage() {
           <span className="ml-auto text-xs text-muted-foreground">{j.agency}</span>
         </div>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight">{j.title}</h1>
-        <p className="mt-1 text-sm text-muted-foreground max-md:text-sidebar-foreground/80">
+        <p className="mt-1 text-sm text-muted-foreground">
           {j.ticketCount} {j.ticketCount === 1 ? "filing" : "filings"}
           {j.address ? ` · ${j.address}` : ""}
           {j.firstFiledAt ? ` · ${spanLabel(j.firstFiledAt, j.latestAt)}` : ""}
@@ -150,7 +150,7 @@ function JobPage() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase max-md:text-sidebar-foreground/70">
+        <h2 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           Tickets
         </h2>
         {j.tickets.map((t) => (
@@ -194,7 +194,7 @@ function JobPage() {
         </section>
       )}
 
-      <p className="text-xs text-muted-foreground max-md:text-sidebar-foreground/70">
+      <p className="text-xs text-muted-foreground">
         These are public records republished with their government citation. A filing describes what
         was requested, not what will be built.
       </p>

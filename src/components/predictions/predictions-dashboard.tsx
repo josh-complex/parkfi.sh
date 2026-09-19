@@ -13,13 +13,9 @@ import { scaleLinear } from "@visx/scale";
 import { Area, Bar, Circle, Line, LinePath } from "@visx/shape";
 import { ChevronDownIcon } from "lucide-react";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "#/components/ui/card.tsx";
+import { Band, BandHeading } from "#/components/detail/band.tsx";
+import { WashPanel } from "#/components/detail/panels.tsx";
+import { PageBody, PageMasthead } from "#/components/site-chrome/page-masthead.tsx";
 import {
   Collapsible,
   CollapsibleContent,
@@ -76,15 +72,15 @@ function Tile({
   sub?: React.ReactNode;
 }) {
   return (
-    <Card size="sm" className="gap-2">
-      <CardContent className="flex flex-col gap-1">
-        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          {label}
-        </span>
-        <span className="text-2xl font-semibold tabular-nums leading-tight">{value}</span>
-        {sub && <span className="line-clamp-1 text-xs text-muted-foreground">{sub}</span>}
-      </CardContent>
-    </Card>
+    <div className="flex flex-col gap-1 rounded-[22px] border border-card-edge bg-card p-5">
+      <span className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+        {label}
+      </span>
+      <span className="text-2xl leading-tight font-extrabold tracking-[-0.02em] tabular-nums">
+        {value}
+      </span>
+      {sub && <span className="line-clamp-1 text-xs text-muted-foreground">{sub}</span>}
+    </div>
   );
 }
 
@@ -479,34 +475,35 @@ function ParkCurve() {
   const crowd = curveQ.data?.crowd;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Tomorrow's crowds</CardTitle>
-        <CardDescription>
-          {friendlyDate(date)} · how long waits should run through the day
-        </CardDescription>
-        <div className="col-start-2 row-span-2 row-start-1 self-start justify-self-end">
-          <Select value={activeSlug ?? undefined} onValueChange={setParkSlug}>
-            <SelectTrigger className="w-44" size="sm">
-              <SelectValue placeholder="Select a park" />
-            </SelectTrigger>
-            <SelectContent>
-              {(parks ?? []).map((p) => (
-                <SelectItem key={p.slug} value={p.slug}>
-                  {p.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
+    <WashPanel
+      title="Tomorrow's crowds"
+      meta={
+        <Select value={activeSlug ?? undefined} onValueChange={setParkSlug}>
+          <SelectTrigger className="w-44" size="sm">
+            <SelectValue placeholder="Select a park" />
+          </SelectTrigger>
+          <SelectContent>
+            {(parks ?? []).map((p) => (
+              <SelectItem key={p.slug} value={p.slug}>
+                {p.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      }
+    >
+      <p className="-mt-1 text-sm text-wash-muted">
+        {friendlyDate(date)} · how long waits should run through the day
+      </p>
+      <div className="flex flex-col gap-4">
         {crowd?.index != null ? (
           <div className="flex flex-col gap-1">
             <div className="flex items-baseline gap-3">
-              <span className="text-4xl font-semibold tabular-nums">{crowd.index}</span>
-              <span className="text-muted-foreground">/ 10</span>
-              <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-sm font-medium text-primary">
+              <span className="text-4xl font-extrabold tracking-[-0.02em] tabular-nums">
+                {crowd.index}
+              </span>
+              <span className="text-wash-muted">/ 10</span>
+              <span className="rounded-full bg-background/70 px-2.5 py-0.5 text-sm font-bold text-wash-fg">
                 {crowdLabel(crowd.index)}
               </span>
             </div>
@@ -534,32 +531,32 @@ function ParkCurve() {
         ) : (
           <>
             <ForecastCurveChart points={points} />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-wash-muted">
               The line is the expected average wait across the park's rides; the shaded area is the
               range waits will most likely fall in.
             </p>
           </>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </WashPanel>
   );
 }
 
 export function PredictionsDashboard({ className }: { className?: string }) {
   return (
-    <div className={cn("flex flex-col gap-6 p-4 lg:p-6", className)}>
-      <div className="flex flex-col gap-1">
-        <h1 className="font-heading text-2xl font-semibold">Wait-time forecasts</h1>
-        <p className="text-sm text-muted-foreground">
-          How busy each park will be tomorrow — and how our predictions have held up against real
-          wait times.
-        </p>
-      </div>
-      <ParkCurve />
-      <div className="flex flex-col gap-3">
-        <h2 className="font-heading text-lg font-medium">How accurate is this?</h2>
-        <AccuracySection />
-      </div>
+    <div className={cn("flex flex-col", className)}>
+      <PageMasthead
+        kicker="Ahead"
+        title="Wait-time forecasts"
+        description="How busy each park will be tomorrow — and, because a forecast nobody checks is just a guess, how ours have held up against the waits that actually got posted."
+      />
+      <PageBody size="wide" className="gap-8">
+        <ParkCurve />
+        <Band>
+          <BandHeading kicker="Know" title="How accurate is this?" />
+          <AccuracySection />
+        </Band>
+      </PageBody>
     </div>
   );
 }

@@ -2,21 +2,11 @@ import { createFileRoute } from "@tanstack/react-router";
 import { isServer, useQuery } from "@tanstack/react-query";
 
 import { RideDetail } from "#/components/park-dashboard/ride-detail.tsx";
+import { RIDE_CURVE_STEP } from "#/components/park-dashboard/today-curve.tsx";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
+import { discordComponentEmbed, linkButton, linkPreview } from "#/lib/discord-embed.ts";
 import {
-  actionRow,
-  canEmbedMedia,
-  container,
-  discordComponentEmbed,
-  linkButton,
-  section,
-  separator,
-  text,
-  thumbnail,
-} from "#/lib/discord-embed.ts";
-import {
-  SITE_URL,
   attractionJsonLd,
   breadcrumbJsonLd,
   liveCardVersion,
@@ -56,7 +46,7 @@ export const Route = createFileRoute("/_app/_dash/park/$slug_/ride/$rideSlug")({
     // ride's day). Not awaited: the page renders without it.
     if (ride?.id) {
       void context.queryClient.prefetchQuery(
-        context.trpc.parks.rideCrowd.queryOptions({ attractionId: ride.id }),
+        context.trpc.parks.rideCrowd.queryOptions({ attractionId: ride.id, step: RIDE_CURVE_STEP }),
       );
     }
     return {
@@ -65,9 +55,13 @@ export const Route = createFileRoute("/_app/_dash/park/$slug_/ride/$rideSlug")({
       operatorSlug: ride?.park.operatorSlug ?? null,
       standbyWait: ride?.standbyWait ?? null,
       description: ride?.meta?.description ?? null,
-      // Thumbnail for the Discord component embed. Same source the page's
-      // JSON-LD uses; `head()` can't reach into the query cache, so carry it.
-      imageUrl: ride?.meta?.imageHeroUrl ?? ride?.meta?.imageThumbUrl ?? null,
+      land: ride?.meta?.land ?? null,
+      // Ride stills for the Discord component embed's photo grid. `head()`
+      // can't reach into the query cache, so carry them through the loader.
+      // Videos are dropped: a component embed can't play one.
+      photos: (ride?.meta?.heroMedia ?? [])
+        .filter((slide) => slide.kind === "image")
+        .map((slide) => slide.url),
     };
   },
   head: ({ params, loaderData }) => {
@@ -91,30 +85,25 @@ export const Route = createFileRoute("/_app/_dash/park/$slug_/ride/$rideSlug")({
         imageWidth: 1200,
         imageHeight: 630,
       }),
-      // First route to carry a Discord component embed — see `lib/discord-embed.ts`.
-      // Purely additive: the OG tags above still render whenever Discord rejects
-      // or ignores this. Deliberately no wait number in the headline — Discord
-      // caches a preview for ~30 minutes and the shared URL is the cache key, so
-      // there's no version trick (unlike `og:image`) to keep a figure honest.
+      // Discord component embed — see `lib/discord-embed.ts`. Purely additive:
+      // the OG tags above still render whenever Discord rejects or ignores it.
+      // No wait number in the copy on purpose — Discord caches a preview for
+      // ~30 minutes keyed on the shared URL, so there's no version trick (the
+      // way `og:image` has one) to keep a figure honest. The generated card
+      // carries the live chips and re-renders when the cache turns over.
       scripts: discordComponentEmbed(
-        container([
-          canEmbedMedia(loaderData?.imageUrl)
-            ? section(
-                [text(`## [${name}](${SITE_URL}${path})\n${parkName}`)],
-                thumbnail(loaderData.imageUrl, name),
-              )
-            : text(`## [${name}](${SITE_URL}${path})\n${parkName}`),
-          text(
-            wait != null
-              ? `**${wait} min** standby at last check · ${lineLabel} status and wait history on the ride page.`
-              : `Live standby wait, ride status, and ${lineLabel} availability.`,
-          ),
-          separator(),
-          actionRow(
+        linkPreview({
+          title: name,
+          url: path,
+          subtitle: [loaderData?.land, parkName].filter(Boolean).join(" · "),
+          body: `${lineLabel} status, standby history, and wait alerts.`,
+          card: `/og/ride/${params.slug}/${params.rideSlug}/card.jpg?v=${liveCardVersion()}`,
+          photos: loaderData?.photos,
+          buttons: [
             linkButton(`All ${parkName} waits`, `/park/${params.slug}`),
-            linkButton("Crowd forecast", "/predictions"),
-          ),
-        ]),
+            linkButton("Live map", "/map"),
+          ],
+        }),
       ),
     };
   },

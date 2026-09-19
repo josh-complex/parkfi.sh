@@ -1,6 +1,7 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 
 import { PinCollectionManager } from "#/components/pins/pin-collection-manager.tsx";
+import { PageBody, PageMasthead } from "#/components/site-chrome/page-masthead.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { seo } from "#/lib/seo.ts";
 
@@ -17,23 +18,25 @@ export const Route = createFileRoute("/_app/pins_/collection")({
 
 function PinCollectionPage() {
   return (
-    <div className="flex flex-1 flex-col">
-      <div className="@container/main flex flex-1 flex-col gap-2">
-        <div className="mx-auto w-full max-w-2xl space-y-5 px-4 py-8">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <h1 className="text-xl font-semibold">My pins</h1>
-              <p className="text-muted-foreground text-sm">
-                Track what you have and want, and mark pins for trade.
-              </p>
-            </div>
-            <Button variant="outline" size="sm" render={<Link to="/pins/trades" />}>
-              Trades
+    <>
+      <PageMasthead
+        kicker="Your pins"
+        title="My collection"
+        description="What you have, what you're hunting, and what you'd part with — the three lists a trade is made of."
+        actions={
+          <>
+            <Button variant="yellow" size="sm" render={<Link to="/pins/trades" />}>
+              Find a trade
             </Button>
-          </div>
-          <PinCollectionManager />
-        </div>
-      </div>
-    </div>
+            <Button variant="ticket" size="sm" render={<Link to="/pins" />}>
+              Catalog
+            </Button>
+          </>
+        }
+      />
+      <PageBody size="form">
+        <PinCollectionManager />
+      </PageBody>
+    </>
   );
 }

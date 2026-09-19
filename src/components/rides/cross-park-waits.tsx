@@ -226,17 +226,28 @@ function rideComparator(sortKey: WaitsSort, sortDir: SortDir): (a: Ride, b: Ride
  * re-sort. The column heads drive the *board's* sort instead, which is the same
  * state the Sort drawer writes.
  *
- * Park, land, type and height are desktop-only — below `lg` the row collapses
- * to the phone line (photo · name over park · wait) through `hidden
- * lg:table-cell` rather than a second set of markup, so a phone ships one DOM
- * and the server renders the same HTML at every width.
+ * Park, land, type and height are desktop-only — below their breakpoint the row
+ * collapses to the phone line (photo · name over park · wait).
+ *
+ * Which columns exist is decided **here, in JS**, from the viewport width, and
+ * not by hanging `hidden lg:table-cell` on cells the table would otherwise
+ * render. That was the older shape and it was quietly broken: a `<td>` set to
+ * `display: none` is removed from its row, but its `<col>` is not removed from
+ * the colgroup — so every cell after a hidden one slid one column to the left
+ * and inherited the wrong width. Between `xl` and `2xl` that put the wait pill
+ * in the (zero-width) Height column and "Shortest later" in the wait's 88px
+ * one, printing the two on top of each other while the last 128px of the table
+ * stood empty. Cells and `<col>`s are now the same list, so they cannot drift.
+ *
+ * The width comes from `useViewportWidth`, which answers with its 1280px
+ * fallback on the server and corrects itself in a layout effect — before paint,
+ * and with the same value on both sides of hydration.
  */
 type RideColumnMeta = {
-  /** Display gate for the `<th>`/`<td>` — which breakpoint the column appears at. */
+  /** Extra classes for the `<th>`/`<td>`. */
   className?: string;
   /**
-   * The same column's `<col>`: its pinned width, and `w-0` below the breakpoint
-   * where its cells are hidden.
+   * The same column's `<col>`: its pinned width.
    *
    * The table is `table-fixed`, so *these* are the column widths — full stop.
    * Nothing a cell contains can widen a column. That is the point: the list is
@@ -248,6 +259,10 @@ type RideColumnMeta = {
   col?: string;
   align?: "right";
 };
+
+/** The widths the board's columns arrive at — Tailwind's `lg`, `xl` and `2xl`,
+ *  spelled out because the decision is made in JS rather than in a variant. */
+const COL_BREAKPOINT = { land: 1024, type: 1280, height: 1536 } as const;
 
 function useRideColumns(
   eagerCount: number,
@@ -261,6 +276,8 @@ function useRideColumns(
    * land under it, the wait on the right. Nothing is lost, only re-stacked.
    */
   compact: boolean,
+  /** Viewport width — decides which of the wide columns are in the table. */
+  width: number,
 ) {
   const hasLater = laterById.size > 0;
   return React.useMemo<Array<ColumnDef<Ride>>>(() => {
@@ -282,10 +299,7 @@ function useRideColumns(
             {formatParkName(row.original.parkName)}
           </span>
         ),
-        meta: {
-          className: "hidden lg:table-cell",
-          col: "w-0 lg:w-[168px]",
-        } satisfies RideColumnMeta,
+        meta: { col: "w-[168px]" } satisfies RideColumnMeta,
       },
       {
         id: "land",
@@ -307,10 +321,7 @@ function useRideColumns(
             {row.original.land ?? "—"}
           </span>
         ),
-        meta: {
-          className: "hidden lg:table-cell",
-          col: "w-0 lg:w-[144px] xl:w-[169px] 2xl:w-[199px]",
-        } satisfies RideColumnMeta,
+        meta: { col: "w-[144px] xl:w-[169px] 2xl:w-[199px]" } satisfies RideColumnMeta,
       },
       {
         id: "type",
@@ -324,10 +335,7 @@ function useRideColumns(
             </span>
           );
         },
-        meta: {
-          className: "hidden xl:table-cell",
-          col: "w-0 xl:w-[128px]",
-        } satisfies RideColumnMeta,
+        meta: { col: "w-[128px]" } satisfies RideColumnMeta,
       },
       {
         id: "height",
@@ -338,10 +346,7 @@ function useRideColumns(
             {row.original.heightRequirement ?? "—"}
           </span>
         ),
-        meta: {
-          className: "hidden 2xl:table-cell",
-          col: "w-0 2xl:w-[168px]",
-        } satisfies RideColumnMeta,
+        meta: { col: "w-[168px]" } satisfies RideColumnMeta,
       },
       {
         id: "wait",
@@ -352,11 +357,18 @@ function useRideColumns(
       },
     ];
     if (compact) return cols.filter((c) => c.id === "name" || c.id === "wait");
+    // Which of the wide columns the width has room for. Name and the wait are
+    // the row's floor — they are what the phone shows, and they are never cut.
+    const keep = new Set(["name", "wait"]);
+    if (width >= COL_BREAKPOINT.land) keep.add("park").add("land");
+    if (width >= COL_BREAKPOINT.type) keep.add("type");
+    if (width >= COL_BREAKPOINT.height) keep.add("height");
+    const shown = cols.filter((c) => keep.has(String(c.id)));
     // "Shortest later" is entirely the profiles rollup's output (§6). Until that
     // exists the column is *absent* rather than a column of dashes — an empty
     // column is a promise the data can't keep.
-    if (hasLater) {
-      cols.push({
+    if (hasLater && width >= COL_BREAKPOINT.land) {
+      shown.push({
         id: "later",
         header: "Shortest later",
         enableSorting: false,
@@ -373,14 +385,11 @@ function useRideColumns(
             </span>
           );
         },
-        meta: {
-          className: "hidden lg:table-cell",
-          col: "w-0 lg:w-[128px]",
-        } satisfies RideColumnMeta,
+        meta: { col: "w-[128px]" } satisfies RideColumnMeta,
       });
     }
-    return cols;
-  }, [eagerCount, laterById, hasLater, compact]);
+    return shown;
+  }, [eagerCount, laterById, hasLater, compact, width]);
 }
 
 /** The name cell: the photo, the ride name as a real link, and — on a phone,
@@ -489,7 +498,12 @@ function RideListTable({
 }) {
   const navigate = useNavigate();
   const reduced = useReducedMotion();
-  const columns = useRideColumns(eagerCount, laterById, compact);
+  // Read before the columns: the column *set* is a function of it now, not just
+  // the row height. Its fallback is a fixed 1280, so the server and the
+  // hydrating client agree; the real width lands in a layout effect, which runs
+  // before paint, so a phone never shows a desktop row.
+  const viewport = useViewportWidth();
+  const columns = useRideColumns(eagerCount, laterById, compact, viewport);
   const table = useReactTable({
     data: rides,
     columns,
@@ -546,7 +560,6 @@ function RideListTable({
     </TableHeader>
   );
 
-  const viewport = useViewportWidth();
   const [rowHeight, measureRow] = useRowHeight(
     !compact && viewport >= WIDE_ROW_BREAKPOINT ? ROW_HEIGHT.lg : ROW_HEIGHT.base,
   );
@@ -650,6 +663,14 @@ function Spacer({ height, columns }: { height: number; columns: number }) {
 /* ── Chrome ───────────────────────────────────────────────────────────────── */
 
 /**
+ * The toolbar's keys, sized to the masthead's. Every control in the header's
+ * actions cluster is a 44px key at an 18px radius (`HeaderAccountMenu`), and
+ * the board's bar hangs directly beneath that header — two rows of chrome on
+ * the same page, so one measure rather than two.
+ */
+const TOOLBAR_KEY = "h-11 shrink-0 rounded-[18px]";
+
+/**
  * A latched control wears its state the way a held one does: down on its shelf,
  * flat, with the top glare gone. Same three classes as `ui/toggle` and the park
  * strip, spelled out here because the toolbar's toggles are plain `Button`s.
@@ -710,7 +731,11 @@ function SortMenu({
 }) {
   return (
     <Popover>
-      <PopoverTrigger render={<Button variant="outline" size="sm" className="min-h-10" />}>
+      {/* A 44px key with the search palette's 18px radius — the masthead's own
+          measure. The toolbar sits directly under the nav capsule and is the
+          same bar continued, so a shorter, rounder key here read as a second,
+          lesser set of chrome. */}
+      <PopoverTrigger render={<Button variant="outline" size="lg" className={TOOLBAR_KEY} />}>
         <ArrowUpDownIcon data-icon="inline-start" />
         Sort
       </PopoverTrigger>
@@ -812,9 +837,33 @@ function ViewToggle({
   // (list and tiles are a display choice: same rows either way). And each
   // segment is a wide lozenge rather than a circle, so the target is the half
   // of the control you were already pointing at.
+  //
+  // Cut from the same chrome as the keys beside it, not drawn beside them. The
+  // track used to bring its own rim (`border`, i.e. `--border`) and its own
+  // recess (`bg-input/40`, a hand-rolled inset), and both were one step off the
+  // bar's other controls in dark mode: `--border` is the plain navy, where every
+  // key on this bar rims itself in the *lightened* `--btn-3d`, and `--input` is
+  // lighter than the field it was supposed to be a hole in — a raised navy
+  // lozenge doing an impression of a slot. So: `btn-3d-outline` for the rim,
+  // which is the one variable the keys read theirs from, and `--shadow-deboss`,
+  // which is the system's recess and knows which theme it is in.
+  //
+  // And it is 47px tall, in a row of 44px keys, which is the whole of the
+  // alignment problem stated in one number: a key here is 44px of face *on a
+  // 3px shelf*, so its silhouette is 47 and a track built to match the face
+  // stops three pixels short of the row — twice, once at each end, once
+  // `items-center` has split the difference. So the track takes the key's full
+  // silhouette and hands the shelf's 3px back as negative bottom margin: flex
+  // centres the margin box, so the margin box is 44 and lines up with the keys'
+  // boxes, while the border box runs from their top edge to the bottom of their
+  // shelves. Top edges flush, bottom edges flush, and the row still measures 44.
   return (
     <div
-      className="flex shrink-0 items-center gap-1 rounded-full border border-t-3 bg-muted p-1 shadow-[inset_0_1px_2px_oklch(0_0_0/0.07)] dark:bg-input/40"
+      // `items-stretch`, so the two segments fill whatever height the slot has
+      // left after its walls and its 4px inset — the thumb used to be pinned to
+      // 32px, which was an exact fit for a 44px track and 3px of slack in this
+      // one. The segments own their width; the track owns their height.
+      className="btn-3d-outline border-3d -mb-[3px] flex h-[calc(2.75rem+3px)] shrink-0 items-stretch gap-1 rounded-2xl border-t-3 bg-muted p-1 shadow-[var(--shadow-deboss)] dark:bg-black/25"
       role="group"
       aria-label="View"
     >
@@ -829,9 +878,12 @@ function ViewToggle({
             title={v === "list" ? "List view" : "Tile view"}
             onClick={() => onView(v)}
             className={cn(
-              "flex h-8 w-12 items-center justify-center rounded-full transition-[background-color,color,box-shadow] duration-150 [&>svg]:size-4",
+              "flex w-12 items-center justify-center rounded-xl transition-[background-color,color,box-shadow] duration-150 [&>svg]:size-4",
               on
-                ? "bg-background text-foreground shadow-[0_1px_2px_oklch(0_0_0/0.14)] ring-1 ring-border/70"
+                ? // The thumb's rim is the track's own `--btn-3d`, so the raised
+                  // face in here and the raised faces either side of the track
+                  // are outlined by one value in both themes.
+                  "bg-background text-foreground shadow-[0_1px_2px_oklch(0_0_0/0.14)] ring-1 ring-[var(--btn-3d)] border-b-2 border-[var(--btn-3d)]"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -870,11 +922,11 @@ function MapToggle({ on, onToggle }: { on: boolean; onToggle: (on: boolean) => v
   return (
     <Button
       type="button"
-      size="sm"
+      size="lg"
       variant={on ? "default" : "outline"}
       aria-pressed={on}
       aria-label={label}
-      className={cn("min-h-10", PRESSED_FLAT)}
+      className={cn(TOOLBAR_KEY, PRESSED_FLAT)}
       onClick={() => onToggle(!on)}
     >
       <MapIcon data-icon="inline-start" />
@@ -1475,12 +1527,30 @@ export function CrossParkWaits() {
             sliding up under a hard edge. This lifts off the results instead —
             the same move the map's own control chips make — and is deliberately
             *quiet* (no emboss of its own) so the 3D controls inside it stay the
-            things the eye lands on. */}
+            things the eye lands on.
+
+            Sized to the masthead: a 44px key in 12px of air, which is exactly
+            what the nav capsule above is (its wordmark is `h-11` in `py-3`).
+            The two bars are within a couple of pixels of each other and read as
+            one piece of chrome continued — where a 40px key in 8px used to read
+            as a smaller, lesser bar hanging off the bottom of the real one.
+
+            Desktop only. Every control in it is `md:`-gated — the phone's
+            Sort, Filters and view switch are the floating pills at the bottom
+            of the screen — so below `md` the bar was a sticky capsule carrying
+            one heading and nothing else: a second, thinner header pinned under
+            the real one, costing a line of the fold to say "Every attraction"
+            over a list of attractions. The phone keeps the count as the live
+            region below, which is the part of that heading a screen reader was
+            actually using. */}
+        <p className="sr-only md:hidden" aria-live="polite">
+          {active ? `${results.length} attractions` : "Every attraction"}
+        </p>
         <div
           ref={toolbarRef}
           className={cn(
             TOOLBAR_STICKY,
-            "-mx-3 flex items-center justify-between gap-3 rounded-4xl shadow-lg border border-t-3 bg-background/95 py-2 pr-2 backdrop-blur-xl supports-backdrop-filter:bg-background/80 md:pr-3",
+            "-mx-3 hidden items-center justify-between gap-3 rounded-4xl shadow-lg border border-t-3 bg-background/95 py-3 pr-2 backdrop-blur-xl supports-backdrop-filter:bg-background/80 md:flex md:pr-3",
             // The bar's own left padding depends on whether anything is sitting
             // in the corner: a button brings its own inset, a bare heading needs
             // the gutter. Both conditions are media queries (the cluster is

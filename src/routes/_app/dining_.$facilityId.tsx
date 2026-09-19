@@ -8,6 +8,7 @@ import { VENUE_HOURS_DAYS } from "#/components/dining/venue-hours.tsx";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
 import { useAchievementTrack } from "#/hooks/use-achievement-track.ts";
 import { useTRPC } from "#/integrations/trpc/react.ts";
+import { discordComponentEmbed, linkButton, linkPreview } from "#/lib/discord-embed.ts";
 import { breadcrumbJsonLd, restaurantJsonLd, seo, truncateMeta } from "#/lib/seo.ts";
 
 export const Route = createFileRoute("/_app/dining_/$facilityId")({
@@ -56,14 +57,29 @@ export const Route = createFileRoute("/_app/dining_/$facilityId")({
     const at = loaderData?.parkResort ? ` at ${loaderData.parkResort}` : "";
     // Official copy (plan item 2.3) beats the template blurb when we have it.
     const about = loaderData?.description ? ` ${truncateMeta(loaderData.description)}` : "";
-    return seo({
-      title: `${name} — Menu & Reservations — ParkFi`,
-      description: `Full menu, pricing, and live reservation availability for ${name}${at} on ParkFi.${about}`,
-      path: `/dining/${params.facilityId}`,
-      image: `/og/dining/${params.facilityId}/card.jpg`,
-      imageWidth: 1200,
-      imageHeight: 630,
-    });
+    const path = `/dining/${params.facilityId}`;
+    return {
+      ...seo({
+        title: `${name} — Menu & Reservations — ParkFi`,
+        description: `Full menu, pricing, and live reservation availability for ${name}${at} on ParkFi.${about}`,
+        path,
+        image: `/og/dining/${params.facilityId}/card.jpg`,
+        imageWidth: 1200,
+        imageHeight: 630,
+      }),
+      scripts: discordComponentEmbed(
+        linkPreview({
+          title: name,
+          url: path,
+          subtitle: [loaderData?.cuisine, loaderData?.parkResort].filter(Boolean).join(" · "),
+          body: loaderData?.description
+            ? truncateMeta(loaderData.description, 220)
+            : "Full menu, per-item pricing, and live reservation availability.",
+          card: `/og/dining/${params.facilityId}/card.jpg`,
+          buttons: [linkButton("Browse all dining", "/dining")],
+        }),
+      ),
+    };
   },
 });
 

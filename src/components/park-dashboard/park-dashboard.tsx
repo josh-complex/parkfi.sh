@@ -54,7 +54,7 @@ import { ParkNews } from "./park-news.tsx";
 import { parkStats, shortRideName } from "./park-stats.ts";
 import { SeasonalHouses } from "./seasonal-houses.tsx";
 import { TicketPriceCard } from "./ticket-price-card.tsx";
-import { TodayCurve } from "./today-curve.tsx";
+import { PARK_CURVE_STEP, TodayCurve } from "./today-curve.tsx";
 import { useSelection } from "./selection-context.tsx";
 
 // The analytics grid is chart-heavy and lives below the fold, so split it out
@@ -133,7 +133,7 @@ export function ParkDashboard({ parkSlug }: { parkSlug: string }) {
   // the ticket is stamped with. Owned here rather than inside the panel so the
   // stub and the panel read one payload (and one round trip).
   const crowdQ = useQuery({
-    ...trpc.parks.crowd.queryOptions({ parkSlug: activeSlug ?? "" }),
+    ...trpc.parks.crowd.queryOptions({ parkSlug: activeSlug ?? "", step: PARK_CURVE_STEP }),
     enabled: !!activeSlug,
   });
 

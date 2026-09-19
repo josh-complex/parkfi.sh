@@ -43,6 +43,30 @@ const code = (map: Record<number, string>, v: number | null) =>
 const OPEN_SCHEDULE_TYPES = sql`('OPERATING', 'EXTRA_HOURS', 'TICKETED_EVENT')`;
 
 /**
+ * How finely `crowd` / `rideCrowd` slice the day, in minutes. The park page's
+ * narrow panel asks for 30, the ride page's wide one for 15, and 60 is what
+ * every caller got before the chart drew anything finer than an hour.
+ */
+const curveStep = z.union([z.literal(15), z.literal(30), z.literal(60)]).default(60);
+type CurveStep = z.infer<typeof curveStep>;
+
+/** `INTERVAL '15 minutes'` — the step is one of three literals, so raw is safe. */
+const curveBucket = (step: CurveStep) => sql.raw(`INTERVAL '${step} minutes'`);
+
+/**
+ * Where a curve's *typical* series comes from. The hourly cagg for hourly
+ * steps (what the chart always read); the 15-minute feature store underneath
+ * it for anything finer, re-bucketed to the step so a 30-minute typical is the
+ * mean of both quarter-hours across the same weekdays.
+ */
+const curveTypicalSource = (step: CurveStep) =>
+  sql.raw(step === 60 ? "queue_hourly" : "queue_15min");
+
+/** Minute of the park's own day for a timestamp — 570 for 9:30 AM local. */
+const localMinute = (ts: ReturnType<typeof sql>, tz: ReturnType<typeof sql>) =>
+  sql`(EXTRACT(hour FROM ${ts} AT TIME ZONE ${tz}) * 60 + EXTRACT(minute FROM ${ts} AT TIME ZONE ${tz}))::int`;
+
+/**
  * The bar an hour-of-day bucket has to clear before we'll tell a guest what a
  * queue "usually" does then (`attraction_hour_profile`).
  *
@@ -384,43 +408,56 @@ export const parksRouter = {
    * the ticket's "Avg wait", which the client computes from the live board the
    * same way, and a walk-on really is part of how the park is running.
    *
+   * `step` is the grain of the day in minutes (15, 30 or 60): the park page's
+   * narrow panel asks for half-hours, the ride page's wide one for quarters.
+   * Under an hour the typical series reads the `queue_15min` feature store
+   * instead of the hourly cagg, re-bucketed to the step. The schedule-window
+   * CTE is `MATERIALIZED` on purpose: inlined, Postgres re-sorted the park's
+   * whole schedule history once per aggregate row, and a finer step made that
+   * four times worse (4.7s → 0.4s at 30 minutes).
+   *
    * Returns an empty `hours` list when the park posts no schedule for today —
    * the panel then falls back to its live figure alone.
    */
-  crowd: publicProcedure.input(z.object({ parkSlug: z.string() })).query(async ({ input }) => {
-    const slug = input.parkSlug;
-    const park = sql`(SELECT id FROM parks WHERE slug = ${slug})`;
-    const tz = sql`(SELECT timezone FROM parks WHERE slug = ${slug})`;
-    // Rides the park's own board counts: real attractions only. `category IS
-    // NOT NULL` drops both the un-enriched ghost duplicates and Universal's
-    // standalone "Single Rider" rows (neither is ever enriched), which is the
-    // same filter the board table and the stat math use.
-    const realRides = sql`
+  crowd: publicProcedure
+    .input(z.object({ parkSlug: z.string(), step: curveStep }))
+    .query(async ({ input }) => {
+      const slug = input.parkSlug;
+      const step = input.step;
+      const bucket = curveBucket(step);
+      const park = sql`(SELECT id FROM parks WHERE slug = ${slug})`;
+      const tz = sql`(SELECT timezone FROM parks WHERE slug = ${slug})`;
+      // Rides the park's own board counts: real attractions only. `category IS
+      // NOT NULL` drops both the un-enriched ghost duplicates and Universal's
+      // standalone "Single Rider" rows (neither is ever enriched), which is the
+      // same filter the board table and the stat math use.
+      const realRides = sql`
       a.active = true AND a.entity_type = 'ATTRACTION' AND a.category IS NOT NULL`;
-    // Every past operating window this park has posted, latest snapshot's view
-    // of it. Both history queries below gate on it: the overnight feeds keep
-    // re-posting a stale wait long after closing, so an ungated average learns
-    // that half of Universal is "usually 5 minutes at 4 AM".
-    const pastSched = sql`
+      // Every past operating window this park has posted, latest snapshot's view
+      // of it. Both history queries below gate on it: the overnight feeds keep
+      // re-posting a stale wait long after closing, so an ungated average learns
+      // that half of Universal is "usually 5 minutes at 4 AM".
+      const pastSched = sql`
       SELECT DISTINCT ON (service_date, opening_time) opening_time, closing_time
       FROM park_schedule
       WHERE park_id = ${park}
         AND type IN ${OPEN_SCHEDULE_TYPES}
         AND closing_time IS NOT NULL
       ORDER BY service_date, opening_time, snapshot_date DESC`;
-    const [meta, hours, days] = await Promise.all([
-      db.execute<{ timezone: string; local_date: string }>(sql`
+      const [meta, hours, days] = await Promise.all([
+        db.execute<{ timezone: string; local_date: string }>(sql`
         SELECT timezone, (now() AT TIME ZONE timezone)::date::text AS local_date
         FROM parks WHERE slug = ${slug}
       `),
-      db.execute<{
-        local_hour: number;
-        actual: number | null;
-        typical: number | null;
-        is_now: boolean;
-        lo: string;
-        hi: string;
-      }>(sql`
+        db.execute<{
+          local_hour: number;
+          local_minute: number;
+          actual: number | null;
+          typical: number | null;
+          is_now: boolean;
+          lo: string;
+          hi: string;
+        }>(sql`
         WITH sched AS (
           SELECT DISTINCT ON (opening_time) opening_time, closing_time
           FROM park_schedule
@@ -433,13 +470,13 @@ export const parksRouter = {
         win AS (SELECT min(opening_time) AS lo, max(closing_time) AS hi FROM sched),
         spine AS (
           SELECT generate_series(
-            time_bucket('1 hour'::interval, (SELECT lo FROM win)),
-            time_bucket('1 hour'::interval, (SELECT hi FROM win) - INTERVAL '1 minute'),
-            '1 hour'::interval
+            time_bucket(${bucket}, (SELECT lo FROM win)),
+            time_bucket(${bucket}, (SELECT hi FROM win) - INTERVAL '1 minute'),
+            ${bucket}
           ) AS bucket
         ),
         obs AS (
-          SELECT time_bucket('1 hour'::interval, q.observed_at) AS bucket,
+          SELECT time_bucket(${bucket}, q.observed_at) AS bucket,
                  avg(q.wait_min)::int AS avg_wait
           FROM queue_obs q
           JOIN attractions a ON a.id = q.attraction_id
@@ -450,11 +487,11 @@ export const parksRouter = {
             AND q.observed_at <  (SELECT hi FROM win)
           GROUP BY 1
         ),
-        past_sched AS (${pastSched}),
+        past_sched AS MATERIALIZED (${pastSched}),
         typ AS (
-          SELECT (EXTRACT(hour FROM qh.bucket AT TIME ZONE ${tz}))::int AS local_hour,
+          SELECT ${localMinute(sql`time_bucket(${bucket}, qh.bucket)`, tz)} AS local_min,
                  round(avg(qh.avg_wait))::int AS avg_wait
-          FROM queue_hourly qh
+          FROM ${curveTypicalSource(step)} qh
           JOIN attractions a ON a.id = qh.attraction_id
           WHERE a.park_id = ${park} AND ${realRides}
             AND qh.queue_type = ${QueueType.STANDBY}
@@ -470,21 +507,22 @@ export const parksRouter = {
           GROUP BY 1
         )
         SELECT (EXTRACT(hour FROM s.bucket AT TIME ZONE ${tz}))::int AS local_hour,
+               (EXTRACT(minute FROM s.bucket AT TIME ZONE ${tz}))::int AS local_minute,
                o.avg_wait AS actual,
                t.avg_wait AS typical,
-               (s.bucket = time_bucket('1 hour'::interval, now())) AS is_now,
+               (s.bucket = time_bucket(${bucket}, now())) AS is_now,
                (SELECT lo FROM win)::text AS lo,
                (SELECT hi FROM win)::text AS hi
         FROM spine s
         LEFT JOIN obs o ON o.bucket = s.bucket
-        LEFT JOIN typ t ON t.local_hour = (EXTRACT(hour FROM s.bucket AT TIME ZONE ${tz}))::int
+        LEFT JOIN typ t ON t.local_min = ${localMinute(sql`s.bucket`, tz)}
         ORDER BY s.bucket
       `),
-      // The crowd calendar: one park-wide average per park-local day over the
-      // last five weeks — the heatmap's grid, and (folded by weekday on the
-      // client) the "by day of week" bars beside it.
-      db.execute<{ d: string; avg_wait: number }>(sql`
-        WITH past_sched AS (${pastSched})
+        // The crowd calendar: one park-wide average per park-local day over the
+        // last five weeks — the heatmap's grid, and (folded by weekday on the
+        // client) the "by day of week" bars beside it.
+        db.execute<{ d: string; avg_wait: number }>(sql`
+        WITH past_sched AS MATERIALIZED (${pastSched})
         SELECT (qh.bucket AT TIME ZONE ${tz})::date::text AS d,
                round(avg(qh.avg_wait))::int AS avg_wait
         FROM queue_hourly qh
@@ -500,26 +538,27 @@ export const parksRouter = {
         GROUP BY 1
         ORDER BY 1
       `),
-    ]);
+      ]);
 
-    const first = hours.rows[0];
-    return {
-      timezone: meta.rows[0]?.timezone ?? "America/New_York",
-      /** Today in the park's own timezone — the client formats the weekday off
-       *  this rather than the viewer's clock, so SSR and hydration agree. */
-      date: meta.rows[0]?.local_date ?? null,
-      open: first?.lo ?? null,
-      close: first?.hi ?? null,
-      hours: hours.rows.map((r) => ({
-        hour: Number(r.local_hour),
-        actual: r.actual == null ? null : Number(r.actual),
-        typical: r.typical == null ? null : Number(r.typical),
-        now: Boolean(r.is_now),
-      })),
-      /** Park-wide average standby per park-local day, oldest first, 35 days. */
-      days: days.rows.map((r) => ({ date: r.d, avgWait: Number(r.avg_wait) })),
-    };
-  }),
+      const first = hours.rows[0];
+      return {
+        timezone: meta.rows[0]?.timezone ?? "America/New_York",
+        /** Today in the park's own timezone — the client formats the weekday off
+         *  this rather than the viewer's clock, so SSR and hydration agree. */
+        date: meta.rows[0]?.local_date ?? null,
+        open: first?.lo ?? null,
+        close: first?.hi ?? null,
+        hours: hours.rows.map((r) => ({
+          hour: Number(r.local_hour),
+          minute: Number(r.local_minute),
+          actual: r.actual == null ? null : Number(r.actual),
+          typical: r.typical == null ? null : Number(r.typical),
+          now: Boolean(r.is_now),
+        })),
+        /** Park-wide average standby per park-local day, oldest first, 35 days. */
+        days: days.rows.map((r) => ({ date: r.d, avgWait: Number(r.avg_wait) })),
+      };
+    }),
 
   /**
    * `crowd`, over one ride instead of the whole park: today's hour-by-hour
@@ -536,9 +575,11 @@ export const parksRouter = {
    * ungated average learns that Hagrid's is usually 5 minutes at 4 AM.
    */
   rideCrowd: publicProcedure
-    .input(z.object({ attractionId: z.number().int().positive() }))
+    .input(z.object({ attractionId: z.number().int().positive(), step: curveStep }))
     .query(async ({ input }) => {
       const id = input.attractionId;
+      const step = input.step;
+      const bucket = curveBucket(step);
       const park = sql`(SELECT park_id FROM attractions WHERE id = ${id})`;
       const tz = sql`(
         SELECT p.timezone FROM attractions a JOIN parks p ON p.id = a.park_id WHERE a.id = ${id}
@@ -558,6 +599,7 @@ export const parksRouter = {
         `),
         db.execute<{
           local_hour: number;
+          local_minute: number;
           actual: number | null;
           typical: number | null;
           is_now: boolean;
@@ -576,13 +618,13 @@ export const parksRouter = {
           win AS (SELECT min(opening_time) AS lo, max(closing_time) AS hi FROM sched),
           spine AS (
             SELECT generate_series(
-              time_bucket('1 hour'::interval, (SELECT lo FROM win)),
-              time_bucket('1 hour'::interval, (SELECT hi FROM win) - INTERVAL '1 minute'),
-              '1 hour'::interval
+              time_bucket(${bucket}, (SELECT lo FROM win)),
+              time_bucket(${bucket}, (SELECT hi FROM win) - INTERVAL '1 minute'),
+              ${bucket}
             ) AS bucket
           ),
           obs AS (
-            SELECT time_bucket('1 hour'::interval, observed_at) AS bucket,
+            SELECT time_bucket(${bucket}, observed_at) AS bucket,
                    avg(wait_min)::int AS avg_wait
             FROM queue_obs
             WHERE attraction_id = ${id}
@@ -592,11 +634,11 @@ export const parksRouter = {
               AND observed_at <  (SELECT hi FROM win)
             GROUP BY 1
           ),
-          past_sched AS (${pastSched}),
+          past_sched AS MATERIALIZED (${pastSched}),
           typ AS (
-            SELECT (EXTRACT(hour FROM bucket AT TIME ZONE ${tz}))::int AS local_hour,
-                   round(avg(avg_wait))::int AS avg_wait
-            FROM queue_hourly qh
+            SELECT ${localMinute(sql`time_bucket(${bucket}, qh.bucket)`, tz)} AS local_min,
+                   round(avg(qh.avg_wait))::int AS avg_wait
+            FROM ${curveTypicalSource(step)} qh
             WHERE qh.attraction_id = ${id}
               AND qh.queue_type = ${QueueType.STANDBY}
               AND qh.avg_wait IS NOT NULL
@@ -611,18 +653,19 @@ export const parksRouter = {
             GROUP BY 1
           )
           SELECT (EXTRACT(hour FROM s.bucket AT TIME ZONE ${tz}))::int AS local_hour,
+               (EXTRACT(minute FROM s.bucket AT TIME ZONE ${tz}))::int AS local_minute,
                  o.avg_wait AS actual,
                  t.avg_wait AS typical,
-                 (s.bucket = time_bucket('1 hour'::interval, now())) AS is_now,
+                 (s.bucket = time_bucket(${bucket}, now())) AS is_now,
                  (SELECT lo FROM win)::text AS lo,
                  (SELECT hi FROM win)::text AS hi
           FROM spine s
           LEFT JOIN obs o ON o.bucket = s.bucket
-          LEFT JOIN typ t ON t.local_hour = (EXTRACT(hour FROM s.bucket AT TIME ZONE ${tz}))::int
+          LEFT JOIN typ t ON t.local_min = ${localMinute(sql`s.bucket`, tz)}
           ORDER BY s.bucket
         `),
         db.execute<{ d: string; avg_wait: number }>(sql`
-          WITH past_sched AS (${pastSched})
+          WITH past_sched AS MATERIALIZED (${pastSched})
           SELECT (qh.bucket AT TIME ZONE ${tz})::date::text AS d,
                  round(avg(qh.avg_wait))::int AS avg_wait
           FROM queue_hourly qh
@@ -647,6 +690,7 @@ export const parksRouter = {
         close: first?.hi ?? null,
         hours: hours.rows.map((r) => ({
           hour: Number(r.local_hour),
+          minute: Number(r.local_minute),
           actual: r.actual == null ? null : Number(r.actual),
           typical: r.typical == null ? null : Number(r.typical),
           now: Boolean(r.is_now),

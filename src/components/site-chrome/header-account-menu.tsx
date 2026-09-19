@@ -103,14 +103,23 @@ export function HeaderAccountMenu() {
       >
         {/* Fills the key's content box, and drops the avatar's own hairline
             ring — the button's rim is already drawing that edge, and the
-            avatar's is a circle that would cut across the squircle. */}
-        <Avatar className="size-full rounded-[inherit] after:hidden">
+            avatar's is a circle that would cut across the squircle.
+
+            Square, and clipped by the key rather than rounded to match it.
+            `rounded-[inherit]` looked like the careful answer and is the wrong
+            one: `inherit` takes the key's *outer* 18px radius and applies it to
+            a box that is the key minus its 1px rim, which curves harder than
+            the hole it sits in and leaves a wedge of the button's own face
+            showing at each corner. The key is already `overflow-hidden`, and
+            clipping happens at the padding box — exactly the shape we want the
+            image to take — so the correct radius here is none at all. */}
+        <Avatar className="size-full rounded-none after:hidden">
           <AvatarImage
             src={user.image ?? undefined}
             alt={user.name ?? user.email}
-            className="rounded-[inherit]"
+            className="rounded-none"
           />
-          <AvatarFallback className="rounded-[inherit] bg-transparent text-xs">
+          <AvatarFallback className="rounded-none bg-transparent text-xs">
             {initials}
           </AvatarFallback>
         </Avatar>

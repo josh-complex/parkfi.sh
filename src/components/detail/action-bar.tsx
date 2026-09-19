@@ -29,6 +29,12 @@ export function DetailActionBar({
     <div
       className={cn(
         "pointer-events-none fixed inset-x-(--chrome-gutter) z-30 flex items-stretch gap-2 [&>*]:pointer-events-auto md:hidden",
+        // Outline keys are `dark:bg-transparent` — right for a key sitting in a
+        // panel, wrong for one floating over the page, where the article
+        // scrolls through it and the key reads as a hole with a label in it.
+        // Anything docked out here gets a real fill; the rule is scoped to the
+        // bar so the variant's own behaviour is untouched everywhere else.
+        "dark:[&_.btn-3d-outline]:bg-background",
         className,
       )}
       style={{ bottom: "calc(var(--safe-bottom) + var(--bottom-nav-height) + 1.4rem)" }}

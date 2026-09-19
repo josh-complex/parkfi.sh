@@ -8,13 +8,7 @@ import { seo } from "#/lib/seo.ts";
 import { ConfirmButton } from "#/components/account/confirm-button.tsx";
 import { AppleIcon, GoogleIcon, MicrosoftIcon } from "#/components/account/provider-icons.tsx";
 import { Button } from "#/components/ui/button.tsx";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "#/components/ui/card.tsx";
+import { DetailCard } from "#/components/detail/panels.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { toast } from "sonner";
 
@@ -107,72 +101,66 @@ function ConnectionsPage() {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Connected accounts</CardTitle>
-        <CardDescription>Sign-in methods linked to your account</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <ConnectionsSkeleton />
-        ) : (
-          <ul className="space-y-1">
-            {PROVIDERS.map(({ id, label, Icon, kind }) => {
-              const linked = linkedProviders.has(id);
-              const acct = (accounts as LinkedAccount[]).find((a) => a.providerId === id);
-              return (
-                <li
-                  key={id}
-                  className="flex items-center justify-between rounded-2xl bg-muted/50 px-3 py-2.5"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <span className="size-7 rounded-full bg-background border flex items-center justify-center shrink-0">
-                      <Icon />
-                    </span>
-                    <div>
-                      <p className="text-sm font-medium">{label}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {linked
-                          ? (acct?.accountId ? `${acct.accountId} · ` : "") +
-                            `Connected ${formatDate(acct?.createdAt)}`
-                          : "Not connected"}
-                      </p>
-                    </div>
+    <DetailCard title="Connected accounts" description="Sign-in methods linked to your account">
+      {isLoading ? (
+        <ConnectionsSkeleton />
+      ) : (
+        <ul className="space-y-1">
+          {PROVIDERS.map(({ id, label, Icon, kind }) => {
+            const linked = linkedProviders.has(id);
+            const acct = (accounts as LinkedAccount[]).find((a) => a.providerId === id);
+            return (
+              <li
+                key={id}
+                className="flex items-center justify-between rounded-2xl bg-muted/50 px-3 py-2.5"
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="size-7 rounded-full bg-background border flex items-center justify-center shrink-0">
+                    <Icon />
+                  </span>
+                  <div>
+                    <p className="text-sm font-medium">{label}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {linked
+                        ? (acct?.accountId ? `${acct.accountId} · ` : "") +
+                          `Connected ${formatDate(acct?.createdAt)}`
+                        : "Not connected"}
+                    </p>
                   </div>
-                  {linked ? (
-                    <div className="flex items-center gap-2">
-                      <CheckIcon className="size-4 text-green-500" />
-                      {(accounts as LinkedAccount[]).length > 1 && id !== "credential" && (
-                        <ConfirmButton
-                          label="Unlink"
-                          confirmLabel="Yes, unlink"
-                          variant="outline"
-                          onConfirm={() => handleUnlink(id)}
-                        />
-                      )}
-                    </div>
-                  ) : kind === "social" ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void handleLink(id as SocialProviderId, label)}
-                      disabled={linking !== null}
-                    >
-                      <ChevronRightIcon />
-                      {linking === id ? "Connecting…" : "Connect"}
-                    </Button>
-                  ) : (
-                    <Button size="sm" variant="outline" render={<Link to="/account/security" />}>
-                      Set up
-                      <ChevronRightIcon />
-                    </Button>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
+                </div>
+                {linked ? (
+                  <div className="flex items-center gap-2">
+                    <CheckIcon className="size-4 text-green-500" />
+                    {(accounts as LinkedAccount[]).length > 1 && id !== "credential" && (
+                      <ConfirmButton
+                        label="Unlink"
+                        confirmLabel="Yes, unlink"
+                        variant="outline"
+                        onConfirm={() => handleUnlink(id)}
+                      />
+                    )}
+                  </div>
+                ) : kind === "social" ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void handleLink(id as SocialProviderId, label)}
+                    disabled={linking !== null}
+                  >
+                    <ChevronRightIcon />
+                    {linking === id ? "Connecting…" : "Connect"}
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="outline" render={<Link to="/account/security" />}>
+                    Set up
+                    <ChevronRightIcon />
+                  </Button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </DetailCard>
   );
 }

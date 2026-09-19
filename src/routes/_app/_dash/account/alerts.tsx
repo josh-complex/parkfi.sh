@@ -1,3 +1,4 @@
+import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -7,13 +8,7 @@ import { DiningAlertsManager } from "#/components/dining/dining-alerts-manager.t
 import { FilingWatchesManager } from "#/components/records/filing-watches-manager.tsx";
 import { NotificationBell } from "#/components/notifications/notification-bell.tsx";
 import { StayAlertsManager } from "#/components/stays/stay-alerts-manager.tsx";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "#/components/ui/card.tsx";
+import { DetailCard, WashPanel } from "#/components/detail/panels.tsx";
 import { Skeleton } from "#/components/ui/skeleton.tsx";
 import { Switch } from "#/components/ui/switch.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
@@ -54,67 +49,83 @@ function PreferencesCard() {
   const filingEmail = !(prefsQ.data?.filingEmailOptOut ?? false);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Notification preferences</CardTitle>
-        <CardDescription>Choose how ParkFi reaches you about your alerts</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex items-center justify-between gap-3 rounded-2xl bg-muted/50 px-3 py-2.5">
-          <div>
-            <p className="text-sm font-medium">Push notifications</p>
-            <p className="text-muted-foreground text-xs">
-              Required for ride alerts to reach this device.
-            </p>
-          </div>
-          <NotificationBell />
-        </div>
+    <WashPanel title="How we reach you" meta="Push + email">
+      <PrefRow
+        title="Push notifications"
+        note="Required for ride alerts to reach this device."
+        control={<NotificationBell />}
+      />
 
-        {prefsQ.isLoading ? (
-          <Skeleton className="h-16 w-full rounded-2xl" />
-        ) : (
-          <>
-            <label className="flex items-center justify-between gap-3 rounded-2xl bg-muted/50 px-3 py-2.5">
-              <div>
-                <p className="text-sm font-medium">Stay-alert email</p>
-                <p className="text-muted-foreground text-xs">
-                  Resort availability + price-drop emails.
-                </p>
-              </div>
+      {prefsQ.isLoading ? (
+        <Skeleton className="h-16 w-full rounded-2xl" />
+      ) : (
+        <>
+          <PrefRow
+            as="label"
+            title="Stay-alert email"
+            note="Resort availability + price-drop emails."
+            control={
               <Switch
                 checked={stayEmail}
                 disabled={setPrefs.isPending}
                 onCheckedChange={(v) => setPrefs.mutate({ stayEmailOptOut: !v })}
               />
-            </label>
-            <label className="flex items-center justify-between gap-3 rounded-2xl bg-muted/50 px-3 py-2.5">
-              <div>
-                <p className="text-sm font-medium">Dining-alert email</p>
-                <p className="text-muted-foreground text-xs">Table-availability emails.</p>
-              </div>
+            }
+          />
+          <PrefRow
+            as="label"
+            title="Dining-alert email"
+            note="Table-availability emails."
+            control={
               <Switch
                 checked={diningEmail}
                 disabled={setPrefs.isPending}
                 onCheckedChange={(v) => setPrefs.mutate({ diningEmailOptOut: !v })}
               />
-            </label>
-            <label className="flex items-center justify-between gap-3 rounded-2xl bg-muted/50 px-3 py-2.5">
-              <div>
-                <p className="text-sm font-medium">Filing-watch email</p>
-                <p className="text-muted-foreground text-xs">
-                  New permits, trademarks and airspace studies you watch.
-                </p>
-              </div>
+            }
+          />
+          <PrefRow
+            as="label"
+            title="Filing-watch email"
+            note="New permits, trademarks and airspace studies you watch."
+            control={
               <Switch
                 checked={filingEmail}
                 disabled={setPrefs.isPending}
                 onCheckedChange={(v) => setPrefs.mutate({ filingEmailOptOut: !v })}
               />
-            </label>
-          </>
-        )}
-      </CardContent>
-    </Card>
+            }
+          />
+        </>
+      )}
+    </WashPanel>
+  );
+}
+
+/**
+ * One channel on the wash field. The row is a pale card *on* the field rather
+ * than a `bg-muted` tile — muted grey on the wash reads as a disabled row.
+ */
+function PrefRow({
+  as = "div",
+  title,
+  note,
+  control,
+}: {
+  as?: "div" | "label";
+  title: string;
+  note: string;
+  control: React.ReactNode;
+}) {
+  const Row = as;
+  return (
+    <Row className="flex items-center justify-between gap-3 rounded-2xl bg-background/70 px-3.5 py-3">
+      <div className="min-w-0">
+        <p className="text-sm font-semibold">{title}</p>
+        <p className="text-xs text-muted-foreground">{note}</p>
+      </div>
+      <div className="shrink-0">{control}</div>
+    </Row>
   );
 }
 
@@ -129,50 +140,33 @@ function AlertsPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-5">
       <PreferencesCard />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Stay alerts</CardTitle>
-          <CardDescription>Resort availability for your dates — up to 3</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <StayAlertsManager />
-        </CardContent>
-      </Card>
+      <DetailCard title="Stay alerts" description="Resort availability for your dates — up to 3">
+        <StayAlertsManager />
+      </DetailCard>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Dining alerts</CardTitle>
-          <CardDescription>Table availability at your restaurants — up to 3</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <DiningAlertsManager />
-        </CardContent>
-      </Card>
+      <DetailCard
+        title="Dining alerts"
+        description="Table availability at your restaurants — up to 3"
+      >
+        <DiningAlertsManager />
+      </DetailCard>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Filing watches</CardTitle>
-          <CardDescription>
-            Permits, trademarks and FAA studies as they're filed — up to 3
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <FilingWatchesManager />
-        </CardContent>
-      </Card>
+      <DetailCard
+        title="Filing watches"
+        description="Permits, trademarks and FAA studies as they're filed — up to 3"
+      >
+        <FilingWatchesManager />
+      </DetailCard>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Ride alerts</CardTitle>
-          <CardDescription>Wait-time + Lightning Lane alerts — up to 3 per park</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <AlertsManager />
-        </CardContent>
-      </Card>
+      <DetailCard
+        title="Ride alerts"
+        description="Wait-time + Lightning Lane alerts — up to 3 per park"
+      >
+        <AlertsManager />
+      </DetailCard>
     </div>
   );
 }

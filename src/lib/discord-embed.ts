@@ -150,8 +150,8 @@ export function gallery(items: Array<{ url: string; description?: string }>): Me
   };
 }
 
-export function separator(spacing: 1 | 2 = 1): Separator {
-  return { type: 14, spacing };
+export function separator(spacing: 1 | 2 = 1, divider = false): Separator {
+  return divider ? { type: 14, spacing, divider } : { type: 14, spacing };
 }
 
 /** Drops `undefined` entries so callers can inline conditional buttons. */
@@ -166,6 +166,87 @@ export function container(children: Array<ContainerChild | undefined>): Containe
     accent_color: DISCORD_ACCENT,
     components: children.filter((c): c is ContainerChild => c !== undefined),
   };
+}
+
+/* -------------------------------------------------------------------------- */
+/* The house layout                                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Cap on the photo grid. Three keeps it to one row, and keeps the whole embed
+ * to four images including the lead card — Discord fetches every one of them
+ * inside the same 10s budget as the page, and a component embed has no
+ * width/height field to skip the measuring fetch the way `og:image` does. Our
+ * generated cards render on demand, so the margin is worth more than a 4th pic.
+ */
+const MAX_GALLERY_ITEMS = 3;
+
+export interface LinkPreviewOptions {
+  /** Heading text. Linked to {@link LinkPreviewOptions.url}. */
+  title: string;
+  /** Root-relative path (or absolute URL) the heading links to. */
+  url: string;
+  /** Muted metadata line under the heading — "Tomorrowland · Magic Kingdom". */
+  subtitle?: string | null;
+  /** Optional body paragraph. Discord markdown. */
+  body?: string | null;
+  /**
+   * The lead image, rendered full-bleed on its own row: our generated OG card
+   * on the pages that have one, otherwise the page's own hero photo. A gallery
+   * rather than a thumbnail on purpose — a thumbnail crops a 1200×630 card into
+   * an illegible square, which is what made the first cut look worse than the
+   * plain Open Graph preview it replaced.
+   */
+  card?: string | null;
+  /**
+   * Extra photos, as a grid *below* the lead image, and only when there are two
+   * or more. A single extra renders full-bleed too, reading as a second card
+   * rather than a gallery — so one photo is dropped instead.
+   */
+  photos?: Array<string | null | undefined>;
+  /** Link buttons. `undefined` entries are dropped, so inline conditionals. */
+  buttons?: Array<LinkButton | undefined>;
+}
+
+/**
+ * The shape every parkfi.sh link preview uses: heading, subtext, optional body,
+ * the full-bleed card, an optional photo grid, then buttons. Keeping it in one
+ * place is what makes the cards feel like one product across ride, park, dining,
+ * resort, shop, pin, menu-item and blog links.
+ */
+export function linkPreview(opts: LinkPreviewOptions): Container {
+  const href = absolute(opts.url);
+  const heading = opts.subtitle
+    ? `### [${escapeLinkLabel(opts.title)}](${href})\n-# ${opts.subtitle}`
+    : `### [${escapeLinkLabel(opts.title)}](${href})`;
+
+  // Compare absolute forms so a root-relative card and an absolute photo of the
+  // same asset still dedupe — never repeat the lead image inside the grid.
+  const card = canEmbedMedia(opts.card) ? absolute(opts.card) : null;
+  const extras = (opts.photos ?? [])
+    .filter(canEmbedMedia)
+    .map(absolute)
+    .filter((url) => url !== card)
+    .slice(0, MAX_GALLERY_ITEMS);
+
+  const buttons = (opts.buttons ?? []).filter((b): b is LinkButton => b !== undefined);
+
+  return container([
+    text(heading),
+    opts.body ? text(opts.body) : undefined,
+    card ? gallery([{ url: card }]) : undefined,
+    extras.length >= 2 ? gallery(extras.map((url) => ({ url }))) : undefined,
+    buttons.length > 0 ? separator(1, true) : undefined,
+    buttons.length > 0 ? actionRow(...buttons) : undefined,
+  ]);
+}
+
+/**
+ * `]` inside a markdown link label closes it early, so a name like "Mickey
+ * Waffles [GF]" would break the heading into loose text and a stray URL.
+ */
+function escapeLinkLabel(s: string): string {
+  return s.replace(/([[\]])/g, "\\$1");
 }
 
 /* -------------------------------------------------------------------------- */
@@ -281,10 +362,17 @@ function validate(root: Container): string | undefined {
  */
 export function canEmbedMedia(url: string | null | undefined): url is string {
   if (!url) return false;
-  if (!/^https?:\/\//.test(url)) return false;
+  // Root-relative is fine: every emit path runs {@link absolute} over it, so
+  // `/og/ride/…/card.jpg` reaches Discord as an absolute URL on our own origin.
+  // Rejecting it here is what silently emptied the galleries on the first pass.
+  if (!/^(https?:\/\/|\/[^/])/.test(url)) return false;
   if (url.length > 2048) return false;
+  // A denylist, not an allowlist. Discord sniffs the response's content type, so
+  // an extensionless URL is fine — and plenty of ours are, between R2 keys and
+  // Disney's `/resize/mwImage/...` segments. Only reject what we can see won't
+  // decode: video (unsupported anywhere in a component embed) and SVG.
   const path = url.split("?")[0]?.toLowerCase() ?? "";
-  return /\.(png|gif|jpe?g|webp|avif)$/.test(path);
+  return !/\.(svg|mp4|webm|mov|m3u8|pdf)$/.test(path);
 }
 
 /** Root-relative paths are ours; anything else is passed through untouched. */

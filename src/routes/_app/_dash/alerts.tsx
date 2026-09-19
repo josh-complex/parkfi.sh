@@ -1,6 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
+
+import { DetailCard, WashPanel } from "#/components/detail/panels.tsx";
 import { AlertsManager } from "#/components/notifications/alerts-manager";
 import { NotificationBell } from "#/components/notifications/notification-bell";
+import { PageBody, PageMasthead } from "#/components/site-chrome/page-masthead.tsx";
+import { Button } from "#/components/ui/button.tsx";
 import { seo } from "#/lib/seo.ts";
 
 export const Route = createFileRoute("/_app/_dash/alerts")({
@@ -17,37 +21,40 @@ export const Route = createFileRoute("/_app/_dash/alerts")({
 
 function AlertsPage() {
   return (
-    // On mobile the dashboard inset is the blue sidebar surface, so page-level
-    // text uses the light sidebar foreground and the cards carry their own white
-    // (bg-card) surface. On desktop the inset is already white, so these are no-ops.
-    <div className="p-6 max-w-2xl space-y-6 max-md:text-sidebar-foreground">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Alerts</h1>
-        <p className="text-muted-foreground text-sm mt-1 max-md:text-sidebar-foreground/80">
-          Manage push notifications for wait times, Lightning Lane availability, and price drops.
-        </p>
-      </div>
+    <>
+      <PageMasthead
+        kicker="Watching for you"
+        title="Ride alerts"
+        description="Tell us the wait you're holding out for and we'll buzz this device the moment a queue drops to it."
+        actions={
+          <Button variant="ticket" size="sm" render={<Link to="/account/alerts" />}>
+            All alert settings
+          </Button>
+        }
+      />
 
-      <div className="rounded-lg border bg-card text-card-foreground p-4 flex items-center justify-between">
-        <div>
-          <p className="font-medium text-sm">Push notifications</p>
-          <p className="text-muted-foreground text-xs mt-0.5">
-            Receive alerts on this device even when the app is closed. Required for ride alerts to
-            reach you.
-          </p>
-        </div>
-        <NotificationBell />
-      </div>
+      <PageBody size="form">
+        {/* The page's job block: nothing below it can reach anyone until this
+            device has said yes, so the permission key leads. */}
+        <WashPanel title="Push notifications" meta="This device">
+          <div className="flex items-center justify-between gap-3 rounded-2xl bg-background/70 px-3.5 py-3">
+            <p className="min-w-0 text-sm text-muted-foreground">
+              Alerts arrive even when the app is closed. Ride alerts can&rsquo;t reach you without
+              it.
+            </p>
+            <div className="shrink-0">
+              <NotificationBell />
+            </div>
+          </div>
+        </WashPanel>
 
-      <div className="space-y-3">
-        <div>
-          <h2 className="text-lg font-medium tracking-tight">Ride alerts</h2>
-          <p className="text-muted-foreground text-xs mt-0.5 max-md:text-sidebar-foreground/80">
-            Track up to 3 rides per park. Add alerts from any park’s ride board.
-          </p>
-        </div>
-        <AlertsManager />
-      </div>
-    </div>
+        <DetailCard
+          title="Ride alerts"
+          description="Up to 3 rides per park. Add an alert from any park's ride board, or from a ride's own page."
+        >
+          <AlertsManager />
+        </DetailCard>
+      </PageBody>
+    </>
   );
 }

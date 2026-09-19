@@ -325,9 +325,10 @@ function MoverHalf({
  * The band: a full-bleed dark field carrying the picks and, under them, both
  * mover shelves.
  *
- * The field is the masthead's own gradient run tall (`band-masthead`), and the
- * picks panel *dissolves into it* — no pale wash, no border, the posters
- * sitting straight on the dark. The posters are dark-edged photographs, so on a
+ * The field is the masthead's own gradient run tall on desktop, and a radial lit
+ * from the top centre on the phone (`band-waits`, which explains why the two
+ * differ). The picks panel *dissolves into it* — no pale wash, no border, the
+ * posters sitting straight on the dark. The posters are dark-edged photographs, so on a
  * pale field they were five bright rectangles inside a sixth; on this one they
  * are the only lit thing on the row, which is the whole argument for making the
  * band media-forward in the first place.
@@ -398,7 +399,19 @@ export function WaitsBlurbs({
   return (
     <section
       className={cn(
-        "band-masthead band-tints py-5 text-white md:py-7",
+        "band-waits band-tints pb-5 text-white md:pb-7",
+        // Phone: the same move, against the other header. The floating search
+        // pill and the account key ride on nothing — `SiteHeader` is
+        // deliberately transparent so the page shows through it — and what
+        // showed through here was the app shell's own `--background`, which put
+        // a theme-coloured slab above a navy board and a hard seam between
+        // them. Pulling the band up by the header's locked height
+        // (`--safe-top + --app-header-h`, the same figure every full-bleed hero
+        // uses) runs the field to y=0 and the chrome floats on the navy, the
+        // way it does over a hero photo. The padding gives the pull back, so
+        // nothing inside the band moves.
+        "mt-[calc((var(--safe-top)+var(--app-header-h))*-1)]",
+        "pt-[calc(var(--safe-top)+var(--app-header-h)+1.25rem)]",
         // Desktop only: run the field up behind the floating nav so the glass
         // capsule sits *on* the navy rather than on the page background above
         // it — the board opens on one continuous dark field. The top padding

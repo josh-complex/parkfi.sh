@@ -9,6 +9,7 @@ import { PostCard } from "#/components/blog/post-card.tsx";
 import { JsonLd } from "#/components/seo/json-ld.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { useTRPC } from "#/integrations/trpc/react.ts";
+import { discordComponentEmbed, linkButton, linkPreview } from "#/lib/discord-embed.ts";
 import { articleJsonLd, breadcrumbJsonLd, seo } from "#/lib/seo.ts";
 
 export const Route = createFileRoute("/blog/$slug")({
@@ -23,15 +24,38 @@ export const Route = createFileRoute("/blog/$slug")({
     void context.queryClient.prefetchQuery(
       context.trpc.blog.sidebar.queryOptions({ recentLimit: 6 }),
     );
-    return { title: post.title, dek: post.dek, heroImageUrl: post.heroImageUrl };
+    return {
+      title: post.title,
+      dek: post.dek,
+      heroImageUrl: post.heroImageUrl,
+      publishedAt: post.publishedAt,
+    };
   },
-  head: ({ params, loaderData }) =>
-    seo({
-      title: loaderData ? `${loaderData.title} — ParkFi` : "Park News & Analysis — ParkFi",
-      description: loaderData?.dek ?? "Orlando theme park news and analysis from ParkFi.",
-      path: `/blog/${params.slug}`,
-      image: loaderData?.heroImageUrl ?? undefined,
-    }),
+  head: ({ params, loaderData }) => {
+    const path = `/blog/${params.slug}`;
+    return {
+      ...seo({
+        title: loaderData ? `${loaderData.title} — ParkFi` : "Park News & Analysis — ParkFi",
+        description: loaderData?.dek ?? "Orlando theme park news and analysis from ParkFi.",
+        path,
+        image: loaderData?.heroImageUrl ?? undefined,
+      }),
+      scripts: loaderData
+        ? discordComponentEmbed(
+            linkPreview({
+              title: loaderData.title,
+              url: path,
+              subtitle: loaderData.publishedAt
+                ? `ParkFi · ${formatDate(loaderData.publishedAt)}`
+                : "ParkFi",
+              body: loaderData.dek,
+              card: loaderData.heroImageUrl,
+              buttons: [linkButton("More park news", "/blog")],
+            }),
+          )
+        : [],
+    };
+  },
 });
 
 function formatDate(d: Date | null | undefined): string {

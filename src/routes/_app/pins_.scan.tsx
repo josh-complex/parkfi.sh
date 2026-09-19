@@ -1,6 +1,7 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 
 import { PinScanner } from "#/components/pins/pin-scanner.tsx";
+import { PageBody, PageMasthead } from "#/components/site-chrome/page-masthead.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { seo } from "#/lib/seo.ts";
 
@@ -17,23 +18,20 @@ export const Route = createFileRoute("/_app/pins_/scan")({
 
 function PinScanPage() {
   return (
-    <div className="flex flex-1 flex-col">
-      <div className="@container/main flex flex-1 flex-col gap-2">
-        <div className="mx-auto w-full max-w-2xl space-y-5 px-4 py-8">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <h1 className="text-xl font-semibold">Scan a pin</h1>
-              <p className="text-muted-foreground text-sm">
-                Snap a photo and we'll find the closest matches.
-              </p>
-            </div>
-            <Button variant="outline" size="sm" render={<Link to="/pins" />}>
-              Catalog
-            </Button>
-          </div>
-          <PinScanner />
-        </div>
-      </div>
-    </div>
+    <>
+      <PageMasthead
+        kicker="Identify a pin"
+        title="Scan a pin"
+        description="Snap the pin on the board in front of you and we'll put the closest matches — and what they go for — beside it."
+        actions={
+          <Button variant="ticket" size="sm" render={<Link to="/pins" />}>
+            Catalog
+          </Button>
+        }
+      />
+      <PageBody size="form">
+        <PinScanner />
+      </PageBody>
+    </>
   );
 }

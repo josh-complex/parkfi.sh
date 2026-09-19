@@ -63,7 +63,7 @@ function FilingDetailPage() {
   const back = (
     <Link
       to="/filings"
-      className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline max-md:text-sidebar-foreground/80"
+      className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:underline"
     >
       <ArrowLeftIcon className="size-4" aria-hidden />
       All filings
@@ -81,7 +81,7 @@ function FilingDetailPage() {
   }
   if (q.isError || !q.data) {
     return (
-      <div className="mx-auto max-w-3xl space-y-4 p-6 max-md:text-sidebar-foreground">
+      <div className="mx-auto max-w-3xl space-y-4 p-6">
         {back}
         <h1 className="text-2xl font-semibold tracking-tight">Filing not found</h1>
         <p className="text-sm text-muted-foreground">
@@ -112,7 +112,7 @@ function FilingDetailPage() {
     .filter((row): row is readonly [string, string] => row[1] != null);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-6 max-md:text-sidebar-foreground">
+    <div className="mx-auto max-w-3xl space-y-6 p-6">
       {back}
 
       <div>
@@ -121,11 +121,7 @@ function FilingDetailPage() {
           <StatusBadge status={r.status} />
         </div>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight">{r.title}</h1>
-        {r.description && (
-          <p className="mt-2 text-sm text-muted-foreground max-md:text-sidebar-foreground/80">
-            {r.description}
-          </p>
-        )}
+        {r.description && <p className="mt-2 text-sm text-muted-foreground">{r.description}</p>}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <EntityChips links={r.links} />
           <a
@@ -214,7 +210,7 @@ function FilingDetailPage() {
         </section>
       )}
 
-      <p className="text-xs text-muted-foreground max-md:text-sidebar-foreground/70">
+      <p className="text-xs text-muted-foreground">
         This is a public record republished with its government citation. A filing describes what
         was requested, not what will be built.
       </p>
